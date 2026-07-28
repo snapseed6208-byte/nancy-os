@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-warm-cream: #FAF8F5;
+  --color-sage: #7BC4A0;
+  --color-sage-deep: #5DAF8B;
+  --color-sage-light: #E8F5EE;
+  --color-ink: #2C2C2C;
+  --color-ink-light: #6B6B6B;
+  --color-ink-lighter: #9B9B9B;
+  --color-border: #E8E3DB;
+  --color-card: #FFFFFF;
+  --color-card-hover: #F5F2ED;
+  --color-accent-warm: #E8B482;
+  --color-accent-rose: #E8A4A4;
+  --color-accent-sky: #6BAED4;
+
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: "Georgia", "Noto Serif SC", serif;
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-warm-cream text-ink font-sans;
+    overscroll-behavior: none;
+  }
+
+  input, textarea, select {
+    @apply text-ink;
+  }
+}
+
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}

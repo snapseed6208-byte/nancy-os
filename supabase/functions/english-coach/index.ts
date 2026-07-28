@@ -1,0 +1,233 @@
+// ============================================
+// Nancy OS — English Coach Edge Function v3
+// v3: JWT auth required for all calls.
+// Always injects user context (preferences + history).
+// Removed anonymous proxy path for security.
+// ============================================
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+// ── Helpers ──
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
+// ── Build learning context from memories + history ──
+
+function buildLearningContext(
+  memories: Array<Record<string, unknown>>,
+  reviewStats: { totalReviewed: number; correctRate: number; problemAreas: string[] },
+  speakingStats: { totalSessions: number; avgDuration: number; recentScenarios: string[] },
+): string {
+  const lines: string[] = [];
+
+  if (memories.length > 0) {
+    lines.push("## 用户学习偏好（来自长期记忆）");
+    const learningMemories = memories.filter((m) =>
+      ["preference", "habit", "insight", "skill"].includes(m.memory_type as string),
+    );
+    for (const m of learningMemories.slice(0, 10)) {
+      lines.push(`- [${m.memory_type}] ${m.content}`);
+    }
+
+    const personalityMemories = memories.filter((m) => m.memory_type === "personality");
+    if (personalityMemories.length > 0) {
+      lines.push("\n## 用户性格特点");
+      for (const m of personalityMemories.slice(0, 3)) {
+        lines.push(`- ${m.content}`);
+      }
+      lines.push("请根据性格特点调整鼓励方式和反馈语气。");
+    }
+  }
+
+  if (reviewStats.totalReviewed > 0) {
+    lines.push("\n## 用户学习数据");
+    lines.push(`- 累计复习次数: ${reviewStats.totalReviewed}`);
+    lines.push(`- 正确率: ${Math.round(reviewStats.correctRate * 100)}%`);
+    if (reviewStats.problemAreas.length > 0) {
+      lines.push(`- 薄弱领域: ${reviewStats.problemAreas.join("、")}`);
+      lines.push("请在反馈中优先关注这些薄弱领域。");
+    }
+  }
+
+  if (speakingStats.totalSessions > 0) {
+    lines.push(`- 口语练习次数: ${speakingStats.totalSessions}`);
+    lines.push(`- 平均练习时长: ${Math.round(speakingStats.avgDuration / 60)}分钟`);
+    if (speakingStats.recentScenarios.length > 0) {
+      lines.push(`- 最近练习场景: ${speakingStats.recentScenarios.join("、")}`);
+    }
+  }
+
+  if (lines.length === 0) return "";
+
+  lines.unshift("## 用户学习上下文（供个性化教练参考）");
+  return lines.join("\n");
+}
+
+// ── Main ──
+
+serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: CORS_HEADERS });
+  }
+
+  try {
+    const body = await req.json();
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    const model = (body.model as string) || "deepseek-chat";
+    const maxTokens = (body.maxTokens as number) || 2048;
+    const temperature = (body.temperature as number) ?? 0.7;
+
+    if (!messages || !Array.isArray(messages)) {
+      return jsonResponse({ error: "messages array is required" }, 400);
+    }
+
+    // ── Auth (always required) ──
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return jsonResponse({ error: "需要登录" }, 401);
+
+    const token = authHeader.replace("Bearer ", "");
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) return jsonResponse({ error: "登录已过期" }, 401);
+    const userId = user.id;
+
+    // Fetch learning context in parallel
+    const [
+      { data: confirmedMemories },
+      { data: expressionReviews },
+      { data: speakingSessions },
+    ] = await Promise.all([
+      supabase.from("ai_memories")
+        .select("id,memory_type,content,confidence")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .eq("status", "confirmed")
+        .in("memory_type", ["preference", "personality", "habit", "insight", "skill"])
+        .order("last_reinforced_at", { ascending: false })
+        .limit(15),
+      supabase.from("expression_reviews")
+        .select("id,result")
+        .eq("user_id", userId)
+        .order("reviewed_at", { ascending: false })
+        .limit(50),
+      supabase.from("speaking_sessions")
+        .select("id,scenario,duration_seconds")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(10),
+    ]);
+
+    // Compute review stats
+    const reviews = (expressionReviews || []) as Array<{ result: string }>;
+    const totalReviewed = reviews.length;
+    const correctCount = reviews.filter((r) => r.result === "correct").length;
+    const correctRate = totalReviewed > 0 ? correctCount / totalReviewed : 0;
+    const incorrectResults = reviews.filter((r) => r.result === "incorrect" || r.result === "partial");
+
+    const problemAreas: string[] = [];
+    if (incorrectResults.length > totalReviewed * 0.3) problemAreas.push("词汇准确性");
+    if (incorrectResults.length > totalReviewed * 0.5) problemAreas.push("语法结构");
+
+    // Compute speaking stats
+    const sessions = (speakingSessions || []) as Array<{ scenario: string; duration_seconds: number }>;
+    const totalSessions = sessions.length;
+    const avgDuration = totalSessions > 0
+      ? sessions.reduce((sum, s) => sum + (s.duration_seconds || 0), 0) / totalSessions
+      : 0;
+    const recentScenarios = [...new Set(sessions.slice(0, 5).map((s) => s.scenario))];
+
+    const learningContext = buildLearningContext(
+      (confirmedMemories || []) as Array<Record<string, unknown>>,
+      { totalReviewed, correctRate, problemAreas },
+      { totalSessions, avgDuration, recentScenarios },
+    );
+
+    // ── Build messages with context injection ──
+    const finalMessages = [...messages];
+    if (learningContext) {
+      const hasSystem = finalMessages.length > 0 && finalMessages[0].role === "system";
+      if (hasSystem) {
+        finalMessages[0] = {
+          role: "system",
+          content: finalMessages[0].content + "\n\n" + learningContext,
+        };
+      } else {
+        finalMessages.unshift({ role: "system", content: learningContext });
+      }
+    }
+
+    // ── Call DeepSeek ──
+    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: finalMessages,
+        max_tokens: maxTokens,
+        temperature,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return jsonResponse({ error: `DeepSeek API error (${response.status}): ${err}` }, 502);
+    }
+
+    const data = await response.json();
+
+    const tokensUsed: number = data.usage?.total_tokens || 0;
+
+    // ── Log ──
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "coaching_session",
+      input_data: {
+        message_count: messages.length,
+        memory_count: (confirmedMemories || []).length,
+        review_count: totalReviewed,
+        speaking_count: totalSessions,
+        context_injected: true,
+      },
+      output_data: { model, tokens_used: tokensUsed },
+      model,
+      tokens_used: tokensUsed,
+    });
+
+    return jsonResponse({
+      content: data.choices?.[0]?.message?.content || "",
+      model: data.model || model,
+      tokensUsed: data.usage?.total_tokens,
+      context_injected: true,
+      context_sources: learningContext ? {
+        memories_count: (confirmedMemories || []).length,
+        reviews_count: totalReviewed,
+      } : null,
+    });
+  } catch (err) {
+    return jsonResponse({
+      error: err instanceof Error ? err.message : "服务器内部错误",
+    }, 500);
+  }
+});
