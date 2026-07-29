@@ -387,6 +387,7 @@ export function useToggleTaskComplete() {
 
       if (taskType === "recurring") {
         // Handle recurring task: increment completion count
+        // Uses task_completion_records as source of truth
         const today = new Date().toISOString().split("T")[0];
         const userId = (await supabase.auth.getUser()).data.user?.id;
 
@@ -399,24 +400,36 @@ export function useToggleTaskComplete() {
 
         if (!rt) throw new Error("Task not found");
 
-        const cycleStart = getCycleStart((rt as Record<string, unknown>).frequency_type as string || "daily");
+        const freqType = (rt as Record<string, unknown>).frequency_type as string || "daily";
         const targetCount = (rt as Record<string, unknown>).target_count as number || 1;
-        let completedCount = (rt as Record<string, unknown>).completed_count as number || 0;
-        const oldCycleStart = (rt as Record<string, unknown>).cycle_start_date as string || "";
+        const cycleStart = getCycleStart(freqType);
 
-        // Reset count if new cycle
-        if (oldCycleStart !== cycleStart) {
-          completedCount = 0;
+        // Count existing completion records within current cycle as source of truth
+        const { count: recordCount, error: countErr } = await supabase
+          .from("task_completion_records")
+          .select("id", { count: "exact", head: true })
+          .eq("task_id", id)
+          .gte("completion_date", cycleStart);
+
+        if (countErr) throw countErr;
+
+        const currentCount = (recordCount ?? 0);
+
+        // Guard: prevent exceeding target within current cycle
+        if (currentCount >= targetCount) {
+          // Already at target — no-op
+          return;
         }
-        completedCount++;
 
-        const isComplete = completedCount >= targetCount;
+        // Increment count (cycleStart already reflects current cycle)
+        const newCount = currentCount + 1;
+        const isComplete = newCount >= targetCount;
 
-        // Update task
+        // Update task cache
         const { error: updateErr } = await supabase
           .from("tasks")
           .update({
-            completed_count: completedCount,
+            completed_count: newCount,
             cycle_start_date: cycleStart,
             status: isComplete ? "done" : "in_progress",
             updated_at: new Date().toISOString(),
