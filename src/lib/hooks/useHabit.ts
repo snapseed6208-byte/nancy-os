@@ -17,12 +17,29 @@ export type HabitRow = {
   color?: string;
   category?: string;
   module?: string;
-  target_days_per_week: number;
+  frequency_type: string; // "daily" | "weekly" | "monthly"
+  frequency_value: number; // e.g. daily/1, weekly/3, monthly/2
   is_active: boolean;
   streak_best: number;
   reminder_time?: string;
   created_at: string;
 };
+
+/** Format frequency into Chinese label: "每天", "每周3次", "每月2次" */
+export function formatFrequency(type: string, value: number): string {
+  if (type === "daily") return "每天";
+  if (type === "weekly") return `每周${value}次`;
+  if (type === "monthly") return `每月${value}次`;
+  return `${type}/${value}`;
+}
+
+/** Get expected completions per week for a habit, for stats computation */
+export function expectedPerWeek(type: string, value: number): number {
+  if (type === "daily") return 7;
+  if (type === "weekly") return value;
+  if (type === "monthly") return Math.ceil(value / 4.33);
+  return value;
+}
 
 export type HabitRecordRow = {
   id: string;
@@ -131,7 +148,8 @@ export function useCreateHabit() {
       color?: string;
       category?: string;
       module?: string;
-      targetDaysPerWeek?: number;
+      frequencyType?: string;
+      frequencyValue?: number;
       reminderTime?: string;
     }) => {
       const userId = await getUserId();
@@ -144,7 +162,8 @@ export function useCreateHabit() {
           color: input.color,
           category: input.category,
           module: input.module,
-          target_days_per_week: input.targetDaysPerWeek ?? 7,
+          frequency_type: input.frequencyType ?? "daily",
+          frequency_value: input.frequencyValue ?? 1,
           reminder_time: input.reminderTime,
         })
         .select("id")
@@ -171,7 +190,8 @@ export function useUpdateHabit() {
       icon?: string;
       color?: string;
       is_active?: boolean;
-      target_days_per_week?: number;
+      frequency_type?: string;
+      frequency_value?: number;
       reminder_time?: string;
     }) => {
       const { error } = await supabase
@@ -338,7 +358,7 @@ export function useHabitStats(days = 7) {
     queryKey: ["habitStats", days],
     queryFn: async (): Promise<HabitStats> => {
       const [{ data: habits }, { data: records }] = await Promise.all([
-        supabase.from("habits").select("id,streak_best").eq("is_active", true),
+        supabase.from("habits").select("id,streak_best,frequency_type,frequency_value").eq("is_active", true),
         supabase.from("habit_records")
           .select("habit_id,date,status")
           .gte("date", startStr)
@@ -346,7 +366,7 @@ export function useHabitStats(days = 7) {
           .order("date", { ascending: false }),
       ]);
 
-      const habitList = (habits || []) as { id: string; streak_best: number }[];
+      const habitList = (habits || []) as { id: string; streak_best: number; frequency_type: string; frequency_value: number }[];
       const recordList = (records || []) as { habit_id: string; date: string; status: string }[];
 
       const todayRecords = recordList.filter((r) => r.date === today);
@@ -357,9 +377,17 @@ export function useHabitStats(days = 7) {
       const currentStreak = computeStreak(recordList, today);
       const bestStreak = Math.max(...habitList.map((h) => h.streak_best || 0), currentStreak);
 
-      // Completion rate this week
-      const weekDays = Math.min(days, Math.ceil((Date.now() - new Date(startStr + "T00:00:00").getTime()) / 86400000) + 1);
-      const totalExpected = habitList.length * weekDays;
+      // Completion rate: expected completions based on each habit's frequency
+      const periodDays = Math.min(days, Math.ceil((Date.now() - new Date(startStr + "T00:00:00").getTime()) / 86400000) + 1);
+      const weekFraction = periodDays / 7;
+      const monthFraction = periodDays / 30;
+      let totalExpected = 0;
+      for (const h of habitList) {
+        if (h.frequency_type === "daily") totalExpected += periodDays;
+        else if (h.frequency_type === "weekly") totalExpected += Math.round(h.frequency_value * weekFraction);
+        else if (h.frequency_type === "monthly") totalExpected += Math.round(h.frequency_value * monthFraction);
+        else totalExpected += periodDays; // fallback
+      }
       const totalCompleted = recordList.filter((r) => r.status === "completed").length;
       const completionRateWeek = totalExpected > 0 ? totalCompleted / totalExpected : 0;
 
@@ -547,14 +575,14 @@ export function useHabitWeeklyStats(weeksBack = 4) {
       const todayStr = today.toISOString().split("T")[0];
 
       const [{ data: habits }, { data: records }] = await Promise.all([
-        supabase.from("habits").select("id,title,color").eq("is_active", true),
+        supabase.from("habits").select("id,title,color,frequency_type,frequency_value").eq("is_active", true),
         supabase.from("habit_records")
           .select("habit_id,date,status")
           .gte("date", startStr)
           .lte("date", todayStr),
       ]);
 
-      const habitList = (habits || []) as { id: string; title: string; color: string }[];
+      const habitList = (habits || []) as { id: string; title: string; color: string; frequency_type: string; frequency_value: number }[];
       const recordList = (records || []) as { habit_id: string; date: string; status: string }[];
 
       const weeks: WeeklyStat[] = [];
@@ -568,21 +596,24 @@ export function useHabitWeeklyStats(weeksBack = 4) {
         const we = weekEnd.toISOString().split("T")[0];
 
         const weekRecords = recordList.filter((r) => r.date >= ws && r.date <= we);
-        const daysInWeek = new Set(weekRecords.map((r) => r.date)).size || 1;
 
         const habitRates = habitList.map((h) => {
           const habitRecs = weekRecords.filter((r) => r.habit_id === h.id);
           const completed = habitRecs.filter((r) => r.status === "completed").length;
+          const expected = expectedPerWeek(h.frequency_type, h.frequency_value);
           return {
             id: h.id,
             name: h.title,
             color: h.color || "#45B7D1",
-            rate: daysInWeek > 0 ? completed / daysInWeek : 0,
+            rate: expected > 0 ? Math.min(completed / expected, 1) : 0,
           };
         });
 
+        let totalExpected = 0;
+        for (const h of habitList) {
+          totalExpected += expectedPerWeek(h.frequency_type, h.frequency_value);
+        }
         const totalCompleted = weekRecords.filter((r) => r.status === "completed").length;
-        const totalExpected = habitList.length * daysInWeek;
 
         weeks.push({
           weekStart: ws,

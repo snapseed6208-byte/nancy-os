@@ -36,7 +36,7 @@ Your task: analyze the user's habit tracking data and provide insightful, motiva
 
 ## Available Data
 You will receive:
-1. A list of the user's active habits (title, icon, color, target_days_per_week, best_streak)
+1. A list of the user's active habits (title, icon, color, frequency, best_streak)
 2. Habit completion records for the analysis period (habit_id, date, status: completed/skipped/missed)
 
 ## Your Analysis Must Include
@@ -132,7 +132,7 @@ serve(async (req: Request) => {
     const { data: habits } = await habitQuery;
     const habitList = (habits || []) as Array<{
       id: string; title: string; icon?: string; color?: string;
-      target_days_per_week: number; streak_best: number;
+      frequency_type: string; frequency_value: number; streak_best: number;
     }>;
 
     if (habitList.length === 0) {
@@ -160,7 +160,7 @@ serve(async (req: Request) => {
     const habitSummary = habitList.map((h) => ({
       name: h.title,
       icon: h.icon,
-      target_per_week: h.target_days_per_week,
+      frequency: h.frequency_type === "daily" ? "每天" : h.frequency_type === "weekly" ? `每周${h.frequency_value}次` : `每月${h.frequency_value}次`,
       best_streak: h.streak_best,
       records: recordList
         .filter((r) => r.habit_id === h.id)

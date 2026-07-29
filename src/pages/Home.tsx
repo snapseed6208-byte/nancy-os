@@ -42,7 +42,7 @@ import {
 import { useTodayBrief, useGenerateDailyBrief, useBriefFeedback } from "@/lib/hooks/useReflection";
 import { useDashboardStats, type TimelineItem } from "@/lib/hooks/useDashboard";
 import { useUpcomingTasks, useToggleTaskComplete } from "@/lib/hooks/usePlan";
-import { useHabitsWithToday, useToggleHabitCompletion, useHabitWeeklyStats, useHabitAnalysis, type HabitWithRecord } from "@/lib/hooks/useHabit";
+import { useHabitsWithToday, useToggleHabitCompletion, useHabitWeeklyStats, useHabitAnalysis, formatFrequency, type HabitWithRecord } from "@/lib/hooks/useHabit";
 import { useCreateIdea } from "@/lib/hooks/useLifeTrace";
 import type { DailyBrief, DailyBriefSuggestion, DailyBriefWarning } from "@/lib/types";
 
@@ -853,7 +853,7 @@ function TodayHabits({
 
               {/* Target indicator */}
               <span className="text-[10px] text-ink-lighter shrink-0">
-                {h.target_days_per_week || 7}/周
+                {formatFrequency(h.frequency_type || "daily", h.frequency_value || 1)}
               </span>
 
               {/* Loading spinner */}

@@ -288,7 +288,8 @@ export interface Habit {
   color?: string;
   category?: string;
   module?: ModuleId;
-  targetDaysPerWeek: number;
+  frequencyType: "daily" | "weekly" | "monthly";
+  frequencyValue: number;
   isActive: boolean;
   streakBest: number;
   reminderTime?: string;

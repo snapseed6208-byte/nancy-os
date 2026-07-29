@@ -18,6 +18,7 @@ import {
   useHabitsWithToday, useCreateHabit, useToggleHabitRecord,
   useDeleteHabit, useHabitAnalysis, useGenerateHabitAnalysis,
   useHabitMonthCalendar, useHabitWeeklyStats,
+  formatFrequency,
   type HabitWithRecord, type HabitAnalysis, type DayCell, type WeeklyStat,
 } from "@/lib/hooks/useHabit";
 
@@ -775,6 +776,8 @@ function HabitTracker() {
   const deleteHabit = useDeleteHabit();
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newFrequencyType, setNewFrequencyType] = useState("daily");
+  const [newFrequencyValue, setNewFrequencyValue] = useState(1);
 
   // Calendar state
   const now = new Date();
@@ -862,13 +865,13 @@ function HabitTracker() {
       </button>
 
       {showAdd && (
-        <div className="bg-card rounded-xl border border-sage-light/30 p-3 flex items-center gap-2">
+        <div className="bg-card rounded-xl border border-sage-light/30 p-3 space-y-2">
           <input
             type="text"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="习惯名称..."
-            className="flex-1 text-sm rounded-lg border border-border px-3 py-2 bg-white"
+            className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === "Enter" && newTitle.trim()) {
@@ -876,28 +879,78 @@ function HabitTracker() {
                   title: newTitle.trim(),
                   icon: HABIT_ICONS[Math.floor(Math.random() * HABIT_ICONS.length)],
                   color: HABIT_COLORS[Math.floor(Math.random() * HABIT_COLORS.length)],
+                  frequencyType: newFrequencyType,
+                  frequencyValue: newFrequencyValue,
                 });
                 setNewTitle("");
+                setNewFrequencyType("daily");
+                setNewFrequencyValue(1);
                 setShowAdd(false);
               }
             }}
           />
-          <button
-            onClick={() => {
-              if (!newTitle.trim()) return;
-              createHabit.mutate({
-                title: newTitle.trim(),
-                icon: HABIT_ICONS[Math.floor(Math.random() * HABIT_ICONS.length)],
-                color: HABIT_COLORS[Math.floor(Math.random() * HABIT_COLORS.length)],
-              });
-              setNewTitle("");
-              setShowAdd(false);
-            }}
-            disabled={!newTitle.trim() || createHabit.isPending}
-            className="bg-sage-light text-sage-deep rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-          >
-            {createHabit.isPending ? "..." : "添加"}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-ink-lighter shrink-0">频率</span>
+            {([
+              { type: "daily", label: "每天" },
+              { type: "weekly", label: "每周" },
+              { type: "monthly", label: "每月" },
+            ] as const).map(({ type, label }) => (
+              <button
+                key={type}
+                onClick={() => {
+                  setNewFrequencyType(type);
+                  if (type === "daily") setNewFrequencyValue(1);
+                }}
+                className={cn(
+                  "text-[10px] px-2 py-1 rounded-full font-medium transition-colors",
+                  newFrequencyType === type
+                    ? "bg-sage-light text-sage-deep"
+                    : "bg-ink/5 text-ink-lighter hover:bg-ink/10",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            {newFrequencyType !== "daily" && (
+              <select
+                value={newFrequencyValue}
+                onChange={(e) => setNewFrequencyValue(Number(e.target.value))}
+                className="text-[10px] bg-ink/5 rounded px-1.5 py-1 outline-none"
+              >
+                {Array.from({ length: newFrequencyType === "weekly" ? 7 : 10 }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>{n}次</option>
+                ))}
+              </select>
+            )}
+            <div className="flex-1" />
+            <button
+              onClick={() => setShowAdd(false)}
+              className="text-ink-lighter hover:text-ink p-1"
+            >
+              <X size={14} />
+            </button>
+            <button
+              onClick={() => {
+                if (!newTitle.trim()) return;
+                createHabit.mutate({
+                  title: newTitle.trim(),
+                  icon: HABIT_ICONS[Math.floor(Math.random() * HABIT_ICONS.length)],
+                  color: HABIT_COLORS[Math.floor(Math.random() * HABIT_COLORS.length)],
+                  frequencyType: newFrequencyType,
+                  frequencyValue: newFrequencyValue,
+                });
+                setNewTitle("");
+                setNewFrequencyType("daily");
+                setNewFrequencyValue(1);
+                setShowAdd(false);
+              }}
+              disabled={!newTitle.trim() || createHabit.isPending}
+              className="bg-sage-light text-sage-deep rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+            >
+              {createHabit.isPending ? "..." : "添加"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -937,7 +990,7 @@ function HabitTracker() {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-ink-lighter">
-                      目标 {h.target_days_per_week || 7}天/周
+                      {formatFrequency(h.frequency_type || "daily", h.frequency_value || 1)}
                     </span>
                     {h.streak_best > 0 && (
                       <span className="text-[10px] text-accent-warm">
