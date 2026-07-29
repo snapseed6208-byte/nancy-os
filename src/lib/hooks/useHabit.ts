@@ -251,6 +251,60 @@ export function useToggleHabitRecord() {
   });
 }
 
+// ── Toggle Habit Completion (simple binary toggle for quick check-in) ──
+
+export function useToggleHabitCompletion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (habitId: string) => {
+      const userId = await getUserId();
+      const today = new Date().toISOString().split("T")[0];
+
+      // Check if there's already a record for today
+      const { data: existing } = await supabase
+        .from("habit_records")
+        .select("id,status")
+        .eq("habit_id", habitId)
+        .eq("date", today)
+        .maybeSingle();
+
+      if (existing && existing.status === "completed") {
+        // Undo: remove the record
+        const { error } = await supabase
+          .from("habit_records")
+          .delete()
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else if (existing) {
+        // Update to completed
+        const { error } = await supabase
+          .from("habit_records")
+          .update({ status: "completed" })
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        // Insert new completed record
+        const { error } = await supabase
+          .from("habit_records")
+          .insert({
+            user_id: userId,
+            habit_id: habitId,
+            date: today,
+            status: "completed",
+          });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["habits"] });
+      qc.invalidateQueries({ queryKey: ["habitRecords"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["habitMonthCalendar"] });
+      qc.invalidateQueries({ queryKey: ["habitWeeklyStats"] });
+    },
+  });
+}
+
 // ── Habit Stats (streak, completion rate) ──
 
 function computeStreak(records: { date: string; status: string }[], fromDate: string): number {

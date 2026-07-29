@@ -23,6 +23,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   RefreshCw,
+  Check, X,
   CheckCircle2,
   Circle,
   CircleDot,
@@ -41,7 +42,7 @@ import {
 import { useTodayBrief, useGenerateDailyBrief, useBriefFeedback } from "@/lib/hooks/useReflection";
 import { useDashboardStats, type TimelineItem } from "@/lib/hooks/useDashboard";
 import { useUpcomingTasks, useToggleTaskComplete } from "@/lib/hooks/usePlan";
-import { useHabitsWithToday, useToggleHabitRecord, useHabitWeeklyStats, useHabitAnalysis, type HabitWithRecord } from "@/lib/hooks/useHabit";
+import { useHabitsWithToday, useToggleHabitCompletion, useHabitWeeklyStats, useHabitAnalysis, type HabitWithRecord } from "@/lib/hooks/useHabit";
 import { useCreateIdea } from "@/lib/hooks/useLifeTrace";
 import type { DailyBrief, DailyBriefSuggestion, DailyBriefWarning } from "@/lib/types";
 
@@ -87,7 +88,7 @@ export default function Home() {
   const { data: stats, isLoading: loadingStats } = useDashboardStats();
   const { data: upcomingTasks } = useUpcomingTasks(7);
   const { data: habitsWithToday } = useHabitsWithToday();
-  const toggleHabitRecord = useToggleHabitRecord();
+  const toggleHabitCompletion = useToggleHabitCompletion();
   const toggleTaskComplete = useToggleTaskComplete();
   const briefFeedback = useBriefFeedback();
   const createIdea = useCreateIdea();
@@ -276,13 +277,8 @@ export default function Home() {
       {habitsWithToday && (habitsWithToday as HabitWithRecord[]).length > 0 && (
         <TodayHabits
           habits={habitsWithToday as HabitWithRecord[]}
-          onToggle={(habitId, status) =>
-            toggleHabitRecord.mutate({
-              habitId,
-              date: new Date().toISOString().split("T")[0],
-              currentStatus: status,
-            })
-          }
+          onToggle={(habitId) => toggleHabitCompletion.mutate(habitId)}
+          isToggling={toggleHabitCompletion.isPending}
           weeklyStats={habitWeeklyStats || []}
           analysis={habitAnalysis}
         />
@@ -744,11 +740,13 @@ function ModuleCard({
 function TodayHabits({
   habits,
   onToggle,
+  isToggling,
   weeklyStats,
   analysis,
 }: {
   habits: HabitWithRecord[];
-  onToggle: (habitId: string, currentStatus?: string) => void;
+  onToggle: (habitId: string) => void;
+  isToggling: boolean;
   weeklyStats?: { weekStart: string; overallRate: number }[];
   analysis?: { summary?: string; motivation?: string } | null;
 }) {
@@ -782,13 +780,16 @@ function TodayHabits({
               ))}
             </div>
           )}
-          <span className="text-[11px] text-ink-light">
+          <span className={cn(
+            "text-[11px] font-medium",
+            pct === 100 ? "text-emerald-500" : "text-ink-light",
+          )}>
             {completed}/{total} · {pct}%
           </span>
         </div>
       </div>
 
-      {/* Compact progress bar */}
+      {/* Progress bar */}
       <div className="bg-ink/5 rounded-full h-1.5 mb-3 overflow-hidden">
         <div
           className="bg-emerald-400 h-full rounded-full transition-all duration-500"
@@ -796,29 +797,65 @@ function TodayHabits({
         />
       </div>
 
-      {/* Habit check-in chips */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Habit check-in list */}
+      <div className="space-y-1">
         {habits.map((h) => {
           const isCompleted = h.today_record?.status === "completed";
           const isSkipped = h.today_record?.status === "skipped";
+          const isMissed = h.today_record?.status === "missed";
+
           return (
             <button
               key={h.id}
-              onClick={() => onToggle(h.id, h.today_record?.status)}
+              onClick={() => onToggle(h.id)}
+              disabled={isToggling}
               className={cn(
-                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all active:scale-95 border",
+                "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all active:scale-[0.98] border",
                 isCompleted
-                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  ? "bg-emerald-50/50 border-emerald-200"
                   : isSkipped
-                    ? "bg-amber-50 border-amber-200 text-amber-600"
-                    : h.today_record?.status === "missed"
-                      ? "bg-accent-rose/5 border-accent-rose/20 text-accent-rose"
-                      : "bg-card border-border text-ink-light hover:border-sage-light/30",
+                    ? "bg-amber-50/50 border-amber-200"
+                    : isMissed
+                      ? "bg-accent-rose/5 border-accent-rose/20"
+                      : "bg-card border-border hover:border-sage-light/30",
               )}
             >
-              <span className="text-sm leading-none">{h.icon || "✅"}</span>
-              <span className="truncate max-w-[80px]">{h.title}</span>
-              {isCompleted && <CheckCircle2 size={10} />}
+              {/* Checkbox indicator */}
+              <div className={cn(
+                "h-6 w-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors",
+                isCompleted
+                  ? "bg-emerald-500 border-emerald-500 text-white"
+                  : isSkipped
+                    ? "border-amber-300 bg-amber-50 text-amber-500"
+                    : isMissed
+                      ? "border-accent-rose/30 bg-accent-rose/5 text-accent-rose"
+                      : "border-ink/20 bg-white text-transparent",
+              )}>
+                {isCompleted && <Check size={12} strokeWidth={3} />}
+                {isSkipped && <span className="text-[9px] font-bold">→</span>}
+                {isMissed && <X size={10} strokeWidth={3} />}
+              </div>
+
+              {/* Habit info */}
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <span className="text-sm leading-none shrink-0">{h.icon || "✅"}</span>
+                <span className={cn(
+                  "text-xs font-medium truncate",
+                  isCompleted ? "text-emerald-700" : "text-ink",
+                )}>
+                  {h.title}
+                </span>
+              </div>
+
+              {/* Target indicator */}
+              <span className="text-[10px] text-ink-lighter shrink-0">
+                {h.target_days_per_week || 7}/周
+              </span>
+
+              {/* Loading spinner */}
+              {isToggling && (
+                <Loader2 size={12} className="animate-spin text-ink-lighter shrink-0" />
+              )}
             </button>
           );
         })}
