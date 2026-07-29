@@ -277,7 +277,11 @@ export default function Home() {
       {habitsWithToday && (habitsWithToday as HabitWithRecord[]).length > 0 && (
         <TodayHabits
           habits={habitsWithToday as HabitWithRecord[]}
-          onToggle={(habitId) => toggleHabitCompletion.mutate(habitId)}
+          onToggle={(habitId) => toggleHabitCompletion.mutate(habitId, {
+            onError: (err) => {
+              console.error("Habit toggle failed:", err);
+            },
+          })}
           isToggling={toggleHabitCompletion.isPending}
           weeklyStats={habitWeeklyStats || []}
           analysis={habitAnalysis}

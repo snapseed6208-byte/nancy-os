@@ -21,8 +21,16 @@ CREATE TABLE IF NOT EXISTS habit_analyses (
 );
 
 ALTER TABLE habit_analyses ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own habit_analyses"
-  ON habit_analyses FOR ALL USING (auth.uid() = user_id);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage own habit_analyses' AND tablename = 'habit_analyses'
+  ) THEN
+    CREATE POLICY "Users can manage own habit_analyses"
+      ON habit_analyses FOR ALL USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_habit_analyses_user ON habit_analyses(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_habit_analyses_habit ON habit_analyses(habit_id, created_at DESC);

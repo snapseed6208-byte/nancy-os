@@ -41,9 +41,14 @@ CREATE INDEX IF NOT EXISTS idx_speaking_attempts_session
 CREATE INDEX IF NOT EXISTS idx_expression_reviews_expression
   ON expression_reviews(expression_id);
 
--- learning_resources: 按分类查询
-CREATE INDEX IF NOT EXISTS idx_learning_resources_user_category
-  ON learning_resources(user_id, category);
+-- learning_resources: 按分类查询 (only if table exists)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'learning_resources') THEN
+    CREATE INDEX IF NOT EXISTS idx_learning_resources_user_category
+      ON learning_resources(user_id, category);
+  END IF;
+END $$;
 
 -- ai_insights: 按 agent 类型 + 日期查最新的洞察
 CREATE INDEX IF NOT EXISTS idx_ai_insights_user_agent_date
