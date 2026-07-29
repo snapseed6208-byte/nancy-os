@@ -1,0 +1,9 @@
+# Nancy OS — Cloudflare Pages configuration
+# Framework: Vite + React + TypeScript
+
+name = "nancy-os"
+compatibility_date = "2026-07-29"
+
+# Cloudflare Pages settings
+[pages]
+build_dir = "dist"
