@@ -207,6 +207,7 @@ function TaskSection({
   defaultCollapsed?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
+  const isRecurring = (t: TaskRow) => t.task_type === "recurring";
 
   return (
     <div>
@@ -243,8 +244,25 @@ function TaskSection({
                 <p className={cn("text-xs text-ink truncate", t.status === "done" && "line-through")}>
                   {t.title}
                 </p>
-                {t.description && (
-                  <p className="text-[10px] text-ink-lighter truncate">{t.description}</p>
+                {isRecurring(t) ? (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[10px] text-ink-lighter">
+                      {t.completed_count}/{t.target_count}
+                    </span>
+                    <div className="w-12 bg-ink/10 rounded-full h-1 overflow-hidden">
+                      <div
+                        className="bg-accent-sky h-full rounded-full transition-all"
+                        style={{ width: `${Math.min((t.completed_count / (t.target_count || 1)) * 100, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-ink-lighter">
+                      {t.frequency_type === "daily" ? "每天" : t.frequency_type === "weekly" ? "每周" : t.frequency_type === "monthly" ? "每月" : ""}
+                    </span>
+                  </div>
+                ) : (
+                  t.description && (
+                    <p className="text-[10px] text-ink-lighter truncate">{t.description}</p>
+                  )
                 )}
               </div>
               {(t as TaskRow & { time_slot?: string }).time_slot && (
@@ -255,9 +273,16 @@ function TaskSection({
               {t.estimated_minutes && (
                 <span className="text-[10px] text-ink-lighter shrink-0">{t.estimated_minutes}min</span>
               )}
-              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0", PRIORITY_COLORS[t.priority] || "")}>
-                {PRIORITY_LABELS[t.priority] || t.priority}
-              </span>
+              {!isRecurring(t) && (
+                <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0", PRIORITY_COLORS[t.priority] || "")}>
+                  {PRIORITY_LABELS[t.priority] || t.priority}
+                </span>
+              )}
+              {isRecurring(t) && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-accent-sky/10 text-accent-sky">
+                  周期
+                </span>
+              )}
               <button
                 onClick={() => onDelete(t.id)}
                 className="text-ink-lighter hover:text-accent-rose shrink-0"
@@ -601,7 +626,9 @@ function TaskList() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          {taskList.map((t) => (
+          {taskList.map((t) => {
+            const isRecurring = t.task_type === "recurring";
+            return (
             <div
               key={t.id}
               className={cn(
@@ -626,34 +653,59 @@ function TaskList() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  {t.module && <span className="text-[10px] text-ink-lighter">{t.module}</span>}
-                  {(t as TaskRow & { time_slot?: string }).time_slot && (
-                    <span className="text-[10px] text-ink-lighter">
-                      {TIME_SLOTS.find((s) => s.key === (t as TaskRow & { time_slot?: string }).time_slot)?.label}
-                    </span>
-                  )}
-                  {t.due_date && (
-                    <span className={cn(
-                      "text-[10px]",
-                      new Date(t.due_date) < new Date(new Date().toISOString().split("T")[0])
-                        ? "text-accent-rose" : "text-ink-lighter",
-                    )}>
-                      {t.due_date}
-                    </span>
+                  {isRecurring ? (
+                    <>
+                      <span className="text-[10px] text-ink-lighter">
+                        {t.completed_count}/{t.target_count}
+                      </span>
+                      <div className="w-10 bg-ink/10 rounded-full h-1 overflow-hidden">
+                        <div
+                          className="bg-accent-sky h-full rounded-full transition-all"
+                          style={{ width: `${Math.min((t.completed_count / (t.target_count || 1)) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[9px] text-ink-lighter">
+                        {t.frequency_type === "daily" ? "每天" : t.frequency_type === "weekly" ? "每周" : t.frequency_type === "monthly" ? "每月" : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {t.module && <span className="text-[10px] text-ink-lighter">{t.module}</span>}
+                      {(t as TaskRow & { time_slot?: string }).time_slot && (
+                        <span className="text-[10px] text-ink-lighter">
+                          {TIME_SLOTS.find((s) => s.key === (t as TaskRow & { time_slot?: string }).time_slot)?.label}
+                        </span>
+                      )}
+                      {t.due_date && (
+                        <span className={cn(
+                          "text-[10px]",
+                          new Date(t.due_date) < new Date(new Date().toISOString().split("T")[0])
+                            ? "text-accent-rose" : "text-ink-lighter",
+                        )}>
+                          {t.due_date}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
               {t.estimated_minutes && (
                 <span className="text-[10px] text-ink-lighter shrink-0">{t.estimated_minutes}min</span>
               )}
-              <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0", PRIORITY_COLORS[t.priority] || "")}>
-                {PRIORITY_LABELS[t.priority] || t.priority}
-              </span>
+              {isRecurring ? (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-accent-sky/10 text-accent-sky">
+                  周期
+                </span>
+              ) : (
+                <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0", PRIORITY_COLORS[t.priority] || "")}>
+                  {PRIORITY_LABELS[t.priority] || t.priority}
+                </span>
+              )}
               <button onClick={() => deleteTask.mutate(t.id)} className="text-ink-lighter hover:text-accent-rose shrink-0">
                 <Trash2 size={12} />
               </button>
             </div>
-          ))}
+          )})}
         </div>
       )}
 
@@ -721,6 +773,11 @@ function AiReviewSection() {
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-ink truncate">{t.title}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
+                    {t.task_type === "recurring" && (
+                      <span className="text-[9px] px-1 py-0.5 rounded-full bg-accent-sky/10 text-accent-sky">
+                        周期·{t.completed_count || 0}/{t.target_count || 1}
+                      </span>
+                    )}
                     {t.priority && (
                       <span className={cn("text-[9px] px-1 py-0.5 rounded-full", PRIORITY_COLORS[t.priority])}>
                         {PRIORITY_LABELS[t.priority]}

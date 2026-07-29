@@ -906,9 +906,12 @@ function TodaySchedule({
   if (allTasks.length === 0) return null;
 
   const sorted = [...allTasks].sort((a, b) => {
+    // Recurring tasks first, then one-time tasks by priority
+    if (a.taskType === "recurring" && b.taskType !== "recurring") return -1;
+    if (a.taskType !== "recurring" && b.taskType === "recurring") return 1;
     const priorityOrder = { high: 0, medium: 1, low: 2 };
-    const aPriority = (a as Record<string, unknown>).priority as string || "medium";
-    const bPriority = (b as Record<string, unknown>).priority as string || "medium";
+    const aPriority = (a.subtitle === "高优先" ? "high" : a.subtitle === "中优先" ? "medium" : "low");
+    const bPriority = (b.subtitle === "高优先" ? "high" : b.subtitle === "中优先" ? "medium" : "low");
     return (priorityOrder[aPriority as keyof typeof priorityOrder] ?? 1) -
            (priorityOrder[bPriority as keyof typeof priorityOrder] ?? 1);
   });
@@ -919,12 +922,19 @@ function TodaySchedule({
         <Clock size={13} className="text-sage-deep" />
         <h2 className="text-xs font-semibold text-ink">今日执行建议</h2>
         <span className="text-[10px] text-ink-lighter ml-auto">
-          按优先级排序 · 点击完成任务
+          {sorted.some((t) => t.taskType === "recurring")
+            ? "点击累计完成 · 周期任务显示进度"
+            : "按优先级排序 · 点击完成任务"}
         </span>
       </div>
       <div className="space-y-1">
-        {sorted.slice(0, 5).map((task, i) => {
+        {sorted.slice(0, 5).map((task) => {
+          const isRecurring = task.taskType === "recurring";
           const taskStatus = task.status === "in_progress" ? "in_progress" : "pending";
+          const compCount = task.completedCount || 0;
+          const tgtCount = task.targetCount || 1;
+          const pct = Math.round((compCount / tgtCount) * 100);
+
           return (
             <div
               key={task.id}
@@ -935,14 +945,37 @@ function TodaySchedule({
                 disabled={isToggling}
                 className="shrink-0"
               >
-                {task.status === "in_progress" ? (
+                {isRecurring ? (
+                  compCount >= tgtCount ? (
+                    <CheckCircle2 size={14} className="text-emerald-500" />
+                  ) : compCount > 0 ? (
+                    <CircleDot size={14} className="text-accent-sky" />
+                  ) : (
+                    <Circle size={14} className="text-ink-lighter hover:text-accent-sky transition-colors" />
+                  )
+                ) : task.status === "in_progress" ? (
                   <CircleDot size={14} className="text-accent-sky" />
                 ) : (
                   <Circle size={14} className="text-ink-lighter hover:text-accent-sky transition-colors" />
                 )}
               </button>
-              <span className="text-xs text-ink truncate flex-1">{task.title}</span>
-              {task.subtitle && (
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-ink truncate">{task.title}</span>
+                {isRecurring && (
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex-1 bg-ink/5 rounded-full h-1 overflow-hidden max-w-[100px]">
+                      <div
+                        className="bg-emerald-400 h-full rounded-full transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-ink-lighter shrink-0">
+                      {compCount}/{tgtCount}
+                    </span>
+                  </div>
+                )}
+              </div>
+              {!isRecurring && task.subtitle && (
                 <span className={cn(
                   "text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0",
                   task.subtitle === "高优先" ? "bg-accent-rose/10 text-accent-rose" :

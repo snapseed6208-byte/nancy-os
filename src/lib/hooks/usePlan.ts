@@ -50,6 +50,12 @@ export type TaskRow = {
   source_type: string;
   completed_at?: string;
   created_at: string;
+  // Recurring task fields
+  task_type: string; // "one_time" | "recurring"
+  frequency_type?: string; // "daily" | "weekly" | "monthly"
+  target_count: number; // e.g. 3 for 每周3次
+  completed_count: number; // current cycle completions
+  cycle_start_date?: string; // start of current cycle
 };
 
 export type TaskBreakdownItem = {
@@ -58,7 +64,34 @@ export type TaskBreakdownItem = {
   priority: "high" | "medium" | "low";
   estimated_minutes: number;
   module?: string;
+  task_type?: string; // "one_time" | "recurring" — from AI
+  frequency_type?: string; // "daily" | "weekly" | "monthly"
+  target_count?: number; // e.g. 3
 };
+
+export type TaskCompletionRecord = {
+  id: string;
+  task_id: string;
+  user_id: string;
+  completed_at: string;
+  completion_date: string;
+};
+
+/** Get the start date of the current cycle for a frequency type */
+export function getCycleStart(frequencyType: string): string {
+  const now = new Date();
+  if (frequencyType === "daily") {
+    return now.toISOString().split("T")[0];
+  }
+  if (frequencyType === "weekly") {
+    const dow = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+    return mon.toISOString().split("T")[0];
+  }
+  // monthly
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+}
 
 // ── Goals ──
 
@@ -221,17 +254,29 @@ export function useTodayTasks() {
   return useQuery({
     queryKey: ["tasks", "today"],
     queryFn: async () => {
-      // Tasks due today OR marked as today focus
-      const { data, error } = await supabase
-        .from("tasks")
-        .select("*")
-        .or(`due_date.eq.${today},is_today_focus.eq.true`)
-        .in("status", ["pending", "in_progress"])
-        .order("priority", { ascending: true })
-        .limit(30);
+      // Fetch one-time tasks due today or today focus, plus all active recurring tasks
+      const [{ data: oneTimeTasks }, { data: recurringTasks }] = await Promise.all([
+        supabase
+          .from("tasks")
+          .select("*")
+          .or(`due_date.eq.${today},is_today_focus.eq.true`)
+          .eq("task_type", "one_time")
+          .in("status", ["pending", "in_progress"])
+          .order("priority", { ascending: true })
+          .limit(30),
+        supabase
+          .from("tasks")
+          .select("*")
+          .eq("task_type", "recurring")
+          .neq("status", "done")
+          .order("priority", { ascending: true })
+          .limit(30),
+      ]);
 
-      if (error) throw error;
-      return (data || []) as TaskRow[];
+      const all = [...(oneTimeTasks || []), ...(recurringTasks || [])] as TaskRow[];
+      // Deduplicate by id
+      const seen = new Set<string>();
+      return all.filter((t) => { const ok = !seen.has(t.id); seen.add(t.id); return ok; });
     },
     staleTime: 30 * 1000,
   });
@@ -251,8 +296,17 @@ export function useCreateTask() {
       isTodayFocus?: boolean;
       energyLevel?: string;
       timeSlot?: string;
+      // Recurring task fields
+      taskType?: string;
+      frequencyType?: string;
+      targetCount?: number;
     }) => {
       const userId = await getUserId();
+      const isRecurring = input.taskType === "recurring";
+      const cycleStart = isRecurring && input.frequencyType
+        ? getCycleStart(input.frequencyType)
+        : null;
+
       const { data, error } = await supabase
         .from("tasks")
         .insert({
@@ -269,6 +323,11 @@ export function useCreateTask() {
           time_slot: input.timeSlot || null,
           category: input.module || "general",
           energy_cost: "medium",
+          task_type: input.taskType || "one_time",
+          frequency_type: input.frequencyType || null,
+          target_count: input.targetCount || 1,
+          completed_count: 0,
+          cycle_start_date: cycleStart,
         })
         .select("id")
         .single();
@@ -317,17 +376,79 @@ export function useToggleTaskComplete() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
-      const isDone = currentStatus === "done";
-      const { error } = await supabase
+      // Fetch task to check type
+      const { data: task } = await supabase
         .from("tasks")
-        .update({
-          status: isDone ? "pending" : "done",
-          completed_at: isDone ? null : new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+        .select("task_type")
+        .eq("id", id)
+        .single();
 
-      if (error) throw error;
+      const taskType = (task as Record<string, unknown> | null)?.task_type as string || "one_time";
+
+      if (taskType === "recurring") {
+        // Handle recurring task: increment completion count
+        const today = new Date().toISOString().split("T")[0];
+        const userId = (await supabase.auth.getUser()).data.user?.id;
+
+        // Fetch current state
+        const { data: rt } = await supabase
+          .from("tasks")
+          .select("frequency_type,target_count,completed_count,cycle_start_date")
+          .eq("id", id)
+          .single();
+
+        if (!rt) throw new Error("Task not found");
+
+        const cycleStart = getCycleStart((rt as Record<string, unknown>).frequency_type as string || "daily");
+        const targetCount = (rt as Record<string, unknown>).target_count as number || 1;
+        let completedCount = (rt as Record<string, unknown>).completed_count as number || 0;
+        const oldCycleStart = (rt as Record<string, unknown>).cycle_start_date as string || "";
+
+        // Reset count if new cycle
+        if (oldCycleStart !== cycleStart) {
+          completedCount = 0;
+        }
+        completedCount++;
+
+        const isComplete = completedCount >= targetCount;
+
+        // Update task
+        const { error: updateErr } = await supabase
+          .from("tasks")
+          .update({
+            completed_count: completedCount,
+            cycle_start_date: cycleStart,
+            status: isComplete ? "done" : "in_progress",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (updateErr) throw updateErr;
+
+        // Insert completion record
+        const { error: insertErr } = await supabase
+          .from("task_completion_records")
+          .insert({
+            task_id: id,
+            user_id: userId,
+            completion_date: today,
+          });
+
+        if (insertErr) throw insertErr;
+      } else {
+        // One-time task: toggle done/pending
+        const isDone = currentStatus === "done";
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            status: isDone ? "pending" : "done",
+            completed_at: isDone ? null : new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (error) throw error;
+      }
     },
     onSuccess: async (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
@@ -337,23 +458,35 @@ export function useToggleTaskComplete() {
       try {
         const { data: task } = await supabase
           .from("tasks")
-          .select("goal_id")
+          .select("goal_id,task_type,completed_count,target_count,status")
           .eq("id", id)
           .single();
 
-        const goalId = (task as Record<string, unknown> | null)?.goal_id as string | undefined;
+        const t = task as Record<string, unknown> | null;
+        const goalId = t?.goal_id as string | undefined;
         if (!goalId) return;
 
         const { data: siblings } = await supabase
           .from("tasks")
-          .select("status")
+          .select("task_type,status,completed_count,target_count")
           .eq("goal_id", goalId);
 
-        const all = (siblings || []) as { status: string }[];
+        const all = (siblings || []) as { task_type: string; status: string; completed_count: number; target_count: number }[];
         if (all.length === 0) return;
 
-        const done = all.filter((t) => t.status === "done").length;
-        const progress = done / all.length;
+        // Compute progress: for recurring tasks use completed_count/target_count ratio
+        let totalWeight = 0;
+        let completedWeight = 0;
+        for (const s of all) {
+          if (s.task_type === "recurring") {
+            totalWeight += s.target_count || 1;
+            completedWeight += Math.min(s.completed_count || 0, s.target_count || 1);
+          } else {
+            totalWeight += 1;
+            if (s.status === "done") completedWeight += 1;
+          }
+        }
+        const progress = totalWeight > 0 ? completedWeight / totalWeight : 0;
 
         await supabase
           .from("goals")
@@ -427,20 +560,32 @@ export function useBatchCreateTasks() {
       tasks: TaskBreakdownItem[];
     }) => {
       const userId = await getUserId();
-      const rows = input.tasks.map((t) => ({
-        user_id: userId,
-        title: t.title,
-        description: t.description,
-        priority: t.priority,
-        module: t.module,
-        goal_id: input.goalId || null,
-        estimated_minutes: t.estimated_minutes,
-        source_type: "ai_agent",
-        ai_review_status: "pending",
-        category: t.module || "general",
-        energy_cost: "medium",
-        energy_level: "medium",
-      }));
+      const rows = input.tasks.map((t) => {
+        const isRecurring = t.task_type === "recurring";
+        const cycleStart = isRecurring && t.frequency_type
+          ? getCycleStart(t.frequency_type)
+          : null;
+
+        return {
+          user_id: userId,
+          title: t.title,
+          description: t.description,
+          priority: t.priority,
+          module: t.module,
+          goal_id: input.goalId || null,
+          estimated_minutes: t.estimated_minutes,
+          source_type: "ai_agent",
+          ai_review_status: "pending",
+          category: t.module || "general",
+          energy_cost: "medium",
+          energy_level: "medium",
+          task_type: t.task_type || "one_time",
+          frequency_type: t.frequency_type || null,
+          target_count: t.target_count || 1,
+          completed_count: 0,
+          cycle_start_date: cycleStart,
+        };
+      });
 
       const { error } = await supabase.from("tasks").insert(rows);
       if (error) throw error;
@@ -449,6 +594,30 @@ export function useBatchCreateTasks() {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
+  });
+}
+
+// ── Task Completion Records ──
+
+export function useTaskCompletionRecords(taskId: string, days = 30) {
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  const startStr = startDate.toISOString().split("T")[0];
+
+  return useQuery({
+    queryKey: ["taskCompletions", taskId, days],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("task_completion_records")
+        .select("*")
+        .eq("task_id", taskId)
+        .gte("completion_date", startStr)
+        .order("completion_date", { ascending: false });
+
+      if (error) throw error;
+      return (data || []) as TaskCompletionRecord[];
+    },
+    staleTime: 30 * 1000,
   });
 }
 
@@ -651,25 +820,36 @@ async function fetchGoalProgress(): Promise<GoalWithProgress[]> {
     { data: allTasks },
   ] = await Promise.all([
     supabase.from("goals").select("id,title,status,goal_level,category").eq("status", "active").order("created_at", { ascending: false }),
-    supabase.from("tasks").select("id,goal_id,status").not("goal_id", "is", null),
+    supabase.from("tasks").select("id,goal_id,status,task_type,completed_count,target_count").not("goal_id", "is", null),
   ]);
 
-  const taskMap = new Map<string, { total: number; done: number }>();
+  const taskMap = new Map<string, { totalWeight: number; completedWeight: number; totalTasks: number; doneTasks: number }>();
   for (const t of (allTasks || []) as Array<Record<string, unknown>>) {
     const gid = t.goal_id as string;
-    if (!taskMap.has(gid)) taskMap.set(gid, { total: 0, done: 0 });
+    if (!taskMap.has(gid)) taskMap.set(gid, { totalWeight: 0, completedWeight: 0, totalTasks: 0, doneTasks: 0 });
     const entry = taskMap.get(gid)!;
-    entry.total++;
-    if (t.status === "done") entry.done++;
+    entry.totalTasks++;
+    if ((t.task_type as string) === "recurring") {
+      const target = (t.target_count as number) || 1;
+      const completed = Math.min((t.completed_count as number) || 0, target);
+      entry.totalWeight += target;
+      entry.completedWeight += completed;
+    } else {
+      entry.totalWeight += 1;
+      if (t.status === "done") {
+        entry.completedWeight += 1;
+        entry.doneTasks++;
+      }
+    }
   }
 
   return ((goals || []) as unknown as GoalRow[]).map((g) => {
-    const tasks = taskMap.get(g.id) || { total: 0, done: 0 };
+    const tasks = taskMap.get(g.id) || { totalWeight: 0, completedWeight: 0, totalTasks: 0, doneTasks: 0 };
     return {
       ...g,
-      totalTasks: tasks.total,
-      completedTasks: tasks.done,
-      progress: tasks.total > 0 ? tasks.done / tasks.total : 0,
+      totalTasks: tasks.totalTasks,
+      completedTasks: tasks.doneTasks,
+      progress: tasks.totalWeight > 0 ? tasks.completedWeight / tasks.totalWeight : 0,
     };
   });
 }

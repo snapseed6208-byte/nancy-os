@@ -277,6 +277,12 @@ export interface Task {
   completedAt?: string;
   createdAt: string;
   updatedAt: string;
+  // Recurring task fields
+  taskType?: "one_time" | "recurring";
+  frequencyType?: "daily" | "weekly" | "monthly";
+  targetCount?: number;
+  completedCount?: number;
+  cycleStartDate?: string;
 }
 
 // ── Habit ──
