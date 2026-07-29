@@ -41,7 +41,7 @@ import {
 import { useTodayBrief, useGenerateDailyBrief, useBriefFeedback } from "@/lib/hooks/useReflection";
 import { useDashboardStats, type TimelineItem } from "@/lib/hooks/useDashboard";
 import { useUpcomingTasks, useToggleTaskComplete } from "@/lib/hooks/usePlan";
-import { useHabitsWithToday, useToggleHabitRecord, type HabitWithRecord } from "@/lib/hooks/useHabit";
+import { useHabitsWithToday, useToggleHabitRecord, useHabitWeeklyStats, useHabitAnalysis, type HabitWithRecord } from "@/lib/hooks/useHabit";
 import { useCreateIdea } from "@/lib/hooks/useLifeTrace";
 import type { DailyBrief, DailyBriefSuggestion, DailyBriefWarning } from "@/lib/types";
 
@@ -91,6 +91,8 @@ export default function Home() {
   const toggleTaskComplete = useToggleTaskComplete();
   const briefFeedback = useBriefFeedback();
   const createIdea = useCreateIdea();
+  const { data: habitWeeklyStats } = useHabitWeeklyStats(2);
+  const { data: habitAnalysis } = useHabitAnalysis();
 
   const briefData = brief as DailyBrief | null;
   const [feedbackSent, setFeedbackSent] = useState(false);
@@ -281,6 +283,8 @@ export default function Home() {
               currentStatus: status,
             })
           }
+          weeklyStats={habitWeeklyStats || []}
+          analysis={habitAnalysis}
         />
       )}
 
@@ -740,13 +744,23 @@ function ModuleCard({
 function TodayHabits({
   habits,
   onToggle,
+  weeklyStats,
+  analysis,
 }: {
   habits: HabitWithRecord[];
   onToggle: (habitId: string, currentStatus?: string) => void;
+  weeklyStats?: { weekStart: string; overallRate: number }[];
+  analysis?: { summary?: string; motivation?: string } | null;
 }) {
+  const [, navigate] = useLocation();
   const completed = habits.filter((h) => h.today_record?.status === "completed").length;
   const total = habits.length;
   const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  // Sparkline from weekly stats
+  const sparkline = weeklyStats && weeklyStats.length > 0
+    ? weeklyStats.map((w) => Math.round(w.overallRate * 100))
+    : null;
 
   return (
     <section>
@@ -755,9 +769,23 @@ function TodayHabits({
           <Trophy size={14} className="text-accent-warm" />
           <h2 className="text-[13px] font-semibold text-ink">今日习惯</h2>
         </div>
-        <span className="text-[11px] text-ink-light">
-          {completed}/{total} · {pct}%
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Sparkline */}
+          {sparkline && sparkline.length > 1 && (
+            <div className="flex items-end gap-0.5 h-5">
+              {sparkline.map((v, i) => (
+                <div
+                  key={i}
+                  className="w-1.5 bg-sage-light/60 rounded-t-sm transition-all"
+                  style={{ height: `${Math.max(v, 4)}%`, minHeight: 2 }}
+                />
+              ))}
+            </div>
+          )}
+          <span className="text-[11px] text-ink-light">
+            {completed}/{total} · {pct}%
+          </span>
+        </div>
       </div>
 
       {/* Compact progress bar */}
@@ -795,6 +823,20 @@ function TodayHabits({
           );
         })}
       </div>
+
+      {/* AI insight chip */}
+      {analysis && (analysis.motivation || analysis.summary) && (
+        <button
+          onClick={() => navigate("/plan")}
+          className="mt-2 w-full flex items-center gap-2 bg-purple-50/50 border border-purple-100 rounded-xl px-3 py-2 hover:bg-purple-50 transition-colors text-left"
+        >
+          <Sparkles size={12} className="text-purple-500 shrink-0" />
+          <span className="text-[11px] text-purple-700 truncate">
+            {analysis.motivation || (analysis.summary && analysis.summary.slice(0, 60) + "...")}
+          </span>
+          <ChevronRight size={12} className="text-purple-400 shrink-0 ml-auto" />
+        </button>
+      )}
     </section>
   );
 }

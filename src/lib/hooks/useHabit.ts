@@ -321,3 +321,225 @@ export function useHabitStats(days = 7) {
     staleTime: 30 * 1000,
   });
 }
+
+// ── Habit Analysis (AI) ──
+
+export type HabitAnalysis = {
+  id: string;
+  habit_id?: string | null;
+  analysis_type: "overall" | "habit_specific";
+  period_start: string;
+  period_end: string;
+  summary: string;
+  strengths: string[];
+  suggestions: string[];
+  motivation: string;
+  stats: {
+    completion_rate: number;
+    total_completed: number;
+    total_missed: number;
+    total_skipped: number;
+    total_days: number;
+    most_consistent_habit: string;
+    most_struggled_habit: string;
+    best_day_of_week: string;
+    consistency_score: number;
+  };
+  created_at: string;
+};
+
+export function useHabitAnalysis(habitId?: string) {
+  return useQuery({
+    queryKey: ["habitAnalysis", habitId || "overall"],
+    queryFn: async (): Promise<HabitAnalysis | null> => {
+      let query = supabase
+        .from("habit_analyses")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (habitId) {
+        query = query.eq("habit_id", habitId);
+      } else {
+        query = query.eq("analysis_type", "overall");
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data?.[0] as HabitAnalysis) || null;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useGenerateHabitAnalysis() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input?: { habitId?: string; days?: number }) => {
+      const { data, error } = await supabase.functions.invoke("habit-analyst-agent", {
+        body: {
+          habit_id: input?.habitId || undefined,
+          days: input?.days || 30,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error as string);
+      return data as HabitAnalysis;
+    },
+    onSuccess: (_, variables) => {
+      qc.invalidateQueries({ queryKey: ["habitAnalysis", variables?.habitId || "overall"] });
+    },
+  });
+}
+
+// ── Month Calendar ──
+
+export type DayCell = {
+  date: string;
+  dayOfMonth: number;
+  isToday: boolean;
+  isCurrentMonth: boolean;
+  habits: { id: string; name: string; color: string; icon: string; status: string }[];
+  completionRate: number;
+};
+
+async function fetchMonthCalendar(year: number, month: number): Promise<DayCell[]> {
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay = new Date(year, month, 0);
+
+  const startDate = new Date(firstDay);
+  startDate.setDate(startDate.getDate() - firstDay.getDay());
+  const endDate = new Date(lastDay);
+  if (lastDay.getDay() < 6) endDate.setDate(endDate.getDate() + (6 - lastDay.getDay()));
+
+  const startStr = startDate.toISOString().split("T")[0];
+  const endStr = endDate.toISOString().split("T")[0];
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const [{ data: habits }, { data: records }] = await Promise.all([
+    supabase.from("habits").select("id,title,icon,color").eq("is_active", true),
+    supabase.from("habit_records")
+      .select("habit_id,date,status")
+      .gte("date", startStr)
+      .lte("date", endStr),
+  ]);
+
+  const habitList = (habits || []) as { id: string; title: string; icon: string; color: string }[];
+  const recordList = (records || []) as { habit_id: string; date: string; status: string }[];
+
+  const recordMap = new Map<string, Map<string, string>>();
+  for (const r of recordList) {
+    if (!recordMap.has(r.date)) recordMap.set(r.date, new Map());
+    recordMap.get(r.date)!.set(r.habit_id, r.status);
+  }
+
+  const cells: DayCell[] = [];
+  const cursor = new Date(startDate);
+  while (cursor <= endDate) {
+    const ds = cursor.toISOString().split("T")[0];
+    const dayRecords = recordMap.get(ds) || new Map();
+
+    const dayHabits = habitList.map((h) => ({
+      id: h.id,
+      name: h.title,
+      color: h.color || "#45B7D1",
+      icon: h.icon || "✅",
+      status: dayRecords.get(h.id) || "",
+    }));
+
+    const completed = dayHabits.filter((h) => h.status === "completed").length;
+
+    cells.push({
+      date: ds,
+      dayOfMonth: cursor.getDate(),
+      isToday: ds === todayStr,
+      isCurrentMonth: cursor.getMonth() === month - 1,
+      habits: dayHabits,
+      completionRate: habitList.length > 0 ? completed / habitList.length : 0,
+    });
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return cells;
+}
+
+export function useHabitMonthCalendar(year: number, month: number) {
+  return useQuery({
+    queryKey: ["habitMonthCalendar", year, month],
+    queryFn: () => fetchMonthCalendar(year, month),
+    staleTime: 60 * 1000,
+  });
+}
+
+// ── Weekly Stats ──
+
+export type WeeklyStat = {
+  weekStart: string;
+  weekEnd: string;
+  habits: { id: string; name: string; color: string; rate: number }[];
+  overallRate: number;
+};
+
+export function useHabitWeeklyStats(weeksBack = 4) {
+  return useQuery({
+    queryKey: ["habitWeeklyStats", weeksBack],
+    queryFn: async (): Promise<WeeklyStat[]> => {
+      const today = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - weeksBack * 7);
+
+      const startStr = startDate.toISOString().split("T")[0];
+      const todayStr = today.toISOString().split("T")[0];
+
+      const [{ data: habits }, { data: records }] = await Promise.all([
+        supabase.from("habits").select("id,title,color").eq("is_active", true),
+        supabase.from("habit_records")
+          .select("habit_id,date,status")
+          .gte("date", startStr)
+          .lte("date", todayStr),
+      ]);
+
+      const habitList = (habits || []) as { id: string; title: string; color: string }[];
+      const recordList = (records || []) as { habit_id: string; date: string; status: string }[];
+
+      const weeks: WeeklyStat[] = [];
+      for (let w = 0; w < weeksBack; w++) {
+        const weekEnd = new Date(today);
+        weekEnd.setDate(weekEnd.getDate() - w * 7);
+        const weekStart = new Date(weekEnd);
+        weekStart.setDate(weekStart.getDate() - 6);
+
+        const ws = weekStart.toISOString().split("T")[0];
+        const we = weekEnd.toISOString().split("T")[0];
+
+        const weekRecords = recordList.filter((r) => r.date >= ws && r.date <= we);
+        const daysInWeek = new Set(weekRecords.map((r) => r.date)).size || 1;
+
+        const habitRates = habitList.map((h) => {
+          const habitRecs = weekRecords.filter((r) => r.habit_id === h.id);
+          const completed = habitRecs.filter((r) => r.status === "completed").length;
+          return {
+            id: h.id,
+            name: h.title,
+            color: h.color || "#45B7D1",
+            rate: daysInWeek > 0 ? completed / daysInWeek : 0,
+          };
+        });
+
+        const totalCompleted = weekRecords.filter((r) => r.status === "completed").length;
+        const totalExpected = habitList.length * daysInWeek;
+
+        weeks.push({
+          weekStart: ws,
+          weekEnd: we,
+          habits: habitRates,
+          overallRate: totalExpected > 0 ? totalCompleted / totalExpected : 0,
+        });
+      }
+
+      return weeks.reverse();
+    },
+    staleTime: 60 * 1000,
+  });
+}
