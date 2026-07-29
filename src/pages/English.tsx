@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { BookOpen, Mic, Library, Brain, TrendingUp, Clock, ChevronRight, Zap } from "lucide-react";
+import { BookOpen, Mic, Library, Brain, TrendingUp, Clock, ChevronRight, Zap, Upload } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +43,12 @@ export default function English() {
           label="口语练习"
           desc={`${stats?.totalSessions ?? 0} 次练习记录`}
           onClick={() => navigate("/english/speaking")}
+        />
+        <ActionCard
+          icon={Upload}
+          label="导入表达"
+          desc="从文件或文本批量导入英语表达"
+          onClick={() => navigate("/english/import")}
         />
       </div>
 

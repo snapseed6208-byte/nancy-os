@@ -325,3 +325,108 @@ export function useEnglishStats() {
     queryFn: fetchEnglishStats,
   });
 }
+
+// ── Expression Import ──
+
+export type ParsedExpression = {
+  english: string;
+  chinese: string;
+  type: string;
+  pronunciation?: string;
+  example_sentence?: string;
+  scene?: string;
+  topic?: string;
+  difficulty_level?: string;
+  usefulness_level?: number;
+  usage_note?: string;
+};
+
+export type ImportResult = {
+  expressions: ParsedExpression[];
+  stats: {
+    total: number;
+    vocabulary: number;
+    chunk: number;
+    sentencePattern: number;
+    speakingExpression: number;
+  };
+  tokens_used: number;
+  import_batch_id?: string;
+};
+
+export function useParseFile() {
+  return useMutation({
+    mutationFn: async (input: { file: string; mime_type: string }) => {
+      const { data, error } = await supabase.functions.invoke("file-parser-agent", {
+        body: { file: input.file, mime_type: input.mime_type },
+      });
+      if (error) throw new Error(error.message || "文件解析失败");
+      return data as { text: string; char_count: number; warning?: string };
+    },
+  });
+}
+
+export function useExtractExpressions() {
+  return useMutation({
+    mutationFn: async (input: { text: string }): Promise<ImportResult> => {
+      const { data, error } = await supabase.functions.invoke("expression-import-agent", {
+        body: { text: input.text },
+      });
+      if (error) throw new Error(error.message || "表达式提取失败");
+      return data as ImportResult;
+    },
+  });
+}
+
+export function useBatchImportExpressions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      expressions: ParsedExpression[];
+      source_type: string;
+      source_name?: string;
+    }): Promise<string> => {
+      const userId = await getUserId();
+
+      // 1. Create import batch record
+      const { data: batch, error: batchErr } = await supabase
+        .from("expression_imports")
+        .insert({
+          user_id: userId,
+          source_type: input.source_type,
+          source_name: input.source_name || null,
+          status: "imported",
+          stats: { total_extracted: input.expressions.length, imported: input.expressions.length, skipped: 0 },
+        })
+        .select("id")
+        .single();
+
+      if (batchErr) throw batchErr;
+
+      // 2. Batch insert expressions
+      const rows = input.expressions.map((expr) => ({
+        user_id: userId,
+        english: expr.english,
+        chinese: expr.chinese,
+        type: expr.type,
+        pronunciation: expr.pronunciation || null,
+        example_sentence: expr.example_sentence || null,
+        scene: expr.scene || null,
+        topic: expr.topic || null,
+        difficulty_level: expr.difficulty_level || null,
+        status: "new",
+        source: input.source_name || "import",
+        import_batch_id: batch.id,
+      }));
+
+      const { error } = await supabase.from("expressions").insert(rows);
+      if (error) throw error;
+
+      return batch.id;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
+  });
+}

@@ -10,6 +10,7 @@ import EnglishExpressions from "@/pages/EnglishExpressions";
 import EnglishExpressionDetail from "@/pages/EnglishExpressionDetail";
 import EnglishReview from "@/pages/EnglishReview";
 import EnglishSpeaking from "@/pages/EnglishSpeaking";
+import EnglishImport from "@/pages/EnglishImport";
 import Health from "@/pages/Health";
 import Exam from "@/pages/Exam";
 import LifeTrace from "@/pages/LifeTrace";
@@ -52,6 +53,7 @@ function AppRoutes() {
         <Route path="/english/expressions/:id" component={EnglishExpressionDetail} />
         <Route path="/english/review" component={EnglishReview} />
         <Route path="/english/speaking" component={EnglishSpeaking} />
+        <Route path="/english/import" component={EnglishImport} />
         <Route path="/health" component={Health} />
         <Route path="/exam" component={Exam} />
         <Route path="/life-trace" component={LifeTrace} />
