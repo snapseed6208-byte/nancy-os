@@ -13,18 +13,29 @@ const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const ALLOWED_ORIGINS = [
+  "https://nancy-os.pages.dev",
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:5173",
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 // ── Helpers ──
 
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(req: Request, data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
@@ -84,7 +95,7 @@ function buildLearningContext(
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS_HEADERS });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   try {
@@ -95,18 +106,18 @@ serve(async (req: Request) => {
     const temperature = (body.temperature as number) ?? 0.7;
 
     if (!messages || !Array.isArray(messages)) {
-      return jsonResponse({ error: "messages array is required" }, 400);
+      return jsonResponse(req,{ error: "messages array is required" }, 400);
     }
 
     // ── Auth (always required) ──
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse({ error: "需要登录" }, 401);
+    if (!authHeader) return jsonResponse(req,{ error: "需要登录" }, 401);
 
     const token = authHeader.replace("Bearer ", "");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return jsonResponse({ error: "登录已过期" }, 401);
+    if (!user) return jsonResponse(req,{ error: "登录已过期" }, 401);
     const userId = user.id;
 
     // Fetch learning context in parallel
@@ -191,7 +202,7 @@ serve(async (req: Request) => {
 
     if (!response.ok) {
       const err = await response.text();
-      return jsonResponse({ error: `DeepSeek API error (${response.status}): ${err}` }, 502);
+      return jsonResponse(req,{ error: `DeepSeek API error (${response.status}): ${err}` }, 502);
     }
 
     const data = await response.json();
@@ -215,7 +226,7 @@ serve(async (req: Request) => {
       tokens_used: tokensUsed,
     });
 
-    return jsonResponse({
+    return jsonResponse(req,{
       content: data.choices?.[0]?.message?.content || "",
       model: data.model || model,
       tokensUsed: data.usage?.total_tokens,
@@ -226,7 +237,7 @@ serve(async (req: Request) => {
       } : null,
     });
   } catch (err) {
-    return jsonResponse({
+    return jsonResponse(req,{
       error: err instanceof Error ? err.message : "服务器内部错误",
     }, 500);
   }

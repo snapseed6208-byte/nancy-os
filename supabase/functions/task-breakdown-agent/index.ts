@@ -12,11 +12,22 @@ const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const ALLOWED_ORIGINS = [
+  "https://nancy-os.pages.dev",
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:5173",
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 const SYSTEM_PROMPT = `你是一个个人效率 AI 助手（Nancy OS Task Breakdown Agent）。你的用户是一位正在自我提升的年轻人。
 
@@ -54,10 +65,10 @@ const SYSTEM_PROMPT = `你是一个个人效率 AI 助手（Nancy OS Task Breakd
 
 // ── Helpers ──
 
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(req: Request, data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
@@ -115,19 +126,19 @@ function buildUserProfile(memories: Array<Record<string, unknown>>): string {
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS_HEADERS });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   try {
     // Authenticate
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse({ error: "未登录" }, 401);
+    if (!authHeader) return jsonResponse(req,{ error: "未登录" }, 401);
 
     const token = authHeader.replace("Bearer ", "");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return jsonResponse({ error: "登录已过期" }, 401);
+    if (!user) return jsonResponse(req,{ error: "登录已过期" }, 401);
 
     const body = await req.json();
     const goalTitle = body.goal_title as string;
@@ -135,7 +146,7 @@ serve(async (req: Request) => {
     const goalLevel = body.goal_level as string || "monthly";
 
     if (!goalTitle || goalTitle.trim().length === 0) {
-      return jsonResponse({ error: "目标标题不能为空" }, 400);
+      return jsonResponse(req,{ error: "目标标题不能为空" }, 400);
     }
 
     // ── Fetch confirmed memories for personalization ──
@@ -182,7 +193,7 @@ serve(async (req: Request) => {
     });
 
     if (!aiResponse.ok) {
-      return jsonResponse({ error: `AI 服务异常 (${aiResponse.status})` }, 502);
+      return jsonResponse(req,{ error: `AI 服务异常 (${aiResponse.status})` }, 502);
     }
 
     const aiData = await aiResponse.json();
@@ -193,7 +204,7 @@ serve(async (req: Request) => {
     try {
       result = parseAIJson(rawContent);
     } catch {
-      return jsonResponse({
+      return jsonResponse(req,{
         error: "parse_error",
         raw: rawContent.slice(0, 500),
         message: "AI 返回格式异常，请重试",
@@ -216,12 +227,12 @@ serve(async (req: Request) => {
       tokens_used: tokensUsed,
     });
 
-    return jsonResponse({
+    return jsonResponse(req,{
       ...result,
       memory_count: (confirmedMemories || []).length,
     });
   } catch (err) {
-    return jsonResponse({
+    return jsonResponse(req,{
       error: err instanceof Error ? err.message : "服务器内部错误",
     }, 500);
   }

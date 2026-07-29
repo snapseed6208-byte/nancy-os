@@ -13,11 +13,22 @@ const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const ALLOWED_ORIGINS = [
+  "https://nancy-os.pages.dev",
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:5173",
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 const SYSTEM_PROMPT = `你是一个个人成长 AI 助手（Nancy OS Daily Brief Agent）。你的用户是一位正在自我提升的年轻人。
 
@@ -61,10 +72,10 @@ const SYSTEM_PROMPT = `你是一个个人成长 AI 助手（Nancy OS Daily Brief
 
 // ── Helpers ──
 
-function jsonResponse(data: unknown, status = 200) {
+function jsonResponse(req: Request, data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
@@ -123,7 +134,7 @@ function buildPreferenceProfile(memories: Array<Record<string, unknown>>): strin
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS_HEADERS });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   const startTime = Date.now();
@@ -131,13 +142,13 @@ serve(async (req: Request) => {
   try {
     // 1 ─ Authenticate
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse({ error: "未登录" }, 401);
+    if (!authHeader) return jsonResponse(req,{ error: "未登录" }, 401);
 
     const token = authHeader.replace("Bearer ", "");
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return jsonResponse({ error: "登录已过期" }, 401);
+    if (!user) return jsonResponse(req,{ error: "登录已过期" }, 401);
     const userId = user.id;
 
     // 2 ─ Determine yesterday's date
@@ -155,7 +166,7 @@ serve(async (req: Request) => {
       .single();
 
     if (existingBrief) {
-      return jsonResponse({ error: "already_exists", message: "今天的简报已生成" }, 409);
+      return jsonResponse(req,{ error: "already_exists", message: "今天的简报已生成" }, 409);
     }
 
     // 4 ─ Query yesterday's data + confirmed memories in parallel
@@ -230,7 +241,7 @@ serve(async (req: Request) => {
         tokens_used: 0,
       });
 
-      return jsonResponse({
+      return jsonResponse(req,{
         period: yesterday,
         yesterday_summary: "昨天没有记录任何数据。",
         today_focus: "从今天开始记录吧！",
@@ -292,7 +303,7 @@ serve(async (req: Request) => {
     });
 
     if (!aiResponse.ok) {
-      return jsonResponse({ error: `AI 服务异常 (${aiResponse.status})` }, 502);
+      return jsonResponse(req,{ error: `AI 服务异常 (${aiResponse.status})` }, 502);
     }
 
     const aiData = await aiResponse.json();
@@ -304,7 +315,7 @@ serve(async (req: Request) => {
     try {
       analysis = parseAIJson(rawContent);
     } catch {
-      return jsonResponse({
+      return jsonResponse(req,{
         error: "parse_error",
         raw: rawContent.slice(0, 500),
         message: "AI 返回格式异常，请重试",
@@ -355,7 +366,7 @@ serve(async (req: Request) => {
 
     // 11 ─ Return
     const duration = Date.now() - startTime;
-    return jsonResponse({
+    return jsonResponse(req,{
       id: brief?.id,
       date: realToday,
       period: yesterday,
@@ -367,7 +378,7 @@ serve(async (req: Request) => {
     });
 
   } catch (err) {
-    return jsonResponse({
+    return jsonResponse(req,{
       error: err instanceof Error ? err.message : "服务器内部错误",
     }, 500);
   }
