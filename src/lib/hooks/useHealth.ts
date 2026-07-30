@@ -414,20 +414,22 @@ export function useRecipes() {
 export function useCreateRecipe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { source_url: string }) => {
+    mutationFn: async (input: { source_url: string; source_context?: string }) => {
       const userId = await getUserId();
       const normalized = normalizeUrl(input.source_url);
       if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
       const platform = detectUrlPlatform(normalized);
+      const context = input.source_context || "";
 
       // Step 1: Insert base recipe record
       const { data, error } = await supabase
         .from("recipes")
         .insert({
           user_id: userId,
-          name: "",
+          name: context ? context.slice(0, 80) : "",
           source_url: normalized,
           source_platform: platform,
+          notes: context || null,
           ai_analysis_status: "pending",
         })
         .select()
@@ -441,6 +443,7 @@ export function useCreateRecipe() {
           url: normalized,
           content_type: "recipe",
           recipe_id: record.id,
+          source_context: context || undefined,
         },
       }).catch(() => {
         // AI failure is non-blocking — record already saved
@@ -508,11 +511,16 @@ export function useDeleteRecipe() {
 export function useRetryRecipeAnalysis() {
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: async (recipe: { id: string; source_url: string }) => {
+    mutationFn: async (recipe: { id: string; source_url: string; source_context?: string }) => {
       if (!recipe.source_url) throw new Error("该食谱没有来源链接");
       const result = await Promise.race([
         supabase.functions.invoke("content-parser-agent", {
-          body: { url: recipe.source_url, content_type: "recipe", recipe_id: recipe.id },
+          body: {
+            url: recipe.source_url,
+            content_type: "recipe",
+            recipe_id: recipe.id,
+            source_context: recipe.source_context || undefined,
+          },
         }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 30_000),

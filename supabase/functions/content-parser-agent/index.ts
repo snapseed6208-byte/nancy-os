@@ -1,9 +1,10 @@
 // ============================================
-// Nancy OS — Content Parser Agent v6
+// Nancy OS — Content Parser Agent v7
 // v3: Unified content intelligence — auto-classifies + extracts
 // v4: Workout UPDATE mode + JSON schema validation
 // v5: Recipe UPDATE mode + error logging + failure status propagation
 // v6: URL content fetching + relaxed recipe validation + partial data saving
+// v7: source_context priority + partial status + 3-level context strategy
 // Accepts URL or text, routes to resources/workout_videos/recipes
 // ============================================
 
@@ -465,10 +466,12 @@ serve(async (req: Request) => {
       preferred_module?: string;
       workout_video_id?: string;
       recipe_id?: string;
+      source_context?: string;
     };
 
     const workoutVideoId = body.workout_video_id || "";
     const recipeId = body.recipe_id || "";
+    const sourceContext = body.source_context || "";
 
     const input = body.url || body.text || "";
     if (!input && !workoutVideoId) {
@@ -479,17 +482,28 @@ serve(async (req: Request) => {
     const platform = inputIsUrl ? detectPlatform(input) : "text";
     const preferredModule = body.preferred_module || "";
 
-    // ── Fetch URL content for AI context ──
+    // ── Fetch URL content for AI context (Level 2) ──
     let fetchedContent: { title: string; description: string; text: string } = { title: "", description: "", text: "" };
+    let fetchContentLen = 0;
     if (inputIsUrl) {
       fetchedContent = await fetchUrlContent(input);
-      console.log(`[content-parser-agent] Fetched URL: title="${fetchedContent.title.slice(0, 80)}", text=${fetchedContent.text.length} chars`);
+      fetchContentLen = fetchedContent.text.length;
+      console.log(`[content-parser-agent] URL fetch: title="${fetchedContent.title.slice(0, 80)}", text=${fetchContentLen} chars`);
     }
 
-    // ── Build prompt ──
+    // ── Build prompt with 3-level context priority ──
     let userMessage = "";
+
+    // Level 1: User-provided context (highest priority)
+    if (sourceContext) {
+      userMessage = `用户提供的食谱信息:\n${sourceContext}\n\n`;
+      console.log(`[content-parser-agent] Level 1 source_context: "${sourceContext.slice(0, 120)}"`);
+    }
+
     if (inputIsUrl) {
-      userMessage = `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+      userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+
+      // Level 2: Web fetch content
       if (fetchedContent.title) {
         userMessage += `\n页面标题: ${fetchedContent.title}`;
       }
@@ -498,11 +512,20 @@ serve(async (req: Request) => {
       }
       if (fetchedContent.text) {
         userMessage += `\n页面文本片段: ${fetchedContent.text}`;
-      } else if (!fetchedContent.title && !fetchedContent.description) {
-        userMessage += `\n注意：无法抓取此链接的网页内容，请根据URL和平台名称推断视频/内容主题。`;
+      }
+
+      // Level 3: Insufficient info — instruct AI to infer
+      const hasContext = sourceContext.length > 0;
+      const hasFetched = fetchContentLen > 50 || fetchedContent.title.length > 0;
+      if (!hasContext && !hasFetched) {
+        userMessage += `\n\n⚠️ 无法获取此链接的页面内容，请根据URL和平台名称进行合理推断。`;
+        userMessage += `\n优先从URL结构或已知的常见食谱模式推测食谱名称和内容。`;
+        userMessage += `\n如果完全无法确定内容，请在name字段填写"未命名食谱"，在ai_summary字段说明无法获取内容的原因。`;
+      } else if (!hasFetched) {
+        userMessage += `\n注意：无法抓取此链接的网页内容，请主要依据用户提供的信息进行分析。`;
       }
     } else {
-      userMessage = `输入类型: 文本内容\n文本: ${input.slice(0, 3000)}`;
+      userMessage += `输入类型: 文本内容\n文本: ${input.slice(0, 3000)}`;
     }
     if (preferredModule) {
       userMessage += `\n用户偏好模块: ${preferredModule}`;
@@ -673,16 +696,44 @@ serve(async (req: Request) => {
             : [];
       }
 
-      // Build ai_summary: combine AI's summary, validation warnings, and fetch errors
+      // Determine final ingredients/steps
+      const finalIngredients = (Array.isArray(metadata.ingredients_json) ? metadata.ingredients_json : []) as unknown[];
+      const finalSteps = (Array.isArray(metadata.steps_json) ? metadata.steps_json : []) as unknown[];
+
+      // Determine AI status: completed | partial | failed
+      const hasName = recipeName.length > 0 && recipeName !== "未命名食谱";
+      const hasIngredients = finalIngredients.length > 0;
+      const hasSteps = finalSteps.length > 0;
+
+      let aiStatus: string;
+      if (!hasName && !hasIngredients && !hasSteps) {
+        aiStatus = "failed";
+      } else if (hasName && hasIngredients && hasSteps) {
+        aiStatus = "completed";
+      } else {
+        aiStatus = "partial";
+      }
+
+      // Build ai_summary: combine AI's summary, validation warnings, and context notes
       const aiSummaryParts: string[] = [];
       if (metadata.ai_summary) aiSummaryParts.push((metadata.ai_summary as string));
       if (recipeValidation.warnings.length > 0) {
-        aiSummaryParts.push(`\n⚠️ 注意：${recipeValidation.warnings.join("；")}`);
+        aiSummaryParts.push(`\n⚠️ ${recipeValidation.warnings.join("；")}`);
+      }
+      if (aiStatus === "partial") {
+        const missing: string[] = [];
+        if (!hasIngredients) missing.push("食材清单");
+        if (!hasSteps) missing.push("烹饪步骤");
+        if (!hasName) missing.push("食谱名称");
+        aiSummaryParts.push(`\n📝 状态：部分整理（缺少：${missing.join("、")}）。请在食谱详情中手动补充。`);
+      }
+      if (aiStatus === "failed") {
+        aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑或尝试重新分析。`);
       }
       const finalAiSummary = aiSummaryParts.join("") || null;
 
       const updateFields = {
-        name: recipeName || undefined,
+        name: recipeName || "未命名食谱",
         image_url: (metadata.image_url as string) || null,
         category: metadata.category as string || category,
         meal_time: (metadata.meal_time as string[]) || [],
@@ -693,12 +744,17 @@ serve(async (req: Request) => {
         protein_grams: (metadata.protein_grams as number) || null,
         carbs_grams: (metadata.carbs_grams as number) || null,
         fat_grams: (metadata.fat_grams as number) || null,
-        ingredients_json: (metadata.ingredients_json as unknown[]) || [],
-        steps_json: (metadata.steps_json as unknown[]) || [],
+        ingredients_json: finalIngredients,
+        steps_json: finalSteps,
         ai_summary: finalAiSummary,
-        ai_analysis_status: "completed",
+        ai_analysis_status: aiStatus,
         ai_analyzed_at: new Date().toISOString(),
       };
+
+      console.log(
+        `[content-parser-agent] Recipe result: name="${recipeName.slice(0, 60)}" ` +
+        `ingredients=${finalIngredients.length} steps=${finalSteps.length} status=${aiStatus}`,
+      );
 
       if (recipeId) {
         // ── UPDATE mode: enrich existing recipe row ──

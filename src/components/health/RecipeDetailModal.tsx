@@ -17,7 +17,7 @@ type RecipeDetailModalProps = {
     steps_json?: RecipeStep[];
   }) => Promise<unknown>;
   onDelete: (id: string) => void;
-  onRetryAnalysis: (recipe: { id: string; source_url: string }) => Promise<unknown>;
+  onRetryAnalysis: (recipe: { id: string; source_url: string; source_context?: string }) => Promise<unknown>;
   isRetrying: boolean;
   retryError?: Error | null;
 };
@@ -28,8 +28,9 @@ function getPlatformBadge(platform: string | null) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  pending: { label: "AI整理中", color: "bg-amber-50 text-amber-600", dot: "bg-amber-400" },
+  pending: { label: "AI整理中", color: "bg-slate-50 text-slate-500", dot: "bg-slate-400" },
   completed: { label: "AI已整理", color: "bg-emerald-50 text-emerald-600", dot: "bg-emerald-400" },
+  partial: { label: "部分整理，需要补充", color: "bg-amber-50 text-amber-600", dot: "bg-amber-400" },
   failed: { label: "分析失败", color: "bg-red-50 text-red-500", dot: "bg-red-400" },
 };
 
@@ -66,7 +67,11 @@ export default function RecipeDetailModal({
 
   const handleRetry = async () => {
     if (!recipe.source_url) return;
-    await onRetryAnalysis({ id: recipe.id, source_url: recipe.source_url });
+    await onRetryAnalysis({
+      id: recipe.id,
+      source_url: recipe.source_url,
+      source_context: recipe.notes || undefined,
+    });
   };
 
   return (

@@ -1356,7 +1356,7 @@ function RecipeBoxTab() {
 
   const [filter, setFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
-  const [url, setUrl] = useState("");
+  const [inputText, setInputText] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const filtered = (recipes || []).filter((r) => {
@@ -1369,8 +1369,20 @@ function RecipeBoxTab() {
   const todayPicks = (recipes || []).filter((r) => r.is_favorite).slice(0, 3);
 
   const handleAdd = () => {
-    if (!url.trim()) return;
-    createRecipe.mutate({ source_url: url.trim() }, { onSuccess: () => { setUrl(""); setShowAdd(false); } });
+    const text = inputText.trim();
+    if (!text) return;
+
+    // Extract URL and context text
+    const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
+    const url = urlMatch ? urlMatch[1] : text;
+    const context = urlMatch
+      ? text.replace(urlMatch[0], "").replace(/\n+/g, " ").trim()
+      : "";
+
+    createRecipe.mutate(
+      { source_url: url, source_context: context || undefined },
+      { onSuccess: () => { setInputText(""); setShowAdd(false); } },
+    );
   };
 
   const getPlatformBadge = (platform: string | null) => {
@@ -1390,8 +1402,9 @@ function RecipeBoxTab() {
 
   const getStatusBadge = (status: string | null) => {
     if (status === "completed") return { label: "AI已整理", cls: "bg-emerald-50 text-emerald-600" };
+    if (status === "partial") return { label: "部分整理", cls: "bg-amber-50 text-amber-600" };
     if (status === "failed") return { label: "分析失败", cls: "bg-red-50 text-red-500" };
-    return { label: "AI整理中", cls: "bg-amber-50 text-amber-600" };
+    return { label: "AI整理中", cls: "bg-slate-50 text-slate-500" };
   };
 
   const getIngredientsPreview = (r: Recipe): string => {
@@ -1424,17 +1437,17 @@ function RecipeBoxTab() {
         </button>
       ) : (
         <div className="bg-card rounded-2xl border border-border p-3 space-y-2">
-          <input
-            type="url" value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="粘贴抖音/小红书/B站食谱链接..."
-            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors"
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder="粘贴食谱名称和链接，例如：&#10;杏鲍菇焖鸡腿，美味低卡低脂还顶饱&#10;https://v.douyin.com/xxx"
+            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
+            rows={3}
             autoFocus
-            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           />
           <div className="flex gap-2">
-            <button onClick={handleAdd} disabled={!url.trim() || createRecipe.isPending} className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50">
-              {createRecipe.isPending ? "添加中..." : "保存链接"}
+            <button onClick={handleAdd} disabled={!inputText.trim() || createRecipe.isPending} className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50">
+              {createRecipe.isPending ? "添加中..." : "保存"}
             </button>
             <button onClick={() => setShowAdd(false)} className="px-4 py-2.5 text-sm text-ink-light hover:bg-ink/5 rounded-xl">取消</button>
           </div>
