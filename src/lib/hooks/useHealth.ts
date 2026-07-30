@@ -47,12 +47,18 @@ export type WorkoutVideo = {
   created_at: string;
 };
 
+export type RecipeSourceType = "bilibili" | "xiaohongshu" | "douyin" | "upload" | "manual";
+
 export type Recipe = {
   id: string;
   user_id: string;
   name: string;
   source_url: string | null;
   source_platform: string | null;
+  // v3 source tracking
+  source_type: RecipeSourceType | null;
+  source_content: Record<string, unknown> | null;
+  confidence: "high" | "medium" | "low" | null;
   // legacy TEXT columns (preserved)
   ingredients: string | null;
   steps: string | null;
@@ -414,40 +420,50 @@ export function useRecipes() {
 export function useCreateRecipe() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { source_url: string; source_context?: string }) => {
+    mutationFn: async (input: { source_url: string; source_type: RecipeSourceType; source_context?: string }) => {
       const userId = await getUserId();
+
+      if (input.source_type === "manual") {
+        // Manual creation: no URL needed, just save the shell
+        const { data, error } = await supabase
+          .from("recipes")
+          .insert({
+            user_id: userId,
+            name: input.source_context?.slice(0, 80) || "",
+            source_type: "manual",
+            ai_analysis_status: "completed",
+            confidence: "high",
+            notes: input.source_context || null,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return data as Recipe;
+      }
+
       const normalized = normalizeUrl(input.source_url);
       if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
       const platform = detectUrlPlatform(normalized);
-      const context = input.source_context || "";
 
-      // Step 1: Insert base recipe record
+      // Step 1: Insert with extracting status
       const { data, error } = await supabase
         .from("recipes")
         .insert({
           user_id: userId,
-          name: context ? context.slice(0, 80) : "",
+          name: input.source_context?.slice(0, 80) || "",
           source_url: normalized,
           source_platform: platform,
-          notes: context || null,
-          ai_analysis_status: "pending",
+          source_type: input.source_type,
+          notes: input.source_context || null,
+          ai_analysis_status: "extracting",
         })
         .select()
         .single();
       if (error) throw error;
       const record = data as Recipe;
 
-      // Step 2: Trigger AI analysis (non-blocking)
-      supabase.functions.invoke("content-parser-agent", {
-        body: {
-          url: normalized,
-          content_type: "recipe",
-          recipe_id: record.id,
-          source_context: context || undefined,
-        },
-      }).catch(() => {
-        // AI failure is non-blocking — record already saved
-      });
+      // Step 2: Source extraction → AI parsing (non-blocking chain)
+      invokeRecipePipeline(record.id, normalized, input.source_type, input.source_context);
 
       return record;
     },
@@ -455,6 +471,62 @@ export function useCreateRecipe() {
       qc.invalidateQueries({ queryKey: ["recipes"] });
     },
   });
+}
+
+async function invokeRecipePipeline(
+  recipeId: string,
+  url: string,
+  sourceType: RecipeSourceType,
+  sourceContext?: string,
+) {
+  // Step A: Set status → extracting
+  await supabase.from("recipes").update({ ai_analysis_status: "extracting" }).eq("id", recipeId);
+
+  // Step B: Extract source content
+  let sourceContent: Record<string, unknown> | null = null;
+  try {
+    const extractResult = await supabase.functions.invoke("source-extractor-agent", {
+      body: { url, source_type: sourceType, recipe_id: recipeId },
+    });
+    if (!extractResult.error && extractResult.data) {
+      sourceContent = extractResult.data as Record<string, unknown>;
+      await supabase.from("recipes").update({
+        source_content: sourceContent,
+        ai_analysis_status: "analyzing",
+      }).eq("id", recipeId);
+    }
+  } catch {
+    // Extraction failed — try direct AI with source_context only
+  }
+
+  // If extraction returned need_upload status, mark recipe
+  if (sourceContent && (sourceContent as { status?: string }).status === "need_upload") {
+    await supabase.from("recipes").update({
+      ai_analysis_status: "need_upload",
+      ai_summary: "无法从此链接获取真实内容。请上传视频文件以确保食谱准确性。",
+    }).eq("id", recipeId);
+    return;
+  }
+
+  // Step C: AI parsing
+  try {
+    const parseResult = await supabase.functions.invoke("content-parser-agent", {
+      body: {
+        content_type: "recipe",
+        recipe_id: recipeId,
+        source_type: sourceType,
+        source_context: sourceContext || undefined,
+        source_content: sourceContent,
+      },
+    });
+    if (parseResult.error) throw parseResult.error;
+  } catch {
+    // AI parsing failed
+    await supabase.from("recipes").update({
+      ai_analysis_status: "failed",
+      ai_summary: "AI 解析失败，请稍后重试。",
+    }).eq("id", recipeId);
+  }
 }
 
 export function useUpdateRecipe() {
@@ -511,23 +583,27 @@ export function useDeleteRecipe() {
 export function useRetryRecipeAnalysis() {
   const qc = useQueryClient();
   const mutation = useMutation({
-    mutationFn: async (recipe: { id: string; source_url: string; source_context?: string }) => {
-      if (!recipe.source_url) throw new Error("该食谱没有来源链接");
-      const result = await Promise.race([
-        supabase.functions.invoke("content-parser-agent", {
-          body: {
-            url: recipe.source_url,
-            content_type: "recipe",
-            recipe_id: recipe.id,
-            source_context: recipe.source_context || undefined,
-          },
-        }),
+    mutationFn: async (recipe: { id: string; source_url: string; source_type?: RecipeSourceType; source_context?: string }) => {
+      if (!recipe.source_url && recipe.source_type !== "manual") throw new Error("该食谱没有来源链接");
+
+      const sourceType = recipe.source_type || "bilibili";
+
+      // Use the full pipeline with 30s timeout
+      await Promise.race([
+        invokeRecipePipeline(recipe.id, recipe.source_url, sourceType, recipe.source_context),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 30_000),
+          setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 60_000),
         ),
       ]);
-      if (result.error) throw result.error;
-      return result.data;
+
+      // Fetch updated recipe
+      const { data, error } = await supabase
+        .from("recipes")
+        .select("*")
+        .eq("id", recipe.id)
+        .single();
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["recipes"] });

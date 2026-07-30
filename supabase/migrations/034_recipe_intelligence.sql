@@ -25,8 +25,16 @@ COMMENT ON COLUMN recipes.ai_analysis_status IS 'pending | completed | failed';
 COMMENT ON COLUMN recipes.ai_summary IS 'AI 食谱分析摘要';
 
 -- 5. Goal upgrade: TEXT → TEXT[] (support multiple goals)
-ALTER TABLE recipes ALTER COLUMN goal TYPE TEXT[] USING
-  CASE WHEN goal IS NOT NULL AND goal != '' THEN ARRAY[goal] ELSE NULL END;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'recipes' AND column_name = 'goal' AND data_type = 'text'
+  ) THEN
+    ALTER TABLE recipes ALTER COLUMN goal TYPE TEXT[] USING
+      CASE WHEN goal IS NOT NULL AND goal != '' THEN ARRAY[goal] ELSE NULL END;
+  END IF;
+END $$;
 COMMENT ON COLUMN recipes.goal IS '目标数组: 减脂/增肌/保持';
 
 -- 6. Indexes for new query patterns

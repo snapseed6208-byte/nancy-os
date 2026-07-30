@@ -1,10 +1,10 @@
 // ============================================
-// Nancy OS — Content Parser Agent v7
-// v3: Unified content intelligence — auto-classifies + extracts
-// v4: Workout UPDATE mode + JSON schema validation
-// v5: Recipe UPDATE mode + error logging + failure status propagation
+// Nancy OS — Content Parser Agent v8
 // v6: URL content fetching + relaxed recipe validation + partial data saving
 // v7: source_context priority + partial status + 3-level context strategy
+// v8: Recipe path split — real content only via RECIPE_PARSER_PROMPT,
+//     source_content from source-extractor-agent, no more guessing,
+//     confidence field, need_upload status.
 // Accepts URL or text, routes to resources/workout_videos/recipes
 // ============================================
 
@@ -263,6 +263,73 @@ HIIT → **必须同时满足**以下条件之一：
 - 如果无法从链接/文本推断内容，基于上下文合理推断
 - 如果输入为纯文本而非URL，优先分析文本内容本身`;
 
+// ═══════════════════════════════════════════
+// Recipe Parser Prompt — real content only, no guessing
+// ═══════════════════════════════════════════
+
+const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
+
+## 你的任务
+根据提供的**真实内容**整理食谱，不要创作或猜测。
+
+## 真实内容来源
+用户会提供以下一种或多种：
+- 视频字幕/文字记录（transcript）
+- OCR识别的文字（ocr_text）
+- 用户手动输入的描述（source_context）
+- 视频标题和简介（title + description）
+
+## 核心原则
+
+### 禁止事项
+1. ❌ 不允许根据标题猜测食材或用量
+2. ❌ 不允许根据经验补全不存在的信息
+3. ❌ 不允许创造视频中未出现的步骤
+4. ❌ 不允许为了"完整"而编造数据
+
+### 必须遵守
+1. ✅ 只提取明确出现在来源内容中的食材和步骤
+2. ✅ 如果某个信息在来源中不存在，该字段返回 null 或空数组
+3. ✅ 准确度优先于完整性
+
+## 输出格式 — 严格 JSON
+
+{
+  "name": "从内容中提取的食谱名称（中文）",
+  "ingredients_json": [
+    { "name": "食材名称", "amount": "用量" }
+  ],
+  "steps_json": [
+    { "order": 1, "text": "步骤描述" }
+  ],
+  "ai_summary": "1-2句话的食谱摘要",
+  "calories_per_serving": null,
+  "protein_grams": null,
+  "carbs_grams": null,
+  "fat_grams": null,
+  "goal": [],
+  "meal_time": [],
+  "confidence": "high"
+}
+
+## confidence 规则
+
+- "high": 信息来自字幕、正文或完整的用户输入
+- "medium": 信息来自OCR识别或视觉分析
+- "low": 信息来源有限（仅标题），此时 ingredients_json 和 steps_json 应为空数组
+
+## 营养估算规则
+
+- 如果真实内容中包含了食材和用量，可以根据食材合理估算
+- 如果内容中只有食材名称没有用量，calories_per_serving 等字段必须为 null
+- 宁可返回 null，也不要瞎编数字
+
+## 特别注意
+
+- 如果用户提供的 source_context 包含了食谱名称，用它作为 name
+- 步骤中的时间信息（如"焖煮15分钟"）只在内容明确提及时才填写 duration
+- 不要从标题推断完整食谱——标题只是参考信息`;
+
 function parseAIJson(raw: string): Record<string, unknown> {
   let cleaned = raw.trim().replace(/^﻿/, "");
 
@@ -467,14 +534,18 @@ serve(async (req: Request) => {
       workout_video_id?: string;
       recipe_id?: string;
       source_context?: string;
+      source_content?: Record<string, unknown>;
+      source_type?: string;
     };
 
     const workoutVideoId = body.workout_video_id || "";
     const recipeId = body.recipe_id || "";
     const sourceContext = body.source_context || "";
+    const sourceContent = body.source_content || null;
+    const sourceType = body.source_type || "";
 
     const input = body.url || body.text || "";
-    if (!input && !workoutVideoId) {
+    if (!input && !workoutVideoId && !recipeId) {
       return jsonResponse({ error: "请提供 URL 链接或文本内容" }, req, 400);
     }
 
@@ -482,53 +553,86 @@ serve(async (req: Request) => {
     const platform = inputIsUrl ? detectPlatform(input) : "text";
     const preferredModule = body.preferred_module || "";
 
-    // ── Fetch URL content for AI context (Level 2) ──
-    let fetchedContent: { title: string; description: string; text: string } = { title: "", description: "", text: "" };
-    let fetchContentLen = 0;
-    if (inputIsUrl) {
-      fetchedContent = await fetchUrlContent(input);
-      fetchContentLen = fetchedContent.text.length;
-      console.log(`[content-parser-agent] URL fetch: title="${fetchedContent.title.slice(0, 80)}", text=${fetchContentLen} chars`);
-    }
+    // Determine if this is a recipe pipeline call (has source_content from extractor)
+    const isRecipePipeline = recipeId && (sourceContent || sourceContext);
 
-    // ── Build prompt with 3-level context priority ──
-    let userMessage = "";
+    let systemPrompt: string;
+    let userMessage: string;
 
-    // Level 1: User-provided context (highest priority)
-    if (sourceContext) {
-      userMessage = `用户提供的食谱信息:\n${sourceContext}\n\n`;
-      console.log(`[content-parser-agent] Level 1 source_context: "${sourceContext.slice(0, 120)}"`);
-    }
+    if (isRecipePipeline) {
+      // ═══════════════════════════════════════════
+      // RECIPE PATH — real content only, no guessing
+      // ═══════════════════════════════════════════
+      systemPrompt = RECIPE_PARSER_PROMPT;
 
-    if (inputIsUrl) {
-      userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+      // Build user message from REAL content only
+      const parts: string[] = [];
 
-      // Level 2: Web fetch content
-      if (fetchedContent.title) {
-        userMessage += `\n页面标题: ${fetchedContent.title}`;
-      }
-      if (fetchedContent.description) {
-        userMessage += `\n页面描述: ${fetchedContent.description}`;
-      }
-      if (fetchedContent.text) {
-        userMessage += `\n页面文本片段: ${fetchedContent.text}`;
+      if (sourceContext) {
+        parts.push(`## 用户提供的描述\n${sourceContext}`);
       }
 
-      // Level 3: Insufficient info — instruct AI to infer
-      const hasContext = sourceContext.length > 0;
-      const hasFetched = fetchContentLen > 50 || fetchedContent.title.length > 0;
-      if (!hasContext && !hasFetched) {
-        userMessage += `\n\n⚠️ 无法获取此链接的页面内容，请根据URL和平台名称进行合理推断。`;
-        userMessage += `\n优先从URL结构或已知的常见食谱模式推测食谱名称和内容。`;
-        userMessage += `\n如果完全无法确定内容，请在name字段填写"未命名食谱"，在ai_summary字段说明无法获取内容的原因。`;
-      } else if (!hasFetched) {
-        userMessage += `\n注意：无法抓取此链接的网页内容，请主要依据用户提供的信息进行分析。`;
+      if (sourceContent) {
+        const sc = sourceContent as Record<string, unknown>;
+        if (sc.title) parts.push(`## 来源标题\n${sc.title}`);
+        if (sc.description) parts.push(`## 来源简介\n${(sc.description as string).slice(0, 2000)}`);
+        if (sc.transcript) parts.push(`## 视频字幕/文字记录\n${(sc.transcript as string).slice(0, 5000)}`);
+        if (sc.ocr_text) parts.push(`## OCR识别文字\n${(sc.ocr_text as string).slice(0, 3000)}`);
+        if (sc.platform) parts.push(`## 来源平台\n${sc.platform}`);
       }
+
+      // If no real content at all, return need_upload
+      const hasRealContent = parts.length > 0;
+      if (!hasRealContent) {
+        if (recipeId) {
+          await supabase.from("recipes").update({
+            ai_analysis_status: "need_upload",
+            ai_summary: "无法从此链接获取真实内容。请上传视频文件以确保食谱准确性。",
+            confidence: "low",
+          }).eq("id", recipeId);
+        }
+        return jsonResponse({
+          error: "no_content",
+          message: "无法获取真实内容，需要用户上传视频",
+          ai_analysis_status: "need_upload",
+        }, req, 200);
+      }
+
+      userMessage = parts.join("\n\n");
+      console.log(`[content-parser-agent] Recipe path: source_type=${sourceType} content_parts=${parts.length}`);
+
     } else {
-      userMessage += `输入类型: 文本内容\n文本: ${input.slice(0, 3000)}`;
-    }
-    if (preferredModule) {
-      userMessage += `\n用户偏好模块: ${preferredModule}`;
+      // ═══════════════════════════════════════════
+      // LEGACY PATH — workout videos, articles, etc.
+      // ═══════════════════════════════════════════
+      systemPrompt = UNIFIED_PROMPT;
+
+      // Build prompt with fetched URL content (legacy behavior)
+      let fetchedContent: { title: string; description: string; text: string } = { title: "", description: "", text: "" };
+      if (inputIsUrl) {
+        fetchedContent = await fetchUrlContent(input);
+        console.log(`[content-parser-agent] URL fetch: title="${fetchedContent.title.slice(0, 80)}", text=${fetchedContent.text.length} chars`);
+      }
+
+      userMessage = "";
+      if (sourceContext) {
+        userMessage = `用户提供的上下文:\n${sourceContext}\n\n`;
+      }
+
+      if (inputIsUrl) {
+        userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+        if (fetchedContent.title) userMessage += `\n页面标题: ${fetchedContent.title}`;
+        if (fetchedContent.description) userMessage += `\n页面描述: ${fetchedContent.description}`;
+        if (fetchedContent.text) userMessage += `\n页面文本片段: ${fetchedContent.text}`;
+        if (!sourceContext && fetchedContent.text.length <= 50 && !fetchedContent.title) {
+          userMessage += `\n\n⚠️ 无法获取此链接的页面内容，请根据URL和平台名称进行合理推断。`;
+        }
+      } else {
+        userMessage += `输入类型: 文本内容\n文本: ${input.slice(0, 3000)}`;
+      }
+      if (preferredModule) {
+        userMessage += `\n用户偏好模块: ${preferredModule}`;
+      }
     }
 
     // ── Call DeepSeek ──
@@ -541,10 +645,10 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         model: "deepseek-chat",
         messages: [
-          { role: "system", content: UNIFIED_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
-        temperature: 0.5,
+        temperature: isRecipePipeline ? 0.3 : 0.5,
         max_tokens: 2048,
       }),
     });
@@ -700,13 +804,13 @@ serve(async (req: Request) => {
       const finalIngredients = (Array.isArray(metadata.ingredients_json) ? metadata.ingredients_json : []) as unknown[];
       const finalSteps = (Array.isArray(metadata.steps_json) ? metadata.steps_json : []) as unknown[];
 
-      // Determine AI status: completed | partial | failed
-      const hasName = recipeName.length > 0 && recipeName !== "未命名食谱";
-      const hasIngredients = finalIngredients.length > 0;
-      const hasSteps = finalSteps.length > 0;
+      // Determine AI status using confidence from AI response
+      const confidence = (metadata.confidence as string) || "medium";
 
-      let aiStatus: string;
-      if (!hasName && !hasIngredients && !hasSteps) {
+      if (confidence === "low") {
+        // Low confidence = AI doesn't have enough real content
+        aiStatus = "need_upload";
+      } else if (!hasName && !hasIngredients && !hasSteps) {
         aiStatus = "failed";
       } else if (hasName && hasIngredients && hasSteps) {
         aiStatus = "completed";
@@ -727,8 +831,11 @@ serve(async (req: Request) => {
         if (!hasName) missing.push("食谱名称");
         aiSummaryParts.push(`\n📝 状态：部分整理（缺少：${missing.join("、")}）。请在食谱详情中手动补充。`);
       }
+      if (aiStatus === "need_upload") {
+        aiSummaryParts.push(`\n📤 信息来源有限，无法确认食谱准确性。建议上传视频文件获取完整内容。`);
+      }
       if (aiStatus === "failed") {
-        aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑或尝试重新分析。`);
+        aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑或尝试上传视频文件。`);
       }
       const finalAiSummary = aiSummaryParts.join("") || null;
 
@@ -749,11 +856,13 @@ serve(async (req: Request) => {
         ai_summary: finalAiSummary,
         ai_analysis_status: aiStatus,
         ai_analyzed_at: new Date().toISOString(),
+        confidence: confidence,
       };
 
       console.log(
         `[content-parser-agent] Recipe result: name="${recipeName.slice(0, 60)}" ` +
-        `ingredients=${finalIngredients.length} steps=${finalSteps.length} status=${aiStatus}`,
+        `ingredients=${finalIngredients.length} steps=${finalSteps.length} ` +
+        `status=${aiStatus} confidence=${confidence}`,
       );
 
       if (recipeId) {

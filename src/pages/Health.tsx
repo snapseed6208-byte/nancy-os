@@ -23,7 +23,7 @@ import {
   useHealthGoals,
   useExerciseLibrary,
   useWorkoutSessions, useWorkoutSession, useCreateWorkoutSession, useUpdateWorkoutSession, useDeleteWorkoutSession,
-  type WorkoutVideo, type Recipe, type RecipeIngredient, type RecipeStep, type MealPlan, type MealPlanSlot, type FoodRecord,
+  type WorkoutVideo, type Recipe, type RecipeIngredient, type RecipeStep, type RecipeSourceType, type MealPlan, type MealPlanSlot, type FoodRecord,
   type WorkoutSession, type WorkoutSessionInput,
 } from "@/lib/hooks/useHealth";
 
@@ -1347,6 +1347,14 @@ function WorkoutJournalSection({ startFromVideo, onConsumedVideo }: { startFromV
 
 // ── Tab 3: Recipe Box ──
 
+const SOURCE_TYPES = [
+  { key: "bilibili" as const, label: "B站视频", icon: "🎬", placeholder: "输入 B站视频链接，例如：\nhttps://www.bilibili.com/video/BVxxxx" },
+  { key: "xiaohongshu" as const, label: "小红书笔记", icon: "📕", placeholder: "输入小红书笔记链接" },
+  { key: "douyin" as const, label: "抖音视频", icon: "🎵", placeholder: "输入抖音视频链接\n\n提示：抖音限制较多，若无法获取请上传视频" },
+  { key: "upload" as const, label: "上传视频", icon: "📁", placeholder: "上传 mp4/mov 视频文件（即将支持）" },
+  { key: "manual" as const, label: "手动输入", icon: "✍️", placeholder: "直接输入食谱名称、食材和步骤" },
+] as const;
+
 function RecipeBoxTab() {
   const { data: recipes, isLoading } = useRecipes();
   const createRecipe = useCreateRecipe();
@@ -1356,6 +1364,7 @@ function RecipeBoxTab() {
 
   const [filter, setFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [sourceType, setSourceType] = useState<RecipeSourceType>("bilibili");
   const [inputText, setInputText] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
@@ -1368,11 +1377,20 @@ function RecipeBoxTab() {
 
   const todayPicks = (recipes || []).filter((r) => r.is_favorite).slice(0, 3);
 
+  const currentSource = SOURCE_TYPES.find(s => s.key === sourceType) || SOURCE_TYPES[0];
+
   const handleAdd = () => {
     const text = inputText.trim();
     if (!text) return;
 
-    // Extract URL and context text
+    if (sourceType === "manual") {
+      createRecipe.mutate(
+        { source_url: text, source_type: "manual", source_context: text || undefined },
+        { onSuccess: () => { setInputText(""); setShowAdd(false); } },
+      );
+      return;
+    }
+
     const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
     const url = urlMatch ? urlMatch[1] : text;
     const context = urlMatch
@@ -1380,7 +1398,7 @@ function RecipeBoxTab() {
       : "";
 
     createRecipe.mutate(
-      { source_url: url, source_context: context || undefined },
+      { source_url: url, source_type: sourceType, source_context: context || undefined },
       { onSuccess: () => { setInputText(""); setShowAdd(false); } },
     );
   };
@@ -1388,6 +1406,10 @@ function RecipeBoxTab() {
   const getPlatformBadge = (platform: string | null) => {
     const map: Record<string, string> = { bilibili: "B站", douyin: "抖音", xiaohongshu: "小红书", youtube: "YT" };
     return map[platform || ""] || platform || "web";
+  };
+
+  const getSourceTypeLabel = (st: string | null) => {
+    return SOURCE_TYPES.find(s => s.key === st)?.label || "";
   };
 
   const handleUpdate = async (input: {
@@ -1402,9 +1424,12 @@ function RecipeBoxTab() {
 
   const getStatusBadge = (status: string | null) => {
     if (status === "completed") return { label: "AI已整理", cls: "bg-emerald-50 text-emerald-600" };
+    if (status === "extracting") return { label: "提取内容中", cls: "bg-yellow-50 text-yellow-600" };
+    if (status === "analyzing") return { label: "AI整理中", cls: "bg-blue-50 text-blue-600" };
     if (status === "partial") return { label: "部分整理", cls: "bg-amber-50 text-amber-600" };
+    if (status === "need_upload") return { label: "请上传视频", cls: "bg-orange-50 text-orange-600" };
     if (status === "failed") return { label: "分析失败", cls: "bg-red-50 text-red-500" };
-    return { label: "AI整理中", cls: "bg-slate-50 text-slate-500" };
+    return { label: "等待处理", cls: "bg-slate-50 text-slate-500" };
   };
 
   const getIngredientsPreview = (r: Recipe): string => {
@@ -1433,23 +1458,63 @@ function RecipeBoxTab() {
       {/* Add button */}
       {!showAdd ? (
         <button onClick={() => setShowAdd(true)} className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-sage-light/50 py-3.5 text-sm text-sage-deep hover:bg-sage-light/10 transition-colors">
-          <Plus size={15} />添加食谱链接
+          <Plus size={15} />创建食谱
         </button>
       ) : (
-        <div className="bg-card rounded-2xl border border-border p-3 space-y-2">
-          <textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="粘贴食谱名称和链接，例如：&#10;杏鲍菇焖鸡腿，美味低卡低脂还顶饱&#10;https://v.douyin.com/xxx"
-            className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
-            rows={3}
-            autoFocus
-          />
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+          {/* Source type selector */}
+          <div>
+            <p className="text-xs font-medium text-ink-light mb-2">选择来源</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {SOURCE_TYPES.map((st) => (
+                <button
+                  key={st.key}
+                  onClick={() => setSourceType(st.key)}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-xl py-2.5 px-1 text-[10px] font-medium transition-colors",
+                    sourceType === st.key
+                      ? "bg-sage-light text-sage-deep ring-1 ring-sage-deep/30"
+                      : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                  )}
+                >
+                  <span className="text-base">{st.icon}</span>
+                  <span className="leading-tight text-center">{st.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Input area */}
+          {sourceType === "manual" ? (
+            <textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="输入食谱名称，保存后可编辑食材和步骤"
+              className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
+              rows={2}
+              autoFocus
+            />
+          ) : (
+            <textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={currentSource.placeholder}
+              className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
+              rows={3}
+              autoFocus
+            />
+          )}
+
           <div className="flex gap-2">
-            <button onClick={handleAdd} disabled={!inputText.trim() || createRecipe.isPending} className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50">
-              {createRecipe.isPending ? "添加中..." : "保存"}
+            <button
+              onClick={handleAdd}
+              disabled={!inputText.trim() || createRecipe.isPending}
+              className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 hover:bg-sage-light/80 transition-colors"
+            >
+              {createRecipe.isPending ? <Loader2 size={14} className="animate-spin inline mr-1" /> : null}
+              {createRecipe.isPending ? "创建中..." : (sourceType === "manual" ? "创建食谱" : "提取食谱")}
             </button>
-            <button onClick={() => setShowAdd(false)} className="px-4 py-2.5 text-sm text-ink-light hover:bg-ink/5 rounded-xl">取消</button>
+            <button onClick={() => { setShowAdd(false); setInputText(""); }} className="px-4 py-2.5 text-sm text-ink-light hover:bg-ink/5 rounded-xl transition-colors">取消</button>
           </div>
           {createRecipe.error && <p className="text-xs text-accent-rose">{(createRecipe.error as Error).message}</p>}
         </div>

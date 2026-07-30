@@ -10,7 +10,7 @@ WHERE url LIKE '% %'
 UNION ALL
 SELECT 'workout_videos', id, url, 'has_chinese'
 FROM workout_videos
-WHERE url ~ '[\x{4e00}-\x{9fff}\x{3040}-\x{309f}\x{30a0}-\x{30ff}\x{ac00}-\x{d7af}]'
+WHERE url ~ '[一-鿿぀-ゟ゠-ヿ가-힯]'
 UNION ALL
 SELECT 'workout_videos', id, url, 'non_http_protocol'
 FROM workout_videos
@@ -27,7 +27,7 @@ WHERE source_url LIKE '% %'
 UNION ALL
 SELECT 'recipes', id, COALESCE(source_url, 'NULL'), 'has_chinese'
 FROM recipes
-WHERE source_url ~ '[\x{4e00}-\x{9fff}\x{3040}-\x{309f}\x{30a0}-\x{30ff}\x{ac00}-\x{d7af}]'
+WHERE source_url ~ '[一-鿿぀-ゟ゠-ヿ가-힯]'
 UNION ALL
 SELECT 'recipes', id, COALESCE(source_url, 'NULL'), 'non_http_protocol'
 FROM recipes
@@ -44,7 +44,7 @@ WHERE url LIKE '% %'
 UNION ALL
 SELECT 'resources', id, COALESCE(url, 'NULL'), 'has_chinese'
 FROM resources
-WHERE url ~ '[\x{4e00}-\x{9fff}\x{3040}-\x{309f}\x{30a0}-\x{30ff}\x{ac00}-\x{d7af}]'
+WHERE url ~ '[一-鿿぀-ゟ゠-ヿ가-힯]'
 UNION ALL
 SELECT 'resources', id, COALESCE(url, 'NULL'), 'non_http_protocol'
 FROM resources
@@ -61,7 +61,7 @@ WHERE jd_url LIKE '% %'
 UNION ALL
 SELECT 'jobs', id, COALESCE(jd_url, 'NULL'), 'has_chinese'
 FROM jobs
-WHERE jd_url ~ '[\x{4e00}-\x{9fff}\x{3040}-\x{309f}\x{30a0}-\x{30ff}\x{ac00}-\x{d7af}]'
+WHERE jd_url ~ '[一-鿿぀-ゟ゠-ヿ가-힯]'
 UNION ALL
 SELECT 'jobs', id, COALESCE(jd_url, 'NULL'), 'non_http_protocol'
 FROM jobs

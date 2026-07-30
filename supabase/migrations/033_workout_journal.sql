@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS exercise_library (
 COMMENT ON TABLE exercise_library IS '标准动作库 — 用户选择动作时的参考数据';
 COMMENT ON COLUMN exercise_library.target_muscles IS 'JSONB 数组: ["臀大肌", "股四头肌"]';
 
-CREATE INDEX idx_exercise_library_category ON exercise_library(category);
+CREATE INDEX IF NOT EXISTS idx_exercise_library_category ON exercise_library(category);
 
 -- Seed: common exercises
 INSERT INTO exercise_library (name, category, target_muscles, equipment, movement_pattern, instruction) VALUES
@@ -94,12 +94,19 @@ COMMENT ON COLUMN workout_sessions.mode IS 'video_follow: 跟练视频 | free_tr
 COMMENT ON COLUMN workout_sessions.source_video_id IS '关联训练库视频，自由训练时为空';
 COMMENT ON COLUMN workout_sessions.ai_summary IS 'AI 训练分析摘要';
 
-CREATE INDEX idx_workout_sessions_user_date ON workout_sessions(user_id, date DESC);
-CREATE INDEX idx_workout_sessions_source ON workout_sessions(source_video_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_user_date ON workout_sessions(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_source ON workout_sessions(source_video_id);
 
 ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own workout_sessions"
-  ON workout_sessions FOR ALL USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'workout_sessions' AND policyname = 'Users can manage own workout_sessions'
+  ) THEN
+    CREATE POLICY "Users can manage own workout_sessions"
+      ON workout_sessions FOR ALL USING (auth.uid() = user_id);
+  END IF;
+END $$;
 
 -- 3. Workout Exercises
 CREATE TABLE IF NOT EXISTS workout_exercises (
@@ -125,10 +132,17 @@ COMMENT ON TABLE workout_exercises IS '训练动作 — session 内的每个动�
 COMMENT ON COLUMN workout_exercises.reps IS 'JSONB 数组: [{"set":1,"reps":12,"weight":20,"completed":true}, ...]';
 COMMENT ON COLUMN workout_exercises.exercise_id IS '关联标准动作库';
 
-CREATE INDEX idx_workout_exercises_session ON workout_exercises(session_id, sort_order);
-CREATE INDEX idx_workout_exercises_user ON workout_exercises(user_id);
-CREATE INDEX idx_workout_exercises_library ON workout_exercises(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_workout_exercises_session ON workout_exercises(session_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_workout_exercises_user ON workout_exercises(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_exercises_library ON workout_exercises(exercise_id);
 
 ALTER TABLE workout_exercises ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own workout_exercises"
-  ON workout_exercises FOR ALL USING (auth.uid() = user_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'workout_exercises' AND policyname = 'Users can manage own workout_exercises'
+  ) THEN
+    CREATE POLICY "Users can manage own workout_exercises"
+      ON workout_exercises FOR ALL USING (auth.uid() = user_id);
+  END IF;
+END $$;
