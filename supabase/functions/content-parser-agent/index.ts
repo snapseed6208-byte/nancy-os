@@ -27,7 +27,15 @@ function getCorsHeaders(req: Request): Record<string, string> {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Vary": "Origin",
   };
+}
+
+function jsonResponse(body: unknown, req: Request, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+  });
 }
 
 const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一个链接或一段文本，请自动分析并提取结构化信息。
@@ -162,7 +170,13 @@ function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: bo
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: getCorsHeaders(req) });
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...getCorsHeaders(req),
+        "Access-Control-Max-Age": "86400",
+      },
+    });
   }
 
   try {
@@ -173,9 +187,7 @@ serve(async (req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Unauthorized" }, req, 401);
     }
 
     // ── Parse input ──
@@ -190,9 +202,7 @@ serve(async (req: Request) => {
 
     const input = body.url || body.text || "";
     if (!input && !workoutVideoId) {
-      return new Response(JSON.stringify({ error: "请提供 URL 链接或文本内容" }), {
-        status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "请提供 URL 链接或文本内容" }, req, 400);
     }
 
     const inputIsUrl = body.url ? true : isUrl(input);
@@ -236,9 +246,7 @@ serve(async (req: Request) => {
           .update({ ai_analysis_status: "failed" })
           .eq("id", workoutVideoId);
       }
-      return new Response(JSON.stringify({ error: `AI 服务异常 (${aiResponse.status})` }), {
-        status: 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: `AI 服务异常 (${aiResponse.status})` }, req, 502);
     }
 
     const result = await aiResponse.json();
@@ -255,13 +263,11 @@ serve(async (req: Request) => {
           .update({ ai_analysis_status: "failed" })
           .eq("id", workoutVideoId);
       }
-      return new Response(JSON.stringify({
+      return jsonResponse({
         error: "parse_error",
         raw: raw.slice(0, 500),
         message: "AI 返回格式异常，请重试",
-      }), {
-        status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+      }, req, 500);
     }
 
     // Force workout UPDATE mode when retrying (workout_video_id takes priority over AI classification)
@@ -294,13 +300,11 @@ serve(async (req: Request) => {
             .update({ ai_analysis_status: "failed" })
             .eq("id", workoutVideoId);
         }
-        return new Response(JSON.stringify({
+        return jsonResponse({
           error: "schema_validation_failed",
           message: "AI 输出不符合 schema",
           validation_errors: validation.errors,
-        }), {
-          status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-        });
+        }, req, 500);
       }
 
       if (workoutVideoId) {
@@ -419,7 +423,7 @@ serve(async (req: Request) => {
     });
 
     // ── Return ──
-    return new Response(JSON.stringify({
+    return jsonResponse({
       content_type,
       title,
       category,
@@ -431,16 +435,12 @@ serve(async (req: Request) => {
       target_table: targetTable,
       record_id: recordId,
       tokens_used: tokensUsed,
-    }), {
-      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    });
+    }, req);
 
   } catch (err) {
     console.error("Content parser error:", err);
-    return new Response(JSON.stringify({
+    return jsonResponse({
       error: (err as Error).message || "服务器内部错误",
-    }), {
-      status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    });
+    }, req, 500);
   }
 });
