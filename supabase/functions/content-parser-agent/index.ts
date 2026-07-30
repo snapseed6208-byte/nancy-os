@@ -51,22 +51,51 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
 - "recipe" — 食谱/烹饪视频或内容
 - "course" — 系统化课程、学习路径
 
-## 第二步：提取结构化信息
+## 第二步：提取结构化信息（通用字段，所有类型）
 
 返回严格 JSON 格式（不要markdown代码块）:
 
 {
   "content_type": "article|video|workout|recipe|course",
-  "title": "内容标题",
-  "category": "分类标签（中文，如：个人成长、技术、英语、健康、职业）",
+  "title": "内容标题（准确、简洁）",
+  "category": "内容所属领域（中文）",
   "summary": "150-250字的中文摘要，概括核心内容和价值",
-  "key_points": ["关键知识点或发现1", "关键知识点或发现2", ...],
+  "key_points": ["核心观点或关键知识点"],
+  "important_quotes": ["值得保留的原话、金句、关键数据"],
   "action_items": [
     { "action": "具体可执行的行动建议", "priority": "high|medium|low" }
   ],
+  "recommended_category": {
+    "name": "推荐放入的知识库分类名（如：阅读收藏、影视解读、健身健康、饮食管理、工作成长、人情世故、生活技巧、英语学习）",
+    "confidence": 0.9
+  },
+  "applicable_scenarios": ["这些知识适用于哪些生活/工作场景"],
+  "related_knowledge": ["关联的知识领域或主题"],
   "tags": ["标签1", "标签2", "标签3"],
   "metadata": {}
 }
+
+### 新增字段规则
+
+**important_quotes（重要引用）：**
+- 提取原文中最有价值的1-5句话
+- 优先选择：核心论点、独特见解、数据事实、可引用的金句
+- 每条不超过150字
+- 如果没有值得保留的原话，返回空数组 []
+
+**recommended_category（推荐分类）：**
+- 根据内容主题推荐一个用户知识库分类
+- name: 中文分类名，参考：阅读收藏、影视解读、健身健康、饮食管理、工作成长、人情世故、生活技巧、英语学习
+- confidence: 0.0-1.0，根据内容匹配度评估
+
+**applicable_scenarios（适用场景）：**
+- 这些知识在什么情况下可以使用
+- 具体、可操作的场景描述
+- 1-3条场景
+
+**related_knowledge（关联知识）：**
+- 与哪些已有知识领域关联
+- 帮助用户建立知识间的连接
 
 ## 类型特定规则
 
@@ -257,8 +286,12 @@ HIIT → **必须同时满足**以下条件之一：
 
 ## 规则
 - key_points: 3-8条，每条是一句话的关键发现
+- important_quotes: 1-5条值得保留的原话或数据，没有则空数组
 - action_items: 1-3条，具体可执行
 - summary: 必须是中文，150-250字
+- recommended_category: 必须提供，根据内容主题推荐知识库分类
+- applicable_scenarios: 1-3个具体使用场景
+- related_knowledge: 关联的知识领域，帮助建立知识连接
 - 如果无法从链接/文本推断内容，基于上下文合理推断
 - 如果输入为纯文本而非URL，优先分析文本内容本身`;
 
@@ -1298,30 +1331,9 @@ serve(async (req: Request) => {
         if (inserted) recordId = inserted.id as string;
       }
     } else {
+      // ── RESOURCES PATH (article/video/course) ──
+      // v2: Do NOT auto-save. Return parsed data for user confirmation.
       targetTable = "resources";
-      const { data: inserted } = await supabase
-        .from("resources")
-        .insert({
-          user_id: user.id,
-          title: title,
-          url: inputIsUrl ? input : null,
-          resource_type: content_type,
-          module: preferredModule || "general",
-          tags: tags,
-          source_url: body.url || null,
-          content_type: content_type,
-          parse_status: "parsed",
-          ai_summary: summary,
-          ai_category: category,
-          ai_tags: tags,
-          ai_key_points: key_points,
-          ai_action_items: action_items,
-          notes: summary,
-        })
-        .select("id")
-        .single();
-
-      if (inserted) recordId = inserted.id as string;
     }
 
     // ── Write agent log ──
@@ -1351,18 +1363,26 @@ serve(async (req: Request) => {
     });
 
     // ── Return ──
+    // v2: Include new knowledge extraction fields.
+    // For resources (article/video/course), recordId is empty (no auto-save).
     return jsonResponse({
       content_type,
       title,
       category,
       summary,
       key_points,
+      important_quotes: (parsed.important_quotes as string[]) || [],
       action_items,
+      recommended_category: (parsed.recommended_category as Record<string, unknown>) || null,
+      applicable_scenarios: (parsed.applicable_scenarios as string[]) || [],
+      related_knowledge: (parsed.related_knowledge as string[]) || [],
       tags,
       metadata,
       target_table: targetTable,
       record_id: recordId,
       tokens_used: tokensUsed,
+      source_url: body.url || input || null,
+      source_platform: inputIsUrl ? platform : null,
     }, req);
 
   } catch (err) {

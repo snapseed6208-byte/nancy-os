@@ -289,8 +289,11 @@ export const MODULE_LABELS: Record<ModuleId, string> = {
 export const RESOURCE_TYPES = ["video", "article", "file", "course", "book", "tool", "other"] as const;
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 
-export const RESOURCE_PLATFORMS = ["bilibili", "youtube", "douyin", "feishu", "web", "local", "other"] as const;
+export const RESOURCE_PLATFORMS = ["bilibili", "youtube", "douyin", "xiaohongshu", "feishu", "web", "local", "other"] as const;
 export type ResourcePlatform = (typeof RESOURCE_PLATFORMS)[number];
+
+export const RESOURCE_STATUSES = ["saved", "understood", "applied"] as const;
+export type ResourceStatus = (typeof RESOURCE_STATUSES)[number];
 
 // ── Goal ──
 export interface Goal {
@@ -425,7 +428,7 @@ export interface DailyReview {
   updatedAt: string;
 }
 
-// ── Resource (unified library) ──
+// ── Resource (unified library) v2 ──
 export interface Resource {
   id: string;
   userId: string;
@@ -438,9 +441,27 @@ export interface Resource {
   tags?: string[];
   author?: string;
   thumbnailUrl?: string;
+  // Layer 1: Original Source
+  sourcePlatform?: string;
+  sourceAuthor?: string;
+  sourceTitle?: string;
+  sourceCover?: string;
+  rawContent?: string;
+  // Layer 2: AI Understanding
   aiSummary?: string;
   aiCategory?: string;
   aiTags?: string[];
+  aiKeyPoints?: string[];
+  aiImportantQuotes?: string[];
+  aiActionItems?: Array<{ action: string; priority: string }>;
+  aiRecommendedCategory?: { name: string; confidence: number };
+  aiApplicableScenarios?: string[];
+  aiRelatedKnowledge?: string[];
+  // Layer 3: Personal Knowledge
+  status?: ResourceStatus;
+  userNotes?: string;
+  categoryId?: string;
+  // Legacy
   isFavorite: boolean;
   isArchived: boolean;
   readProgress: number;
