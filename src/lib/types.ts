@@ -454,7 +454,7 @@ export interface Resource {
   aiKeyPoints?: string[];
   aiImportantQuotes?: string[];
   aiActionItems?: Array<{ action: string; priority: string }>;
-  aiRecommendedCategory?: { name: string; confidence: number };
+  aiSuggestedCategory?: string;
   aiApplicableScenarios?: string[];
   aiRelatedKnowledge?: string[];
   // Layer 3: Personal Knowledge

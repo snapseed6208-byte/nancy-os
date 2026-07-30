@@ -1,33 +1,19 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import {
   Link2, Plus, Tag, Trash2, ExternalLink, Archive, Star,
   Loader2, FolderOpen, Sparkles, Lightbulb, Target, Check,
-  Search, Filter, ChevronDown, Quote, MapPin, GitBranch,
-  BookOpen, Globe, Heart, Briefcase, GraduationCap, Edit3, X,
-  MoreHorizontal, Play,
+  Search, ChevronDown, Quote, MapPin, GitBranch,
+  BookOpen, Edit3, X, Play, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useResources, useCreateResource, useUpdateResource, useDeleteResource,
   useContentParser, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
-  type ResourceRow, type ParsedContent, type Category,
+  useAllResourceTags, useCreateTags, useAttachTagsToResource, useDetachTagFromResource,
+  type ResourceRow, type ParsedContent, type Category, type TagType,
 } from "@/lib/hooks/useResources";
 
 // ── Constants ──
-
-const DEFAULT_CATEGORIES = [
-  { name: "学习成长", icon: "📚", color: "text-accent-sky" },
-  { name: "工作职业", icon: "💼", color: "text-accent-rose" },
-  { name: "健康健身", icon: "💪", color: "text-emerald-600" },
-  { name: "饮食生活", icon: "🍽️", color: "text-amber-600" },
-  { name: "生活技巧", icon: "🔧", color: "text-purple-600" },
-  { name: "影视娱乐", icon: "🎬", color: "text-indigo-600" },
-  { name: "财商投资", icon: "💰", color: "text-teal-600" },
-  { name: "思维认知", icon: "🧠", color: "text-sage-deep" },
-  { name: "人际关系", icon: "🤝", color: "text-accent-warm" },
-  { name: "旅行体验", icon: "✈️", color: "text-cyan-600" },
-  { name: "灵感收藏", icon: "💡", color: "text-yellow-600" },
-] as const;
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   saved: { label: "已保存", color: "bg-slate-50 text-slate-500" },
@@ -53,12 +39,16 @@ const DEFAULT_CATEGORY_COLORS = [
 export default function Resources() {
   const { data: resources, isLoading } = useResources();
   const { data: categories } = useCategories();
+  const { data: allResourceTags } = useAllResourceTags();
   const createResource = useCreateResource();
   const updateResource = useUpdateResource();
   const deleteResource = useDeleteResource();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
+  const createTags = useCreateTags();
+  const attachTags = useAttachTagsToResource();
+  const detachTag = useDetachTagFromResource();
 
   const parseContent = useContentParser();
 
@@ -79,17 +69,6 @@ export default function Resources() {
 
   // ── Handlers ──
 
-  // Seed default categories if user has none (runs once on mount)
-  const seededRef = useRef(false);
-  useEffect(() => {
-    if (seededRef.current) return;
-    if (!categories || categories.length > 0) return;
-    seededRef.current = true;
-    DEFAULT_CATEGORIES.forEach((cat) => {
-      createCategory.mutate({ name: cat.name, icon: cat.icon, color: cat.color });
-    });
-  }, [categories]);
-
   const handleParse = () => {
     if (!importInput.trim()) return;
     const isUrl = /^https?:\/\//.test(importInput.trim());
@@ -99,39 +78,49 @@ export default function Resources() {
     );
   };
 
-  const handleSaveParsed = (overrides?: { title?: string; category_id?: string; tags?: string[]; status?: string }) => {
+  const handleSaveParsed = async (overrides?: { title?: string; category_id?: string; tags?: string[]; status?: string }) => {
     if (!parsed) return;
-    createResource.mutate(
-      {
+    const tagNames = overrides?.tags || parsed.tags;
+
+    try {
+      // Step 1: Create resource (without inline tags — tags go through junction table)
+      const newResource = await createResource.mutateAsync({
         title: overrides?.title || parsed.title,
         url: parsed.source_url || undefined,
         resource_type: parsed.content_type,
-        tags: overrides?.tags || parsed.tags,
         category_id: overrides?.category_id || undefined,
         source_url: parsed.source_url || undefined,
         source_platform: parsed.source_platform || undefined,
         source_title: parsed.title,
         ai_summary: parsed.summary,
         ai_category: parsed.category,
-        ai_tags: parsed.tags,
         ai_key_points: parsed.key_points,
         ai_important_quotes: parsed.important_quotes,
         ai_action_items: parsed.action_items,
-        ai_recommended_category: parsed.recommended_category || undefined,
+        ai_suggested_category: parsed.suggested_category || undefined,
         ai_applicable_scenarios: parsed.applicable_scenarios,
         ai_related_knowledge: parsed.related_knowledge,
         raw_content: parsed.raw_content || undefined,
         content_type: parsed.content_type,
         status: overrides?.status || "saved",
-      },
-      {
-        onSuccess: () => {
-          setParsed(null);
-          setImportInput("");
-          setShowImport(false);
-        },
-      },
-    );
+      });
+
+      // Step 2: Create tags in tags table (idempotent upsert)
+      if (tagNames && tagNames.length > 0) {
+        const tagRecords = await createTags.mutateAsync(tagNames);
+        // Step 3: Attach tags to the new resource via junction table
+        await attachTags.mutateAsync({
+          resourceId: (newResource as ResourceRow).id,
+          tagIds: tagRecords.map((t) => t.id),
+        });
+      }
+
+      setParsed(null);
+      setImportInput("");
+      setShowImport(false);
+    } catch {
+      // Error state handled by mutation's isError
+    }
   };
 
   const handleCreateCategory = () => {
@@ -377,6 +366,7 @@ export default function Resources() {
               key={r.id}
               resource={r}
               categories={categories || []}
+              tags={allResourceTags?.[r.id] || []}
               onClick={() => setSelectedResource(r)}
               onToggleFavorite={(id) => updateResource.mutate({ id, is_favorite: !r.is_favorite })}
               onArchive={(id) => updateResource.mutate({ id, is_archived: true })}
@@ -392,10 +382,12 @@ export default function Resources() {
         <ResourceDetailModal
           resource={selectedResource}
           categories={categories || []}
+          tags={allResourceTags?.[selectedResource.id] || []}
           onClose={() => setSelectedResource(null)}
           onUpdate={(id, fields) => updateResource.mutate({ id, ...fields })}
           onDelete={(id) => { deleteResource.mutate(id); setSelectedResource(null); }}
           onStatusCycle={(id) => handleStatusCycle(id, selectedResource.status)}
+          onDetachTag={(tagId) => detachTag.mutate({ resourceId: selectedResource.id, tagId })}
         />
       )}
     </div>
@@ -420,16 +412,27 @@ function ImportConfirmPanel({
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(p.title);
-  const [categoryId, setCategoryId] = useState<string>("");
-  const [tags, setTags] = useState(p.tags.join("，"));
+  // Pre-select category if AI's suggested_category matches an existing category
+  const suggestedCat = p.suggested_category;
+  const matchedCategoryId = suggestedCat
+    ? categories.find((c) => c.name === suggestedCat)?.id || ""
+    : "";
+  const [categoryId, setCategoryId] = useState<string>(matchedCategoryId);
+  // Tag chips
+  const [tagChips, setTagChips] = useState<string[]>(p.tags || []);
+  const [tagInput, setTagInput] = useState("");
 
-  // Pre-select recommended category if confidence >= 0.5
-  const recCat = p.recommended_category;
-  const preSelectedCat = recCat && recCat.confidence >= 0.5 ? recCat.name : null;
+  const handleAddTag = () => {
+    const name = tagInput.trim().replace(/^#/, "");
+    if (name && !tagChips.includes(name)) {
+      setTagChips([...tagChips, name]);
+    }
+    setTagInput("");
+  };
 
-  const matchedCat = categories.find(
-    (c) => c.name === preSelectedCat || (categoryId && c.id === categoryId),
-  );
+  const handleRemoveTag = (name: string) => {
+    setTagChips(tagChips.filter((t) => t !== name));
+  };
 
   return (
     <div className="space-y-4">
@@ -457,36 +460,63 @@ function ImportConfirmPanel({
         />
       </div>
 
-      {/* Category selector + tags */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">
-            分类
-            {recCat && recCat.confidence >= 0.5 && (
-              <span className="ml-1 text-amber-600">AI推荐: {recCat.name} ({Math.round(recCat.confidence * 100)}%)</span>
-            )}
-          </label>
-          <div className="mt-1">
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="w-full text-xs bg-transparent border border-border rounded-xl px-3 py-2 outline-none text-ink"
-            >
-              <option value="">选择分类...</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.icon || "📁"} {c.name}</option>
-              ))}
-            </select>
-          </div>
+      {/* Category selector */}
+      <div>
+        <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">
+          分类
+          {suggestedCat && (
+            <span className="ml-1 text-amber-600">
+              AI推荐: {suggestedCat}
+              {!matchedCategoryId && <span className="text-accent-rose ml-1">(待确认)</span>}
+            </span>
+          )}
+        </label>
+        <div className="mt-1">
+          <select
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+            className="w-full text-xs bg-transparent border border-border rounded-xl px-3 py-2 outline-none text-ink"
+          >
+            <option value="">选择分类...</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.icon || "📁"} {c.name}</option>
+            ))}
+          </select>
         </div>
-        <div>
-          <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">标签</label>
-          <input
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="逗号分隔"
-            className="w-full text-xs bg-transparent border border-border rounded-xl px-3 py-2 mt-1 outline-none"
-          />
+      </div>
+
+      {/* Tags — chip-based input */}
+      <div>
+        <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">标签</label>
+        <div className="mt-1 space-y-2">
+          {tagChips.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {tagChips.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 text-[10px] bg-sage-light/40 text-sage-deep rounded-full pl-2.5 pr-1 py-1">
+                  {t}
+                  <button onClick={() => handleRemoveTag(t)} className="hover:text-accent-rose">
+                    <XCircle size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTag(); } }}
+              placeholder="输入标签后回车添加"
+              className="flex-1 text-xs bg-transparent border border-border rounded-xl px-3 py-1.5 outline-none placeholder:text-ink-lighter"
+            />
+            <button
+              onClick={handleAddTag}
+              disabled={!tagInput.trim()}
+              className="shrink-0 text-xs text-sage-deep hover:bg-sage-light/30 rounded-lg px-2 py-1.5 disabled:opacity-30 transition-colors"
+            >
+              <Plus size={12} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -602,7 +632,7 @@ function ImportConfirmPanel({
             onClick={() => onSave({
               title: title.trim(),
               category_id: categoryId || undefined,
-              tags: tags ? tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : undefined,
+              tags: tagChips,
             })}
             disabled={isSaving || !title.trim()}
             className="bg-sage-light text-sage-deep rounded-xl px-5 py-2 text-xs font-semibold disabled:opacity-50 hover:bg-sage-light/80 transition-colors flex items-center gap-1.5"
@@ -623,6 +653,7 @@ function ImportConfirmPanel({
 function ResourceCard({
   resource: r,
   categories,
+  tags,
   onClick,
   onToggleFavorite,
   onArchive,
@@ -631,6 +662,7 @@ function ResourceCard({
 }: {
   resource: ResourceRow;
   categories: Category[];
+  tags: TagType[];
   onClick: () => void;
   onToggleFavorite: (id: string) => void;
   onArchive: (id: string) => void;
@@ -640,8 +672,6 @@ function ResourceCard({
   const status = STATUS_CONFIG[r.status || "saved"] || STATUS_CONFIG.saved;
   const platformBadge = r.source_platform ? PLATFORM_BADGES[r.source_platform] : null;
   const category = categories.find((c) => c.id === r.category_id);
-  // Combine ai_tags and user tags, deduplicate
-  const allTags = [...new Set([...(r.ai_tags || []), ...(r.tags || [])])];
 
   return (
     <div
@@ -737,12 +767,12 @@ function ResourceCard({
             </div>
           )}
 
-          {/* Tags — AI generated + user tags, with # prefix */}
-          {allTags.length > 0 && (
+          {/* Tags — from resource_tags junction table */}
+          {tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
-              {allTags.map((t, i) => (
-                <span key={i} className="text-[10px] text-sage-deep bg-sage-light/30 rounded-full px-2 py-0.5">
-                  #{t.startsWith("#") ? t.slice(1) : t}
+              {tags.map((t) => (
+                <span key={t.id} className="text-[10px] text-sage-deep bg-sage-light/30 rounded-full px-2 py-0.5">
+                  #{t.name}
                 </span>
               ))}
             </div>
@@ -760,7 +790,6 @@ function ResourceCard({
             <span className="text-[10px] text-ink-lighter">{TYPE_LABELS[r.content_type || ""] || r.resource_type}</span>
             {r.module && <span className="text-[10px] text-ink-lighter">{r.module}</span>}
             <span className="text-[10px] text-ink-lighter">{new Date(r.created_at).toLocaleDateString("zh-CN")}</span>
-            {r.category_id && <span className="text-[10px] text-ink-lighter">·</span>}
           </div>
         </div>
       </div>
@@ -775,17 +804,21 @@ function ResourceCard({
 function ResourceDetailModal({
   resource: r,
   categories,
+  tags,
   onClose,
   onUpdate,
   onDelete,
   onStatusCycle,
+  onDetachTag,
 }: {
   resource: ResourceRow;
   categories: Category[];
+  tags: TagType[];
   onClose: () => void;
   onUpdate: (id: string, fields: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
   onStatusCycle: (id: string) => void;
+  onDetachTag: (tagId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"source" | "ai" | "personal">("ai");
   const [userNotes, setUserNotes] = useState(r.user_notes || "");
@@ -924,8 +957,8 @@ function ResourceDetailModal({
                   <span className="text-[10px] text-ink-lighter">{r.ai_category}</span>
                 )}
                 {r.ai_recommended_category && (
-                  <span className="text-[10px] text-sage-deep">
-                    AI推荐: {r.ai_recommended_category.name} ({Math.round(r.ai_recommended_category.confidence * 100)}%)
+                  <span className="text-[10px] text-amber-600">
+                    AI推荐分类: {r.ai_recommended_category.name}
                   </span>
                 )}
               </div>
@@ -1023,13 +1056,13 @@ function ResourceDetailModal({
               </div>
 
               {/* Tags */}
-              {r.ai_tags && r.ai_tags.length > 0 && (
+              {tags.length > 0 && (
                 <div>
-                  <h3 className="text-[10px] font-semibold text-ink-lighter uppercase mb-1">AI 标签</h3>
+                  <h3 className="text-[10px] font-semibold text-ink-lighter uppercase mb-1">标签</h3>
                   <div className="flex flex-wrap gap-1">
-                    {r.ai_tags.map((t, i) => (
-                      <span key={i} className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-2 py-0.5 flex items-center gap-1">
-                        <Tag size={8} />{t}
+                    {tags.map((t) => (
+                      <span key={t.id} className="text-[10px] text-sage-deep bg-sage-light/30 rounded-full px-2 py-0.5 inline-flex items-center gap-1">
+                        <Tag size={8} />{t.name}
                       </span>
                     ))}
                   </div>

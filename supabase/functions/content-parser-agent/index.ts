@@ -65,13 +65,10 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
   "action_items": [
     { "action": "具体可执行的行动建议", "priority": "high|medium|low" }
   ],
-  "recommended_category": {
-    "name": "从以下11个默认分类中选择最匹配的：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏",
-    "confidence": 0.9
-  },
+  "suggested_category": "从以下11个系统分类中选择最匹配的一个：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏。如果无法判断，返回空字符串",
   "applicable_scenarios": ["这些知识适用于哪些生活/工作场景"],
   "related_knowledge": ["关联的知识领域或主题"],
-  "tags": ["#关键词1", "#关键词2", "#关键词3"],
+  "tags": ["关键词1", "关键词2", "关键词3"],
   "metadata": {}
 }
 
@@ -83,11 +80,11 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
 - 每条不超过150字
 - 如果没有值得保留的原话，返回空数组 []
 
-**recommended_category（推荐分类）：**
+**suggested_category（建议分类）：**
 - 根据内容主题推荐一个分类
-- name: 必须从以下11个默认分类中选择：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏
-- confidence: 0.0-1.0，根据内容匹配度评估
-- 重要：不要推荐默认分类之外的分类名
+- 必须从以下11个系统分类中选择：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏
+- 如果无法确定分类，返回空字符串 ""
+- 重要：不要推荐系统分类之外的分类名
 
 **applicable_scenarios（适用场景）：**
 - 这些知识在什么情况下可以使用
@@ -290,13 +287,14 @@ HIIT → **必须同时满足**以下条件之一：
 - important_quotes: 1-5条值得保留的原话或数据，没有则空数组
 - action_items: 1-3条，具体可执行
 - summary: 必须是中文，150-250字
-- tags: 3-6个带#前缀的关键词标签，用于快速检索。格式示例：#英语口语 #减脂 #面试技巧。标签应具体、可检索
-- recommended_category: 必须提供。只能从以下11个默认分类中选择：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏。不要建议新的分类名
+- tags: 3-6个关键词标签（不带#前缀），用于快速检索。示例："英语口语", "减脂", "面试技巧"。标签应具体、可检索
+- suggested_category: 必须尝试推荐。只能从以下11个系统分类中选择：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏。无法判断时返回空字符串""
 - applicable_scenarios: 1-3个具体使用场景
 - related_knowledge: 关联的知识领域，帮助建立知识连接
 - 如果无法从链接/文本推断内容，基于上下文合理推断
 - 如果输入为纯文本而非URL，优先分析文本内容本身
-- 重要：不要创建新的分类名称。分类只能从上述11个默认分类中选择`;
+- 重要：tags 是内容关键词，不是平台名。不要用 bilibili/B站/抖音 等平台名作为标签
+- 重要：不要创建新的分类名称。分类只能从上述11个系统分类中选择`;
 
 // ═══════════════════════════════════════════
 // Recipe Parser Prompt v2 — structured, actionable recipes
@@ -1377,7 +1375,7 @@ serve(async (req: Request) => {
       key_points,
       important_quotes: (parsed.important_quotes as string[]) || [],
       action_items,
-      recommended_category: (parsed.recommended_category as Record<string, unknown>) || null,
+      suggested_category: (parsed.suggested_category as string) || "",
       applicable_scenarios: (parsed.applicable_scenarios as string[]) || [],
       related_knowledge: (parsed.related_knowledge as string[]) || [],
       tags,

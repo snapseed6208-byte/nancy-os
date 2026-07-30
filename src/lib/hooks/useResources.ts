@@ -16,6 +16,14 @@ export type Category = {
   name: string;
   icon: string | null;
   color: string | null;
+  type: "system" | "custom" | null;
+  created_at: string;
+};
+
+export type TagType = {
+  id: string;
+  name: string;
+  user_id: string;
   created_at: string;
 };
 
@@ -145,6 +153,127 @@ export function useDeleteCategory() {
   });
 }
 
+// ── Tags ──
+
+async function fetchTags(): Promise<TagType[]> {
+  const { data, error } = await supabase
+    .from("tags")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  return (data || []) as TagType[];
+}
+
+export function useTags() {
+  return useQuery({
+    queryKey: ["tags"],
+    queryFn: fetchTags,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useCreateTags() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (names: string[]) => {
+      const userId = await getUserId();
+      const rows = names.map((name) => ({ user_id: userId, name }));
+      // Use upsert to skip duplicates gracefully
+      const { data, error } = await supabase
+        .from("tags")
+        .upsert(rows, { onConflict: "name, user_id", ignoreDuplicates: true })
+        .select();
+      if (error) throw error;
+      return (data || []) as TagType[];
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+    },
+  });
+}
+
+// Fetch all resource_tags for current user (RLS-filtered)
+async function fetchAllResourceTags(): Promise<Record<string, TagType[]>> {
+  const { data, error } = await supabase
+    .from("resource_tags")
+    .select("resource_id, tags(*)");
+
+  if (error) throw error;
+  const grouped: Record<string, TagType[]> = {};
+  const rows = (data || []) as unknown as Array<{ resource_id: string; tags: TagType }>;
+  for (const row of rows) {
+    if (!grouped[row.resource_id]) grouped[row.resource_id] = [];
+    grouped[row.resource_id].push(row.tags);
+  }
+  return grouped;
+}
+
+export function useAllResourceTags() {
+  return useQuery({
+    queryKey: ["resource_tags_all"],
+    queryFn: fetchAllResourceTags,
+    staleTime: 60 * 1000,
+  });
+}
+
+// Fetch tags for a specific resource
+async function fetchResourceTags(resourceId: string): Promise<TagType[]> {
+  const { data, error } = await supabase
+    .from("resource_tags")
+    .select("tags(*)")
+    .eq("resource_id", resourceId);
+
+  if (error) throw error;
+  return ((data || []) as unknown as Array<{ tags: TagType }>).map((r) => r.tags);
+}
+
+export function useResourceTags(resourceId: string | null) {
+  return useQuery({
+    queryKey: ["resource_tags", resourceId],
+    queryFn: () => fetchResourceTags(resourceId!),
+    enabled: !!resourceId,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAttachTagsToResource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ resourceId, tagIds }: { resourceId: string; tagIds: string[] }) => {
+      const rows = tagIds.map((tag_id) => ({ resource_id: resourceId, tag_id }));
+      const { data, error } = await supabase
+        .from("resource_tags")
+        .upsert(rows, { onConflict: "resource_id, tag_id", ignoreDuplicates: true })
+        .select();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["resource_tags", vars.resourceId] });
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
+export function useDetachTagFromResource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ resourceId, tagId }: { resourceId: string; tagId: string }) => {
+      const { error } = await supabase
+        .from("resource_tags")
+        .delete()
+        .eq("resource_id", resourceId)
+        .eq("tag_id", tagId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["resource_tags", vars.resourceId] });
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
 // ── Fetch Resources ──
 
 async function fetchResources(): Promise<ResourceRow[]> {
@@ -193,7 +322,7 @@ export function useCreateResource() {
       ai_key_points?: string[];
       ai_important_quotes?: string[];
       ai_action_items?: Array<{ action: string; priority: string }>;
-      ai_recommended_category?: { name: string; confidence: number };
+      ai_suggested_category?: string;
       ai_applicable_scenarios?: string[];
       ai_related_knowledge?: string[];
       content_type?: string;
@@ -225,7 +354,7 @@ export function useCreateResource() {
           ai_key_points: input.ai_key_points || null,
           ai_important_quotes: input.ai_important_quotes || null,
           ai_action_items: input.ai_action_items || null,
-          ai_recommended_category: input.ai_recommended_category || null,
+          ai_recommended_category: input.ai_suggested_category ? { name: input.ai_suggested_category, confidence: 0.8 } : null,
           ai_applicable_scenarios: input.ai_applicable_scenarios || null,
           ai_related_knowledge: input.ai_related_knowledge || null,
           content_type: input.content_type || null,
@@ -301,7 +430,7 @@ export type ParsedContent = {
   key_points: string[];
   important_quotes: string[];
   action_items: Array<{ action: string; priority: string }>;
-  recommended_category: { name: string; confidence: number } | null;
+  suggested_category: string;
   applicable_scenarios: string[];
   related_knowledge: string[];
   tags: string[];
