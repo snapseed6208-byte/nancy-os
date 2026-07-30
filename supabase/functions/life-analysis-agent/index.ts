@@ -212,7 +212,7 @@ serve(async (req: Request) => {
       .update({
         ai_summary: summary || null,
         ai_emotion_analysis: emotion_analysis || null,
-        ai_actions,
+        ai_actions: actions,
         ai_thoughts: thoughts,
         ai_themes: themes,
         ai_events: events,
