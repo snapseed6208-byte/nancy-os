@@ -1,15 +1,16 @@
 // ============================================
-// Nancy OS — Source Extractor Agent v1
+// Nancy OS — Source Extractor Agent v2
 // Platform-specific content extraction layer.
 //
 // This agent does NOT call AI.
 // It extracts raw content from the source:
-//   - Bilibili: video title, description, subtitles
+//   - Bilibili: video info API + page INITIAL_STATE → title, description, subtitle
 //   - Xiaohongshu: note title, body, images → OCR
 //   - Douyin: metadata only, returns need_upload if insufficient
 //   - Upload: placeholder for future video processing
 //
 // Output: structured source_content JSONB
+//   { title, description, subtitle, transcript, ocr_text, vision_result, platform }
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -35,20 +36,44 @@ function getCorsHeaders(req: Request): Record<string, string> {
   };
 }
 
+// ── Types ──
+
+interface SourceContent {
+  title: string;
+  description: string;
+  subtitle: string;
+  transcript: string;
+  ocr_text: string;
+  vision_result: string;
+  platform: string;
+}
+
+interface BilibiliVideoInfo {
+  title: string;
+  desc: string;
+  aid: number;
+  bvid: string;
+  cid: number;
+  pages?: Array<{ cid: number; page: number; part: string }>;
+  subtitle?: { subtitles?: Array<{ subtitle_url: string; lan: string }> };
+}
+
 // ── HTML fetching ──
 
-async function fetchHtml(url: string): Promise<string | null> {
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+async function fetchHtml(url: string, referer?: string): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-      },
-    });
+    const headers: Record<string, string> = {
+      "User-Agent": UA,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    };
+    if (referer) headers["Referer"] = referer;
+
+    const resp = await fetch(url, { signal: controller.signal, headers });
     clearTimeout(timeout);
     if (!resp.ok) return null;
     return await resp.text();
@@ -78,10 +103,7 @@ function extractTitle(html: string): string {
 }
 
 function extractDescription(html: string): string {
-  const ogDesc = extractMeta(html, "description");
-  if (ogDesc) return ogDesc;
-  const m = html.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
-  return m?.[1] || "";
+  return extractMeta(html, "description");
 }
 
 function stripHtml(html: string): string {
@@ -99,115 +121,280 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-// ── Platform extractors ──
+// ── B站: Extract BV号 from URL ──
 
-interface SourceContent {
-  title: string;
-  description: string;
-  transcript: string;
-  ocr_text: string;
-  images: string[];
-  platform: string;
-  status?: string;
+function extractBvid(url: string): string | null {
+  // BV1xx411c7mD format
+  const bvMatch = url.match(/BV[a-zA-Z0-9]{10,12}/);
+  if (bvMatch) return bvMatch[0];
+  // b23.tv short link
+  const shortMatch = url.match(/b23\.tv\/([a-zA-Z0-9]+)/);
+  if (shortMatch) return null; // need to follow redirect
+  // av号
+  const avMatch = url.match(/av(\d+)/i);
+  if (avMatch) return `av${avMatch[1]}`;
+  return null;
 }
+
+// ── B站: API-based extraction ──
+
+async function extractBilibiliByApi(bvid: string): Promise<BilibiliVideoInfo | null> {
+  try {
+    const url = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": UA, "Referer": "https://www.bilibili.com/" },
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (json.code !== 0 || !json.data) return null;
+
+    const data = json.data;
+    return {
+      title: data.title || "",
+      desc: data.desc || "",
+      aid: data.aid || 0,
+      bvid: data.bvid || bvid,
+      cid: data.cid || (data.pages?.[0]?.cid) || 0,
+      pages: data.pages || [],
+      subtitle: data.subtitle || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── B站: Subtitle extraction via player API ──
+
+async function fetchBilibiliSubtitle(bvid: string, cid: number): Promise<string> {
+  try {
+    const url = `https://api.bilibili.com/x/player/v2?bvid=${bvid}&cid=${cid}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": UA, "Referer": "https://www.bilibili.com/" },
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) return "";
+    const json = await resp.json();
+    if (json.code !== 0 || !json.data) return "";
+
+    // Try subtitle from player API
+    const subtitles = json.data?.subtitle?.subtitles;
+    if (subtitles && subtitles.length > 0) {
+      const subtitleUrl = subtitles[0].subtitle_url;
+      if (subtitleUrl) {
+        const subResp = await fetch(subtitleUrl.startsWith("http") ? subtitleUrl : `https:${subtitleUrl}`);
+        if (subResp.ok) {
+          const subJson = await subResp.json();
+          const lines = (subJson?.body || [])
+            .map((item: { content?: string }) => item.content || "")
+            .filter((c: string) => c.trim().length > 0);
+          return lines.join("\n");
+        }
+      }
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+// ── B站: Page-based extraction ──
 
 async function extractBilibili(url: string): Promise<SourceContent> {
   console.log(`[source-extractor] Bilibili: ${url}`);
 
-  const html = await fetchHtml(url);
-  if (!html) {
-    return { title: "", description: "", transcript: "", ocr_text: "", images: [], platform: "bilibili", status: "need_upload" };
+  const bvid = extractBvid(url);
+  const empty: SourceContent = {
+    title: "", description: "", subtitle: "", transcript: "",
+    ocr_text: "", vision_result: "", platform: "bilibili",
+  };
+
+  if (!bvid || bvid.startsWith("av")) {
+    // For AV numbers or short links, fall back to HTML parsing
+    console.log(`[source-extractor] Bilibili: no BV号 found, falling back to HTML`);
   }
 
-  // Extract embedded video data (B站 embeds initial state in <script>)
-  let title = extractTitle(html);
-  let description = extractDescription(html);
+  // Strategy 1: B站 API (most reliable)
+  let videoInfo: BilibiliVideoInfo | null = null;
+  let subtitleText = "";
+  let transcriptText = "";
 
-  // Try to find __INITIAL_STATE__ or window.__playinfo__
-  const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/);
-  if (stateMatch) {
-    try {
-      const state = JSON.parse(stateMatch[1]);
-      title = state?.videoData?.title || title;
-      description = state?.videoData?.desc || description;
-
-      // Check for subtitle availability
-      const subtitleUrl = state?.videoData?.subtitle?.subtitles?.[0]?.subtitle_url;
-      if (subtitleUrl) {
-        console.log(`[source-extractor] Bilibili subtitle found: ${subtitleUrl}`);
-        const subtitleResp = await fetch(`https:${subtitleUrl}`);
-        if (subtitleResp.ok) {
-          const subtitleJson = await subtitleResp.json();
-          const transcript = (subtitleJson?.body || [])
-            .map((item: { content?: string }) => item.content || "")
-            .join("\n");
-          if (transcript.length > 50) {
-            return {
-              title: title || "",
-              description: description || "",
-              transcript,
-              ocr_text: "",
-              images: [],
-              platform: "bilibili",
-              status: "ok",
-            };
-          }
+  if (bvid && !bvid.startsWith("av")) {
+    videoInfo = await extractBilibiliByApi(bvid);
+    if (videoInfo) {
+      console.log(`[source-extractor] Bilibili API success: title="${videoInfo.title.slice(0, 60)}" cid=${videoInfo.cid}`);
+      // Fetch subtitle via player API
+      if (videoInfo.cid) {
+        subtitleText = await fetchBilibiliSubtitle(bvid, videoInfo.cid);
+        if (subtitleText) {
+          console.log(`[source-extractor] Bilibili subtitle: ${subtitleText.length} chars`);
         }
       }
-    } catch { /* state parse failed, continue with HTML extraction */ }
+    }
   }
 
-  // Fallback: extract body text as best-effort description
-  const bodyText = stripHtml(html).slice(0, 3000);
-  const hasContent = title.length > 0 || bodyText.length > 100;
+  // Strategy 2: HTML page parsing (fallback)
+  if (!videoInfo) {
+    console.log(`[source-extractor] Bilibili: API failed, trying HTML parsing`);
+    const html = await fetchHtml(url, "https://www.bilibili.com/");
+    if (!html) return empty;
 
-  return {
-    title: title || "",
-    description: (description || bodyText).slice(0, 2000),
-    transcript: "",
+    // Detect error pages
+    if (html.includes("视频去哪了") || html.includes("视频不见了")) {
+      console.log(`[source-extractor] Bilibili: video not found (deleted or invalid)`);
+      return empty;
+    }
+    if (html.includes("啊叻") && html.includes("视频不见了")) {
+      console.log(`[source-extractor] Bilibili: video removed`);
+      return empty;
+    }
+
+    // Extract __INITIAL_STATE__ with greedy matching for nested JSON
+    // Find the script tag containing window.__INITIAL_STATE__
+    const scriptMatch = html.match(/<script[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/i);
+    let stateJson = scriptMatch?.[1];
+
+    // If not found, try alternative patterns
+    if (!stateJson) {
+      const altMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/);
+      stateJson = altMatch?.[1];
+    }
+
+    let title = extractTitle(html);
+    let description = extractDescription(html);
+
+    if (stateJson) {
+      try {
+        const state = JSON.parse(stateJson);
+        const vd = state?.videoData;
+        if (vd) {
+          title = vd.title || title;
+          description = vd.desc || description;
+
+          videoInfo = {
+            title: title || "",
+            desc: description || "",
+            aid: vd.aid || 0,
+            bvid: vd.bvid || bvid || "",
+            cid: vd.cid || (vd.pages?.[0]?.cid) || 0,
+            pages: vd.pages || [],
+            subtitle: vd.subtitle || null,
+          };
+
+          // Try subtitle URL from INITIAL_STATE
+          const subtitleUrl = vd.subtitle?.subtitles?.[0]?.subtitle_url;
+          if (subtitleUrl) {
+            const fullUrl = subtitleUrl.startsWith("http") ? subtitleUrl : `https:${subtitleUrl}`;
+            console.log(`[source-extractor] Bilibili subtitle URL from INITIAL_STATE: ${fullUrl}`);
+            const subResp = await fetch(fullUrl);
+            if (subResp.ok) {
+              const subJson = await subResp.json();
+              subtitleText = (subJson?.body || [])
+                .map((item: { content?: string }) => item.content || "")
+                .filter((c: string) => c.trim().length > 0)
+                .join("\n");
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[source-extractor] Bilibili INITIAL_STATE parse failed: ${(e as Error).message.slice(0, 80)}`);
+        // Continue with meta extraction
+      }
+    }
+
+    // Fallback description from body text
+    if (!description) {
+      description = stripHtml(html).slice(0, 2000);
+    }
+  }
+
+  // Build transcript from subtitle text
+  transcriptText = subtitleText;
+
+  // Also try player API for subtitle if we have bvid+cid from HTML
+  if (!transcriptText && videoInfo?.bvid && videoInfo?.cid && !bvid?.startsWith("av")) {
+    transcriptText = await fetchBilibiliSubtitle(videoInfo.bvid, videoInfo.cid);
+  }
+
+  // If we got title but no videoInfo object, create one
+  if (!videoInfo) {
+    const html = await fetchHtml(url, "https://www.bilibili.com/");
+    if (html) {
+      videoInfo = {
+        title: extractTitle(html),
+        desc: extractDescription(html) || stripHtml(html).slice(0, 2000),
+        aid: 0, bvid: bvid || "", cid: 0,
+      };
+    } else {
+      return empty;
+    }
+  }
+
+  const result: SourceContent = {
+    title: videoInfo.title || "",
+    description: videoInfo.desc || "",
+    subtitle: subtitleText,
+    transcript: transcriptText,
     ocr_text: "",
-    images: [],
+    vision_result: "",
     platform: "bilibili",
-    status: hasContent ? "ok" : "need_upload",
   };
+
+  console.log(
+    `[source-extractor] Bilibili result: title="${result.title.slice(0, 60)}" ` +
+    `desc=${result.description.length} chars subtitle=${result.subtitle.length} chars transcript=${result.transcript.length} chars`,
+  );
+
+  return result;
 }
+
+// ── 小红书 extraction ──
 
 async function extractXiaohongshu(url: string): Promise<SourceContent> {
   console.log(`[source-extractor] Xiaohongshu: ${url}`);
 
+  const empty: SourceContent = {
+    title: "", description: "", subtitle: "", transcript: "",
+    ocr_text: "", vision_result: "", platform: "xiaohongshu",
+  };
+
   const html = await fetchHtml(url);
-  if (!html) {
-    return { title: "", description: "", transcript: "", ocr_text: "", images: [], platform: "xiaohongshu", status: "need_upload" };
-  }
+  if (!html) return empty;
 
   const title = extractTitle(html);
   const description = extractDescription(html);
 
-  // Extract images from meta tags
-  const images: string[] = [];
-  const imgMatches = html.matchAll(/<meta\s+property="og:image"\s+content="([^"]*)"/gi);
-  for (const m of imgMatches) {
-    if (m[1]) images.push(m[1]);
-  }
-
   // Extract body text
   const bodyText = stripHtml(html).slice(0, 5000);
-
-  const hasContent = title.length > 0 || bodyText.length > 100 || images.length > 0;
 
   return {
     title: title || "",
     description: description || bodyText.slice(0, 2000),
+    subtitle: "",
     transcript: "",
     ocr_text: "",
-    images,
+    vision_result: "",
     platform: "xiaohongshu",
-    status: hasContent ? "ok" : "need_upload",
   };
 }
 
+// ── 抖音 extraction ──
+
 async function extractDouyin(url: string): Promise<SourceContent> {
   console.log(`[source-extractor] Douyin: ${url}`);
+
+  const empty: SourceContent = {
+    title: "", description: "", subtitle: "", transcript: "",
+    ocr_text: "", vision_result: "", platform: "douyin",
+  };
 
   const html = await fetchHtml(url);
 
@@ -217,22 +404,19 @@ async function extractDouyin(url: string): Promise<SourceContent> {
   if (html) {
     title = extractTitle(html);
     description = extractDescription(html);
-    // Also try to find video info in script tags
+    // Try to find video info in script tags
     const videoData = html.match(/"desc":"([^"]+)"/);
     if (videoData?.[1]) description = videoData[1];
   }
 
-  // Douyin: if we only have title, that's not enough — return need_upload
-  const hasRealContent = description.length > 20 || (html && stripHtml(html).length > 200);
-
   return {
     title: title || "",
     description: description.slice(0, 2000),
+    subtitle: "",
     transcript: "",
     ocr_text: "",
-    images: [],
+    vision_result: "",
     platform: "douyin",
-    status: hasRealContent ? "ok" : "need_upload",
   };
 }
 
@@ -281,11 +465,9 @@ serve(async (req: Request) => {
         content = await extractDouyin(url);
         break;
       case "upload":
-        // Placeholder for future video upload processing
         content = {
-          title: "", description: "", transcript: "", ocr_text: "", images: [],
-          platform: "upload",
-          status: "need_upload",
+          title: "", description: "", subtitle: "", transcript: "",
+          ocr_text: "", vision_result: "", platform: "upload",
         };
         break;
       default:
@@ -294,19 +476,20 @@ serve(async (req: Request) => {
         content = {
           title: html ? extractTitle(html) : "",
           description: html ? extractDescription(html) : "",
+          subtitle: "",
           transcript: "",
           ocr_text: "",
-          images: [],
+          vision_result: "",
           platform: source_type,
-          status: "ok",
         };
     }
 
     console.log(
       `[source-extractor] Result: platform=${content.platform} ` +
       `title="${content.title.slice(0, 60)}" ` +
-      `transcript=${content.transcript.length} chars ` +
-      `status=${content.status}`,
+      `desc=${content.description.length} chars ` +
+      `subtitle=${content.subtitle.length} chars ` +
+      `transcript=${content.transcript.length} chars`,
     );
 
     // Log extraction
@@ -317,8 +500,10 @@ serve(async (req: Request) => {
       input_data: { url, source_type, recipe_id: body.recipe_id },
       output_data: {
         title: content.title.slice(0, 120),
+        desc_len: content.description.length,
+        subtitle_len: content.subtitle.length,
         transcript_len: content.transcript.length,
-        status: content.status,
+        platform: content.platform,
       },
       model: "none",
       tokens_used: 0,

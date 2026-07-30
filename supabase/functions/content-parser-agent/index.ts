@@ -1,10 +1,9 @@
 // ============================================
-// Nancy OS — Content Parser Agent v8
-// v6: URL content fetching + relaxed recipe validation + partial data saving
-// v7: source_context priority + partial status + 3-level context strategy
-// v8: Recipe path split — real content only via RECIPE_PARSER_PROMPT,
-//     source_content from source-extractor-agent, no more guessing,
-//     confidence field, need_upload status.
+// Nancy OS — Content Parser Agent v9
+// v9: Recipe pipeline — new prompt with source_text, confidence rules,
+//     confidence=low → no full recipe, simplified 5-state status,
+//     source_content fields: subtitle, vision_result.
+// v8: Recipe path split — real content only via RECIPE_PARSER_PROMPT.
 // Accepts URL or text, routes to resources/workout_videos/recipes
 // ============================================
 
@@ -270,21 +269,27 @@ HIIT → **必须同时满足**以下条件之一：
 const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
 
 ## 你的任务
-根据提供的**真实内容**整理食谱，不要创作或猜测。
+你的任务不是创造食谱。
+你的任务只是整理——从提供的真实内容中提取已有的信息。
 
-## 真实内容来源
-用户会提供以下一种或多种：
-- 视频字幕/文字记录（transcript）
-- OCR识别的文字（ocr_text）
-- 用户手动输入的描述（source_context）
-- 视频标题和简介（title + description）
+## 输入格式
+用户会提供 source_content，包含以下字段：
+{
+  title: "视频/笔记的标题",
+  description: "视频/笔记的简介",
+  subtitle: "原始字幕文字",
+  transcript: "完整文字记录",
+  ocr_text: "OCR识别的文字",
+  vision_result: "视觉识别结果",
+  platform: "来源平台"
+}
 
 ## 核心原则
 
 ### 禁止事项
 1. ❌ 不允许根据标题猜测食材或用量
 2. ❌ 不允许根据经验补全不存在的信息
-3. ❌ 不允许创造视频中未出现的步骤
+3. ❌ 不允许创造来源中未出现的步骤
 4. ❌ 不允许为了"完整"而编造数据
 
 ### 必须遵守
@@ -292,43 +297,48 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
 2. ✅ 如果某个信息在来源中不存在，该字段返回 null 或空数组
 3. ✅ 准确度优先于完整性
 
-## 输出格式 — 严格 JSON
+## 输出格式 — 严格 JSON（不要 markdown 代码块）
 
 {
-  "name": "从内容中提取的食谱名称（中文）",
-  "ingredients_json": [
+  "name": "从内容中提取的食谱名称",
+  "ingredients": [
     { "name": "食材名称", "amount": "用量" }
   ],
-  "steps_json": [
+  "steps": [
     { "order": 1, "text": "步骤描述" }
   ],
-  "ai_summary": "1-2句话的食谱摘要",
-  "calories_per_serving": null,
-  "protein_grams": null,
-  "carbs_grams": null,
-  "fat_grams": null,
-  "goal": [],
-  "meal_time": [],
+  "notes": "补充说明（可选，没有则为 null）",
+  "source_text": "AI 参考的原始内容摘要（保留关键信息）",
   "confidence": "high"
 }
 
-## confidence 规则
+## 字段说明
 
-- "high": 信息来自字幕、正文或完整的用户输入
-- "medium": 信息来自OCR识别或视觉分析
-- "low": 信息来源有限（仅标题），此时 ingredients_json 和 steps_json 应为空数组
+### source_text
+保存 AI 整理时参考的原始内容。用于用户验证 AI 是否基于真实内容。
+- 从 source_content 中提取关键部分
+- 保留食材清单和步骤的原文
+- 保留标题和简介中的关键描述
+- 不要添加原始内容中没有的信息
 
-## 营养估算规则
+### confidence 规则
+- "high": 有字幕、正文或完整的文字记录 — 信息充足，可以生成完整食谱
+- "medium": 来自 OCR 识别或视觉分析 — 信息可能不完整，需要谨慎
+- "low": 只有标题或极少量信息 — **禁止生成完整食谱**
 
-- 如果真实内容中包含了食材和用量，可以根据食材合理估算
-- 如果内容中只有食材名称没有用量，calories_per_serving 等字段必须为 null
-- 宁可返回 null，也不要瞎编数字
+### 如果 confidence = "low"
+- ingredients 必须为空数组 []
+- steps 必须为空数组 []
+- name 只使用标题文字
+- notes 说明"信息不足，无法整理完整食谱"
+- source_text 保留已有的少量原文
 
 ## 特别注意
-
-- 如果用户提供的 source_context 包含了食谱名称，用它作为 name
-- 步骤中的时间信息（如"焖煮15分钟"）只在内容明确提及时才填写 duration
+- 步骤中的时间信息（如"焖煮15分钟"）只在内容明确提及时才填写
+- 用量单位（g、ml、勺等）只使用原文中出现的
 - 不要从标题推断完整食谱——标题只是参考信息`;
+
+// ── JSON Schema validation ──
 
 function parseAIJson(raw: string): Record<string, unknown> {
   let cleaned = raw.trim().replace(/^﻿/, "");
@@ -576,25 +586,27 @@ serve(async (req: Request) => {
         const sc = sourceContent as Record<string, unknown>;
         if (sc.title) parts.push(`## 来源标题\n${sc.title}`);
         if (sc.description) parts.push(`## 来源简介\n${(sc.description as string).slice(0, 2000)}`);
-        if (sc.transcript) parts.push(`## 视频字幕/文字记录\n${(sc.transcript as string).slice(0, 5000)}`);
+        if (sc.subtitle) parts.push(`## 原始字幕\n${(sc.subtitle as string).slice(0, 5000)}`);
+        if (sc.transcript) parts.push(`## 完整文字记录\n${(sc.transcript as string).slice(0, 5000)}`);
         if (sc.ocr_text) parts.push(`## OCR识别文字\n${(sc.ocr_text as string).slice(0, 3000)}`);
+        if (sc.vision_result) parts.push(`## 视觉识别结果\n${(sc.vision_result as string).slice(0, 3000)}`);
         if (sc.platform) parts.push(`## 来源平台\n${sc.platform}`);
       }
 
-      // If no real content at all, return need_upload
+      // If no real content at all, return failed
       const hasRealContent = parts.length > 0;
       if (!hasRealContent) {
         if (recipeId) {
           await supabase.from("recipes").update({
-            ai_analysis_status: "need_upload",
+            ai_analysis_status: "failed",
             ai_summary: "无法从此链接获取真实内容。请上传视频文件以确保食谱准确性。",
             confidence: "low",
           }).eq("id", recipeId);
         }
         return jsonResponse({
           error: "no_content",
-          message: "无法获取真实内容，需要用户上传视频",
-          ai_analysis_status: "need_upload",
+          message: "无法获取真实内容，请上传视频",
+          ai_analysis_status: "failed",
         }, req, 200);
       }
 
@@ -787,7 +799,7 @@ serve(async (req: Request) => {
       // Validate recipe metadata — non-blocking for video/title-only sources
       const recipeValidation = validateRecipeMetadata(metadata);
 
-      // Extract recipe name from metadata or title
+      // Extract recipe name from metadata
       const recipeName = (metadata.name as string) || title;
 
       // Build goal array
@@ -800,16 +812,25 @@ serve(async (req: Request) => {
             : [];
       }
 
-      // Determine final ingredients/steps
-      const finalIngredients = (Array.isArray(metadata.ingredients_json) ? metadata.ingredients_json : []) as unknown[];
-      const finalSteps = (Array.isArray(metadata.steps_json) ? metadata.steps_json : []) as unknown[];
-
-      // Determine AI status using confidence from AI response
+      // Extract new fields: ingredients, steps, source_text, confidence
+      const aiIngredients = (metadata.ingredients || metadata.ingredients_json || []) as Array<{ name?: string; amount?: string; category?: string }>;
+      const aiSteps = (metadata.steps || metadata.steps_json || []) as Array<{ order?: number; text?: string; duration?: number }>;
+      const aiSourceText = (metadata.source_text as string) || "";
       const confidence = (metadata.confidence as string) || "medium";
 
+      // Enforce confidence rules:
+      // low → no full recipe, empty ingredients/steps
+      const finalIngredients = confidence === "low" ? [] : aiIngredients;
+      const finalSteps = confidence === "low" ? [] : aiSteps;
+
+      const hasName = recipeName && recipeName !== "未命名食谱";
+      const hasIngredients = finalIngredients.length > 0;
+      const hasSteps = finalSteps.length > 0;
+
+      // Determine AI status using simplified 5-state model
+      let aiStatus: string;
       if (confidence === "low") {
-        // Low confidence = AI doesn't have enough real content
-        aiStatus = "need_upload";
+        aiStatus = "partial";
       } else if (!hasName && !hasIngredients && !hasSteps) {
         aiStatus = "failed";
       } else if (hasName && hasIngredients && hasSteps) {
@@ -818,21 +839,15 @@ serve(async (req: Request) => {
         aiStatus = "partial";
       }
 
-      // Build ai_summary: combine AI's summary, validation warnings, and context notes
+      // Build ai_summary: preserve source_text + validation info
       const aiSummaryParts: string[] = [];
-      if (metadata.ai_summary) aiSummaryParts.push((metadata.ai_summary as string));
-      if (recipeValidation.warnings.length > 0) {
-        aiSummaryParts.push(`\n⚠️ ${recipeValidation.warnings.join("；")}`);
-      }
+      if (aiSourceText) aiSummaryParts.push(aiSourceText);
       if (aiStatus === "partial") {
         const missing: string[] = [];
         if (!hasIngredients) missing.push("食材清单");
         if (!hasSteps) missing.push("烹饪步骤");
         if (!hasName) missing.push("食谱名称");
         aiSummaryParts.push(`\n📝 状态：部分整理（缺少：${missing.join("、")}）。请在食谱详情中手动补充。`);
-      }
-      if (aiStatus === "need_upload") {
-        aiSummaryParts.push(`\n📤 信息来源有限，无法确认食谱准确性。建议上传视频文件获取完整内容。`);
       }
       if (aiStatus === "failed") {
         aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑或尝试上传视频文件。`);
@@ -842,7 +857,7 @@ serve(async (req: Request) => {
       const updateFields = {
         name: recipeName || "未命名食谱",
         image_url: (metadata.image_url as string) || null,
-        category: metadata.category as string || category,
+        category: (metadata.category as string) || category,
         meal_time: (metadata.meal_time as string[]) || [],
         goal: goalArray.length > 0 ? goalArray : null,
         health_level: (metadata.health_level as string) || null,
@@ -862,7 +877,7 @@ serve(async (req: Request) => {
       console.log(
         `[content-parser-agent] Recipe result: name="${recipeName.slice(0, 60)}" ` +
         `ingredients=${finalIngredients.length} steps=${finalSteps.length} ` +
-        `status=${aiStatus} confidence=${confidence}`,
+        `status=${aiStatus} confidence=${confidence} source_text=${aiSourceText.length} chars`,
       );
 
       if (recipeId) {

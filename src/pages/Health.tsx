@@ -1424,11 +1424,9 @@ function RecipeBoxTab() {
 
   const getStatusBadge = (status: string | null) => {
     if (status === "completed") return { label: "AI已整理", cls: "bg-emerald-50 text-emerald-600" };
-    if (status === "extracting") return { label: "提取内容中", cls: "bg-yellow-50 text-yellow-600" };
-    if (status === "analyzing") return { label: "AI整理中", cls: "bg-blue-50 text-blue-600" };
+    if (status === "processing") return { label: "正在处理", cls: "bg-blue-50 text-blue-600" };
     if (status === "partial") return { label: "部分整理", cls: "bg-amber-50 text-amber-600" };
-    if (status === "need_upload") return { label: "请上传视频", cls: "bg-orange-50 text-orange-600" };
-    if (status === "failed") return { label: "分析失败", cls: "bg-red-50 text-red-500" };
+    if (status === "failed") return { label: "处理失败", cls: "bg-red-50 text-red-500" };
     return { label: "等待处理", cls: "bg-slate-50 text-slate-500" };
   };
 

@@ -29,12 +29,10 @@ function getPlatformBadge(platform: string | null) {
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
   pending: { label: "等待处理", color: "bg-slate-50 text-slate-500", dot: "bg-slate-400" },
-  extracting: { label: "正在提取内容", color: "bg-yellow-50 text-yellow-600", dot: "bg-yellow-400" },
-  analyzing: { label: "AI整理中", color: "bg-blue-50 text-blue-600", dot: "bg-blue-400" },
+  processing: { label: "正在处理", color: "bg-blue-50 text-blue-600", dot: "bg-blue-400" },
   completed: { label: "AI已整理", color: "bg-emerald-50 text-emerald-600", dot: "bg-emerald-400" },
-  partial: { label: "部分整理，需要补充", color: "bg-amber-50 text-amber-600", dot: "bg-amber-400" },
-  need_upload: { label: "请上传视频", color: "bg-orange-50 text-orange-600", dot: "bg-orange-400" },
-  failed: { label: "分析失败", color: "bg-red-50 text-red-500", dot: "bg-red-400" },
+  partial: { label: "部分整理", color: "bg-amber-50 text-amber-600", dot: "bg-amber-400" },
+  failed: { label: "处理失败", color: "bg-red-50 text-red-500", dot: "bg-red-400" },
 };
 
 export default function RecipeDetailModal({

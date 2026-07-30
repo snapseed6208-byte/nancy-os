@@ -445,7 +445,7 @@ export function useCreateRecipe() {
       if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
       const platform = detectUrlPlatform(normalized);
 
-      // Step 1: Insert with extracting status
+      // Step 1: Insert with processing status
       const { data, error } = await supabase
         .from("recipes")
         .insert({
@@ -455,7 +455,7 @@ export function useCreateRecipe() {
           source_platform: platform,
           source_type: input.source_type,
           notes: input.source_context || null,
-          ai_analysis_status: "extracting",
+          ai_analysis_status: "processing",
         })
         .select()
         .single();
@@ -479,8 +479,8 @@ async function invokeRecipePipeline(
   sourceType: RecipeSourceType,
   sourceContext?: string,
 ) {
-  // Step A: Set status → extracting
-  await supabase.from("recipes").update({ ai_analysis_status: "extracting" }).eq("id", recipeId);
+  // Step A: Set status → processing
+  await supabase.from("recipes").update({ ai_analysis_status: "processing" }).eq("id", recipeId);
 
   // Step B: Extract source content
   let sourceContent: Record<string, unknown> | null = null;
@@ -490,19 +490,25 @@ async function invokeRecipePipeline(
     });
     if (!extractResult.error && extractResult.data) {
       sourceContent = extractResult.data as Record<string, unknown>;
+      // Save source_content to recipe
       await supabase.from("recipes").update({
         source_content: sourceContent,
-        ai_analysis_status: "analyzing",
+        ai_analysis_status: "processing",
       }).eq("id", recipeId);
     }
   } catch {
-    // Extraction failed — try direct AI with source_context only
+    // Extraction failed — continue with source_context only
   }
 
-  // If extraction returned need_upload status, mark recipe
-  if (sourceContent && (sourceContent as { status?: string }).status === "need_upload") {
+  // If extraction returned no content at all, mark failed
+  const hasContent = sourceContent
+    && ((sourceContent as Record<string, unknown>).title
+      || (sourceContent as Record<string, unknown>).description
+      || (sourceContent as Record<string, unknown>).transcript
+      || (sourceContent as Record<string, unknown>).subtitle);
+  if (sourceContent && !hasContent) {
     await supabase.from("recipes").update({
-      ai_analysis_status: "need_upload",
+      ai_analysis_status: "failed",
       ai_summary: "无法从此链接获取真实内容。请上传视频文件以确保食谱准确性。",
     }).eq("id", recipeId);
     return;
