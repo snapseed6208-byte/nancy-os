@@ -108,6 +108,7 @@ export default function Resources() {
 
           <div className="flex gap-3">
             <input
+              type="url"
               value={form.url}
               onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
               placeholder="URL 链接 (可选)"

@@ -6,6 +6,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
+import { normalizeUrl } from "@/lib/utils";
 
 // ── Types ──
 
@@ -84,9 +85,10 @@ export function useCreateJob() {
       notes?: string;
     }) => {
       const userId = await getUserId();
+      const normalizedJdUrl = input.jd_url ? normalizeUrl(input.jd_url) : null;
       const { data, error } = await supabase
         .from("jobs")
-        .insert({ ...input, user_id: userId })
+        .insert({ ...input, user_id: userId, jd_url: normalizedJdUrl })
         .select()
         .single();
       if (error) throw error;

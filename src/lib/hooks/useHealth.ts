@@ -6,6 +6,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
+import { normalizeUrl, detectUrlPlatform } from "@/lib/utils";
 
 // ── Types ──
 
@@ -242,13 +243,15 @@ export function useCreateWorkoutVideo() {
   return useMutation({
     mutationFn: async (input: { url: string }) => {
       const userId = await getUserId();
-      const platform = detectPlatform(input.url);
+      const normalized = normalizeUrl(input.url);
+      if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
+      const platform = detectUrlPlatform(normalized);
 
       const { data, error } = await supabase
         .from("workout_videos")
         .insert({
           user_id: userId,
-          url: input.url,
+          url: normalized,
           platform,
           title: null,
           category: null,
@@ -334,14 +337,16 @@ export function useCreateRecipe() {
   return useMutation({
     mutationFn: async (input: { source_url: string }) => {
       const userId = await getUserId();
-      const platform = detectPlatform(input.source_url);
+      const normalized = normalizeUrl(input.source_url);
+      if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
+      const platform = detectUrlPlatform(normalized);
 
       const { data, error } = await supabase
         .from("recipes")
         .insert({
           user_id: userId,
           name: "",
-          source_url: input.source_url,
+          source_url: normalized,
           source_platform: platform,
         })
         .select()
@@ -1127,12 +1132,5 @@ export function useHealthGoals() {
   });
 }
 
-// ── Helpers ──
 
-function detectPlatform(url: string): string {
-  if (url.includes("bilibili.com") || url.includes("b23.tv")) return "bilibili";
-  if (url.includes("douyin.com") || url.includes("v.douyin.com")) return "douyin";
-  if (url.includes("xiaohongshu.com") || url.includes("xhslink.com")) return "xiaohongshu";
-  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube";
-  return "web";
-}
+

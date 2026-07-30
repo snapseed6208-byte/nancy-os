@@ -6,6 +6,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
+import { normalizeUrl } from "@/lib/utils";
 
 // ── Types ──
 
@@ -76,12 +77,13 @@ export function useCreateResource() {
       notes?: string;
     }) => {
       const userId = await getUserId();
+      const normalizedUrl = input.url ? normalizeUrl(input.url) : null;
       const { data, error } = await supabase
         .from("resources")
         .insert({
           user_id: userId,
           title: input.title,
-          url: input.url || null,
+          url: normalizedUrl,
           resource_type: input.resource_type || "article",
           module: input.module || null,
           tags: input.tags || null,
@@ -113,9 +115,10 @@ export function useUpdateResource() {
       is_archived?: boolean;
     }) => {
       const { id, ...fields } = input;
+      const normalizedUrl = fields.url ? normalizeUrl(fields.url) : undefined;
       const { data, error } = await supabase
         .from("resources")
-        .update({ ...fields, updated_at: new Date().toISOString() })
+        .update({ ...fields, url: normalizedUrl ?? fields.url, updated_at: new Date().toISOString() })
         .eq("id", id)
         .select()
         .single();
