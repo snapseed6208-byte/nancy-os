@@ -1494,16 +1494,16 @@ function RecipeBoxTab() {
                 type="text"
                 value={manualName}
                 onChange={(e) => setManualName(e.target.value)}
-                placeholder="食谱名称，例：番茄鸡胸肉意面"
+                placeholder="菜名（可选），例：番茄鸡胸肉意面"
                 className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors"
-                autoFocus
               />
               <textarea
                 value={manualContent}
                 onChange={(e) => setManualContent(e.target.value)}
-                placeholder="食材和步骤，例：&#10;食材：鸡胸肉 200g、西兰花 100g&#10;步骤：&#10;1. 鸡胸肉切丁，加料酒腌制&#10;2. 西兰花焯水&#10;3. 热锅少油翻炒至熟"
+                placeholder="食谱内容&#10;粘贴食谱文字、视频文案或描述&#10;例：&#10;食材：鸡胸肉 200g、西兰花 100g&#10;步骤：&#10;1. 鸡胸肉切丁，加料酒腌制&#10;2. 西兰花焯水&#10;3. 热锅少油翻炒至熟"
                 className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
                 rows={5}
+                autoFocus
               />
             </div>
           ) : (

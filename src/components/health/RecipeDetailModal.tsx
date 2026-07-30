@@ -41,10 +41,21 @@ type ContentSource = {
 
 function deriveContentSources(
   sourceContent: Record<string, unknown> | null,
+  sourceType: RecipeSourceType | null,
 ): ContentSource[] {
   if (!sourceContent) return [];
-  const sc = sourceContent;
 
+  // Manual input: user-provided text, not extracted from platform
+  if (sourceType === "manual") {
+    const hasContent = typeof sourceContent.description === "string" && (sourceContent.description as string).trim().length > 20;
+    return [{
+      icon: FileText,
+      label: "手动输入内容",
+      status: hasContent ? "yes" : "partial",
+    }];
+  }
+
+  const sc = sourceContent;
   const sources: ContentSource[] = [];
 
   // Check subtitle
@@ -133,7 +144,10 @@ export default function RecipeDetailModal({
   const confidence = CONFIDENCE_CONFIG[recipe.confidence || ""] || null;
   const ingredients = Array.isArray(recipe.ingredients_json) ? recipe.ingredients_json : [];
   const steps = Array.isArray(recipe.steps_json) ? recipe.steps_json : [];
-  const contentSources = deriveContentSources(recipe.source_content as Record<string, unknown> | null);
+  const contentSources = deriveContentSources(
+    recipe.source_content as Record<string, unknown> | null,
+    recipe.source_type,
+  );
 
   const handleSave = async (input: {
     name: string;

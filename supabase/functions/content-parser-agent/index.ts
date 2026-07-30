@@ -272,6 +272,28 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
 你的任务不是创造食谱。
 你的任务只是整理——从提供的「来源素材」中提取已有的信息。
 
+## 提取流程（严格按顺序）
+
+### 第一步：识别菜名
+- 从标题或正文第一行提取菜名
+- name 只能是菜名本身，5-25字为宜
+- ❌ name 不能包含食材清单
+- ❌ name 不能包含步骤文字
+- ❌ name 不能包含"食材准备""制作步骤"等段落标题
+- ❌ name 不能包含克数、用量、时间
+
+### 第二步：提取食材
+- 找到食材相关的段落
+- 逐个拆分为独立食材
+- 每个食材提取名称和用量
+- ❌ 禁止把整段文字放进一个食材条目
+
+### 第三步：提取步骤
+- 找到制作步骤段落
+- 按编号或自然段落拆分为独立步骤
+- 每个步骤单独一条
+- ❌ 禁止把全部步骤放进一个条目
+
 ## 输入格式
 用户会提供「来源素材」（source_material），格式如下：
 
@@ -288,6 +310,7 @@ OCR: <从图片中OCR识别出的文字>
 3. ❌ 不允许创造来源中未出现的步骤
 4. ❌ 不允许为了"完整"而编造数据
 5. ❌ 如果正文和字幕都没有食谱内容，禁止凭空生成
+6. ❌ 禁止把 name 当成容器——name 只能是菜名
 
 ### 必须遵守
 1. ✅ 只提取明确出现在来源素材中的食材和步骤
@@ -298,12 +321,12 @@ OCR: <从图片中OCR识别出的文字>
 ## 输出格式 — 严格 JSON（不要 markdown 代码块）
 
 {
-  "name": "从内容中提取的食谱名称",
+  "name": "菜名（仅菜名，5-25字）",
   "ingredients": [
-    { "name": "食材名称", "amount": "用量" }
+    { "name": "单个食材名称", "amount": "该食材用量" }
   ],
   "steps": [
-    { "order": 1, "text": "步骤描述" }
+    { "order": 1, "text": "单一步骤描述" }
   ],
   "notes": "补充说明（可选，没有则为 null）",
   "source_text": "AI 参考的原始内容摘要（保留关键信息，方便人工验证）",
@@ -323,6 +346,7 @@ OCR: <从图片中OCR识别出的文字>
 - source_text 保留已有的少量原文
 
 ## 特别注意
+- name 长度超过 30 字说明你放错内容了——name 不是食材/steps 的容器
 - 步骤中的时间信息（如"焖煮15分钟"）只在来源素材明确提及时才填写
 - 用量单位（g、ml、勺等）只使用原文中出现的
 - 不要从标题推断完整食谱——标题只是参考信息，不能作为食材/步骤的依据`;
@@ -343,6 +367,120 @@ function parseAIJson(raw: string): Record<string, unknown> {
   }
 
   return JSON.parse(cleaned);
+}
+
+// ── Recipe output sanitization ──
+// Post-process AI output to prevent field pollution:
+//   name  → only dish name, not full recipe text
+//   ingredients → split single-item dumps into array
+//   steps → split multiline dumps into individual steps
+
+function sanitizeRecipeOutput(metadata: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = { ...metadata };
+
+  // ── NAME cleanup ──
+  const rawName = (cleaned.name as string) || "";
+  if (rawName.length > 50) {
+    // Name is polluted with full text — extract just the first meaningful line
+    const lines = rawName.split(/[\n\r]+/).filter((l: string) => l.trim().length > 0);
+    // Find first line that looks like a dish name (short, no numbers/arrows)
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const looksLikePollution = (
+        trimmed.length > 40 ||
+        /^(食材|用料|制作|步骤|做法|准备|一[、.]|1[、.]|①)/.test(trimmed) ||
+        /\d+[克gG克]/.test(trimmed) ||
+        /[①②③④⑤]/.test(trimmed)
+      );
+      if (!looksLikePollution && trimmed.length >= 2) {
+        cleaned.name = trimmed;
+        break;
+      }
+    }
+    // If still no clean name, use first line truncated
+    if ((cleaned.name as string).length > 50) {
+      cleaned.name = lines[0]?.trim().slice(0, 50) || "未命名食谱";
+    }
+  }
+  // Strip common suffixes that indicate pollution
+  cleaned.name = (cleaned.name as string)
+    .replace(/食谱[\s\S]*$/i, "")
+    .replace(/\s*[一二三四五六七八九十]、.*$/, "")
+    .trim();
+
+  // ── INGREDIENTS cleanup ──
+  const rawIngredients = (cleaned.ingredients || cleaned.ingredients_json || []) as Array<Record<string, unknown>>;
+  if (Array.isArray(rawIngredients) && rawIngredients.length >= 1) {
+    const fixedIngredients: Array<{ name: string; amount: string }> = [];
+
+    for (const item of rawIngredients) {
+      const itemName = (item.name as string) || "";
+      const itemAmount = (item.amount as string) || "";
+
+      // Detect single-item dump: name contains newlines or is very long
+      if (itemName.includes("\n") || itemName.length > 60) {
+        const lines = itemName.split(/[\n\r]+/).filter((l: string) => l.trim().length > 0);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          // Skip section headers
+          if (/^(食材|用料|制作|步骤|做法|准备)[：:]/.test(trimmed)) continue;
+          if (/^[一-十]、/.test(trimmed)) continue;
+
+          // Try to split "食材名 用量" pattern
+          const parts = trimmed.match(/^(.+?)\s+([\d.]+[克gG克毫升mlML升L勺杯碗个只]+)$/);
+          if (parts) {
+            fixedIngredients.push({ name: parts[1].trim(), amount: parts[2].trim() });
+          } else {
+            fixedIngredients.push({ name: trimmed, amount: "" });
+          }
+        }
+      } else if (itemName.length >= 2) {
+        fixedIngredients.push({ name: itemName, amount: itemAmount });
+      }
+    }
+
+    if (fixedIngredients.length > 0 && fixedIngredients.length > rawIngredients.length) {
+      cleaned.ingredients = fixedIngredients;
+    }
+  }
+
+  // ── STEPS cleanup ──
+  const rawSteps = (cleaned.steps || cleaned.steps_json || []) as Array<Record<string, unknown>>;
+  if (Array.isArray(rawSteps) && rawSteps.length >= 1) {
+    const fixedSteps: Array<{ order: number; text: string }> = [];
+
+    for (const item of rawSteps) {
+      const itemText = (item.text as string) || "";
+
+      // Detect single-item dump: text contains newlines with numbered steps
+      if (itemText.includes("\n") || itemText.length > 150) {
+        const lines = itemText.split(/[\n\r]+/).filter((l: string) => l.trim().length > 0);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          // Skip headers
+          if (/^(食材|用料|制作|步骤|做法)[：:]/.test(trimmed)) continue;
+          if (/^[一-十]、$/.test(trimmed)) continue;
+
+          // Strip leading number prefix like "1." "1、" "①"
+          const cleaned = trimmed.replace(/^[0-9]+[.、．)]\s*/, "").replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, "");
+          if (cleaned.length >= 3) {
+            fixedSteps.push({ order: fixedSteps.length + 1, text: cleaned });
+          }
+        }
+      } else if (itemText.length >= 3) {
+        fixedSteps.push({
+          order: (item.order as number) || fixedSteps.length + 1,
+          text: itemText,
+        });
+      }
+    }
+
+    if (fixedSteps.length > 0 && fixedSteps.length > rawSteps.length) {
+      cleaned.steps = fixedSteps;
+    }
+  }
+
+  return cleaned;
 }
 
 function detectPlatform(input: string): string {
@@ -796,6 +934,9 @@ serve(async (req: Request) => {
       }
     } else if (content_type === "recipe") {
       targetTable = "recipes";
+
+      // Sanitize AI output: prevent name/ingredients/steps field pollution
+      metadata = sanitizeRecipeOutput(metadata);
 
       // Validate recipe metadata — non-blocking for video/title-only sources
       const recipeValidation = validateRecipeMetadata(metadata);
