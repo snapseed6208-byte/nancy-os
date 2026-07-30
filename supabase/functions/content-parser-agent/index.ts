@@ -280,7 +280,10 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
 - ❌ name 不能包含食材清单
 - ❌ name 不能包含步骤文字
 - ❌ name 不能包含"食材准备""制作步骤"等段落标题
-- ❌ name 不能包含克数、用量、时间
+- ❌ name 不能包含克数、用量、时间（如 500g、2勺、15分钟）
+- ❌ name 不能包含换行符或分号
+- ❌ name 不能是整个原文的多行文本
+- ✅ name 正确示例: "杏鲍菇焖鸡腿" | 错误示例: "杏鲍菇焖鸡腿食谱 一、食材准备..."
 
 ### 第二步：提取食材
 - 找到食材相关的段落
@@ -383,10 +386,26 @@ function sanitizeRecipeOutput(metadata: Record<string, unknown>): Record<string,
 
   // ── NAME cleanup ──
   const rawName = (cleaned.name as string) || "";
-  if (rawName.length > 50) {
+
+  // Aggressive stripping: remove everything from common pollution markers
+  let cleanName = rawName;
+
+  // Strip "食谱" suffix and everything after it (catches "食谱 一、食材准备...")
+  cleanName = cleanName.replace(/食谱[\s\S]*$/i, "");
+
+  // Strip from numbered section headers: "一、", "二、", "1.", "①", etc.
+  cleanName = cleanName.replace(/\s*[一二三四五六七八九十]、[\s\S]*$/, "");
+  cleanName = cleanName.replace(/\s*\d+[、.．][\s\S]*$/, "");
+  cleanName = cleanName.replace(/\s*[①②③④⑤⑥⑦⑧⑨⑩][\s\S]*$/, "");
+
+  // Strip from section keywords
+  cleanName = cleanName.replace(/\s*(食材准备|制作步骤|用料准备|烹饪步骤|具体做法)[\s\S]*$/i, "");
+
+  cleanName = cleanName.trim();
+
+  if (cleanName.length > 50) {
     // Name is polluted with full text — extract just the first meaningful line
-    const lines = rawName.split(/[\n\r]+/).filter((l: string) => l.trim().length > 0);
-    // Find first line that looks like a dish name (short, no numbers/arrows)
+    const lines = cleanName.split(/[\n\r]+/).filter((l: string) => l.trim().length > 0);
     for (const line of lines) {
       const trimmed = line.trim();
       const looksLikePollution = (
@@ -396,20 +415,17 @@ function sanitizeRecipeOutput(metadata: Record<string, unknown>): Record<string,
         /[①②③④⑤]/.test(trimmed)
       );
       if (!looksLikePollution && trimmed.length >= 2) {
-        cleaned.name = trimmed;
+        cleanName = trimmed;
         break;
       }
     }
     // If still no clean name, use first line truncated
-    if ((cleaned.name as string).length > 50) {
-      cleaned.name = lines[0]?.trim().slice(0, 50) || "未命名食谱";
+    if (cleanName.length > 50) {
+      cleanName = lines[0]?.trim().slice(0, 50) || "未命名食谱";
     }
   }
-  // Strip common suffixes that indicate pollution
-  cleaned.name = ((cleaned.name as string) || "")
-    .replace(/食谱[\s\S]*$/i, "")
-    .replace(/\s*[一二三四五六七八九十]、.*$/, "")
-    .trim();
+
+  cleaned.name = cleanName || "未命名食谱";
 
   // ── INGREDIENTS cleanup ──
   const rawIngredients = (cleaned.ingredients || cleaned.ingredients_json || []) as Array<Record<string, unknown>>;
@@ -978,9 +994,26 @@ serve(async (req: Request) => {
       const hasIngredients = finalIngredients.length > 0;
       const hasSteps = finalSteps.length > 0;
 
+      // Check source_content quality — detect empty or near-empty extractions
+      const sourceTitle = (sourceContent?.title as string) || "";
+      const sourceDesc = (sourceContent?.description as string) || "";
+      const sourceSubtitle = (sourceContent?.subtitle as string) || "";
+      const sourceOcr = (sourceContent?.ocr_text as string) || "";
+      const sourceTranscript = (sourceContent?.transcript as string) || "";
+      const hasSourceContent = (
+        (sourceTitle.length > 0) ||
+        (sourceDesc.length > 30) ||
+        (sourceSubtitle.length > 30) ||
+        (sourceOcr.length > 30) ||
+        (sourceTranscript.length > 30)
+      );
+
+      // Data quality protection: empty source → partial, never completed
+      const sourceIsEmpty = !hasSourceContent;
+
       // Determine AI status using simplified 5-state model
       let aiStatus: string;
-      if (confidence === "low") {
+      if (confidence === "low" || sourceIsEmpty) {
         aiStatus = "partial";
       } else if (!hasName && !hasIngredients && !hasSteps) {
         aiStatus = "failed";
@@ -993,17 +1026,25 @@ serve(async (req: Request) => {
       // Build ai_summary: preserve source_text + validation info
       const aiSummaryParts: string[] = [];
       if (aiSourceText) aiSummaryParts.push(aiSourceText);
-      if (aiStatus === "partial") {
+      if (sourceIsEmpty) {
+        aiSummaryParts.push("\n⚠️ 来源内容不足，请补充正文或上传图片。");
+      }
+      if (aiStatus === "partial" && !sourceIsEmpty) {
         const missing: string[] = [];
         if (!hasIngredients) missing.push("食材清单");
         if (!hasSteps) missing.push("烹饪步骤");
         if (!hasName) missing.push("食谱名称");
-        aiSummaryParts.push(`\n📝 状态：部分整理（缺少：${missing.join("、")}）。请在食谱详情中手动补充。`);
+        if (missing.length > 0) {
+          aiSummaryParts.push(`\n📝 状态：部分整理（缺少：${missing.join("、")}）。请在食谱详情中手动补充。`);
+        }
       }
       if (aiStatus === "failed") {
         aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑补充食材和步骤。`);
       }
       const finalAiSummary = aiSummaryParts.join("") || null;
+
+      // Override confidence to "low" if source is empty (quality gate)
+      const finalConfidence = sourceIsEmpty ? "low" : confidence;
 
       const updateFields = {
         name: recipeName || "未命名食谱",
@@ -1022,13 +1063,14 @@ serve(async (req: Request) => {
         ai_summary: finalAiSummary,
         ai_analysis_status: aiStatus,
         ai_analyzed_at: new Date().toISOString(),
-        confidence: confidence,
+        confidence: finalConfidence,
       };
 
       console.log(
         `[content-parser-agent] Recipe result: name="${recipeName.slice(0, 60)}" ` +
         `ingredients=${finalIngredients.length} steps=${finalSteps.length} ` +
-        `status=${aiStatus} confidence=${confidence} source_text=${aiSourceText.length} chars`,
+        `status=${aiStatus} confidence=${finalConfidence} source_text=${aiSourceText.length} chars ` +
+        `source_quality=${sourceIsEmpty ? "empty" : "ok"}`,
       );
 
       if (recipeId) {

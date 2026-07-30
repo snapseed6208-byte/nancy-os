@@ -543,16 +543,26 @@ async function invokeRecipePipeline(
   }
 
   // Check if we have any real content at all
-  const hasContent = sourceContent
-    && ((sourceContent as Record<string, unknown>).title
-      || (sourceContent as Record<string, unknown>).description
-      || (sourceContent as Record<string, unknown>).transcript
-      || (sourceContent as Record<string, unknown>).subtitle);
-  if (sourceType !== "manual" && sourceContent && !hasContent && extractionStatus === "failed") {
-    // Manual has its own content from user input, always proceed
+  const sc = sourceContent as Record<string, unknown> | null;
+  const hasContent = sc
+    && ((sc.title as string)?.length > 0
+      || (sc.description as string)?.length > 30
+      || (sc.transcript as string)?.length > 30
+      || (sc.subtitle as string)?.length > 30
+      || (sc.ocr_text as string)?.length > 30);
+  if (sourceType !== "manual" && extractionStatus === "failed") {
     await supabase.from("recipes").update({
-      ai_analysis_status: "failed",
-      ai_summary: extractionError || "无法从此链接获取内容，请检查链接或使用手动输入。",
+      ai_analysis_status: "partial",
+      ai_summary: extractionError || "来源内容不足，请补充正文或上传图片。",
+      confidence: "low",
+    }).eq("id", recipeId);
+    return;
+  }
+  if (sourceType !== "manual" && sourceContent && !hasContent && extractionStatus !== "ok") {
+    // Has source_content object but all fields are effectively empty
+    await supabase.from("recipes").update({
+      ai_analysis_status: "partial",
+      ai_summary: extractionError || "来源内容不足，请补充正文或上传图片。",
       confidence: "low",
     }).eq("id", recipeId);
     return;

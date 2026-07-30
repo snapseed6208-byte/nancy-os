@@ -36,7 +36,7 @@ function getSourceTypeLabel(st: string | null) {
 type ContentSource = {
   icon: typeof Subtitles;
   label: string;
-  status: "yes" | "partial" | "none";
+  status: "yes" | "partial";
 };
 
 function deriveContentSources(
@@ -45,63 +45,124 @@ function deriveContentSources(
 ): ContentSource[] {
   if (!sourceContent) return [];
 
-  // Manual input: user-provided text, not extracted from platform
-  if (sourceType === "manual") {
-    const hasContent = typeof sourceContent.description === "string" && (sourceContent.description as string).trim().length > 20;
-    return [{
-      icon: FileText,
-      label: "手动输入内容",
-      status: hasContent ? "yes" : "partial",
-    }];
-  }
-
   const sc = sourceContent;
   const sources: ContentSource[] = [];
 
-  // Check subtitle
-  const hasSubtitle = typeof sc.subtitle === "string" && sc.subtitle.trim().length > 50;
-  sources.push({
-    icon: Subtitles,
-    label: "视频字幕",
-    status: hasSubtitle ? "yes" : "none",
-  });
+  // Manual input: user-provided text, not extracted from platform
+  if (sourceType === "manual") {
+    const hasContent = typeof sc.description === "string" && (sc.description as string).trim().length > 20;
+    if (hasContent) {
+      sources.push({
+        icon: FileText,
+        label: "用户输入",
+        status: "yes",
+      });
+    }
+    return sources;
+  }
 
-  // Check description / body text
-  const hasDesc = typeof sc.description === "string" && sc.description.trim().length > 50;
-  sources.push({
-    icon: FileText,
-    label: "视频简介/正文",
-    status: hasDesc ? "yes" : "none",
-  });
+  if (sourceType === "bilibili") {
+    // B站: show description/简介, subtitle/字幕, tags/标签 — only if content exists
+    const hasDesc = typeof sc.description === "string" && sc.description.trim().length > 10;
+    if (hasDesc) {
+      sources.push({
+        icon: FileText,
+        label: "视频简介",
+        status: "yes",
+      });
+    }
 
-  // Check OCR
-  const hasOcr = typeof sc.ocr_text === "string" && sc.ocr_text.trim().length > 50;
-  sources.push({
-    icon: ScanText,
-    label: "OCR图片识别",
-    status: hasOcr ? (hasDesc ? "yes" : "partial") : "none",
-  });
+    const hasSubtitle = typeof sc.subtitle === "string" && sc.subtitle.trim().length > 30;
+    if (hasSubtitle) {
+      sources.push({
+        icon: Subtitles,
+        label: "视频字幕",
+        status: "yes",
+      });
+    }
 
-  // Check transcript (separate from subtitle)
-  const hasTranscript = typeof sc.transcript === "string"
-    && sc.transcript.trim().length > 50
-    && sc.transcript !== sc.subtitle;
-  if (hasTranscript) {
+    const tags = sc.tags as string[] | undefined;
+    if (tags && tags.length > 0) {
+      // Show tags as a summary source
+      const hasNoOtherContent = !hasDesc && !hasSubtitle;
+      sources.push({
+        icon: FileText,
+        label: `视频标签 (${tags.slice(0, 3).join("、")}${tags.length > 3 ? "..." : ""})`,
+        status: hasNoOtherContent ? "partial" : "yes",
+      });
+    }
+
+    return sources;
+  }
+
+  if (sourceType === "xiaohongshu") {
+    // 小红书: show description/正文, ocr_text/图片OCR — only if content exists
+    const hasBody = typeof sc.description === "string" && sc.description.trim().length > 30;
+    if (hasBody) {
+      sources.push({
+        icon: FileText,
+        label: "笔记正文",
+        status: "yes",
+      });
+    }
+
+    const hasOcr = typeof sc.ocr_text === "string" && sc.ocr_text.trim().length > 30;
+    if (hasOcr) {
+      sources.push({
+        icon: ScanText,
+        label: "图片OCR",
+        status: "yes",
+      });
+    }
+
+    // Title-only fallback
+    const hasTitle = typeof sc.title === "string" && sc.title.trim().length > 0;
+    if (hasTitle && !hasBody && !hasOcr) {
+      sources.push({
+        icon: AlertTriangle,
+        label: `仅标题: ${(sc.title as string).slice(0, 30)}`,
+        status: "partial",
+      });
+    }
+
+    return sources;
+  }
+
+  // Generic / douyin / other platforms — show whichever fields have content
+  const hasSubtitle = typeof sc.subtitle === "string" && sc.subtitle.trim().length > 30;
+  if (hasSubtitle) {
     sources.push({
-      icon: FileText,
-      label: "完整文字记录",
+      icon: Subtitles,
+      label: "视频字幕",
       status: "yes",
     });
   }
 
-  // Only title fallback
+  const hasDesc = typeof sc.description === "string" && sc.description.trim().length > 30;
+  if (hasDesc) {
+    sources.push({
+      icon: FileText,
+      label: "视频简介/正文",
+      status: "yes",
+    });
+  }
+
+  const hasOcr = typeof sc.ocr_text === "string" && sc.ocr_text.trim().length > 30;
+  if (hasOcr) {
+    sources.push({
+      icon: ScanText,
+      label: "OCR图片识别",
+      status: hasDesc ? "yes" : "partial",
+    });
+  }
+
+  // Title-only fallback
   const hasTitle = typeof sc.title === "string" && sc.title.trim().length > 0;
-  const hasAnyContent = hasSubtitle || hasDesc || hasOcr || hasTranscript;
-  if (hasTitle && !hasAnyContent) {
+  if (hasTitle && !hasSubtitle && !hasDesc && !hasOcr) {
     sources.push({
       icon: AlertTriangle,
-      label: "仅标题",
-      status: "none",
+      label: `仅标题: ${(sc.title as string).slice(0, 30)}`,
+      status: "partial",
     });
   }
 

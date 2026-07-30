@@ -46,6 +46,8 @@ interface SourceContent {
   ocr_text: string;
   vision_result: string;
   platform: string;
+  image_urls?: string[];
+  tags?: string[];
 }
 
 interface ExtractionResult {
@@ -276,12 +278,61 @@ async function ocrImagesWithDeepSeek(imageUrls: string[]): Promise<string> {
 }
 
 // ── B站: Extract BV号 ──
+// Unified function that handles:
+//   1. Bare BV号: BVxxxxxxxxxx
+//   2. Full URL: https://www.bilibili.com/video/BVxxxx
+//   3. Short link: https://b23.tv/xxxxx → follow redirect → extract BV号
 
-function extractBvid(url: string): string | null {
+async function extractBilibiliId(url: string): Promise<string | null> {
+  // 1. Direct BV号 match (works for bare BV ids and full URLs)
   const bvMatch = url.match(/BV[a-zA-Z0-9]{10,12}/);
   if (bvMatch) return bvMatch[0];
+
+  // 2. av号 format
   const avMatch = url.match(/av(\d+)/i);
   if (avMatch) return `av${avMatch[1]}`;
+
+  // 3. b23.tv short link — follow redirect to get BV号
+  if (url.includes("b23.tv") || url.match(/b23\.tv\/[a-zA-Z0-9]+/)) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6_000);
+      const resp = await fetch(url, {
+        method: "HEAD",
+        signal: controller.signal,
+        headers: { "User-Agent": UA },
+      });
+      clearTimeout(timeout);
+      // After redirect, resp.url contains the final destination URL
+      const finalUrl = resp.url || "";
+      const bvFromRedirect = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
+      if (bvFromRedirect) return bvFromRedirect[0];
+      // Fallback: check redirect headers
+      const bvFromBody = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
+      if (bvFromBody) return bvFromBody[0];
+    } catch {
+      // b23.tv redirect failed — try extracting BV号 from error message or response body
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6_000);
+        const resp = await fetch(url, {
+          signal: controller.signal,
+          headers: { "User-Agent": UA },
+        });
+        clearTimeout(timeout);
+        const html = await resp.text();
+        const bvFromHtml = html.match(/BV[a-zA-Z0-9]{10,12}/);
+        if (bvFromHtml) return bvFromHtml[0];
+        // Also check final URL from resp
+        const finalUrl = resp.url || "";
+        const bvFromFinal = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
+        if (bvFromFinal) return bvFromFinal[0];
+      } catch {
+        // All methods exhausted
+      }
+    }
+  }
+
   return null;
 }
 
@@ -357,15 +408,18 @@ async function fetchBilibiliSubtitle(bvid: string, cid: number): Promise<string>
 async function extractBilibili(url: string): Promise<ExtractionResult> {
   console.log(`[source-extractor] Bilibili: ${url}`);
 
-  const empty = (): ExtractionResult => ({
+  const empty = (msg: string): ExtractionResult => ({
     content: { title: "", description: "", subtitle: "", transcript: "", ocr_text: "", vision_result: "", platform: "bilibili" },
     extraction_status: "failed",
-    extraction_error: "无法访问 B站页面或视频不存在",
+    extraction_error: msg,
   });
 
-  const bvid = extractBvid(url);
-  if (!bvid || bvid.startsWith("av")) {
-    return { ...empty(), extraction_error: "无法解析视频 BV 号，请检查链接格式" };
+  const bvid = await extractBilibiliId(url);
+  if (!bvid) {
+    return empty("无法解析视频 BV 号，请检查链接格式（支持 BV号、完整URL、b23.tv短链接）");
+  }
+  if (bvid.startsWith("av")) {
+    return empty("暂不支持 av 号格式，请使用 BV 号链接");
   }
 
   // Strategy 1: B站 API
@@ -374,10 +428,10 @@ async function extractBilibili(url: string): Promise<ExtractionResult> {
     // Try HTML fallback
     const html = await fetchHtml(url, "https://www.bilibili.com/");
     if (!html) {
-      return { ...empty(), extraction_error: "无法访问 B站（412 安全风控），请稍后重试" };
+      return empty("无法访问 B站（412 安全风控），请稍后重试");
     }
     if (html.includes("视频去哪了") || html.includes("视频不见了")) {
-      return { ...empty(), extraction_error: "视频不存在或已被删除" };
+      return empty("视频不存在或已被删除");
     }
 
     const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/);
@@ -388,10 +442,12 @@ async function extractBilibili(url: string): Promise<ExtractionResult> {
         if (vd) {
           const title = vd.title || extractTitle(html);
           const desc = vd.desc || "";
+          const tags: string[] = (vd.tags || []).map((t: { tag_name?: string }) => t.tag_name || "").filter(Boolean);
           const { hasRecipeContent } = analyzeDescriptionForRecipe(desc);
           const material = buildSourceMaterial([
             { label: "标题", content: title },
-            { label: "视频简介", content: desc },
+            { label: "简介", content: desc || "(无简介)" },
+            ...(tags.length > 0 ? [{ label: "标签", content: tags.join("、") }] : []),
           ]);
           return {
             content: {
@@ -435,9 +491,15 @@ async function extractBilibili(url: string): Promise<ExtractionResult> {
     }
   }
 
-  // Analyze description for recipe content
+  // Get description — prefer videoInfo.desc, fall back to building from tags
   const desc = videoInfo.desc || "";
-  const { hasRecipeContent, matchCount } = analyzeDescriptionForRecipe(desc);
+  const hasDesc = desc.trim().length > 10;
+
+  // Analyze description for recipe content
+  // If desc is empty but tags exist, check tags for recipe indicators
+  const { hasRecipeContent, matchCount } = analyzeDescriptionForRecipe(
+    hasDesc ? desc : tags.join(" ")
+  );
 
   // Determine confidence and content routing
   let confidence: string;
@@ -447,16 +509,20 @@ async function extractBilibili(url: string): Promise<ExtractionResult> {
     // CC subtitles available — highest quality
     confidence = "high";
     transcript = subtitleText;
-    // Also include description in transcript if it has recipe content
-    if (hasRecipeContent) {
+    if (hasRecipeContent && hasDesc) {
       transcript = subtitleText + "\n\n--- 视频简介中的食谱信息 ---\n" + desc;
     }
   } else if (hasRecipeContent) {
-    // No subtitle but description has recipe content
+    // No subtitle but description/tags have recipe content
     confidence = "medium";
-    transcript = desc;
+    transcript = hasDesc ? desc : `标签: ${tags.join("、")}`;
+  } else if (hasDesc || tags.length > 0) {
+    // Has content but no clear recipe indicators
+    confidence = "medium";
+    // Still pass content to AI parser — it may find recipe info
+    transcript = hasDesc ? desc : "";
   } else {
-    // Only title and short description — can't extract recipe
+    // Only title — can't extract recipe
     confidence = "low";
   }
 
@@ -464,13 +530,13 @@ async function extractBilibili(url: string): Promise<ExtractionResult> {
   const materialParts: { label: string; content: string }[] = [
     { label: "标题", content: videoInfo.title || "" },
   ];
-  if (desc) materialParts.push({ label: "视频简介", content: desc });
-  if (subtitleText) materialParts.push({ label: "原始字幕", content: subtitleText.slice(0, 5000) });
+  if (hasDesc) materialParts.push({ label: "简介", content: desc });
   if (tags.length > 0) materialParts.push({ label: "标签", content: tags.join("、") });
+  if (subtitleText) materialParts.push({ label: "字幕", content: subtitleText.slice(0, 5000) });
 
   const sourceMaterial = buildSourceMaterial(materialParts);
 
-  const hasContent = videoInfo.title || desc || subtitleText;
+  const hasContent = videoInfo.title || hasDesc || subtitleText || tags.length > 0;
 
   return {
     content: {
@@ -481,13 +547,16 @@ async function extractBilibili(url: string): Promise<ExtractionResult> {
       ocr_text: "",
       vision_result: sourceMaterial,
       platform: "bilibili",
+      tags,
     },
     extraction_status: subtitleText || hasRecipeContent ? "ok" : (hasContent ? "partial" : "failed"),
     extraction_error: subtitleText
       ? undefined
       : (hasRecipeContent
         ? undefined
-        : (hasContent ? `无字幕且简介无食谱内容（匹配指标:${matchCount}），confidence=low` : "无法提取任何内容")),
+        : (hasContent
+          ? `无字幕且简介无食谱内容（匹配指标:${matchCount}），confidence=${confidence}`
+          : "无法提取任何内容")),
   };
 }
 
@@ -499,23 +568,57 @@ function extractXiaohongshuContent(html: string): { body: string; tags: string[]
   let body = "";
   const tags: string[] = [];
 
-  // Try to find note content in various XHS page structures
-  // XHS note content is typically in a <div class="note-content"> or similar
+  // Try multiple XHS page structures for note content
   const contentPatterns = [
     /<div[^>]*class="[^"]*note-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class="[^"]*content[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class="[^"]*desc[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<div[^>]*id="detail-desc"[^>]*>([\s\S]*?)<\/div>/i,
+    /<meta\s+name="description"\s+content="([^"]+)"/i,
+    // XHS often stores note text in __INITIAL_STATE__
   ];
 
   for (const pattern of contentPatterns) {
     const m = html.match(pattern);
     if (m?.[1]) {
-      body = stripHtml(m[1]).slice(0, 5000);
-      break;
+      const text = stripHtml(m[1]).trim();
+      if (text.length > 20) {
+        body = text.slice(0, 5000);
+        break;
+      }
     }
   }
 
-  // Extract hashtags from content
+  // Fallback: try to extract from JSON-LD or script data
+  if (!body) {
+    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+    if (jsonLdMatch?.[1]) {
+      try {
+        const ld = JSON.parse(jsonLdMatch[1]);
+        if (ld.description) body = String(ld.description).slice(0, 5000);
+        if (ld.articleBody) body = String(ld.articleBody).slice(0, 5000);
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Try __INITIAL_STATE__ for XHS note data
+  if (!body) {
+    const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/);
+    if (stateMatch) {
+      try {
+        const state = JSON.parse(stateMatch[1]);
+        const note = state?.note?.noteDetailMap || state?.note;
+        if (note) {
+          const noteData = Object.values(note)[0] as Record<string, unknown> | undefined;
+          if (noteData?.note) {
+            const n = noteData.note as Record<string, unknown>;
+            body = String(n.desc || n.title || "").slice(0, 5000);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Extract hashtags from body
   const hashtagMatches = body.matchAll(/#([^\s#]+)/g);
   for (const m of hashtagMatches) {
     if (m[1] && !tags.includes(m[1])) tags.push(m[1]);
@@ -531,6 +634,34 @@ function extractXiaohongshuContent(html: string): { body: string; tags: string[]
   }
 
   return { body, tags };
+}
+
+function extractXiaohongshuImages(html: string): string[] {
+  const images: string[] = [];
+
+  // XHS-specific image patterns
+  // Look for note image URLs which are typically high-res
+  const xhsPatterns = [
+    /"url":"(https?:\/\/[^"]*xiaohongshu[^"]*\.(?:jpg|jpeg|png|webp)[^"]*)"/gi,
+    /"traceId":"[^"]*","url":"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/gi,
+    /<img[^>]+src="(https?:\/\/[^"]*xhscdn[^"]*\.(?:jpg|jpeg|png|webp)[^"]*)"[^>]*>/gi,
+  ];
+
+  for (const pattern of xhsPatterns) {
+    for (const m of html.matchAll(pattern)) {
+      const url = m[1].replace(/\\u002F/g, "/"); // Handle escaped JSON URLs
+      if (url && !images.includes(url) && !url.includes("avatar") && !url.includes("icon")) {
+        images.push(url);
+      }
+    }
+  }
+
+  // Fall back to generic image extraction if XHS-specific fails
+  if (images.length === 0) {
+    return extractImages(html);
+  }
+
+  return images.slice(0, 10);
 }
 
 async function extractXiaohongshu(url: string): Promise<ExtractionResult> {
@@ -560,18 +691,18 @@ async function extractXiaohongshu(url: string): Promise<ExtractionResult> {
 
   // Build description from best available content
   const descriptionParts: string[] = [];
-  if (ogDescription) descriptionParts.push(ogDescription);
+  if (ogDescription && ogDescription.length > 10) descriptionParts.push(ogDescription);
   if (body && body !== ogDescription) descriptionParts.push(body);
   if (tags.length > 0) descriptionParts.push(`标签：${tags.join("、")}`);
 
   const description = descriptionParts.join("\n\n").trim();
 
-  // Extract and OCR images
-  const images = extractImages(html);
+  // Extract images and run OCR
+  const images = extractXiaohongshuImages(html);
   let ocrText = "";
 
   if (images.length > 0 && DEEPSEEK_API_KEY) {
-    console.log(`[source-extractor] XHS OCR: ${images.length} images, running OCR on up to 5...`);
+    console.log(`[source-extractor] XHS: ${images.length} images, running OCR on up to 5...`);
     ocrText = await ocrImagesWithDeepSeek(images);
     if (ocrText) {
       console.log(`[source-extractor] XHS OCR: extracted ${ocrText.length} chars`);
@@ -581,15 +712,18 @@ async function extractXiaohongshu(url: string): Promise<ExtractionResult> {
   }
 
   // Determine content quality
-  const hasBody = body.length > 50;
+  const hasBody = body.length > 30;
   const hasTitle = title.length > 0;
-  const hasOcr = ocrText.length > 50;
+  const hasOcr = ocrText.length > 30;
 
   let extractionStatus: "ok" | "partial" | "failed";
   let extractionError: string | undefined;
 
-  if (hasBody || hasOcr) {
+  if (hasBody && hasOcr) {
     extractionStatus = "ok";
+  } else if (hasBody || hasOcr) {
+    extractionStatus = "partial";
+    extractionError = hasBody ? "正文已获取但图片无食谱文字" : "图片OCR已提取但正文可能不完整";
   } else if (hasTitle) {
     extractionStatus = "partial";
     extractionError = "仅获取到标题，正文和图片均无食谱内容";
@@ -602,7 +736,7 @@ async function extractXiaohongshu(url: string): Promise<ExtractionResult> {
   const materialParts: { label: string; content: string }[] = [];
   if (hasTitle) materialParts.push({ label: "标题", content: title });
   if (description) materialParts.push({ label: "正文", content: description.slice(0, 5000) });
-  if (ocrText) materialParts.push({ label: "OCR图片文字", content: ocrText.slice(0, 5000) });
+  if (ocrText) materialParts.push({ label: "图片文字", content: ocrText.slice(0, 5000) });
 
   const sourceMaterial = buildSourceMaterial(materialParts);
 
@@ -615,6 +749,8 @@ async function extractXiaohongshu(url: string): Promise<ExtractionResult> {
       ocr_text: ocrText,
       vision_result: sourceMaterial,
       platform: "xiaohongshu",
+      image_urls: images.slice(0, 5),
+      tags,
     },
     extraction_status: extractionStatus,
     extraction_error: extractionError,
