@@ -4,8 +4,7 @@ import {
   ChefHat, ListOrdered, Lightbulb, Clock, Loader2,
   Subtitles, FileText, ScanText, AlertTriangle,
 } from "lucide-react";
-import type { Recipe, RecipeIngredient, RecipeStep, RecipeSourceType } from "@/lib/hooks/useHealth";
-import RecipeEditForm from "@/components/health/RecipeEditForm";
+import type { Recipe, RecipeIngredient, RecipeIngredientsGrouped, RecipeStep, RecipeSourceType } from "@/lib/hooks/useHealth";
 
 type RecipeDetailModalProps = {
   recipe: Recipe;
@@ -14,7 +13,7 @@ type RecipeDetailModalProps = {
     id: string;
     name?: string;
     image_url?: string;
-    ingredients_json?: RecipeIngredient[];
+    ingredients_json?: RecipeIngredient[] | RecipeIngredientsGrouped;
     steps_json?: RecipeStep[];
   }) => Promise<unknown>;
   onDelete: (id: string) => void;
@@ -22,6 +21,7 @@ type RecipeDetailModalProps = {
   isRetrying: boolean;
   retryError?: Error | null;
 };
+import RecipeEditForm from "@/components/health/RecipeEditForm";
 
 function getPlatformBadge(platform: string | null) {
   const map: Record<string, string> = { bilibili: "B站", douyin: "抖音", xiaohongshu: "小红书", youtube: "YT" };
@@ -203,7 +203,10 @@ export default function RecipeDetailModal({
 
   const status = STATUS_CONFIG[recipe.ai_analysis_status || ""] || STATUS_CONFIG.pending;
   const confidence = CONFIDENCE_CONFIG[recipe.confidence || ""] || null;
-  const ingredients = Array.isArray(recipe.ingredients_json) ? recipe.ingredients_json : [];
+  const ingredientsJson = recipe.ingredients_json;
+  const isGroupedIngredients = ingredientsJson && typeof ingredientsJson === "object" && !Array.isArray(ingredientsJson);
+  const ingredients = Array.isArray(ingredientsJson) ? ingredientsJson : [];
+  const groupedIngredients = isGroupedIngredients ? (ingredientsJson as RecipeIngredientsGrouped) : null;
   const steps = Array.isArray(recipe.steps_json) ? recipe.steps_json : [];
   const contentSources = deriveContentSources(
     recipe.source_content as Record<string, unknown> | null,
@@ -213,7 +216,7 @@ export default function RecipeDetailModal({
   const handleSave = async (input: {
     name: string;
     image_url: string;
-    ingredients_json: RecipeIngredient[];
+    ingredients_json: RecipeIngredient[] | RecipeIngredientsGrouped;
     steps_json: RecipeStep[];
   }) => {
     setIsSaving(true);
@@ -356,7 +359,33 @@ export default function RecipeDetailModal({
                     <ChefHat size={13} className="text-sage-deep" />
                     食材准备
                   </h3>
-                  {ingredients.length > 0 ? (
+                  {isGroupedIngredients && groupedIngredients ? (
+                    <div className="space-y-3">
+                      {(
+                        [
+                          { key: "main", label: "主食材", items: groupedIngredients.main },
+                          { key: "marinade", label: "腌料", items: groupedIngredients.marinade },
+                          { key: "sauce", label: "料汁", items: groupedIngredients.sauce },
+                          { key: "garnish", label: "出锅装饰", items: groupedIngredients.garnish },
+                        ] as const
+                      ).filter(g => g.items && g.items.length > 0).map(group => (
+                        <div key={group.key}>
+                          <h4 className="text-[10px] font-semibold text-ink-lighter uppercase mb-1.5">{group.label}</h4>
+                          <div className="grid grid-cols-2 gap-1">
+                            {group.items.map((item, i) => (
+                              <div
+                                key={i}
+                                className="bg-ink/5 rounded-lg px-2.5 py-1.5 flex items-center justify-between"
+                              >
+                                <span className="text-xs text-ink">{item.name}</span>
+                                <span className="text-[10px] text-ink-lighter">{item.amount}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : ingredients.length > 0 ? (
                     <div className="grid grid-cols-2 gap-1.5">
                       {ingredients.map((item, i) => (
                         <div

@@ -23,7 +23,7 @@ import {
   useHealthGoals,
   useExerciseLibrary,
   useWorkoutSessions, useWorkoutSession, useCreateWorkoutSession, useUpdateWorkoutSession, useDeleteWorkoutSession,
-  type WorkoutVideo, type Recipe, type RecipeIngredient, type RecipeStep, type RecipeSourceType, type MealPlan, type MealPlanSlot, type FoodRecord,
+  type WorkoutVideo, type Recipe, type RecipeIngredient, type RecipeIngredientsGrouped, type RecipeStep, type RecipeSourceType, type MealPlan, type MealPlanSlot, type FoodRecord,
   type WorkoutSession, type WorkoutSessionInput,
 } from "@/lib/hooks/useHealth";
 
@@ -1421,7 +1421,7 @@ function RecipeBoxTab() {
     id: string;
     name?: string;
     image_url?: string;
-    ingredients_json?: RecipeIngredient[];
+    ingredients_json?: RecipeIngredient[] | RecipeIngredientsGrouped;
     steps_json?: RecipeStep[];
   }) => {
     await updateRecipe.mutateAsync(input);

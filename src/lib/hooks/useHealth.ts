@@ -63,7 +63,7 @@ export type Recipe = {
   ingredients: string | null;
   steps: string | null;
   // v2 structured columns
-  ingredients_json: RecipeIngredient[];
+  ingredients_json: RecipeIngredient[] | RecipeIngredientsGrouped;
   steps_json: RecipeStep[];
   cook_count: number;
   last_cooked_at: string | null;
@@ -92,10 +92,18 @@ export type RecipeIngredient = {
   category: string;
 };
 
+export type RecipeIngredientsGrouped = {
+  main: RecipeIngredient[];
+  marinade: RecipeIngredient[];
+  sauce: RecipeIngredient[];
+  garnish: RecipeIngredient[];
+};
+
 export type RecipeStep = {
   order: number;
   text: string;
   duration?: number;
+  related_ingredients?: string[];
 };
 
 export type MealPlan = {
@@ -598,7 +606,7 @@ export function useUpdateRecipe() {
       meal_time?: string[];
       goal?: string[];
       ingredients?: string;
-      ingredients_json?: RecipeIngredient[];
+      ingredients_json?: RecipeIngredient[] | RecipeIngredientsGrouped;
       steps_json?: RecipeStep[];
       calories_per_serving?: number;
       protein_grams?: number;

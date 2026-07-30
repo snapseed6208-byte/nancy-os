@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Plus, Trash2, GripVertical } from "lucide-react";
-import type { RecipeIngredient, RecipeStep } from "@/lib/hooks/useHealth";
+import type { RecipeIngredient, RecipeIngredientsGrouped, RecipeStep } from "@/lib/hooks/useHealth";
 
 type EditData = {
   name: string;
   image_url: string;
-  ingredients_json: RecipeIngredient[];
+  ingredients_json: RecipeIngredient[] | RecipeIngredientsGrouped;
   steps_json: RecipeStep[];
 };
 
@@ -16,6 +16,17 @@ type RecipeEditFormProps = {
   isSaving: boolean;
 };
 
+const GROUP_DEFS = [
+  { key: "main" as const, label: "主食材" },
+  { key: "marinade" as const, label: "腌料" },
+  { key: "sauce" as const, label: "料汁" },
+  { key: "garnish" as const, label: "出锅装饰" },
+];
+
+function isGrouped(ing: RecipeIngredient[] | RecipeIngredientsGrouped): ing is RecipeIngredientsGrouped {
+  return ing && typeof ing === "object" && !Array.isArray(ing);
+}
+
 export default function RecipeEditForm({
   initialData,
   onSave,
@@ -24,26 +35,69 @@ export default function RecipeEditForm({
 }: RecipeEditFormProps) {
   const [name, setName] = useState(initialData.name);
   const [imageUrl, setImageUrl] = useState(initialData.image_url);
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(
-    initialData.ingredients_json.length > 0 ? initialData.ingredients_json : [{ name: "", amount: "", category: "" }],
+
+  const initialGrouped = isGrouped(initialData.ingredients_json);
+
+  // For grouped mode, maintain state per group
+  const [groupedIngredients, setGroupedIngredients] = useState<RecipeIngredientsGrouped>(
+    initialGrouped
+      ? initialData.ingredients_json as RecipeIngredientsGrouped
+      : { main: [], marinade: [], sauce: [], garnish: [] },
   );
+
+  // For flat mode, maintain flat array
+  const [flatIngredients, setFlatIngredients] = useState<RecipeIngredient[]>(
+    !initialGrouped && Array.isArray(initialData.ingredients_json) && initialData.ingredients_json.length > 0
+      ? initialData.ingredients_json as RecipeIngredient[]
+      : [{ name: "", amount: "", category: "" }],
+  );
+
   const [steps, setSteps] = useState<RecipeStep[]>(
     initialData.steps_json.length > 0 ? initialData.steps_json : [{ order: 1, text: "" }],
   );
 
-  const addIngredient = () => {
-    setIngredients((prev) => [...prev, { name: "", amount: "", category: "" }]);
+  // ── Flat ingredient helpers ──
+  const addFlatIngredient = () => {
+    setFlatIngredients((prev) => [...prev, { name: "", amount: "", category: "" }]);
   };
 
-  const removeIngredient = (idx: number) => {
-    if (ingredients.length <= 1) return;
-    setIngredients((prev) => prev.filter((_, i) => i !== idx));
+  const removeFlatIngredient = (idx: number) => {
+    if (flatIngredients.length <= 1) return;
+    setFlatIngredients((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const updateIngredient = (idx: number, field: "name" | "amount", value: string) => {
-    setIngredients((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+  const updateFlatIngredient = (idx: number, field: "name" | "amount", value: string) => {
+    setFlatIngredients((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
   };
 
+  // ── Grouped ingredient helpers ──
+  const addGroupedIngredient = (groupKey: keyof RecipeIngredientsGrouped) => {
+    setGroupedIngredients((prev) => ({
+      ...prev,
+      [groupKey]: [...prev[groupKey], { name: "", amount: "", category: "" }],
+    }));
+  };
+
+  const removeGroupedIngredient = (groupKey: keyof RecipeIngredientsGrouped, idx: number) => {
+    setGroupedIngredients((prev) => ({
+      ...prev,
+      [groupKey]: prev[groupKey].filter((_, i) => i !== idx),
+    }));
+  };
+
+  const updateGroupedIngredient = (
+    groupKey: keyof RecipeIngredientsGrouped,
+    idx: number,
+    field: "name" | "amount",
+    value: string,
+  ) => {
+    setGroupedIngredients((prev) => ({
+      ...prev,
+      [groupKey]: prev[groupKey].map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
+    }));
+  };
+
+  // ── Step helpers ──
   const addStep = () => {
     setSteps((prev) => [...prev, { order: prev.length + 1, text: "" }]);
   };
@@ -62,13 +116,27 @@ export default function RecipeEditForm({
   };
 
   const handleSubmit = async () => {
-    // Clean empty entries
-    const cleanIngredients = ingredients.filter((item) => item.name.trim() || item.amount.trim());
     const cleanSteps = steps.filter((s) => s.text.trim()).map((s, i) => ({ ...s, order: i + 1 }));
+
+    let finalIngredients: RecipeIngredient[] | RecipeIngredientsGrouped;
+
+    if (initialGrouped) {
+      const cleaned: RecipeIngredientsGrouped = { main: [], marinade: [], sauce: [], garnish: [] };
+      for (const g of GROUP_DEFS) {
+        cleaned[g.key] = groupedIngredients[g.key].filter(
+          (item) => item.name.trim() || item.amount.trim(),
+        );
+      }
+      finalIngredients = cleaned;
+    } else {
+      const cleaned = flatIngredients.filter((item) => item.name.trim() || item.amount.trim());
+      finalIngredients = cleaned.length > 0 ? cleaned : initialData.ingredients_json;
+    }
+
     await onSave({
       name: name.trim(),
       image_url: imageUrl.trim(),
-      ingredients_json: cleanIngredients.length > 0 ? cleanIngredients : initialData.ingredients_json,
+      ingredients_json: finalIngredients,
       steps_json: cleanSteps.length > 0 ? cleanSteps : initialData.steps_json,
     });
   };
@@ -96,42 +164,84 @@ export default function RecipeEditForm({
 
       {/* Ingredients */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">食材</label>
-          <button
-            onClick={addIngredient}
-            className="flex items-center gap-1 text-[10px] text-sage-deep font-medium hover:underline"
-          >
-            <Plus size={10} />添加食材
-          </button>
-        </div>
-        <div className="space-y-1.5">
-          {ingredients.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-1.5">
-              <GripVertical size={12} className="text-ink-lighter shrink-0" />
-              <input
-                type="text"
-                value={item.name}
-                onChange={(e) => updateIngredient(idx, "name", e.target.value)}
-                placeholder="名称"
-                className="flex-1 bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 focus:border-sage-deep/50"
-              />
-              <input
-                type="text"
-                value={item.amount}
-                onChange={(e) => updateIngredient(idx, "amount", e.target.value)}
-                placeholder="用量"
-                className="w-20 bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 focus:border-sage-deep/50"
-              />
-              <button
-                onClick={() => removeIngredient(idx)}
-                className="shrink-0 h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-red-500"
-              >
-                <Trash2 size={11} />
-              </button>
-            </div>
-          ))}
-        </div>
+        <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">食材</label>
+
+        {initialGrouped ? (
+          <div className="space-y-3">
+            {GROUP_DEFS.map((group) => (
+              <div key={group.key} className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-semibold text-ink-lighter">{group.label}</h4>
+                  <button
+                    onClick={() => addGroupedIngredient(group.key)}
+                    className="flex items-center gap-1 text-[10px] text-sage-deep font-medium hover:underline"
+                  >
+                    <Plus size={10} />添加
+                  </button>
+                </div>
+                {groupedIngredients[group.key].map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5">
+                    <GripVertical size={12} className="text-ink-lighter shrink-0" />
+                    <input
+                      type="text"
+                      value={item.name}
+                      onChange={(e) => updateGroupedIngredient(group.key, idx, "name", e.target.value)}
+                      placeholder="名称"
+                      className="flex-1 bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 focus:border-sage-deep/50"
+                    />
+                    <input
+                      type="text"
+                      value={item.amount}
+                      onChange={(e) => updateGroupedIngredient(group.key, idx, "amount", e.target.value)}
+                      placeholder="用量"
+                      className="w-20 bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 focus:border-sage-deep/50"
+                    />
+                    <button
+                      onClick={() => removeGroupedIngredient(group.key, idx)}
+                      className="shrink-0 h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-red-500"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {flatIngredients.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-1.5">
+                <GripVertical size={12} className="text-ink-lighter shrink-0" />
+                <input
+                  type="text"
+                  value={item.name}
+                  onChange={(e) => updateFlatIngredient(idx, "name", e.target.value)}
+                  placeholder="名称"
+                  className="flex-1 bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 focus:border-sage-deep/50"
+                />
+                <input
+                  type="text"
+                  value={item.amount}
+                  onChange={(e) => updateFlatIngredient(idx, "amount", e.target.value)}
+                  placeholder="用量"
+                  className="w-20 bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 focus:border-sage-deep/50"
+                />
+                <button
+                  onClick={() => removeFlatIngredient(idx)}
+                  className="shrink-0 h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-red-500"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={addFlatIngredient}
+              className="flex items-center gap-1 text-[10px] text-sage-deep font-medium hover:underline mt-1"
+            >
+              <Plus size={10} />添加食材
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Steps */}

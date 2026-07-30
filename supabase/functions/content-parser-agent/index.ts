@@ -263,63 +263,23 @@ HIIT → **必须同时满足**以下条件之一：
 - 如果输入为纯文本而非URL，优先分析文本内容本身`;
 
 // ═══════════════════════════════════════════
-// Recipe Parser Prompt — real content only, no guessing
+// Recipe Parser Prompt v2 — structured, actionable recipes
 // ═══════════════════════════════════════════
 
-const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
+const RECIPE_PARSER_PROMPT = `你是一个食谱结构化整理助手。
 
-## 你的任务
-你的任务不是创造食谱。
-你的任务只是整理——从提供的「来源素材」中提取已有的信息。
+## 核心任务
 
-## 提取流程（严格按顺序）
+从「来源素材」中提取信息，整理为**真正可以照着做的结构化菜谱**。
 
-### 第一步：识别菜名
-- 从标题或正文第一行提取菜名
-- name 只能是菜名本身，5-25字为宜
-- ❌ name 不能包含食材清单
-- ❌ name 不能包含步骤文字
-- ❌ name 不能包含"食材准备""制作步骤"等段落标题
-- ❌ name 不能包含克数、用量、时间（如 500g、2勺、15分钟）
-- ❌ name 不能包含换行符或分号
-- ❌ name 不能是整个原文的多行文本
-- ✅ name 正确示例: "杏鲍菇焖鸡腿" | 错误示例: "杏鲍菇焖鸡腿食谱 一、食材准备..."
+## 第一原则
 
-### 第二步：提取食材
-- 找到食材相关的段落
-- 逐个拆分为独立食材
-- 每个食材提取名称和用量
-- ❌ 禁止把整段文字放进一个食材条目
+1. ❌ 不要总结。不要复述。不要创造。
+2. ✅ 只整理来源中明确出现的信息。
+3. ✅ 准确度优先于完整性。
+4. ✅ 没有的信息就是没有——宁可留空，不要编造。
 
-### 第三步：提取步骤
-- 找到制作步骤段落
-- 按编号或自然段落拆分为独立步骤
-- 每个步骤单独一条
-- ❌ 禁止把全部步骤放进一个条目
-
-## 输入格式
-用户会提供「来源素材」（source_material），格式如下：
-
-标题: <视频/笔记的标题>
-正文: <视频简介或笔记正文>
-字幕: <原始CC字幕文字>
-OCR: <从图片中OCR识别出的文字>
-
-## 核心原则
-
-### 禁止事项
-1. ❌ 不允许根据标题猜测食材或用量
-2. ❌ 不允许根据经验补全不存在的信息
-3. ❌ 不允许创造来源中未出现的步骤
-4. ❌ 不允许为了"完整"而编造数据
-5. ❌ 如果正文和字幕都没有食谱内容，禁止凭空生成
-6. ❌ 禁止把 name 当成容器——name 只能是菜名
-
-### 必须遵守
-1. ✅ 只提取明确出现在来源素材中的食材和步骤
-2. ✅ 如果某个信息在来源中不存在，该字段返回 null 或空数组
-3. ✅ 准确度优先于完整性
-4. ✅ 食材名称和用量必须能在来源素材中找到原文依据
+---
 
 ## 输出格式 — 严格 JSON（不要 markdown 代码块）
 
@@ -327,35 +287,193 @@ OCR: <从图片中OCR识别出的文字>
   "content_type": "recipe",
   "metadata": {
     "name": "菜名（仅菜名，5-25字）",
-    "ingredients": [
-      { "name": "单个食材名称", "amount": "该食材用量" }
-    ],
+
+    "ingredients": {
+      "main": [
+        { "name": "主食材名称", "amount": "用量" }
+      ],
+      "marinade": [
+        { "name": "腌料/腌肉料食材", "amount": "用量" }
+      ],
+      "sauce": [
+        { "name": "料汁/酱汁/调味汁食材", "amount": "用量" }
+      ],
+      "garnish": [
+        { "name": "装饰/出锅撒料", "amount": "用量（可选）" }
+      ]
+    },
+
     "steps": [
-      { "order": 1, "text": "单一步骤描述" }
+      {
+        "order": 1,
+        "text": "包含具体动作和用料的完整步骤描述",
+        "related_ingredients": ["步骤中使用的食材名称"]
+      }
     ],
-    "notes": "补充说明（可选，没有则为 null）",
-    "source_text": "AI 参考的原始内容摘要（保留关键信息，方便人工验证）",
-    "confidence": "high"
+
+    "tips": {
+      "cooking": "烹饪技巧（火候、时间、关键动作，来源没有则 null）",
+      "health": "健康建议（营养分析、适合人群、蛋白质/蔬菜搭配，必须标注'根据食材推测'，来源没有营养数据则基于食材常识推测）",
+      "storage": "保存建议（冷藏/冷冻/回温方法，来源没有则 null）"
+    },
+
+    "meal_time": ["breakfast", "lunch", "dinner"],
+    "goal": ["减脂", "高蛋白", "增肌", "日常"],
+    "category": "家常菜|快手菜|汤类|主食|烘焙|凉菜|饮品",
+
+    "health_level": "清淡|均衡|indulgent",
+    "budget_level": "经济|适中|豪华",
+
+    "source_text": "AI 参考的原始内容关键摘要（方便人工验证，50-100字）",
+    "confidence": "high|medium|low"
   }
 }
 
+---
+
+## 食材分组规则（重要）
+
+### 必须保持独立分组，禁止打平合并
+
+如果来源中出现了以下分类，必须保持独立：
+
+- **腌料/腌肉料** → 放入 "marinade" 数组
+  关键词：腌制、腌料、腌肉、腌、码味
+  示例：生抽、料酒、淀粉、姜片（用于腌制的部分）
+
+- **料汁/酱汁/调味汁** → 放入 "sauce" 数组
+  关键词：料汁、酱汁、调味汁、碗汁、浇汁、淋汁
+  示例：生抽:2勺、蚝油:1勺、糖:少许、淀粉:1勺、清水:半碗
+
+- **出锅撒料/装饰** → 放入 "garnish" 数组
+  关键词：撒、点缀、装饰、出锅前
+  示例：葱花、香菜、芝麻
+
+- **主食材** → 放入 "main" 数组
+  所有不属于以上三类的食材
+
+### 分组判断示例
+
+来源原文:
+  腌肉料：生抽、料酒、淀粉
+  料汁：生抽2勺、蚝油1勺、糖半勺、清水半碗
+  主食材：牛肉300g、娃娃菜1颗、豆腐1块
+
+正确输出:
+  "main": [{"name":"牛肉","amount":"300g"},{"name":"娃娃菜","amount":"1颗"},{"name":"豆腐","amount":"1块"}]
+  "marinade": [{"name":"生抽","amount":"腌肉用"},{"name":"料酒","amount":"腌肉用"},{"name":"淀粉","amount":"腌肉用"}]
+  "sauce": [{"name":"生抽","amount":"2勺"},{"name":"蚝油","amount":"1勺"},{"name":"糖","amount":"半勺"},{"name":"清水","amount":"半碗"}]
+
+❌ 错误（打平合并）:
+  "main": [{"name":"牛肉","amount":"300g"},{"name":"生抽","amount":"腌肉用"},{"name":"蚝油","amount":"1勺"},...]
+
+### 如果来源没有分组
+
+如果来源只是简单列出食材，没有腌料/料汁分类：
+- 全部放入 "main"
+- 其他分组为空数组 []
+
+---
+
+## 步骤规则
+
+### 每一步必须包含具体动作和关联食材
+
+❌ 错误（缺少细节）:
+  "加入牛肉"
+  "放入料汁"
+  "加水焖煮"
+
+✅ 正确（包含完整上下文）:
+  "加入提前用生抽、料酒、淀粉腌制好的牛肉片，快速滑炒至变色"
+  "倒入调好的料汁（生抽2勺、蚝油1勺、糖半勺、清水半碗混合），翻炒均匀"
+  "加半碗热水，大火烧开后转小火，盖上锅盖焖煮8分钟"
+
+### related_ingredients 规则
+
+每一步的 related_ingredients 列出这一步涉及的主要食材名称（数组）。
+用于前端高亮关联食材。
+
+示例:
+  步骤: "加入提前腌制好的牛肉片，快速滑炒至变色"
+  related_ingredients: ["牛肉", "生抽", "料酒", "淀粉"]
+
+---
+
+## AI 小贴士规则
+
+### 禁止
+- ❌ 复述菜名或标题
+- ❌ 复述来源平台或作者
+- ❌ 空洞的废话（"这是一道美味的家常菜"）
+
+### cooking 烹饪技巧
+- 关键火候/时间/动作要点
+- 来源中有则提取，没有则基于常识给出1条建议
+- **禁止超过2句话**
+
+### health 健康建议
+- 分析蛋白质来源、蔬菜比例、主食搭配
+- 如果没有营养数据，**必须写"根据食材推测"**
+- 说明适合什么人群/目标
+- **禁止编造具体热量数值**
+
+### storage 保存建议
+- 来源有则提取，没有则 null
+- 如果有剩菜处理建议，简要说明
+
+---
+
+## 分类规则
+
+### meal_time（根据食材和做法判断）
+- "breakfast" — 快手、轻食、粥、三明治、鸡蛋为主
+- "lunch" — 正常菜肴、主食+菜
+- "dinner" — 所有正餐菜肴（默认至少包含 dinner）
+
+**规则**: 如果菜品适合作为正餐 → 至少包含 "lunch" 或 "dinner"
+**默认**: 不确定时默认 ["lunch", "dinner"]
+
+### goal（根据食材和做法判断）
+- "减脂" — 低油、高蛋白、多蔬菜、蒸煮为主
+- "高蛋白" — 肉类/豆制品/蛋类含量高
+- "增肌" — 高蛋白 + 足量碳水
+- "日常" — 正常家常菜
+
+**规则**: 根据食材而非标题判断
+**默认**: 不确定时默认 ["日常"]
+
+### category（根据做法判断）
+- "家常菜" — 炒、烧、焖、炖的家常做法
+- "快手菜" — 总时长 ≤ 20分钟
+- "汤类" — 以汤为主
+- "主食" — 饭、面、粥为主
+- "烘焙" — 烤箱制作
+- "凉菜" — 冷食、凉拌
+- "饮品" — 饮料、奶昔
+
+**默认**: 不确定时默认 "家常菜"
+
+---
+
 ## confidence 规则
-- "high": 来源素材包含字幕或完整文字记录 — 信息充足，可以生成完整食谱
-- "medium": 来源素材来自 OCR 识别或简介中的食谱描述 — 信息可能不完整，需要谨慎
+- "high": 来源素材包含字幕或完整文字记录 — 信息充足
+- "medium": 来源素材来自 OCR 识别或简介 — 信息可能不完整
 - "low": 来源素材只有标题或极少量信息 — **禁止生成完整食谱**
 
 ## 如果 confidence = "low"
-- metadata.ingredients 必须为空数组 []
-- metadata.steps 必须为空数组 []
-- metadata.name 只使用标题文字
-- metadata.notes 说明"信息不足，无法从来源整理完整食谱。建议手动补充食材和步骤。"
-- metadata.source_text 保留已有的少量原文
+- ingredients 所有分组必须为空
+- steps 必须为空数组
+- tips 三个字段都为 null
+- name 只使用标题文字
+- source_text 说明"信息不足，无法从来源整理完整食谱。建议手动补充食材和步骤。"
 
 ## 特别注意
-- name 长度超过 30 字说明你放错内容了——name 不是食材/steps 的容器
-- 步骤中的时间信息（如"焖煮15分钟"）只在来源素材明确提及时才填写
-- 用量单位（g、ml、勺等）只使用原文中出现的
-- 不要从标题推断完整食谱——标题只是参考信息，不能作为食材/步骤的依据`;
+- name 长度超过 30 字说明你放错内容了
+- name 不能包含食材清单、步骤文字、段落标题
+- 步骤中的时间信息只在来源明确提及时才填写
+- 用量单位只使用原文中出现的
+- 不要从标题推断完整食谱——标题只是参考`;
 
 // ── JSON Schema validation ──
 
@@ -428,37 +546,60 @@ function sanitizeRecipeOutput(metadata: Record<string, unknown>): Record<string,
   cleaned.name = cleanName || "未命名食谱";
 
   // ── INGREDIENTS cleanup ──
-  const rawIngredients = (cleaned.ingredients || cleaned.ingredients_json || []) as Array<Record<string, unknown>>;
-  if (Array.isArray(rawIngredients) && rawIngredients.length >= 1) {
-    const fixedIngredients: Array<{ name: string; amount: string }> = [];
+  // v2: supports both grouped object {main/marinade/sauce/garnish} and flat array
+  const rawIngredients = cleaned.ingredients || cleaned.ingredients_json;
 
-    for (const item of rawIngredients) {
-      const itemName = (item.name as string) || "";
-      const itemAmount = (item.amount as string) || "";
+  function sanitizeIngredientGroup(items: unknown): Array<{ name: string; amount: string }> {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    const fixed: Array<{ name: string; amount: string }> = [];
+
+    for (const item of items) {
+      if (typeof item !== "object" || !item) continue;
+      const itemName = ((item as Record<string, unknown>).name as string) || "";
+      const itemAmount = ((item as Record<string, unknown>).amount as string) || "";
 
       // Detect single-item dump: name contains newlines or is very long
       if (itemName.includes("\n") || itemName.length > 60) {
         const lines = itemName.split(/[\n\r]+/).filter((l: string) => l.trim().length > 0);
         for (const line of lines) {
           const trimmed = line.trim();
-          // Skip section headers
           if (/^(食材|用料|制作|步骤|做法|准备)[：:]/.test(trimmed)) continue;
           if (/^[一-十]、/.test(trimmed)) continue;
 
-          // Try to split "食材名 用量" pattern
           const parts = trimmed.match(/^(.+?)\s+([\d.]+[克gG克毫升mlML升L勺杯碗个只]+)$/);
           if (parts) {
-            fixedIngredients.push({ name: parts[1].trim(), amount: parts[2].trim() });
+            fixed.push({ name: parts[1].trim(), amount: parts[2].trim() });
           } else {
-            fixedIngredients.push({ name: trimmed, amount: "" });
+            fixed.push({ name: trimmed, amount: "" });
           }
         }
       } else if (itemName.length >= 2) {
-        fixedIngredients.push({ name: itemName, amount: itemAmount });
+        fixed.push({ name: itemName, amount: itemAmount });
       }
     }
 
-    if (fixedIngredients.length > 0 && fixedIngredients.length > rawIngredients.length) {
+    return fixed;
+  }
+
+  if (rawIngredients && typeof rawIngredients === "object" && !Array.isArray(rawIngredients)) {
+    // Grouped format: { main: [...], marinade: [...], sauce: [...], garnish: [...] }
+    const grouped = rawIngredients as Record<string, unknown>;
+    const sanitized: Record<string, Array<{ name: string; amount: string }>> = {};
+    let totalItems = 0;
+
+    for (const key of ["main", "marinade", "sauce", "garnish"]) {
+      const sanitizedGroup = sanitizeIngredientGroup(grouped[key]);
+      sanitized[key] = sanitizedGroup;
+      totalItems += sanitizedGroup.length;
+    }
+
+    if (totalItems > 0) {
+      cleaned.ingredients = sanitized;
+    }
+  } else if (Array.isArray(rawIngredients) && rawIngredients.length >= 1) {
+    // Flat array format (legacy)
+    const fixedIngredients = sanitizeIngredientGroup(rawIngredients);
+    if (fixedIngredients.length > 0 && fixedIngredients.length > (rawIngredients as Array<unknown>).length) {
       cleaned.ingredients = fixedIngredients;
     }
   }
@@ -585,7 +726,7 @@ const WORKOUT_VALID_CATEGORY = ["臀腿", "背部", "肩胸", "核心", "全身"
 
 // Recipe
 const RECIPE_VALID_MEAL_TIME = ["breakfast", "lunch", "dinner", "snack"] as const;
-const RECIPE_VALID_GOAL = ["减脂", "增肌", "保持"] as const;
+const RECIPE_VALID_GOAL = ["减脂", "高蛋白", "增肌", "日常"] as const;
 const RECIPE_VALID_HEALTH_LEVEL = ["清淡", "均衡", "indulgent"] as const;
 const RECIPE_VALID_BUDGET_LEVEL = ["经济", "适中", "豪华"] as const;
 const RECIPE_VALID_INGREDIENT_CATEGORY = ["蛋白质", "主食", "蔬菜", "水果", "调味料", "油脂", "其他"] as const;
@@ -620,16 +761,32 @@ function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boo
   const warnings: string[] = [];
 
   // ingredients_json — warn if missing but don't block
-  if (!metadata.ingredients_json) {
+  // v2: supports grouped object {main/marinade/sauce/garnish} and flat array
+  const rawIng = metadata.ingredients || metadata.ingredients_json;
+  if (!rawIng) {
     warnings.push("ingredients_json 缺失（AI 无法从来源获取食材信息）");
-  } else if (!Array.isArray(metadata.ingredients_json)) {
-    warnings.push("ingredients_json 格式异常，已忽略");
-  } else {
-    for (const item of metadata.ingredients_json as Array<Record<string, unknown>>) {
+  } else if (typeof rawIng === "object" && !Array.isArray(rawIng)) {
+    // Grouped format — validate each group's items
+    const grouped = rawIng as Record<string, unknown>;
+    for (const key of ["main", "marinade", "sauce", "garnish"]) {
+      const items = grouped[key];
+      if (items && Array.isArray(items)) {
+        for (const item of items as Array<Record<string, unknown>>) {
+          if (!item.name || typeof item.name !== "string") {
+            errors.push(`ingredients_json.${key} 元素缺少 name: ${JSON.stringify(item)}`);
+          }
+        }
+      }
+    }
+  } else if (Array.isArray(rawIng)) {
+    // Flat array format (legacy)
+    for (const item of rawIng as Array<Record<string, unknown>>) {
       if (!item.name || typeof item.name !== "string") {
         errors.push(`ingredients_json 元素缺少 name: ${JSON.stringify(item)}`);
       }
     }
+  } else {
+    warnings.push("ingredients_json 格式异常，已忽略");
   }
 
   // steps_json — warn if missing but don't block
@@ -980,18 +1137,42 @@ serve(async (req: Request) => {
       }
 
       // Extract new fields: ingredients, steps, source_text, confidence
-      const aiIngredients = (metadata.ingredients || metadata.ingredients_json || []) as Array<{ name?: string; amount?: string; category?: string }>;
+      // v2: ingredients can be grouped object {main/marinade/sauce/garnish} or flat array
+      const rawIngredients = metadata.ingredients || metadata.ingredients_json;
+      const isGroupedIngredients = rawIngredients && typeof rawIngredients === "object" && !Array.isArray(rawIngredients);
+
+      const aiIngredients = isGroupedIngredients
+        ? (rawIngredients as Record<string, Array<{ name?: string; amount?: string }>>)
+        : rawIngredients as Array<{ name?: string; amount?: string; category?: string }> | undefined;
+
       const aiSteps = (metadata.steps || metadata.steps_json || []) as Array<{ order?: number; text?: string; duration?: number }>;
+      const aiTips = (metadata.tips as Record<string, string | null>) || null;
       const aiSourceText = (metadata.source_text as string) || "";
       const confidence = (metadata.confidence as string) || "medium";
 
       // Enforce confidence rules:
       // low → no full recipe, empty ingredients/steps
-      const finalIngredients = confidence === "low" ? [] : aiIngredients;
+      const finalIngredients = confidence === "low" ? (isGroupedIngredients ? {} : []) : aiIngredients;
       const finalSteps = confidence === "low" ? [] : aiSteps;
 
       const hasName = recipeName && recipeName !== "未命名食谱";
-      const hasIngredients = finalIngredients.length > 0;
+
+      // Count ingredients across groups (object) or flat (array)
+      let hasIngredients: boolean;
+      let totalIngredientCount: number;
+      if (isGroupedIngredients && finalIngredients && typeof finalIngredients === "object") {
+        const groups = finalIngredients as Record<string, Array<unknown>>;
+        totalIngredientCount = (groups.main?.length || 0) + (groups.marinade?.length || 0)
+          + (groups.sauce?.length || 0) + (groups.garnish?.length || 0);
+        hasIngredients = totalIngredientCount > 0;
+      } else if (Array.isArray(finalIngredients)) {
+        totalIngredientCount = (finalIngredients as Array<unknown>).length;
+        hasIngredients = totalIngredientCount > 0;
+      } else {
+        totalIngredientCount = 0;
+        hasIngredients = false;
+      }
+
       const hasSteps = finalSteps.length > 0;
 
       // Check source_content quality — detect empty or near-empty extractions
@@ -1023,9 +1204,21 @@ serve(async (req: Request) => {
         aiStatus = "partial";
       }
 
-      // Build ai_summary: preserve source_text + validation info
+      // Build ai_summary: preserve source_text + validation info + structured tips
       const aiSummaryParts: string[] = [];
       if (aiSourceText) aiSummaryParts.push(aiSourceText);
+
+      // Include structured tips from v2 prompt
+      if (aiTips) {
+        const tipsParts: string[] = [];
+        if (aiTips.cooking) tipsParts.push(`🔥 烹饪技巧: ${aiTips.cooking}`);
+        if (aiTips.health) tipsParts.push(`💚 健康建议: ${aiTips.health}`);
+        if (aiTips.storage) tipsParts.push(`📦 保存建议: ${aiTips.storage}`);
+        if (tipsParts.length > 0) {
+          aiSummaryParts.push("\n---\n" + tipsParts.join("\n\n"));
+        }
+      }
+
       if (sourceIsEmpty) {
         aiSummaryParts.push("\n⚠️ 来源内容不足，请补充正文或上传图片。");
       }
@@ -1046,11 +1239,17 @@ serve(async (req: Request) => {
       // Override confidence to "low" if source is empty (quality gate)
       const finalConfidence = sourceIsEmpty ? "low" : confidence;
 
+      // Validate meal_time against allowed values
+      const mealTimeRaw = metadata.meal_time;
+      const mealTime = Array.isArray(mealTimeRaw)
+        ? (mealTimeRaw as string[]).filter((m: string) => RECIPE_VALID_MEAL_TIME.includes(m as typeof RECIPE_VALID_MEAL_TIME[number]))
+        : [];
+
       const updateFields = {
         name: recipeName || "未命名食谱",
         image_url: (metadata.image_url as string) || null,
         category: (metadata.category as string) || category,
-        meal_time: (metadata.meal_time as string[]) || [],
+        meal_time: mealTime.length > 0 ? mealTime : null,
         goal: goalArray.length > 0 ? goalArray : null,
         health_level: (metadata.health_level as string) || null,
         budget_level: (metadata.budget_level as string) || null,
@@ -1068,7 +1267,7 @@ serve(async (req: Request) => {
 
       console.log(
         `[content-parser-agent] Recipe result: name="${recipeName.slice(0, 60)}" ` +
-        `ingredients=${finalIngredients.length} steps=${finalSteps.length} ` +
+        `ingredients=${totalIngredientCount} steps=${finalSteps.length} ` +
         `status=${aiStatus} confidence=${finalConfidence} source_text=${aiSourceText.length} chars ` +
         `source_quality=${sourceIsEmpty ? "empty" : "ok"}`,
       );
