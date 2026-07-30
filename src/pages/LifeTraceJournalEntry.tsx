@@ -7,7 +7,7 @@ import {
   useDeleteJournalEntry,
   useTriggerLifeAnalysis,
 } from "@/lib/hooks/useLifeTrace";
-import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern } from "@/lib/types";
+import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern, LifeAnalysisInsight, LifeAnalysisSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const MOODS = ["开心", "平静", "焦虑", "疲惫", "难过", "生气", "迷茫", "有动力", "放松", "想哭"];
@@ -20,10 +20,17 @@ const ENERGY_LABELS: Record<string, string> = {
   energetic: "精力充沛", normal: "正常", tired: "有点累", anxious: "焦虑", lazy: "提不起劲", tried_best: "尽力了",
 };
 const ACTION_CATEGORY_LABELS: Record<string, string> = {
-  workout: "运动", work: "工作", social: "社交", learning: "学习", life: "生活", health: "健康", other: "其他",
+  goal_progress: "目标推进", habit: "习惯", challenge: "克服困难", decision: "重要决定",
+  social: "社交", learning: "学习", workout: "运动", work: "工作", life: "生活", health: "健康", other: "其他",
 };
 const THOUGHT_CATEGORY_LABELS: Record<string, string> = {
   "self-reflection": "自我反思", planning: "计划", worry: "担忧", gratitude: "感恩", learning: "认知", other: "其他",
+};
+const INSIGHT_CATEGORY_LABELS: Record<string, string> = {
+  pattern: "行为模式", growth: "成长变化", trend: "趋势", concern: "值得关注",
+};
+const SUGGESTION_CATEGORY_LABELS: Record<string, string> = {
+  rest: "休息", action: "行动", mindset: "心态", social: "社交", health: "健康",
 };
 
 function MoodChip({ mood, selected, onClick }: { mood: string; selected: boolean; onClick: () => void }) {
@@ -64,9 +71,11 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
   const themes = (entry.ai_themes as string[]) || [];
   const events = (entry.ai_events as string[]) || [];
   const patterns = (entry.ai_patterns as LifeAnalysisPattern[]) || [];
+  const insights = (entry.ai_insights as LifeAnalysisInsight[]) || [];
+  const suggestions = (entry.ai_suggestions as LifeAnalysisSuggestion[]) || [];
   const version = entry.ai_analysis_version as string | undefined;
 
-  if (!summary && !emotionAnalysis && !actions.length && !thoughts.length) return null;
+  if (!summary && !emotionAnalysis && !actions.length && !thoughts.length && !insights.length && !suggestions.length) return null;
 
   return (
     <div className="bg-gradient-to-br from-sage-light/5 to-white border border-sage-light/30 rounded-2xl p-4 space-y-3">
@@ -112,6 +121,33 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {insights.length > 0 && (
+        <div className="bg-purple-light/5 rounded-xl p-3 border border-purple-light/15">
+          <p className="text-[10px] font-semibold text-purple-600 uppercase tracking-wider mb-1.5">洞察</p>
+          {insights.map((ins, i) => (
+            <div key={i} className="flex items-start gap-1.5 mb-1 last:mb-0">
+              <span className="text-[11px] text-ink-light leading-relaxed">{ins.insight}</span>
+              <span className="text-[10px] text-ink-lighter bg-ink/5 rounded px-1 py-0.5 shrink-0">
+                {INSIGHT_CATEGORY_LABELS[ins.category] || ins.category}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {suggestions.length > 0 && (
+        <div className="bg-accent-sky/5 rounded-xl p-3 border border-accent-sky/10">
+          <p className="text-[10px] font-semibold text-accent-sky uppercase tracking-wider mb-1.5">温和建议</p>
+          {suggestions.map((sug, i) => (
+            <div key={i} className="flex items-start gap-1.5 mb-1 last:mb-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent-sky mt-1.5 shrink-0" />
+              <span className="text-[11px] text-ink-light leading-relaxed">{sug.suggestion}</span>
+              <span className="text-[10px] text-ink-lighter bg-ink/5 rounded px-1 py-0.5 shrink-0">
+                {SUGGESTION_CATEGORY_LABELS[sug.category] || sug.category}
+              </span>
+            </div>
+          ))}
         </div>
       )}
       {(themes.length > 0 || events.length > 0) && (

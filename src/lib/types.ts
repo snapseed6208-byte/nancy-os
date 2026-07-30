@@ -70,6 +70,8 @@ export interface JournalEntry {
   aiPatterns: LifeAnalysisPattern[];
   aiActions: LifeAnalysisAction[];
   aiThoughts: LifeAnalysisThought[];
+  aiInsights: LifeAnalysisInsight[];
+  aiSuggestions: LifeAnalysisSuggestion[];
   aiAnalysisVersion?: string;
   images?: string[];
   audioUrls?: string[];
@@ -95,6 +97,17 @@ export interface LifeAnalysisPattern {
   related_dates: string[];
 }
 
+export interface LifeAnalysisInsight {
+  insight: string;
+  category: "pattern" | "growth" | "trend" | "concern";
+  confidence: number;
+}
+
+export interface LifeAnalysisSuggestion {
+  suggestion: string;
+  category: "rest" | "action" | "mindset" | "social" | "health";
+}
+
 export interface LifeAnalysisResult {
   success: boolean;
   summary?: string;
@@ -104,6 +117,8 @@ export interface LifeAnalysisResult {
   themes: string[];
   events: string[];
   patterns_count: number;
+  insights_count: number;
+  suggestions_count: number;
   version: string;
 }
 

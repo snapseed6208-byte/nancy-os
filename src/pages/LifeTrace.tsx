@@ -37,12 +37,12 @@ function ActionButton({ icon, label, onClick, primary }: {
 }
 
 function AIInsightsSection() {
-  const { data: insights, isLoading } = useRecentAIInsights();
+  const { data: recentInsights, isLoading } = useRecentAIInsights();
   const [, navigate] = useLocation();
 
   if (isLoading) return null;
 
-  const latest = (insights || [])[0] as Record<string, unknown> | undefined;
+  const latest = (recentInsights || [])[0] as Record<string, unknown> | undefined;
   if (!latest) {
     return (
       <div className="bg-card rounded-2xl border border-border p-4">
@@ -64,6 +64,8 @@ function AIInsightsSection() {
   const themes = (latest.ai_themes as string[]) || [];
   const actions = (latest.ai_actions as Array<{ action: string }>) || [];
   const thoughts = (latest.ai_thoughts as Array<{ thought: string }>) || [];
+  const insights = (latest.ai_insights as Array<{ insight: string }>) || [];
+  const suggestions = (latest.ai_suggestions as Array<{ suggestion: string }>) || [];
 
   return (
     <button
@@ -83,13 +85,19 @@ function AIInsightsSection() {
 
       <p className="text-sm text-ink font-medium mb-2">{latest.ai_summary as string}</p>
 
-      {(actions.length > 0 || thoughts.length > 0) && (
+      {(actions.length > 0 || thoughts.length > 0 || insights.length > 0 || suggestions.length > 0) && (
         <div className="flex items-center gap-3 text-[11px] text-ink-lighter mb-2">
           {actions.length > 0 && (
             <span>行动 {actions.length} 项</span>
           )}
           {thoughts.length > 0 && (
             <span>想法 {thoughts.length} 项</span>
+          )}
+          {insights.length > 0 && (
+            <span>洞察 {insights.length} 项</span>
+          )}
+          {suggestions.length > 0 && (
+            <span>建议 {suggestions.length} 项</span>
           )}
         </div>
       )}

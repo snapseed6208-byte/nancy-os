@@ -6,7 +6,7 @@ import {
   useUpsertJournalEntry,
   useTriggerLifeAnalysis,
 } from "@/lib/hooks/useLifeTrace";
-import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern } from "@/lib/types";
+import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern, LifeAnalysisInsight, LifeAnalysisSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // ── Constants ──
@@ -21,10 +21,17 @@ const ENERGY_LABELS: Record<string, string> = {
   energetic: "精力充沛", normal: "正常", tired: "有点累", anxious: "焦虑", lazy: "提不起劲", tried_best: "尽力了",
 };
 const ACTION_CATEGORY_LABELS: Record<string, string> = {
-  workout: "运动", work: "工作", social: "社交", learning: "学习", life: "生活", health: "健康", other: "其他",
+  goal_progress: "目标推进", habit: "习惯", challenge: "克服困难", decision: "重要决定",
+  social: "社交", learning: "学习", workout: "运动", work: "工作", life: "生活", health: "健康", other: "其他",
 };
 const THOUGHT_CATEGORY_LABELS: Record<string, string> = {
   "self-reflection": "自我反思", planning: "计划", worry: "担忧", gratitude: "感恩", learning: "认知", other: "其他",
+};
+const INSIGHT_CATEGORY_LABELS: Record<string, string> = {
+  pattern: "行为模式", growth: "成长变化", trend: "趋势", concern: "值得关注",
+};
+const SUGGESTION_CATEGORY_LABELS: Record<string, string> = {
+  rest: "休息", action: "行动", mindset: "心态", social: "社交", health: "健康",
 };
 
 function today(): string {
@@ -71,9 +78,11 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
   const themes = (entry.ai_themes as string[]) || [];
   const events = (entry.ai_events as string[]) || [];
   const patterns = (entry.ai_patterns as LifeAnalysisPattern[]) || [];
+  const insights = (entry.ai_insights as LifeAnalysisInsight[]) || [];
+  const suggestions = (entry.ai_suggestions as LifeAnalysisSuggestion[]) || [];
   const version = entry.ai_analysis_version as string | undefined;
 
-  if (!summary && !emotionAnalysis && !actions.length && !thoughts.length) return null;
+  if (!summary && !emotionAnalysis && !actions.length && !thoughts.length && !insights.length && !suggestions.length) return null;
 
   return (
     <div className="bg-gradient-to-br from-sage-light/5 to-white border border-sage-light/30 rounded-2xl p-4 space-y-3">
@@ -133,6 +142,33 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
       )}
 
       {/* Themes & Events */}
+      {insights.length > 0 && (
+        <div className="bg-purple-light/5 rounded-xl p-3 border border-purple-light/15">
+          <p className="text-[10px] font-semibold text-purple-600 uppercase tracking-wider mb-1.5">洞察</p>
+          {insights.map((ins, i) => (
+            <div key={i} className="flex items-start gap-1.5 mb-1 last:mb-0">
+              <span className="text-[11px] text-ink-light leading-relaxed">{ins.insight}</span>
+              <span className="text-[10px] text-ink-lighter bg-ink/5 rounded px-1 py-0.5 shrink-0">
+                {INSIGHT_CATEGORY_LABELS[ins.category] || ins.category}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {suggestions.length > 0 && (
+        <div className="bg-accent-sky/5 rounded-xl p-3 border border-accent-sky/10">
+          <p className="text-[10px] font-semibold text-accent-sky uppercase tracking-wider mb-1.5">温和建议</p>
+          {suggestions.map((sug, i) => (
+            <div key={i} className="flex items-start gap-1.5 mb-1 last:mb-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent-sky mt-1.5 shrink-0" />
+              <span className="text-[11px] text-ink-light leading-relaxed">{sug.suggestion}</span>
+              <span className="text-[10px] text-ink-lighter bg-ink/5 rounded px-1 py-0.5 shrink-0">
+                {SUGGESTION_CATEGORY_LABELS[sug.category] || sug.category}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       {(themes.length > 0 || events.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
           {themes.map((t, i) => (
@@ -178,17 +214,24 @@ export default function LifeTraceDailyRecord() {
   const upsertEntry = useUpsertJournalEntry();
   const triggerAI = useTriggerLifeAnalysis();
 
-  const [content, setContent] = useState("");
+  const [existingContent, setExistingContent] = useState("");
+  const [appendContent, setAppendContent] = useState("");
+  const [content, setContent] = useState(""); // for new entries (no existing content)
   const [mood, setMood] = useState("");
   const [energyLevel, setEnergyLevel] = useState("");
   const [saving, setSaving] = useState(false);
   const [aiState, setAiState] = useState<"idle" | "analyzing" | "done" | "error">("idle");
   const [aiEntry, setAiEntry] = useState<Record<string, unknown> | null>(null);
 
+  const hasExisting = !!(existingEntry?.content);
+
   // Load existing entry
   useEffect(() => {
     if (existingEntry) {
-      setContent((existingEntry.content as string) || "");
+      const existingContent = (existingEntry.content as string) || "";
+      setExistingContent(existingContent);
+      setAppendContent("");
+      setContent("");
       setMood((existingEntry.mood as string) || "");
       setEnergyLevel((existingEntry.energy_level as string) || "");
       if ((existingEntry.ai_summary as string) || (existingEntry.ai_analysis_version as string)) {
@@ -203,19 +246,25 @@ export default function LifeTraceDailyRecord() {
     try {
       await triggerAI.mutateAsync(entryId);
       setAiState("done");
-      // Re-fetch happens via query invalidation from the hook
-      setAiEntry(existingEntry); // will be replaced by the query refetch
+      setAiEntry(existingEntry);
     } catch {
       setAiState("error");
     }
   }, [triggerAI, existingEntry]);
 
   const handleSave = async () => {
-    if (!content.trim()) return;
+    const newContent = hasExisting ? appendContent.trim() : content.trim();
+    if (!newContent) return;
     setSaving(true);
+
+    // Append to existing content, or create new
+    const finalContent = hasExisting
+      ? existingContent + "\n\n---\n\n" + newContent
+      : newContent;
+
     const payload: Record<string, unknown> = {
       date,
-      content: content.trim(),
+      content: finalContent,
       mood: mood || null,
       energy_level: energyLevel || null,
     };
@@ -257,13 +306,21 @@ export default function LifeTraceDailyRecord() {
         {dateObj.getMonth() + 1}月{dateObj.getDate()}日 {weekdays[dateObj.getDay()]}
       </p>
 
-      {/* Content */}
+      {/* Existing content (read-only) */}
+      {hasExisting && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">今日已记录</p>
+          <div className="text-sm text-ink whitespace-pre-wrap leading-relaxed">{existingContent}</div>
+        </div>
+      )}
+
+      {/* Content input */}
       <textarea
         className="w-full bg-card border border-border rounded-xl px-4 py-3 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light resize-none"
-        rows={10}
-        placeholder="今天发生了什么？有什么想法和感受？"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
+        rows={hasExisting ? 6 : 10}
+        placeholder={hasExisting ? "继续记录今天的事情..." : "今天发生了什么？有什么想法和感受？"}
+        value={hasExisting ? appendContent : content}
+        onChange={(e) => hasExisting ? setAppendContent(e.target.value) : setContent(e.target.value)}
       />
 
       {/* Mood */}
@@ -294,6 +351,8 @@ export default function LifeTraceDailyRecord() {
       >
         {saving ? (
           <><Loader2 size={14} className="animate-spin" />保存中...</>
+        ) : hasExisting ? (
+          <><Send size={14} />追加记录</>
         ) : (
           <><Send size={14} />保存</>
         )}

@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import { dataUrlToBlob, uniqueFileName } from "@/lib/media";
 import type { PendingCapture } from "@/lib/db/indexedDb";
-import type { LifeAnalysisResult } from "@/lib/types";
+import type { LifeAnalysisResult, LifeAnalysisInsight, LifeAnalysisSuggestion } from "@/lib/types";
 
 // ── Helpers ──
 
@@ -291,7 +291,7 @@ async function fetchRecentAIInsights() {
 
   const { data, error } = await supabase
     .from("journal_entries")
-    .select("id, date, title, content, ai_summary, ai_themes, ai_actions, ai_thoughts, ai_analysis_version")
+    .select("id, date, title, content, ai_summary, ai_themes, ai_actions, ai_thoughts, ai_insights, ai_suggestions, ai_analysis_version")
     .not("ai_summary", "is", null)
     .gte("date", sinceDate)
     .order("date", { ascending: false })
