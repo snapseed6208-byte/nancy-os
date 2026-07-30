@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Flag, Calendar, ListChecks, TrendingUp, Loader2, Plus, Check, X,
   RefreshCw, Brain,
@@ -50,7 +50,26 @@ type Tab = "today" | "goals" | "tasks" | "habits" | "weekly";
 // ── Page ──
 
 export default function Plan() {
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTab] = useState<Tab>(() => {
+    const hash = window.location.hash;
+    const match = hash.match(/[?&]tab=([^&]+)/);
+    const initial = match?.[1];
+    if (initial && ["today", "goals", "tasks", "habits", "weekly"].includes(initial)) {
+      return initial as Tab;
+    }
+    return "today";
+  });
+
+  // Sync tab changes to URL
+  const handleTabChange = (next: Tab) => {
+    setTab(next);
+    const hash = window.location.hash;
+    const base = hash.split("?")[0] || "#/plan";
+    const newHash = `${base}?tab=${next}`;
+    if (window.location.hash !== newHash) {
+      window.history.replaceState({}, "", newHash);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -70,7 +89,7 @@ export default function Plan() {
         ]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => handleTabChange(key)}
             className={cn(
               "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors",
               tab === key ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",

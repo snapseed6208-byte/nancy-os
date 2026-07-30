@@ -267,6 +267,7 @@ export default function Home() {
           sub={stats?.tasks.total ? `待完成 ${stats.tasks.pending.length} 项` : "暂无任务"}
           color="text-accent-sky"
           bg="bg-accent-sky/5"
+          path="/plan?tab=tasks"
         />
         <StatusCard
           icon={Trophy}
@@ -275,20 +276,17 @@ export default function Home() {
           sub={stats?.habits.streak ? `连续 ${stats.habits.streak} 天` : "今日暂无记录"}
           color="text-accent-warm"
           bg="bg-accent-warm/5"
+          path="/plan?tab=habits"
         />
-        <button
-          onClick={() => navigate("/english/review")}
-          className="rounded-2xl p-3.5 flex flex-col gap-1.5 bg-sage-light text-left hover:bg-sage-light/70 transition-colors"
-        >
-          <Clock size={16} className="text-sage-deep" />
-          <div>
-            <p className="text-lg font-bold text-ink">
-              {loadingStats ? "..." : `${stats?.reviews.due ?? 0}`}
-            </p>
-            <p className="text-[11px] font-medium text-ink-light">待复习</p>
-            <p className="text-[10px] text-ink-lighter mt-0.5">英语表达</p>
-          </div>
-        </button>
+        <StatusCard
+          icon={Clock}
+          label="待复习"
+          value={loadingStats ? "..." : `${stats?.reviews.due ?? 0}`}
+          sub="英语表达"
+          color="text-sage-deep"
+          bg="bg-sage-light"
+          path="/english/review"
+        />
       </section>
 
       {/* Quick Record — bound to routes */}
@@ -1110,6 +1108,7 @@ function StatusCard({
   sub,
   color,
   bg,
+  path,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
@@ -1117,16 +1116,35 @@ function StatusCard({
   sub: string;
   color: string;
   bg: string;
+  path: string;
 }) {
   return (
-    <div className={cn("rounded-2xl p-3.5 flex flex-col gap-1.5", bg)}>
-      <Icon size={16} className={color} />
+    <a
+      href={path}
+      onClick={(e) => {
+        e.preventDefault();
+        window.history.pushState({}, "", path);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }}
+      className={cn(
+        "rounded-2xl p-3.5 flex flex-col gap-1.5 group",
+        "hover:shadow-md hover:-translate-y-0.5 transition-all duration-200",
+        "cursor-pointer",
+        bg,
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <Icon size={16} className={color} />
+        <span className="text-[9px] text-ink-lighter opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+          查看 <ChevronRight size={9} />
+        </span>
+      </div>
       <div>
         <p className="text-lg font-bold text-ink">{value}</p>
         <p className="text-[11px] font-medium text-ink-light">{label}</p>
         <p className="text-[10px] text-ink-lighter mt-0.5">{sub}</p>
       </div>
-    </div>
+    </a>
   );
 }
 
