@@ -37,15 +37,57 @@ export function getDateLabel(dateStr: string): string {
 const URL_PROTOCOL_RE = /^https?:\/\//i;
 const SAFE_PROTOCOLS = ["http:", "https:"];
 
+/**
+ * Extract the first valid URL from arbitrary text.
+ * Handles pasted text like "抖音视频：\nhttps://v.douyin.com/xxxx" or "B站：b23.tv/test".
+ */
+export function extractFirstUrl(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  // Step 1: Match full URLs with protocol (https://example.com/path)
+  const protocolMatch = trimmed.match(/https?:\/\/[^\s一-鿿぀-ゟ가-힯]+/i);
+  if (protocolMatch) {
+    // Clean trailing punctuation that's unlikely to be part of the URL
+    return protocolMatch[0].replace(/[。,，！!？?）\)】】》>]+$/, "");
+  }
+
+  // Step 2: Match www.xxx.com patterns
+  const wwwMatch = trimmed.match(/www\.[^\s一-鿿぀-ゟ가-힯]+\.[^\s一-鿿぀-ゟ가-힯]*/i);
+  if (wwwMatch) {
+    return wwwMatch[0].replace(/[。,，！!？?）\)】】》>]+$/, "");
+  }
+
+  // Step 3: Match bare domain patterns (b23.tv/xxx, example.com/path)
+  // Only match if the input looks like it contains a domain (has a dot with TLD)
+  const domainMatch = trimmed.match(/(?:^|\s)([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9][-a-zA-Z0-9]*)*\.[a-zA-Z]{2,}(?:\/[^\s一-鿿぀-ゟ가-힯]*)?)/);
+  if (domainMatch) {
+    return domainMatch[1].replace(/[。,，！!？?）\)】】》>]+$/, "");
+  }
+
+  return null;
+}
+
+/**
+ * Normalize a URL string: extract → add protocol → validate.
+ * Accepts raw text (may contain surrounding description) or a bare URL.
+ * Returns a clean absolute URL or null.
+ */
 export function normalizeUrl(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  let withProtocol = trimmed;
-  if (!URL_PROTOCOL_RE.test(trimmed)) {
-    withProtocol = `https://${trimmed}`;
+  // Step 1: Extract the URL candidate from the text
+  const extracted = extractFirstUrl(trimmed);
+  if (!extracted) return null;
+
+  // Step 2: Add protocol if missing
+  let withProtocol = extracted;
+  if (!URL_PROTOCOL_RE.test(extracted)) {
+    withProtocol = `https://${extracted}`;
   }
 
+  // Step 3: Validate as a proper URL
   try {
     const parsed = new URL(withProtocol);
     if (!SAFE_PROTOCOLS.includes(parsed.protocol)) return null;
