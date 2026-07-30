@@ -846,6 +846,80 @@ export function useParseContent() {
   });
 }
 
+// ── Water Intake ──
+
+export type WaterRecord = {
+  id: string;
+  user_id: string;
+  amount_ml: number;
+  recorded_at: string;
+  created_at: string;
+};
+
+export type WaterToday = {
+  records: WaterRecord[];
+  total_ml: number;
+  goal_ml: number;
+};
+
+const DAILY_WATER_GOAL = 2000;
+
+async function fetchWaterToday(date: string): Promise<WaterToday> {
+  const startOfDay = `${date}T00:00:00`;
+  const endOfDay = `${date}T23:59:59`;
+  const { data, error } = await supabase
+    .from("water_records")
+    .select("*")
+    .gte("recorded_at", startOfDay)
+    .lte("recorded_at", endOfDay)
+    .order("recorded_at", { ascending: false });
+  if (error) throw error;
+  const records = (data || []) as WaterRecord[];
+  const total_ml = records.reduce((sum, r) => sum + r.amount_ml, 0);
+  return { records, total_ml, goal_ml: DAILY_WATER_GOAL };
+}
+
+export function useWaterToday(date?: string) {
+  const d = date || new Date().toISOString().split("T")[0];
+  return useQuery({
+    queryKey: ["water_today", d],
+    queryFn: () => fetchWaterToday(d),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useAddWater() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { date: string; amount_ml: number }) => {
+      const userId = await getUserId();
+      const { data, error } = await supabase
+        .from("water_records")
+        .insert({ user_id: userId, ...input, recorded_at: new Date().toISOString() })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as WaterRecord;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["water_today", vars.date] });
+    },
+  });
+}
+
+export function useDeleteWater() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; date: string }) => {
+      const { error } = await supabase.from("water_records").delete().eq("id", input.id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["water_today", vars.date] });
+    },
+  });
+}
+
 // ── Helpers ──
 
 function detectPlatform(url: string): string {
