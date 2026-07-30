@@ -193,6 +193,42 @@ export function useCreateTags() {
   });
 }
 
+export function useUpdateTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { data, error } = await supabase
+        .from("tags")
+        .update({ name })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["resource_tags_all"] });
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
+export function useDeleteTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("tags").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["resource_tags_all"] });
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
 // Fetch all resource_tags for current user (RLS-filtered)
 async function fetchAllResourceTags(): Promise<Record<string, TagType[]>> {
   const { data, error } = await supabase

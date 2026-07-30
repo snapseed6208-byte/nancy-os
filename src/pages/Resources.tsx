@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import {
   useResources, useCreateResource, useUpdateResource, useDeleteResource,
   useContentParser, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
-  useAllResourceTags, useCreateTags, useAttachTagsToResource, useDetachTagFromResource,
+  useAllResourceTags, useTags, useCreateTags, useUpdateTag, useDeleteTag,
+  useAttachTagsToResource, useDetachTagFromResource,
   type ResourceRow, type ParsedContent, type Category, type TagType,
 } from "@/lib/hooks/useResources";
 
@@ -46,7 +47,10 @@ export default function Resources() {
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
+  const { data: tags } = useTags();
   const createTags = useCreateTags();
+  const updateTag = useUpdateTag();
+  const deleteTag = useDeleteTag();
   const attachTags = useAttachTagsToResource();
   const detachTag = useDetachTagFromResource();
 
@@ -282,13 +286,17 @@ export default function Resources() {
       {showCategoryManager && (
         <CategoryManagerModal
           categories={categories || []}
+          tags={tags || []}
           onClose={() => setShowCategoryManager(false)}
-          onCreate={(name) => {
+          onCreateCategory={(name) => {
             const colorIdx = (categories?.length || 0) % DEFAULT_CATEGORY_COLORS.length;
             createCategory.mutate({ name, icon: "📁", color: DEFAULT_CATEGORY_COLORS[colorIdx] });
           }}
-          onUpdate={(id, fields) => updateCategory.mutate({ id, ...fields })}
-          onDelete={(id) => { if (confirm("删除分类后，该分类下的资源将变为未分类。确定删除？")) deleteCategory.mutate(id); }}
+          onUpdateCategory={(id, fields) => updateCategory.mutate({ id, ...fields })}
+          onDeleteCategory={(id) => { if (confirm("删除分类后，该分类下的资源将变为未分类。确定删除？")) deleteCategory.mutate(id); }}
+          onCreateTag={(name) => createTags.mutate([name])}
+          onUpdateTag={(id, name) => updateTag.mutate({ id, name })}
+          onDeleteTag={(id) => { if (confirm("删除标签后，所有资源上的该标签将被移除。确定删除？")) deleteTag.mutate(id); }}
         />
       )}
 
@@ -423,13 +431,95 @@ export default function Resources() {
 
 function CategoryManagerModal({
   categories,
+  tags,
   onClose,
+  onCreateCategory,
+  onUpdateCategory,
+  onDeleteCategory,
+  onCreateTag,
+  onUpdateTag,
+  onDeleteTag,
+}: {
+  categories: Category[];
+  tags: TagType[];
+  onClose: () => void;
+  onCreateCategory: (name: string) => void;
+  onUpdateCategory: (id: string, fields: Record<string, unknown>) => void;
+  onDeleteCategory: (id: string) => void;
+  onCreateTag: (name: string) => void;
+  onUpdateTag: (id: string, name: string) => void;
+  onDeleteTag: (id: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"category" | "tag">("category");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm max-h-[80vh] flex flex-col shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-ink">管理</h2>
+            <div className="flex bg-ink/5 rounded-lg p-0.5">
+              <button
+                onClick={() => setActiveTab("category")}
+                className={cn(
+                  "text-[11px] font-medium px-3 py-1 rounded-md transition-colors",
+                  activeTab === "category" ? "bg-white text-ink shadow-sm" : "text-ink-lighter hover:text-ink",
+                )}
+              >
+                分类
+              </button>
+              <button
+                onClick={() => setActiveTab("tag")}
+                className={cn(
+                  "text-[11px] font-medium px-3 py-1 rounded-md transition-colors",
+                  activeTab === "tag" ? "bg-white text-ink shadow-sm" : "text-ink-lighter hover:text-ink",
+                )}
+              >
+                标签
+              </button>
+            </div>
+          </div>
+          <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-ink/5">
+            <X size={16} className="text-ink-lighter" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {activeTab === "category" ? (
+            <CategoryTab
+              categories={categories}
+              onCreate={onCreateCategory}
+              onUpdate={onUpdateCategory}
+              onDelete={onDeleteCategory}
+            />
+          ) : (
+            <TagTab
+              tags={tags}
+              onCreate={onCreateTag}
+              onUpdate={onUpdateTag}
+              onDelete={onDeleteTag}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Category Tab ──
+
+function CategoryTab({
+  categories,
   onCreate,
   onUpdate,
   onDelete,
 }: {
   categories: Category[];
-  onClose: () => void;
   onCreate: (name: string) => void;
   onUpdate: (id: string, fields: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
@@ -455,121 +545,199 @@ function CategoryManagerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30" onClick={onClose}>
-      <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm max-h-[80vh] flex flex-col shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-ink">管理分类</h2>
-          <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-ink/5">
-            <X size={16} className="text-ink-lighter" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Add new */}
-          <div className="flex items-center gap-2">
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-              placeholder="新增自定义分类..."
-              className="flex-1 text-xs border border-border rounded-xl px-3 py-2 outline-none focus:border-sage-deep/50"
-            />
-            <button
-              onClick={handleCreate}
-              disabled={!newName.trim()}
-              className="text-xs bg-sage-light text-sage-deep rounded-xl px-3 py-2 font-medium disabled:opacity-40 hover:bg-sage-light/80 transition-colors"
-            >
-              添加
-            </button>
-          </div>
-
-          {/* System categories */}
-          {systemCats.length > 0 && (
-            <div>
-              <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">系统分类</p>
-              <div className="space-y-1">
-                {systemCats.map((cat) => (
-                  <div key={cat.id} className="flex items-center justify-between py-1.5">
-                    <div className="flex items-center gap-2 text-xs text-ink">
-                      <span>{cat.icon || "📁"}</span>
-                      {editingId === cat.id ? (
-                        <input
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleRename(cat.id)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleRename(cat.id); if (e.key === "Escape") setEditingId(null); }}
-                          className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
-                          autoFocus
-                        />
-                      ) : (
-                        <span>{cat.name}</span>
-                      )}
-                      <span className="text-[9px] bg-ink/5 text-ink-lighter rounded px-1 py-0.5">系统</span>
-                    </div>
-                    <button
-                      onClick={() => { setEditingId(cat.id); setEditValue(cat.name); }}
-                      className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
-                    >
-                      <Edit3 size={10} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Custom categories */}
-          {customCats.length > 0 && (
-            <div>
-              <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">自定义分类</p>
-              <div className="space-y-1">
-                {customCats.map((cat) => (
-                  <div key={cat.id} className="flex items-center justify-between py-1.5">
-                    <div className="flex items-center gap-2 text-xs text-ink">
-                      <span>{cat.icon || "📁"}</span>
-                      {editingId === cat.id ? (
-                        <input
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={() => handleRename(cat.id)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleRename(cat.id); if (e.key === "Escape") setEditingId(null); }}
-                          className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
-                          autoFocus
-                        />
-                      ) : (
-                        <span>{cat.name}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => { setEditingId(cat.id); setEditValue(cat.name); }}
-                        className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
-                      >
-                        <Edit3 size={10} />
-                      </button>
-                      <button
-                        onClick={() => onDelete(cat.id)}
-                        className="text-[10px] text-ink-lighter hover:text-red-500 px-1.5 py-1"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {systemCats.length === 0 && customCats.length === 0 && (
-            <p className="text-xs text-ink-lighter text-center py-4">暂无分类</p>
-          )}
-        </div>
+    <div className="space-y-4">
+      {/* Add new */}
+      <div className="flex items-center gap-2">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+          placeholder="新增自定义分类..."
+          className="flex-1 text-xs border border-border rounded-xl px-3 py-2 outline-none focus:border-sage-deep/50"
+        />
+        <button
+          onClick={handleCreate}
+          disabled={!newName.trim()}
+          className="text-xs bg-sage-light text-sage-deep rounded-xl px-3 py-2 font-medium disabled:opacity-40 hover:bg-sage-light/80 transition-colors"
+        >
+          添加
+        </button>
       </div>
+
+      {/* System categories */}
+      {systemCats.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">系统分类</p>
+          <div className="space-y-1">
+            {systemCats.map((cat) => (
+              <div key={cat.id} className="flex items-center justify-between py-1.5">
+                <div className="flex items-center gap-2 text-xs text-ink">
+                  <span>{cat.icon || "📁"}</span>
+                  {editingId === cat.id ? (
+                    <input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onBlur={() => handleRename(cat.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleRename(cat.id); if (e.key === "Escape") setEditingId(null); }}
+                      className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
+                      autoFocus
+                    />
+                  ) : (
+                    <span>{cat.name}</span>
+                  )}
+                  <span className="text-[9px] bg-ink/5 text-ink-lighter rounded px-1 py-0.5">系统</span>
+                </div>
+                <button
+                  onClick={() => { setEditingId(cat.id); setEditValue(cat.name); }}
+                  className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
+                >
+                  <Edit3 size={10} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Custom categories */}
+      {customCats.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">自定义分类</p>
+          <div className="space-y-1">
+            {customCats.map((cat) => (
+              <div key={cat.id} className="flex items-center justify-between py-1.5">
+                <div className="flex items-center gap-2 text-xs text-ink">
+                  <span>{cat.icon || "📁"}</span>
+                  {editingId === cat.id ? (
+                    <input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onBlur={() => handleRename(cat.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleRename(cat.id); if (e.key === "Escape") setEditingId(null); }}
+                      className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
+                      autoFocus
+                    />
+                  ) : (
+                    <span>{cat.name}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => { setEditingId(cat.id); setEditValue(cat.name); }}
+                    className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
+                  >
+                    <Edit3 size={10} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(cat.id)}
+                    className="text-[10px] text-ink-lighter hover:text-red-500 px-1.5 py-1"
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {systemCats.length === 0 && customCats.length === 0 && (
+        <p className="text-xs text-ink-lighter text-center py-4">暂无分类</p>
+      )}
+    </div>
+  );
+}
+
+// ── Tag Tab ──
+
+function TagTab({
+  tags,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  tags: TagType[];
+  onCreate: (name: string) => void;
+  onUpdate: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+
+  const handleCreate = () => {
+    if (!newName.trim()) return;
+    onCreate(newName.trim());
+    setNewName("");
+  };
+
+  const handleRename = (id: string) => {
+    if (!editValue.trim()) { setEditingId(null); return; }
+    onUpdate(id, editValue.trim());
+    setEditingId(null);
+    setEditValue("");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Add new tag */}
+      <div className="flex items-center gap-2">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+          placeholder="新增标签..."
+          className="flex-1 text-xs border border-border rounded-xl px-3 py-2 outline-none focus:border-sage-deep/50"
+        />
+        <button
+          onClick={handleCreate}
+          disabled={!newName.trim()}
+          className="text-xs bg-sage-light text-sage-deep rounded-xl px-3 py-2 font-medium disabled:opacity-40 hover:bg-sage-light/80 transition-colors"
+        >
+          添加
+        </button>
+      </div>
+
+      {/* Tag list */}
+      {tags.length > 0 ? (
+        <div className="space-y-1">
+          {tags.map((tag) => (
+            <div key={tag.id} className="flex items-center justify-between py-1.5">
+              <div className="flex items-center gap-2 text-xs text-ink">
+                <span className="text-sage-deep">#</span>
+                {editingId === tag.id ? (
+                  <input
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => handleRename(tag.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleRename(tag.id); if (e.key === "Escape") setEditingId(null); }}
+                    className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
+                    autoFocus
+                  />
+                ) : (
+                  <span>{tag.name}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => { setEditingId(tag.id); setEditValue(tag.name); }}
+                  className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
+                >
+                  <Edit3 size={10} />
+                </button>
+                <button
+                  onClick={() => onDelete(tag.id)}
+                  className="text-[10px] text-ink-lighter hover:text-red-500 px-1.5 py-1"
+                >
+                  <Trash2 size={10} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-ink-lighter text-center py-4">暂无标签</p>
+      )}
     </div>
   );
 }
