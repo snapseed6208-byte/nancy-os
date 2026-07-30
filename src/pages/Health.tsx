@@ -3,6 +3,7 @@ import {
   Heart, Sparkles, Dumbbell, Utensils, Calendar, Loader2, Plus,
   Trash2, ExternalLink, Play, Flame, Target, Activity, Apple,
   ChevronLeft, ChevronRight, Star, Clock, Zap, AlertTriangle, CheckCircle2,
+  Image, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -13,7 +14,8 @@ import {
   useHealthContext, useCoachInsight, useGenerateCoachInsight,
   useWorkoutRecords, useCreateWorkoutRecord, useDeleteWorkoutRecord,
   useFoodRecords, useCreateFoodRecord, useDeleteFoodRecord,
-  type WorkoutVideo, type Recipe, type MealPlan, type MealPlanSlot,
+  useMealAnalysis, useGenerateMealAnalysis,
+  type WorkoutVideo, type Recipe, type MealPlan, type MealPlanSlot, type FoodRecord,
 } from "@/lib/hooks/useHealth";
 
 // ── Constants ──
@@ -37,9 +39,16 @@ const RECIPE_FILTERS = [
   { key: "减脂", label: "减脂" },
 ] as const;
 
-const MEAL_TYPES = ["breakfast", "lunch", "dinner"] as const;
-const MEAL_LABELS: Record<string, string> = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐" };
-const MEAL_ICONS: Record<string, string> = { breakfast: "🌅", lunch: "☀️", dinner: "🌙" };
+const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+const MEAL_LABELS: Record<string, string> = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐", snack: "加餐" };
+const MEAL_ICONS: Record<string, string> = { breakfast: "🌅", lunch: "☀️", dinner: "🌙", snack: "🍪" };
+const FEELING_OPTIONS = [
+  { key: "", label: "无" },
+  { key: "饱", label: "饱" },
+  { key: "刚好", label: "刚好" },
+  { key: "还饿", label: "还饿" },
+  { key: "撑", label: "撑" },
+] as const;
 
 const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
@@ -262,13 +271,31 @@ function QuickLog() {
   const deleteWorkout = useDeleteWorkoutRecord();
   const createFood = useCreateFoodRecord();
   const deleteFood = useDeleteFoodRecord();
+  const generateAnalysis = useGenerateMealAnalysis();
 
   const [logType, setLogType] = useState<"workout" | "food" | null>(null);
   const [workoutForm, setWorkoutForm] = useState({ exercise_name: "", duration_minutes: null as number | null, notes: "" });
-  const [foodForm, setFoodForm] = useState({ meal_type: "breakfast", food_name: "", notes: "" });
+  const [foodForm, setFoodForm] = useState({
+    meal_type: "breakfast" as string,
+    food_name: "",
+    portion: "",
+    feeling: "",
+    record_time: "",
+  });
+  const [analyzingMeal, setAnalyzingMeal] = useState<string | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+
+  // Group food records by meal type
+  const foodsByMeal = (foodRecords || []).reduce<Record<string, typeof foodRecords>>((acc, r) => {
+    const mt = r.meal_type || "other";
+    if (!acc[mt]) acc[mt] = [];
+    acc[mt].push(r);
+    return acc;
+  }, {});
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {/* Quick action buttons */}
       <div className="flex gap-2">
         <button
@@ -334,15 +361,120 @@ function QuickLog() {
           <input
             type="text" value={foodForm.food_name}
             onChange={(e) => setFoodForm((f) => ({ ...f, food_name: e.target.value }))}
-            placeholder="吃了什么？"
+            placeholder="吃了什么？如：番茄炒蛋 + 米饭"
             className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2 focus:border-sage-deep/50 transition-colors"
             autoFocus
           />
+          <div className="flex gap-2">
+            <input
+              type="text" value={foodForm.portion}
+              onChange={(e) => setFoodForm((f) => ({ ...f, portion: e.target.value }))}
+              placeholder="份量，如：1碗、半盘"
+              className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2 focus:border-sage-deep/50 transition-colors"
+            />
+            <input
+              type="time" value={foodForm.record_time}
+              onChange={(e) => setFoodForm((f) => ({ ...f, record_time: e.target.value }))}
+              className="w-28 bg-transparent text-xs text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-2 py-2 focus:border-sage-deep/50 transition-colors"
+            />
+          </div>
+          <div className="flex gap-1.5">
+            {FEELING_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setFoodForm((f) => ({ ...f, feeling: opt.key }))}
+                className={cn(
+                  "flex-1 py-1 rounded-lg text-[10px] font-medium transition-colors",
+                  foodForm.feeling === opt.key
+                    ? "bg-accent-rose/10 text-accent-rose"
+                    : opt.key === "" && foodForm.feeling === ""
+                      ? "bg-ink/5 text-ink-light"
+                      : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Image picker */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                multiple
+                className="hidden"
+                id="food-image-input"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  const remaining = 3 - imageFiles.length;
+                  const toAdd = files.slice(0, remaining);
+                  setImageFiles((prev) => [...prev, ...toAdd].slice(0, 3));
+                  for (const f of toAdd) {
+                    setImagePreviews((prev) => [...prev, URL.createObjectURL(f)].slice(0, 3));
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => document.getElementById("food-image-input")?.click()}
+                disabled={imageFiles.length >= 3}
+                className="flex items-center gap-1 text-[10px] font-medium text-ink-lighter bg-ink/5 rounded-lg px-2 py-1.5 hover:bg-ink/10 disabled:opacity-40 transition-colors"
+              >
+                <Image size={12} />
+                {imageFiles.length > 0 ? `已选 ${imageFiles.length}/3` : "添加图片"}
+              </button>
+              {imageFiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setImageFiles([]); setImagePreviews([]); }}
+                  className="text-[10px] text-ink-lighter hover:text-accent-rose"
+                >
+                  清除
+                </button>
+              )}
+            </div>
+            {imagePreviews.length > 0 && (
+              <div className="flex gap-1.5">
+                {imagePreviews.map((url, i) => (
+                  <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden bg-ink/5">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageFiles((prev) => prev.filter((_, idx) => idx !== i));
+                        setImagePreviews((prev) => prev.filter((_, idx) => idx !== i));
+                      }}
+                      className="absolute top-0 right-0 w-4 h-4 bg-black/40 rounded-bl-lg flex items-center justify-center"
+                    >
+                      <X size={9} className="text-white" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button
             onClick={() => {
               if (!foodForm.food_name.trim()) return;
-              createFood.mutate({ date, meal_type: foodForm.meal_type, food_name: foodForm.food_name.trim(), notes: foodForm.notes || undefined }, {
-                onSuccess: () => { setFoodForm({ meal_type: "breakfast", food_name: "", notes: "" }); setLogType(null); },
+              createFood.mutate({
+                date,
+                meal_type: foodForm.meal_type,
+                food_name: foodForm.food_name.trim(),
+                portion: foodForm.portion || undefined,
+                image_files: imageFiles.length > 0 ? imageFiles : undefined,
+                feeling: foodForm.feeling || undefined,
+                record_time: foodForm.record_time || undefined,
+              }, {
+                onSuccess: () => {
+                  setFoodForm({ meal_type: "breakfast", food_name: "", portion: "", feeling: "", record_time: "" });
+                  setImageFiles([]);
+                  setImagePreviews([]);
+                  setLogType(null);
+                },
               });
             }}
             disabled={!foodForm.food_name.trim() || createFood.isPending}
@@ -353,8 +485,8 @@ function QuickLog() {
         </div>
       )}
 
-      {/* Today's records list */}
-      {((workoutRecords?.length ?? 0) > 0 || (foodRecords?.length ?? 0) > 0) && (
+      {/* Workout records */}
+      {(workoutRecords?.length ?? 0) > 0 && (
         <div className="bg-card rounded-2xl border border-border p-3 space-y-2">
           {(workoutRecords || []).map((r) => (
             <div key={r.id} className="flex items-center justify-between text-xs">
@@ -362,12 +494,145 @@ function QuickLog() {
               <button onClick={() => deleteWorkout.mutate(r.id)} className="text-ink-lighter hover:text-accent-rose"><Trash2 size={11} /></button>
             </div>
           ))}
-          {(foodRecords || []).map((r) => (
-            <div key={r.id} className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5"><Apple size={11} className="text-accent-rose" />{MEAL_LABELS[r.meal_type] || r.meal_type} · {r.food_name}</span>
-              <button onClick={() => deleteFood.mutate(r.id)} className="text-ink-lighter hover:text-accent-rose"><Trash2 size={11} /></button>
+        </div>
+      )}
+
+      {/* Food records by meal type */}
+      {Object.keys(foodsByMeal).length > 0 && (
+        <div className="space-y-2">
+          {MEAL_TYPES.map((mt) => {
+            const meals = foodsByMeal[mt];
+            if (!meals || meals.length === 0) return null;
+            return (
+              <MealSection
+                key={mt}
+                mealType={mt}
+                date={date}
+                foods={meals}
+                onDelete={(id) => deleteFood.mutate(id)}
+                analyzingMeal={analyzingMeal}
+                onAnalyze={(mt) => {
+                  setAnalyzingMeal(mt);
+                  generateAnalysis.mutate({
+                    date,
+                    meal_type: mt,
+                    food_records: meals.map((f) => ({
+                      food_name: f.food_name,
+                      portion: f.portion ?? undefined,
+                      feeling: f.feeling ?? undefined,
+                    })),
+                  }, {
+                    onSettled: () => setAnalyzingMeal(null),
+                  });
+                }}
+                isAnalyzing={generateAnalysis.isPending && analyzingMeal === mt}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Meal Section with AI Analysis ──
+
+function MealSection({
+  mealType,
+  date,
+  foods,
+  onDelete,
+  analyzingMeal,
+  onAnalyze,
+  isAnalyzing,
+}: {
+  mealType: string;
+  date: string;
+  foods: FoodRecord[];
+  onDelete: (id: string) => void;
+  analyzingMeal: string | null;
+  onAnalyze: (mt: string) => void;
+  isAnalyzing: boolean;
+}) {
+  const { data: analysis } = useMealAnalysis(date, mealType);
+  const analysisData = analysis?.data;
+
+  return (
+    <div className="bg-card rounded-2xl border border-border p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-ink-light">
+          {MEAL_ICONS[mealType]} {MEAL_LABELS[mealType]}
+        </p>
+        <button
+          onClick={() => onAnalyze(mealType)}
+          disabled={isAnalyzing}
+          className="flex items-center gap-1 text-[10px] font-medium text-sage-deep bg-sage-light/50 rounded-full px-2 py-0.5 hover:bg-sage-light transition-colors disabled:opacity-50"
+        >
+          {isAnalyzing ? (
+            <><Loader2 size={10} className="animate-spin" />分析中</>
+          ) : (
+            <><Sparkles size={10} />{analysis ? "重新分析" : "AI 分析"}</>
+          )}
+        </button>
+      </div>
+
+      {/* Food items */}
+      {foods.map((f) => (
+        <div key={f.id}>
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <Apple size={11} className="text-accent-rose shrink-0" />
+              <span className="text-ink truncate">{f.food_name}</span>
+              {f.portion && <span className="text-[10px] text-ink-lighter shrink-0">({f.portion})</span>}
+              {f.feeling && <span className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1 shrink-0">{f.feeling}</span>}
             </div>
-          ))}
+            <button onClick={() => onDelete(f.id)} className="text-ink-lighter hover:text-accent-rose shrink-0 ml-2"><Trash2 size={11} /></button>
+          </div>
+          {/* Thumbnails for this food record */}
+          {f.image_urls && f.image_urls.length > 0 && (
+            <div className="flex gap-1 mt-1.5">
+              {f.image_urls.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-ink/5 hover:opacity-80 transition-opacity">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* AI Analysis result */}
+      {analysisData && (
+        <div className="mt-2 pt-2 border-t border-border/50 space-y-1.5">
+          <div className="flex items-center gap-3 text-[10px] text-ink-lighter">
+            {analysisData.estimated_calories != null && (
+              <span className="flex items-center gap-0.5"><Flame size={10} className="text-accent-warm" />{analysisData.estimated_calories}千卡</span>
+            )}
+            {analysisData.estimated_protein != null && (
+              <span>蛋白质 {analysisData.estimated_protein}g</span>
+            )}
+            {analysisData.estimated_carbs != null && (
+              <span>碳水 {analysisData.estimated_carbs}g</span>
+            )}
+            {analysisData.estimated_fat != null && (
+              <span>脂肪 {analysisData.estimated_fat}g</span>
+            )}
+          </div>
+          {analysisData.assessment && (
+            <p className="text-[11px] text-ink-light leading-relaxed">{analysisData.assessment}</p>
+          )}
+          {analysisData.suggestions && analysisData.suggestions.length > 0 && (
+            <div className="space-y-0.5">
+              {analysisData.suggestions.map((s, i) => (
+                <p key={i} className="text-[10px] text-ink-lighter flex items-start gap-1">
+                  <span className="text-sage-deep shrink-0 mt-0.5">•</span>
+                  {s}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

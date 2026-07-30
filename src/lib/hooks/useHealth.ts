@@ -118,6 +118,12 @@ export type FoodRecord = {
   date: string;
   meal_type: string;
   food_name: string;
+  // v2 fields
+  portion: string | null;
+  image_urls: string[] | null;
+  feeling: string | null;
+  record_time: string | null;
+  // deprecated — kept for historical data
   carb: string | null;
   protein: string | null;
   vegetables: string | null;
@@ -127,6 +133,26 @@ export type FoodRecord = {
   checklist: Record<string, unknown> | null;
   notes: string | null;
   created_at: string;
+};
+
+export type MealAnalysis = {
+  id: string;
+  user_id: string;
+  agent_type: string;
+  insight_type: string;
+  title: string | null;
+  content: string | null;
+  data: {
+    meal_type?: string;
+    meal_date?: string;
+    estimated_calories?: number;
+    estimated_protein?: number;
+    estimated_carbs?: number;
+    estimated_fat?: number;
+    assessment?: string;
+    suggestions?: string[];
+  } | null;
+  generated_at: string;
 };
 
 export type HealthContext = {
@@ -497,6 +523,48 @@ export function useDeleteWorkoutRecord() {
   });
 }
 
+// ── Food Images (Storage) ──
+
+const FOOD_IMAGES_BUCKET = "food-images";
+
+export async function uploadFoodImages(userId: string, files: File[]): Promise<string[]> {
+  const urls: string[] = [];
+  for (const file of files) {
+    const ts = Date.now();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${userId}/${ts}_${safeName}`;
+    const { error, data } = await supabase.storage
+      .from(FOOD_IMAGES_BUCKET)
+      .upload(path, file, { upsert: false });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage
+      .from(FOOD_IMAGES_BUCKET)
+      .getPublicUrl(data.path);
+    urls.push(urlData.publicUrl);
+  }
+  return urls;
+}
+
+export async function deleteFoodImages(urls: string[]): Promise<void> {
+  if (!urls || urls.length === 0) return;
+  const paths = urls
+    .map((url) => {
+      try {
+        const u = new URL(url);
+        const parts = u.pathname.split("/");
+        const bucketIdx = parts.indexOf(FOOD_IMAGES_BUCKET);
+        if (bucketIdx === -1) return null;
+        return parts.slice(bucketIdx + 1).join("/");
+      } catch {
+        return null;
+      }
+    })
+    .filter((p): p is string => p !== null);
+  if (paths.length > 0) {
+    await supabase.storage.from(FOOD_IMAGES_BUCKET).remove(paths);
+  }
+}
+
 // ── Food Records ──
 
 async function fetchFoodRecords(date?: string) {
@@ -526,17 +594,26 @@ export function useCreateFoodRecord() {
       date: string;
       meal_type: string;
       food_name: string;
-      carb?: string;
-      protein?: string;
-      vegetables?: string;
-      drink?: string;
-      fullness?: string;
+      portion?: string;
+      image_files?: File[];
+      feeling?: string;
+      record_time?: string;
+      recipe_id?: string;
       notes?: string;
     }) => {
       const userId = await getUserId();
+      const imageFiles = input.image_files;
+      delete (input as Record<string, unknown>).image_files;
+
+      // Upload images first if provided
+      let imageUrls: string[] | undefined;
+      if (imageFiles && imageFiles.length > 0) {
+        imageUrls = await uploadFoodImages(userId, imageFiles);
+      }
+
       const { data, error } = await supabase
         .from("food_records")
-        .insert({ ...input, user_id: userId })
+        .insert({ ...input, user_id: userId, image_urls: imageUrls || [] })
         .select()
         .single();
       if (error) throw error;
@@ -553,12 +630,93 @@ export function useDeleteFoodRecord() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      // Fetch record first to get image_urls for cleanup
+      const { data: record } = await supabase
+        .from("food_records")
+        .select("image_urls")
+        .eq("id", id)
+        .single();
+
       const { error } = await supabase.from("food_records").delete().eq("id", id);
       if (error) throw error;
+
+      // Clean up images from storage
+      if (record?.image_urls && Array.isArray(record.image_urls)) {
+        await deleteFoodImages(record.image_urls as string[]).catch(() => {
+          // Non-critical — image cleanup failure shouldn't block record deletion
+        });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["food_records"] });
       qc.invalidateQueries({ queryKey: ["health_context"] });
+    },
+  });
+}
+
+// ── Meal AI Analysis ──
+
+async function fetchMealAnalysis(date: string, mealType: string) {
+  const { data, error } = await supabase
+    .from("ai_insights")
+    .select("*")
+    .eq("agent_type", "diet_analyst")
+    .eq("insight_type", "meal_analysis")
+    .contains("data", { meal_date: date, meal_type: mealType })
+    .order("generated_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const row = (data || [])[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    ...row,
+    data: row.data as MealAnalysis["data"],
+  } as MealAnalysis;
+}
+
+export function useMealAnalysis(date: string, mealType: string) {
+  return useQuery({
+    queryKey: ["meal_analysis", date, mealType],
+    queryFn: () => fetchMealAnalysis(date, mealType),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!date && !!mealType,
+  });
+}
+
+export function useGenerateMealAnalysis() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      date: string;
+      meal_type: string;
+      food_records: Array<{
+        food_name: string;
+        portion?: string;
+        feeling?: string;
+      }>;
+    }) => {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/diet-analyst-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(input),
+        },
+      );
+      if (!res.ok) throw new Error(`AI 分析失败 (${res.status})`);
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({
+        queryKey: ["meal_analysis", variables.date, variables.meal_type],
+      });
     },
   });
 }
