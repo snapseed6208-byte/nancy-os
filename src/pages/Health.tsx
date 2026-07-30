@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/health/VideoPlayer";
 import WorkoutJournalTab from "@/components/health/WorkoutJournalTab";
 import RecipeDetailModal from "@/components/health/RecipeDetailModal";
+import FoodJournalTab from "@/components/health/FoodJournalTab";
 import {
   useBodyProfile, useUpdateBodyProfile,
   useWorkoutVideos, useCreateWorkoutVideo, useUpdateWorkoutVideo, useDeleteWorkoutVideo, useRetryWorkoutAnalysis,
@@ -60,8 +61,9 @@ const FEELING_OPTIONS = [
 
 const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
-type Tab = "coach" | "workout" | "recipe" | "plan" | "goals";
+type Tab = "coach" | "workout" | "diet" | "plan" | "goals";
 type WorkoutSubTab = "library" | "journal";
+type DietSubTab = "journal" | "recipe";
 
 function today() { return new Date().toISOString().split("T")[0]; }
 
@@ -85,6 +87,7 @@ function formatWeekRange(mondayStr: string): string {
 export default function Health() {
   const [tab, setTab] = useState<Tab>("coach");
   const [workoutSubTab, setWorkoutSubTab] = useState<WorkoutSubTab>("library");
+  const [dietSubTab, setDietSubTab] = useState<DietSubTab>("journal");
 
   // Shared state for "start training from video"
   const [startFromVideo, setStartFromVideo] = useState<WorkoutVideo | null>(null);
@@ -107,7 +110,7 @@ export default function Health() {
         {([
           { key: "coach" as Tab, label: "今日建议", icon: Sparkles },
           { key: "workout" as Tab, label: "训练", icon: Dumbbell },
-          { key: "recipe" as Tab, label: "食谱库", icon: Utensils },
+          { key: "diet" as Tab, label: "饮食", icon: Apple },
           { key: "plan" as Tab, label: "周计划", icon: Calendar },
           { key: "goals" as Tab, label: "健康目标", icon: Target },
         ]).map(({ key, label, icon: Icon }) => (
@@ -155,7 +158,32 @@ export default function Health() {
           )}
         </div>
       )}
-      {tab === "recipe" && <RecipeBoxTab />}
+      {tab === "diet" && (
+        <div className="space-y-3">
+          {/* Sub-tabs */}
+          <div className="flex bg-ink/5 rounded-xl p-1">
+            <button
+              onClick={() => setDietSubTab("journal")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all",
+                dietSubTab === "journal" ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
+              )}
+            >
+              <Apple size={12} />饮食日志
+            </button>
+            <button
+              onClick={() => setDietSubTab("recipe")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all",
+                dietSubTab === "recipe" ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
+              )}
+            >
+              <Utensils size={12} />食谱库
+            </button>
+          </div>
+          {dietSubTab === "journal" ? <FoodJournalTab /> : <RecipeBoxTab />}
+        </div>
+      )}
       {tab === "plan" && <WeeklyPlanTab />}
       {tab === "goals" && <GoalsTab />}
     </div>

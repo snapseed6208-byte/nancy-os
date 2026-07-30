@@ -749,11 +749,33 @@ export function useCreateFoodRecord() {
         .select()
         .single();
       if (error) throw error;
+
+      // If linked to a recipe, increment cook_count (non-blocking)
+      if (input.recipe_id) {
+        try {
+          const { data: recipe } = await supabase
+            .from("recipes")
+            .select("cook_count")
+            .eq("id", input.recipe_id)
+            .maybeSingle();
+          if (recipe) {
+            const newCount = (recipe.cook_count ?? 0) + 1;
+            await supabase
+              .from("recipes")
+              .update({ cook_count: newCount, last_cooked_at: new Date().toISOString() })
+              .eq("id", input.recipe_id);
+          }
+        } catch {
+          // Non-critical — don't block food record creation
+        }
+      }
+
       return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["food_records"] });
       qc.invalidateQueries({ queryKey: ["health_context"] });
+      qc.invalidateQueries({ queryKey: ["recipes"] });
     },
   });
 }
@@ -783,6 +805,74 @@ export function useDeleteFoodRecord() {
       qc.invalidateQueries({ queryKey: ["food_records"] });
       qc.invalidateQueries({ queryKey: ["health_context"] });
     },
+  });
+}
+
+export function useUpdateFoodRecord() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      id: string;
+      food_name?: string;
+      meal_type?: string;
+      portion?: string;
+      notes?: string;
+      feeling?: string;
+      image_urls?: string[];
+    }) => {
+      const { id, ...fields } = input;
+      const { data, error } = await supabase
+        .from("food_records")
+        .update(fields)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["food_records"] });
+      qc.invalidateQueries({ queryKey: ["health_context"] });
+    },
+  });
+}
+
+export function useGenerateDailyDietSummary() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { date: string }) => {
+      const { data, error } = await supabase.functions.invoke("diet-analyst-agent", {
+        body: {
+          date: input.date,
+          mode: "daily_summary",
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["daily_diet_summary", variables.date] });
+    },
+  });
+}
+
+export function useDailyDietSummary(date: string) {
+  return useQuery({
+    queryKey: ["daily_diet_summary", date],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ai_insights")
+        .select("*")
+        .eq("agent_type", "diet_analyst")
+        .eq("insight_type", "daily_summary")
+        .contains("data", { meal_date: date })
+        .order("generated_at", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      return (data?.[0] || null) as { id: string; content: string | null; generated_at: string } | null;
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: !!date,
   });
 }
 
