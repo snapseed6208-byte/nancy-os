@@ -6,6 +6,7 @@ import {
   Image, X, ArrowRight, Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import VideoPlayer from "@/components/health/VideoPlayer";
 import {
   useBodyProfile, useUpdateBodyProfile,
   useWorkoutVideos, useCreateWorkoutVideo, useUpdateWorkoutVideo, useDeleteWorkoutVideo,
@@ -795,9 +796,22 @@ function WorkoutLibraryTab() {
                         </button>
                       </div>
                     </div>
-                    <a href={v.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-sage-deep font-medium hover:underline">
-                      <ExternalLink size={11} />打开视频训练
-                    </a>
+                    {v.embed_url ? (
+                      <div className="mt-3">
+                        <VideoPlayer
+                          embedUrl={v.embed_url}
+                          thumbnailUrl={v.thumbnail_url}
+                          title={v.title || ""}
+                          platform={v.platform}
+                          sourceUrl={v.url}
+                        />
+                      </div>
+                    ) : (
+                      <a href={v.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-sage-deep font-medium hover:underline">
+                        <ExternalLink size={11} />
+                        {v.platform === "douyin" ? "在抖音打开" : v.platform === "xiaohongshu" ? "在小红书打开" : "打开视频训练"}
+                      </a>
+                    )}
                   </div>
                 </div>
               )}

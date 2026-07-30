@@ -6,7 +6,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
-import { normalizeUrl, detectUrlPlatform } from "@/lib/utils";
+import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle } from "@/lib/utils";
 
 // ── Types ──
 
@@ -38,6 +38,9 @@ export type WorkoutVideo = {
   estimated_duration: number | null;
   is_favorite: boolean;
   notes: string | null;
+  video_id: string | null;
+  embed_url: string | null;
+  thumbnail_url: string | null;
   created_at: string;
 };
 
@@ -246,6 +249,8 @@ export function useCreateWorkoutVideo() {
       const normalized = normalizeUrl(input.url);
       if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
       const platform = detectUrlPlatform(normalized);
+      const videoId = extractVideoId(normalized, platform);
+      const embedUrl = videoId ? buildEmbedUrl(platform, videoId) : null;
 
       const { data, error } = await supabase
         .from("workout_videos")
@@ -253,7 +258,10 @@ export function useCreateWorkoutVideo() {
           user_id: userId,
           url: normalized,
           platform,
-          title: null,
+          title: getDefaultVideoTitle(platform),
+          video_id: videoId,
+          embed_url: embedUrl,
+          thumbnail_url: null,
           category: null,
           difficulty: null,
           estimated_duration: null,

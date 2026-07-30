@@ -109,3 +109,41 @@ export function detectUrlPlatform(url: string): string {
   if (lowered.includes("github.com")) return "github";
   return "other";
 }
+
+// ── Video ID extraction & embed URL building ──
+
+const BILIBILI_VID_RE = /bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/;
+const YOUTUBE_WATCH_RE = /[?&]v=([a-zA-Z0-9_-]{11})/;
+const YOUTUBE_SHORT_RE = /youtu\.be\/([a-zA-Z0-9_-]{11})/;
+
+export function extractVideoId(url: string, platform: string): string | null {
+  if (platform === "bilibili") {
+    const m = url.match(BILIBILI_VID_RE);
+    return m ? m[1] : null;
+  }
+  if (platform === "youtube") {
+    const m = url.match(YOUTUBE_WATCH_RE) || url.match(YOUTUBE_SHORT_RE);
+    return m ? m[1] : null;
+  }
+  return null;
+}
+
+export function buildEmbedUrl(platform: string, videoId: string): string | null {
+  if (platform === "bilibili") {
+    return `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(videoId)}&page=1&high_quality=1`;
+  }
+  if (platform === "youtube") {
+    return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
+  }
+  return null;
+}
+
+export function getDefaultVideoTitle(platform: string): string {
+  const map: Record<string, string> = {
+    bilibili: "B站训练视频",
+    youtube: "YouTube训练视频",
+    douyin: "抖音训练视频",
+    xiaohongshu: "小红书训练视频",
+  };
+  return map[platform] || "训练视频";
+}
