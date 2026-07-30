@@ -122,15 +122,15 @@ export default function LifeTraceJournal() {
           </button>
           <div>
             <p className="text-sm text-ink-lighter">Life Trace</p>
-            <h1 className="text-2xl font-semibold tracking-tight mt-0.5">日记</h1>
+            <h1 className="text-2xl font-semibold tracking-tight mt-0.5">历史记录</h1>
           </div>
         </div>
         <button
-          onClick={() => navigate(`/life-trace/journal/${new Date().toISOString().split("T")[0]}`)}
+          onClick={() => navigate("/life-trace/daily")}
           className="flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-3 py-2 text-sm font-medium"
         >
           <Pen size={16} />
-          写日记
+          记录今天
         </button>
       </header>
 

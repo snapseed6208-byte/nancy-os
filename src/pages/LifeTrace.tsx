@@ -53,7 +53,7 @@ function AIInsightsSection() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-ink">AI 生活洞察</p>
             <p className="text-xs text-ink-lighter mt-1">
-              写一篇日记，AI 帮你理解生活模式 —— 区分你的行动和想法，发现隐藏的主题和趋势。
+              记录每天发生的事情，AI帮你理解自己的行动、想法和成长轨迹。
             </p>
           </div>
         </div>
@@ -163,8 +163,8 @@ export default function LifeTrace() {
         />
         <ActionButton
           icon={<Pen size={16} />}
-          label="写日记"
-          onClick={() => navigate("/life-trace/journal")}
+          label="记录今天"
+          onClick={() => navigate("/life-trace/daily")}
         />
         <ActionButton
           icon={<Coins size={16} />}
@@ -176,14 +176,14 @@ export default function LifeTrace() {
       {/* Module cards */}
       <div className="grid gap-2">
         <button
-          onClick={() => navigate("/life-trace/journal")}
+          onClick={() => navigate("/life-trace/daily")}
           className="bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
             <span className="text-xl">📝</span>
             <div>
-              <p className="text-sm font-medium text-ink">日记</p>
-              <p className="text-xs text-ink-lighter mt-0.5">每日记录 · 三件好事 · 待办清单</p>
+              <p className="text-sm font-medium text-ink">今日记录</p>
+              <p className="text-xs text-ink-lighter mt-0.5">记录今天 · AI 理解 · 回顾历史</p>
             </div>
           </div>
           <ArrowRight size={14} className="text-ink-lighter shrink-0" />

@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
-import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, Trash2, Loader2, Brain, Sparkles } from "lucide-react";
+import { useLocation } from "wouter";
+import { ArrowLeft, Loader2, Brain, Sparkles, Send } from "lucide-react";
 import {
   useJournalEntry,
   useUpsertJournalEntry,
-  useDeleteJournalEntry,
   useTriggerLifeAnalysis,
 } from "@/lib/hooks/useLifeTrace";
 import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+// ── Constants ──
 
 const MOODS = ["开心", "平静", "焦虑", "疲惫", "难过", "生气", "迷茫", "有动力", "放松", "想哭"];
 const MOOD_EMOJIS: Record<string, string> = {
@@ -25,6 +26,12 @@ const ACTION_CATEGORY_LABELS: Record<string, string> = {
 const THOUGHT_CATEGORY_LABELS: Record<string, string> = {
   "self-reflection": "自我反思", planning: "计划", worry: "担忧", gratitude: "感恩", learning: "认知", other: "其他",
 };
+
+function today(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+// ── Sub-components ──
 
 function MoodChip({ mood, selected, onClick }: { mood: string; selected: boolean; onClick: () => void }) {
   return (
@@ -76,12 +83,20 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
           AI 生活理解 {version ? `· ${version}` : ""}
         </span>
       </div>
-      {summary && <p className="text-sm text-ink font-medium leading-relaxed">{summary}</p>}
+
+      {/* Summary */}
+      {summary && (
+        <p className="text-sm text-ink font-medium leading-relaxed">{summary}</p>
+      )}
+
+      {/* Emotion */}
       {emotionAnalysis && (
         <div className="bg-sage-light/10 rounded-xl p-3">
           <p className="text-xs text-ink-light leading-relaxed">{emotionAnalysis}</p>
         </div>
       )}
+
+      {/* Actions */}
       {actions.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1.5">行动</p>
@@ -98,6 +113,8 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
           </div>
         </div>
       )}
+
+      {/* Thoughts */}
       {thoughts.length > 0 && (
         <div>
           <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1.5">想法</p>
@@ -114,23 +131,33 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
           </div>
         </div>
       )}
+
+      {/* Themes & Events */}
       {(themes.length > 0 || events.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
           {themes.map((t, i) => (
-            <span key={`theme-${i}`} className="text-[10px] bg-sage-light/30 text-sage-deep rounded-full px-2 py-0.5 font-medium">#{t}</span>
+            <span key={`theme-${i}`} className="text-[10px] bg-sage-light/30 text-sage-deep rounded-full px-2 py-0.5 font-medium">
+              #{t}
+            </span>
           ))}
           {events.map((e, i) => (
-            <span key={`event-${i}`} className="text-[10px] bg-accent-sky/10 text-accent-sky rounded-full px-2 py-0.5">{e}</span>
+            <span key={`event-${i}`} className="text-[10px] bg-accent-sky/10 text-accent-sky rounded-full px-2 py-0.5">
+              {e}
+            </span>
           ))}
         </div>
       )}
+
+      {/* Patterns */}
       {patterns.length > 0 && (
         <div className="border-t border-sage-light/20 pt-2">
           <p className="text-[10px] font-semibold text-ink-lighter mb-1">重复模式</p>
           {patterns.map((p, i) => (
             <p key={i} className="text-[11px] text-ink-light">
               {p.pattern}
-              <span className="text-[10px] text-ink-lighter ml-1">(置信度 {Math.round(p.confidence * 100)}%)</span>
+              <span className="text-[10px] text-ink-lighter ml-1">
+                (置信度 {Math.round(p.confidence * 100)}%)
+              </span>
             </p>
           ))}
         </div>
@@ -139,61 +166,67 @@ function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
   );
 }
 
-export default function LifeTraceJournalEntry() {
+// ── Page ──
+
+export default function LifeTraceDailyRecord() {
   const [, navigate] = useLocation();
-  const [, params] = useRoute("/life-trace/journal/:date");
-  const date = params?.date || "";
+  const date = today();
+  const dateObj = new Date();
+  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
   const { data: existingEntry, isLoading } = useJournalEntry(date);
   const upsertEntry = useUpsertJournalEntry();
-  const deleteEntry = useDeleteJournalEntry();
   const triggerAI = useTriggerLifeAnalysis();
 
   const [content, setContent] = useState("");
   const [mood, setMood] = useState("");
   const [energyLevel, setEnergyLevel] = useState("");
   const [saving, setSaving] = useState(false);
-  const [aiTriggered, setAiTriggered] = useState(false);
+  const [aiState, setAiState] = useState<"idle" | "analyzing" | "done" | "error">("idle");
+  const [aiEntry, setAiEntry] = useState<Record<string, unknown> | null>(null);
 
-  const dateObj = new Date(date);
-  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-
+  // Load existing entry
   useEffect(() => {
     if (existingEntry) {
       setContent((existingEntry.content as string) || "");
       setMood((existingEntry.mood as string) || "");
       setEnergyLevel((existingEntry.energy_level as string) || "");
       if ((existingEntry.ai_summary as string) || (existingEntry.ai_analysis_version as string)) {
-        setAiTriggered(true);
+        setAiState("done");
+        setAiEntry(existingEntry);
       }
     }
   }, [existingEntry]);
 
   const triggerAIAnalysis = useCallback(async (entryId: string) => {
+    setAiState("analyzing");
     try {
       await triggerAI.mutateAsync(entryId);
-      setAiTriggered(true);
-    } catch { /* non-blocking */ }
-  }, [triggerAI]);
+      setAiState("done");
+      // Re-fetch happens via query invalidation from the hook
+      setAiEntry(existingEntry); // will be replaced by the query refetch
+    } catch {
+      setAiState("error");
+    }
+  }, [triggerAI, existingEntry]);
 
   const handleSave = async () => {
+    if (!content.trim()) return;
     setSaving(true);
-    await upsertEntry.mutateAsync({
-      ...(existingEntry ? { id: existingEntry.id } : {}),
+    const payload: Record<string, unknown> = {
       date,
-      content: content || null,
+      content: content.trim(),
       mood: mood || null,
       energy_level: energyLevel || null,
-    });
-    setSaving(false);
-    navigate("/life-trace/journal");
-  };
+    };
+    if (existingEntry?.id) payload.id = existingEntry.id;
 
-  const handleDelete = async () => {
-    if (!existingEntry?.id) return;
-    if (!confirm("确定要删除这天的记录吗？")) return;
-    await deleteEntry.mutateAsync(existingEntry.id as string);
-    navigate("/life-trace/journal");
+    const result = await upsertEntry.mutateAsync(payload);
+    setSaving(false);
+
+    if (result?.id) {
+      triggerAIAnalysis(result.id as string);
+    }
   };
 
   if (isLoading) {
@@ -204,49 +237,20 @@ export default function LifeTraceJournalEntry() {
     );
   }
 
-  if (!existingEntry) {
-    return (
-      <div className="space-y-4">
-        <header className="flex items-center gap-3">
-          <button onClick={() => navigate("/life-trace/journal")} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
-            <ArrowLeft size={16} className="text-ink-light" />
-          </button>
-          <div>
-            <p className="text-sm text-ink-lighter">Life Trace</p>
-            <h1 className="text-2xl font-semibold tracking-tight mt-0.5">查看记录</h1>
-          </div>
-        </header>
-        <p className="text-sm font-medium text-ink">
-          {dateObj.getMonth() + 1}月{dateObj.getDate()}日 {weekdays[dateObj.getDay()]}
-        </p>
-        <div className="text-center py-16">
-          <p className="text-sm text-ink-lighter">这天还没有记录</p>
-          <button
-            onClick={() => navigate("/life-trace/daily")}
-            className="mt-3 text-xs text-sage-deep font-medium"
-          >
-            去记录今天 →
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const hasAIResults = aiState === "done" && existingEntry && (
+    existingEntry.ai_summary || existingEntry.ai_analysis_version
+  );
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/life-trace/journal")} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
-            <ArrowLeft size={16} className="text-ink-light" />
-          </button>
-          <div>
-            <p className="text-sm text-ink-lighter">Life Trace</p>
-            <h1 className="text-2xl font-semibold tracking-tight mt-0.5">查看记录</h1>
-          </div>
-        </div>
-        <button onClick={handleDelete} className="h-8 w-8 rounded-lg bg-accent-rose/10 flex items-center justify-center">
-          <Trash2 size={14} className="text-accent-rose" />
+      <header className="flex items-center gap-3">
+        <button onClick={() => navigate("/life-trace")} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
+          <ArrowLeft size={16} className="text-ink-light" />
         </button>
+        <div>
+          <p className="text-sm text-ink-lighter">Life Trace</p>
+          <h1 className="text-2xl font-semibold tracking-tight mt-0.5">今日生活记录</h1>
+        </div>
       </header>
 
       <p className="text-sm font-medium text-ink">
@@ -282,20 +286,46 @@ export default function LifeTraceJournalEntry() {
         </div>
       </div>
 
+      {/* Save */}
       <button
         onClick={handleSave}
-        disabled={saving}
-        className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+        disabled={saving || aiState === "analyzing"}
+        className="w-full bg-sage-light text-sage-deep rounded-xl py-3 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
       >
-        {saving ? "保存中..." : "保存"}
+        {saving ? (
+          <><Loader2 size={14} className="animate-spin" />保存中...</>
+        ) : (
+          <><Send size={14} />保存</>
+        )}
       </button>
 
-      {/* AI Analysis */}
-      {existingEntry && (existingEntry.ai_summary || existingEntry.ai_analysis_version) && (
+      {/* AI Analysis: loading */}
+      {aiState === "analyzing" && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <div className="flex items-center gap-3">
+            <Loader2 size={16} className="animate-spin text-sage-deep shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-ink">AI 正在理解你的记录...</p>
+              <p className="text-xs text-ink-lighter mt-0.5">分析行动、想法和主题</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Analysis: error */}
+      {aiState === "error" && (
+        <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4">
+          <p className="text-xs text-accent-rose">AI 分析失败，请稍后重试</p>
+        </div>
+      )}
+
+      {/* AI Analysis: results */}
+      {hasAIResults && existingEntry && (
         <AIAnalysisSection entry={existingEntry} />
       )}
 
-      {existingEntry && !existingEntry.ai_summary && !existingEntry.ai_analysis_version && (
+      {/* AI Analysis: re-trigger available for existing unanalyzed entries */}
+      {existingEntry && !existingEntry.ai_summary && !existingEntry.ai_analysis_version && aiState === "idle" && (
         <div className="bg-card rounded-2xl border border-border p-4">
           <div className="flex items-start gap-3">
             <div className="h-9 w-9 rounded-xl bg-sage-light/50 flex items-center justify-center shrink-0">
@@ -303,17 +333,14 @@ export default function LifeTraceJournalEntry() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-ink">AI 生活理解</p>
-              <p className="text-xs text-ink-lighter mt-1">分析这条记录，区分行动和想法，识别主题。</p>
+              <p className="text-xs text-ink-lighter mt-1">
+                分析你的记录，区分行动和想法，识别主题和模式。
+              </p>
               <button
                 onClick={() => existingEntry?.id && triggerAIAnalysis(existingEntry.id as string)}
-                disabled={triggerAI.isPending || aiTriggered}
-                className="mt-3 flex items-center gap-2 bg-sage-light text-sage-deep rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:bg-sage-light/80 transition-colors"
+                className="mt-3 flex items-center gap-2 bg-sage-light text-sage-deep rounded-xl px-4 py-2 text-xs font-semibold hover:bg-sage-light/80 transition-colors"
               >
-                {triggerAI.isPending ? (
-                  <><Loader2 size={12} className="animate-spin" />分析中...</>
-                ) : (
-                  <><Brain size={12} />开始 AI 分析</>
-                )}
+                <Brain size={12} />开始 AI 分析
               </button>
             </div>
           </div>

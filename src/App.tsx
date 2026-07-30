@@ -17,6 +17,7 @@ import LifeTrace from "@/pages/LifeTrace";
 import LifeTraceCapture from "@/pages/LifeTraceCapture";
 import LifeTraceJournal from "@/pages/LifeTraceJournal";
 import LifeTraceJournalEntry from "@/pages/LifeTraceJournalEntry";
+import LifeTraceDailyRecord from "@/pages/LifeTraceDailyRecord";
 import LifeTraceMood from "@/pages/LifeTraceMood";
 import LifeTraceMoney from "@/pages/LifeTraceMoney";
 import Ideas from "@/pages/Ideas";
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="/exam" component={Exam} />
         <Route path="/life-trace" component={LifeTrace} />
         <Route path="/life-trace/capture" component={LifeTraceCapture} />
+        <Route path="/life-trace/daily" component={LifeTraceDailyRecord} />
         <Route path="/life-trace/journal" component={LifeTraceJournal} />
         <Route path="/life-trace/journal/:date" component={LifeTraceJournalEntry} />
         <Route path="/life-trace/mood" component={LifeTraceMood} />
