@@ -1,7 +1,8 @@
 // ============================================
-// Nancy OS — Content Parser Agent v4
+// Nancy OS — Content Parser Agent v5
 // v3: Unified content intelligence — auto-classifies + extracts
 // v4: Workout UPDATE mode + JSON schema validation
+// v5: Recipe UPDATE mode + error logging + failure status propagation
 // Accepts URL or text, routes to resources/workout_videos/recipes
 // ============================================
 
@@ -434,17 +435,23 @@ serve(async (req: Request) => {
           { role: "user", content: userMessage },
         ],
         temperature: 0.5,
-        max_tokens: 1024,
+        max_tokens: 2048,
       }),
     });
 
     if (!aiResponse.ok) {
-      // If this is an UPDATE for an existing workout video, mark as failed
+      console.error(`[content-parser-agent] DeepSeek API error: ${aiResponse.status} ${aiResponse.statusText}`);
       if (workoutVideoId) {
         await supabase
           .from("workout_videos")
           .update({ ai_analysis_status: "failed" })
           .eq("id", workoutVideoId);
+      }
+      if (recipeId) {
+        await supabase
+          .from("recipes")
+          .update({ ai_analysis_status: "failed" })
+          .eq("id", recipeId);
       }
       return jsonResponse({ error: `AI 服务异常 (${aiResponse.status})` }, req, 502);
     }
@@ -457,11 +464,18 @@ serve(async (req: Request) => {
     try {
       parsed = parseAIJson(raw);
     } catch {
+      console.error(`[content-parser-agent] JSON parse error. Raw (first 500): ${raw.slice(0, 500)}`);
       if (workoutVideoId) {
         await supabase
           .from("workout_videos")
           .update({ ai_analysis_status: "failed" })
           .eq("id", workoutVideoId);
+      }
+      if (recipeId) {
+        await supabase
+          .from("recipes")
+          .update({ ai_analysis_status: "failed" })
+          .eq("id", recipeId);
       }
       return jsonResponse({
         error: "parse_error",
@@ -559,6 +573,7 @@ serve(async (req: Request) => {
       // Validate recipe metadata against schema
       const recipeValidation = validateRecipeMetadata(metadata);
       if (!recipeValidation.valid) {
+        console.error(`[content-parser-agent] Recipe schema validation failed: ${recipeValidation.errors.join("; ")}`);
         if (recipeId) {
           await supabase
             .from("recipes")
@@ -680,6 +695,7 @@ serve(async (req: Request) => {
         platform: inputIsUrl ? platform : "text",
         preferred_module: preferredModule || null,
         workout_video_id: workoutVideoId || null,
+        recipe_id: recipeId || null,
       },
       output_data: {
         content_type,

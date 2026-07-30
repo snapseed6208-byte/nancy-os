@@ -19,6 +19,7 @@ type RecipeDetailModalProps = {
   onDelete: (id: string) => void;
   onRetryAnalysis: (recipe: { id: string; source_url: string }) => Promise<unknown>;
   isRetrying: boolean;
+  retryError?: Error | null;
 };
 
 function getPlatformBadge(platform: string | null) {
@@ -39,6 +40,7 @@ export default function RecipeDetailModal({
   onDelete,
   onRetryAnalysis,
   isRetrying,
+  retryError,
 }: RecipeDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -226,6 +228,9 @@ export default function RecipeDetailModal({
               {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
               重新分析
             </button>
+            {retryError && (
+              <p className="text-[10px] text-red-500 mt-1">{(retryError as Error).message || "重试失败"}</p>
+            )}
             <button
               onClick={() => { onDelete(recipe.id); onClose(); }}
               className="flex items-center justify-center gap-1.5 bg-red-50 text-red-500 rounded-xl py-2.5 px-3 text-xs font-medium hover:bg-red-100 transition-colors"

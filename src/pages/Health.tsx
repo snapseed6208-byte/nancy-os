@@ -1352,7 +1352,7 @@ function RecipeBoxTab() {
   const createRecipe = useCreateRecipe();
   const updateRecipe = useUpdateRecipe();
   const deleteRecipe = useDeleteRecipe();
-  const { retryRecipeAnalysis, isRetrying } = useRetryRecipeAnalysis();
+  const { retryRecipeAnalysis, isRetrying, retryError } = useRetryRecipeAnalysis();
 
   const [filter, setFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
@@ -1531,6 +1531,7 @@ function RecipeBoxTab() {
           onDelete={(id) => { deleteRecipe.mutate(id); }}
           onRetryAnalysis={retryRecipeAnalysis}
           isRetrying={isRetrying}
+          retryError={retryError as Error | null}
         />
       )}
     </div>
