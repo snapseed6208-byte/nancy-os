@@ -27,6 +27,17 @@ function getPlatformBadge(platform: string | null) {
   return map[platform || ""] || platform || "web";
 }
 
+function getSourceTypeLabel(st: string | null) {
+  const map: Record<string, string> = { bilibili: "B站视频", douyin: "抖音视频", xiaohongshu: "小红书笔记", manual: "手动输入" };
+  return map[st || ""] || "";
+}
+
+const CONFIDENCE_CONFIG: Record<string, { label: string; color: string }> = {
+  high: { label: "高可信", color: "bg-emerald-50 text-emerald-600" },
+  medium: { label: "中可信", color: "bg-amber-50 text-amber-600" },
+  low: { label: "低可信", color: "bg-red-50 text-red-500" },
+};
+
 const STATUS_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
   pending: { label: "等待处理", color: "bg-slate-50 text-slate-500", dot: "bg-slate-400" },
   processing: { label: "正在处理", color: "bg-blue-50 text-blue-600", dot: "bg-blue-400" },
@@ -48,6 +59,7 @@ export default function RecipeDetailModal({
   const [isSaving, setIsSaving] = useState(false);
 
   const status = STATUS_CONFIG[recipe.ai_analysis_status || ""] || STATUS_CONFIG.pending;
+  const confidence = CONFIDENCE_CONFIG[recipe.confidence || ""] || null;
   const ingredients = Array.isArray(recipe.ingredients_json) ? recipe.ingredients_json : [];
   const steps = Array.isArray(recipe.steps_json) ? recipe.steps_json : [];
 
@@ -91,6 +103,11 @@ export default function RecipeDetailModal({
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${status.dot} mr-1`} />
               {status.label}
             </span>
+            {confidence && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${confidence.color}`}>
+                {confidence.label}
+              </span>
+            )}
           </div>
           <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-ink/5">
             <X size={16} className="text-ink-lighter" />
@@ -130,11 +147,18 @@ export default function RecipeDetailModal({
                 {/* Name + source */}
                 <div>
                   <h2 className="text-lg font-bold text-ink">{recipe.name || "未命名食谱"}</h2>
-                  {recipe.source_platform && (
+                  {(recipe.source_platform || recipe.source_type) && (
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] bg-ink/5 rounded-full px-1.5 py-0.5 text-ink-lighter">
-                        {getPlatformBadge(recipe.source_platform)}
-                      </span>
+                      {recipe.source_platform && (
+                        <span className="text-[10px] bg-ink/5 rounded-full px-1.5 py-0.5 text-ink-lighter">
+                          {getPlatformBadge(recipe.source_platform)}
+                        </span>
+                      )}
+                      {recipe.source_type && (
+                        <span className="text-[10px] text-ink-lighter">
+                          {getSourceTypeLabel(recipe.source_type)}
+                        </span>
+                      )}
                       {recipe.source_url && (
                         <a
                           href={recipe.source_url}

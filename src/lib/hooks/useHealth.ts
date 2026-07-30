@@ -47,7 +47,7 @@ export type WorkoutVideo = {
   created_at: string;
 };
 
-export type RecipeSourceType = "bilibili" | "xiaohongshu" | "douyin" | "upload" | "manual";
+export type RecipeSourceType = "bilibili" | "xiaohongshu" | "douyin" | "manual";
 
 export type Recipe = {
   id: string;
@@ -482,34 +482,55 @@ async function invokeRecipePipeline(
   // Step A: Set status → processing
   await supabase.from("recipes").update({ ai_analysis_status: "processing" }).eq("id", recipeId);
 
-  // Step B: Extract source content
+  // Step B: Extract source content (skip for manual)
   let sourceContent: Record<string, unknown> | null = null;
-  try {
-    const extractResult = await supabase.functions.invoke("source-extractor-agent", {
-      body: { url, source_type: sourceType, recipe_id: recipeId },
-    });
-    if (!extractResult.error && extractResult.data) {
-      sourceContent = extractResult.data as Record<string, unknown>;
-      // Save source_content to recipe
-      await supabase.from("recipes").update({
-        source_content: sourceContent,
-        ai_analysis_status: "processing",
-      }).eq("id", recipeId);
+  let extractionError: string | undefined;
+
+  if (sourceType !== "manual") {
+    try {
+      const extractResult = await supabase.functions.invoke("source-extractor-agent", {
+        body: { url, source_type: sourceType, recipe_id: recipeId },
+      });
+      if (!extractResult.error && extractResult.data) {
+        sourceContent = extractResult.data as Record<string, unknown>;
+        extractionError = (extractResult.data as { extraction_error?: string }).extraction_error;
+        // Save source_content to recipe
+        await supabase.from("recipes").update({
+          source_content: sourceContent,
+          ai_analysis_status: "processing",
+        }).eq("id", recipeId);
+      }
+    } catch {
+      extractionError = "内容提取服务暂时不可用";
     }
-  } catch {
-    // Extraction failed — continue with source_context only
   }
 
-  // If extraction returned no content at all, mark failed
+  // Check extraction result — handle platform-specific failure modes
+  const extractionStatus = sourceContent
+    ? (sourceContent as { extraction_status?: string }).extraction_status
+    : "failed";
+
+  if (sourceType === "douyin" && extractionStatus === "failed") {
+    // Douyin: transparent failure — tell user why, don't call AI
+    await supabase.from("recipes").update({
+      ai_analysis_status: "partial",
+      ai_summary: extractionError || "抖音无法自动获取视频正文。请使用 ✍️ 手动输入补充食材和步骤。",
+      confidence: "low",
+    }).eq("id", recipeId);
+    return;
+  }
+
+  // Check if we have any real content at all
   const hasContent = sourceContent
     && ((sourceContent as Record<string, unknown>).title
       || (sourceContent as Record<string, unknown>).description
       || (sourceContent as Record<string, unknown>).transcript
       || (sourceContent as Record<string, unknown>).subtitle);
-  if (sourceContent && !hasContent) {
+  if (sourceType !== "manual" && sourceContent && !hasContent && extractionStatus === "failed") {
     await supabase.from("recipes").update({
       ai_analysis_status: "failed",
-      ai_summary: "无法从此链接获取真实内容。请上传视频文件以确保食谱准确性。",
+      ai_summary: extractionError || "无法从此链接获取内容，请检查链接或使用手动输入。",
+      confidence: "low",
     }).eq("id", recipeId);
     return;
   }
@@ -527,7 +548,6 @@ async function invokeRecipePipeline(
     });
     if (parseResult.error) throw parseResult.error;
   } catch {
-    // AI parsing failed
     await supabase.from("recipes").update({
       ai_analysis_status: "failed",
       ai_summary: "AI 解析失败，请稍后重试。",

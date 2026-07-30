@@ -599,13 +599,13 @@ serve(async (req: Request) => {
         if (recipeId) {
           await supabase.from("recipes").update({
             ai_analysis_status: "failed",
-            ai_summary: "无法从此链接获取真实内容。请上传视频文件以确保食谱准确性。",
+            ai_summary: "无法从此链接获取真实内容，请使用手动输入补充食谱信息。",
             confidence: "low",
           }).eq("id", recipeId);
         }
         return jsonResponse({
           error: "no_content",
-          message: "无法获取真实内容，请上传视频",
+          message: "无法获取真实内容，请使用手动输入补充食谱",
           ai_analysis_status: "failed",
         }, req, 200);
       }
@@ -850,7 +850,7 @@ serve(async (req: Request) => {
         aiSummaryParts.push(`\n📝 状态：部分整理（缺少：${missing.join("、")}）。请在食谱详情中手动补充。`);
       }
       if (aiStatus === "failed") {
-        aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑或尝试上传视频文件。`);
+        aiSummaryParts.push(`\n❌ AI 无法从此来源提取食谱信息。请手动编辑补充食材和步骤。`);
       }
       const finalAiSummary = aiSummaryParts.join("") || null;
 

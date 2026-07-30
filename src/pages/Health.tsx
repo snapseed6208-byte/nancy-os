@@ -1350,9 +1350,8 @@ function WorkoutJournalSection({ startFromVideo, onConsumedVideo }: { startFromV
 const SOURCE_TYPES = [
   { key: "bilibili" as const, label: "B站视频", icon: "🎬", placeholder: "输入 B站视频链接，例如：\nhttps://www.bilibili.com/video/BVxxxx" },
   { key: "xiaohongshu" as const, label: "小红书笔记", icon: "📕", placeholder: "输入小红书笔记链接" },
-  { key: "douyin" as const, label: "抖音视频", icon: "🎵", placeholder: "输入抖音视频链接\n\n提示：抖音限制较多，若无法获取请上传视频" },
-  { key: "upload" as const, label: "上传视频", icon: "📁", placeholder: "上传 mp4/mov 视频文件（即将支持）" },
-  { key: "manual" as const, label: "手动输入", icon: "✍️", placeholder: "直接输入食谱名称、食材和步骤" },
+  { key: "douyin" as const, label: "抖音视频", icon: "🎵", placeholder: "输入抖音视频链接\n\n提示：抖音限制较严格，若无法自动提取请使用 ✍️ 手动输入" },
+  { key: "manual" as const, label: "手动输入", icon: "✍️", placeholder: "" },
 ] as const;
 
 function RecipeBoxTab() {
@@ -1366,6 +1365,8 @@ function RecipeBoxTab() {
   const [showAdd, setShowAdd] = useState(false);
   const [sourceType, setSourceType] = useState<RecipeSourceType>("bilibili");
   const [inputText, setInputText] = useState("");
+  const [manualName, setManualName] = useState("");
+  const [manualContent, setManualContent] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const filtered = (recipes || []).filter((r) => {
@@ -1380,16 +1381,20 @@ function RecipeBoxTab() {
   const currentSource = SOURCE_TYPES.find(s => s.key === sourceType) || SOURCE_TYPES[0];
 
   const handleAdd = () => {
-    const text = inputText.trim();
-    if (!text) return;
-
     if (sourceType === "manual") {
+      const name = manualName.trim();
+      const content = manualContent.trim();
+      if (!name && !content) return;
+      const context = [name, content].filter(Boolean).join("\n\n");
       createRecipe.mutate(
-        { source_url: text, source_type: "manual", source_context: text || undefined },
-        { onSuccess: () => { setInputText(""); setShowAdd(false); } },
+        { source_url: "", source_type: "manual", source_context: context || undefined },
+        { onSuccess: () => { setManualName(""); setManualContent(""); setInputText(""); setShowAdd(false); } },
       );
       return;
     }
+
+    const text = inputText.trim();
+    if (!text) return;
 
     const urlMatch = text.match(/(https?:\/\/[^\s]+)/);
     const url = urlMatch ? urlMatch[1] : text;
@@ -1399,7 +1404,7 @@ function RecipeBoxTab() {
 
     createRecipe.mutate(
       { source_url: url, source_type: sourceType, source_context: context || undefined },
-      { onSuccess: () => { setInputText(""); setShowAdd(false); } },
+      { onSuccess: () => { setInputText(""); setManualName(""); setManualContent(""); setShowAdd(false); } },
     );
   };
 
@@ -1463,7 +1468,7 @@ function RecipeBoxTab() {
           {/* Source type selector */}
           <div>
             <p className="text-xs font-medium text-ink-light mb-2">选择来源</p>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {SOURCE_TYPES.map((st) => (
                 <button
                   key={st.key}
@@ -1484,14 +1489,23 @@ function RecipeBoxTab() {
 
           {/* Input area */}
           {sourceType === "manual" ? (
-            <textarea
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="输入食谱名称，保存后可编辑食材和步骤"
-              className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
-              rows={2}
-              autoFocus
-            />
+            <div className="space-y-2.5">
+              <input
+                type="text"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+                placeholder="食谱名称，例：番茄鸡胸肉意面"
+                className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors"
+                autoFocus
+              />
+              <textarea
+                value={manualContent}
+                onChange={(e) => setManualContent(e.target.value)}
+                placeholder="食材和步骤，例：&#10;食材：鸡胸肉 200g、西兰花 100g&#10;步骤：&#10;1. 鸡胸肉切丁，加料酒腌制&#10;2. 西兰花焯水&#10;3. 热锅少油翻炒至熟"
+                className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-2.5 focus:border-sage-deep/50 transition-colors resize-none"
+                rows={5}
+              />
+            </div>
           ) : (
             <textarea
               value={inputText}
@@ -1506,15 +1520,27 @@ function RecipeBoxTab() {
           <div className="flex gap-2">
             <button
               onClick={handleAdd}
-              disabled={!inputText.trim() || createRecipe.isPending}
+              disabled={(sourceType === "manual" ? !(manualName.trim() || manualContent.trim()) : !inputText.trim()) || createRecipe.isPending}
               className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 hover:bg-sage-light/80 transition-colors"
             >
               {createRecipe.isPending ? <Loader2 size={14} className="animate-spin inline mr-1" /> : null}
               {createRecipe.isPending ? "创建中..." : (sourceType === "manual" ? "创建食谱" : "提取食谱")}
             </button>
-            <button onClick={() => { setShowAdd(false); setInputText(""); }} className="px-4 py-2.5 text-sm text-ink-light hover:bg-ink/5 rounded-xl transition-colors">取消</button>
+            <button onClick={() => { setShowAdd(false); setInputText(""); setManualName(""); setManualContent(""); }} className="px-4 py-2.5 text-sm text-ink-light hover:bg-ink/5 rounded-xl transition-colors">取消</button>
           </div>
-          {createRecipe.error && <p className="text-xs text-accent-rose">{(createRecipe.error as Error).message}</p>}
+          {createRecipe.error && (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+              <p className="text-xs text-red-600 mb-2">{(createRecipe.error as Error).message || "处理失败"}</p>
+              {sourceType === "douyin" && (
+                <button
+                  onClick={() => { setSourceType("manual"); setManualName(""); setManualContent(inputText); setInputText(""); }}
+                  className="text-xs font-medium text-sage-deep hover:underline"
+                >
+                  手动补充食材
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
