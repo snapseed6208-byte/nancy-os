@@ -424,21 +424,28 @@ export function useCreateRecipe() {
       const userId = await getUserId();
 
       if (input.source_type === "manual") {
-        // Manual creation: no URL needed, just save the shell
+        // Manual creation: insert shell, then run AI pipeline to parse text
+        const rawText = input.source_context || "";
+        const firstLine = rawText.split(/[\n\r]+/)[0]?.trim() || "";
+        const initialName = firstLine.slice(0, 50) || "未命名食谱";
+
         const { data, error } = await supabase
           .from("recipes")
           .insert({
             user_id: userId,
-            name: input.source_context?.slice(0, 80) || "",
+            name: initialName,
             source_type: "manual",
-            ai_analysis_status: "completed",
-            confidence: "high",
-            notes: input.source_context || null,
+            ai_analysis_status: "processing",
+            notes: rawText || null,
           })
           .select()
           .single();
         if (error) throw error;
-        return data as Recipe;
+        const record = data as Recipe;
+
+        invokeRecipePipeline(record.id, "", input.source_type, input.source_context);
+
+        return record;
       }
 
       const normalized = normalizeUrl(input.source_url);
@@ -482,11 +489,26 @@ async function invokeRecipePipeline(
   // Step A: Set status → processing
   await supabase.from("recipes").update({ ai_analysis_status: "processing" }).eq("id", recipeId);
 
-  // Step B: Extract source content (skip for manual)
+  // Step B: Extract source content
   let sourceContent: Record<string, unknown> | null = null;
   let extractionError: string | undefined;
 
-  if (sourceType !== "manual") {
+  if (sourceType === "manual") {
+    // Build sourceContent from manual text input
+    const rawText = sourceContext || "";
+    const lines = rawText.split(/[\n\r]+/).filter((l) => l.trim().length > 0);
+    const title = lines[0]?.trim() || "";
+    sourceContent = {
+      title,
+      description: rawText,
+      source_type: "manual",
+      source_material: `标题: ${title}\n正文: ${rawText.slice(0, 5000)}`,
+    };
+    await supabase.from("recipes").update({
+      source_content: sourceContent,
+      ai_analysis_status: "processing",
+    }).eq("id", recipeId);
+  } else {
     try {
       const extractResult = await supabase.functions.invoke("source-extractor-agent", {
         body: { url, source_type: sourceType, recipe_id: recipeId },
@@ -527,6 +549,7 @@ async function invokeRecipePipeline(
       || (sourceContent as Record<string, unknown>).transcript
       || (sourceContent as Record<string, unknown>).subtitle);
   if (sourceType !== "manual" && sourceContent && !hasContent && extractionStatus === "failed") {
+    // Manual has its own content from user input, always proceed
     await supabase.from("recipes").update({
       ai_analysis_status: "failed",
       ai_summary: extractionError || "无法从此链接获取内容，请检查链接或使用手动输入。",
