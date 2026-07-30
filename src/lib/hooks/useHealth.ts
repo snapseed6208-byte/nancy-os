@@ -6,7 +6,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
-import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle } from "@/lib/utils";
+import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
 
 // ── Types ──
 
@@ -41,6 +41,9 @@ export type WorkoutVideo = {
   video_id: string | null;
   embed_url: string | null;
   thumbnail_url: string | null;
+  equipment: string | null;
+  tags: string[] | null;
+  ai_analysis_status: string | null;
   created_at: string;
 };
 
@@ -251,7 +254,9 @@ export function useCreateWorkoutVideo() {
       const platform = detectUrlPlatform(normalized);
       const videoId = extractVideoId(normalized, platform);
       const embedUrl = videoId ? buildEmbedUrl(platform, videoId) : null;
+      const thumbnailUrl = platform === "youtube" && videoId ? getYouTubeThumbnail(videoId) : null;
 
+      // Step 1: Insert basic record
       const { data, error } = await supabase
         .from("workout_videos")
         .insert({
@@ -261,15 +266,31 @@ export function useCreateWorkoutVideo() {
           title: getDefaultVideoTitle(platform),
           video_id: videoId,
           embed_url: embedUrl,
-          thumbnail_url: null,
+          thumbnail_url: thumbnailUrl,
           category: null,
           difficulty: null,
           estimated_duration: null,
+          ai_analysis_status: "pending",
         })
         .select()
         .single();
       if (error) throw error;
-      return data as WorkoutVideo;
+      const record = data as WorkoutVideo;
+
+      // Step 2: Trigger AI analysis (non-blocking)
+      if (platform === "bilibili" || platform === "youtube") {
+        supabase.functions.invoke("content-parser-agent", {
+          body: {
+            url: normalized,
+            content_type: "workout",
+            workout_video_id: record.id,
+          },
+        }).catch(() => {
+          // AI failure is non-blocking — record already saved
+        });
+      }
+
+      return record;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workout_videos"] });
@@ -288,6 +309,8 @@ export function useUpdateWorkoutVideo() {
       target_muscles?: string[];
       difficulty?: string;
       estimated_duration?: number;
+      equipment?: string;
+      tags?: string[];
       is_favorite?: boolean;
       notes?: string;
     }) => {

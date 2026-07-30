@@ -138,6 +138,10 @@ export function buildEmbedUrl(platform: string, videoId: string): string | null 
   return null;
 }
 
+export function getYouTubeThumbnail(videoId: string): string {
+  return `https://img.youtube.com/vi/${encodeURIComponent(videoId)}/maxresdefault.jpg`;
+}
+
 export function getDefaultVideoTitle(platform: string): string {
   const map: Record<string, string> = {
     bilibili: "B站训练视频",

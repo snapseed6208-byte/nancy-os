@@ -54,12 +54,14 @@ export default function VideoPlayer({ embedUrl, thumbnailUrl, title, platform, s
         {state === "idle" && (
           <button
             onClick={handlePlay}
-            className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2 transition-colors", meta.bg, "hover:opacity-80")}
+            className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2 transition-colors bg-cover bg-center", meta.bg, "hover:opacity-80")}
+            style={thumbnailUrl ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
           >
-            <div className={cn("h-12 w-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg", meta.icon)}>
+            {thumbnailUrl && <div className="absolute inset-0 bg-black/40 rounded-xl" />}
+            <div className={cn("relative z-10 h-12 w-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg", meta.icon)}>
               <Play size={22} fill="currentColor" />
             </div>
-            <span className="text-xs font-medium text-ink-light">点击播放</span>
+            <span className="relative z-10 text-xs font-medium text-white">点击播放</span>
           </button>
         )}
 

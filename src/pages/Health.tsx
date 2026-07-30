@@ -3,7 +3,7 @@ import {
   Heart, Sparkles, Dumbbell, Utensils, Calendar, Loader2, Plus,
   Trash2, ExternalLink, Play, Flame, Target, Activity, Apple,
   ChevronLeft, ChevronRight, Star, Clock, Zap, AlertTriangle, CheckCircle2,
-  Image, X, ArrowRight, Trophy,
+  Image, X, ArrowRight, Trophy, Brain,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/health/VideoPlayer";
@@ -672,7 +672,10 @@ function WorkoutLibraryTab() {
   const [showAdd, setShowAdd] = useState(false);
   const [url, setUrl] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ title: "", category: "", difficulty: "", estimated_duration: null as number | null });
+  const [editForm, setEditForm] = useState({
+    title: "", category: "", difficulty: "", estimated_duration: null as number | null,
+    training_type: "", equipment: "", tags: "",
+  });
 
   const filtered = category === "all"
     ? (videos || [])
@@ -685,11 +688,28 @@ function WorkoutLibraryTab() {
 
   const startEdit = (v: WorkoutVideo) => {
     setEditingId(v.id);
-    setEditForm({ title: v.title || "", category: v.category || "", difficulty: v.difficulty || "", estimated_duration: v.estimated_duration });
+    setEditForm({
+      title: v.title || "",
+      category: v.category || "",
+      difficulty: v.difficulty || "",
+      estimated_duration: v.estimated_duration,
+      training_type: v.training_type || "",
+      equipment: v.equipment || "",
+      tags: (v.tags || []).join("，"),
+    });
   };
 
   const saveEdit = (id: string) => {
-    updateVideo.mutate({ id, ...editForm, estimated_duration: editForm.estimated_duration ?? undefined }, { onSuccess: () => setEditingId(null) });
+    updateVideo.mutate({
+      id,
+      title: editForm.title,
+      category: editForm.category,
+      difficulty: editForm.difficulty,
+      estimated_duration: editForm.estimated_duration ?? undefined,
+      training_type: editForm.training_type || undefined,
+      equipment: editForm.equipment || undefined,
+      tags: editForm.tags ? editForm.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : undefined,
+    }, { onSuccess: () => setEditingId(null) });
   };
 
   const getPlatformBadge = (platform: string) => {
@@ -721,7 +741,7 @@ function WorkoutLibraryTab() {
             <button onClick={() => setShowAdd(false)} className="px-4 py-2.5 text-sm text-ink-light hover:bg-ink/5 rounded-xl">取消</button>
           </div>
           {createVideo.error && <p className="text-xs text-accent-rose">{(createVideo.error as Error).message}</p>}
-          <p className="text-[10px] text-ink-lighter">添加后点击卡片可编辑标题、分类等信息。AI 自动解析功能即将上线。</p>
+          <p className="text-[10px] text-ink-lighter">支持 B站和 YouTube 链接。添加后 AI 会自动分析训练类型、部位、难度等信息。</p>
         </div>
       )}
 
@@ -757,14 +777,23 @@ function WorkoutLibraryTab() {
                   <input type="text" value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} placeholder="视频标题" className="w-full bg-transparent text-sm text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" autoFocus />
                   <div className="grid grid-cols-2 gap-2">
                     <select value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))} className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2 py-1.5">
-                      <option value="">选择分类</option>
+                      <option value="">训练部位</option>
                       {WORKOUT_CATEGORIES.filter((c) => c.key !== "all").map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
                     </select>
+                    <select value={editForm.training_type} onChange={(e) => setEditForm((f) => ({ ...f, training_type: e.target.value }))} className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2 py-1.5">
+                      <option value="">训练方式</option>
+                      <option value="力量训练">力量训练</option><option value="有氧">有氧</option><option value="HIIT">HIIT</option><option value="拉伸">拉伸</option><option value="瑜伽">瑜伽</option><option value="康复">康复</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
                     <select value={editForm.difficulty} onChange={(e) => setEditForm((f) => ({ ...f, difficulty: e.target.value }))} className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2 py-1.5">
                       <option value="">难度</option>
                       <option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option>
                     </select>
+                    <input type="number" value={editForm.estimated_duration ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, estimated_duration: e.target.value ? parseInt(e.target.value) : null }))} placeholder="时长(分钟)" className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   </div>
+                  <input type="text" value={editForm.equipment} onChange={(e) => setEditForm((f) => ({ ...f, equipment: e.target.value }))} placeholder="器材（如：哑铃、弹力带）" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
+                  <input type="text" value={editForm.tags} onChange={(e) => setEditForm((f) => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   <div className="flex gap-2">
                     <button onClick={() => saveEdit(v.id)} className="flex-1 bg-sage-light text-sage-deep rounded-lg py-1.5 text-xs font-semibold">保存</button>
                     <button onClick={() => setEditingId(null)} className="px-3 py-1.5 text-xs text-ink-light hover:bg-ink/5 rounded-lg">取消</button>
@@ -779,13 +808,38 @@ function WorkoutLibraryTab() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-ink truncate">{v.title || "未命名视频"}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-semibold text-ink truncate">{v.title || "未命名视频"}</p>
+                          {v.ai_analysis_status === "pending" && (
+                            <span title="AI 分析中..." className="shrink-0"><Loader2 size={11} className="animate-spin text-ink-lighter" /></span>
+                          )}
+                          {v.ai_analysis_status === "failed" && (
+                            <span title="AI 分析失败" className="shrink-0"><AlertTriangle size={11} className="text-amber-500" /></span>
+                          )}
+                          {v.ai_analysis_status === "completed" && (
+                            <span title="AI 分析完成" className="shrink-0"><Brain size={11} className="text-sage-deep" /></span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                           <span className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{getPlatformBadge(v.platform)}</span>
-                          {v.category && <span className="text-[10px] text-accent-sky bg-accent-sky/5 rounded-full px-1.5 py-0.5">{v.category}</span>}
+                          {v.training_type && <span className="text-[10px] text-accent-sky bg-accent-sky/5 rounded-full px-1.5 py-0.5">{v.training_type}</span>}
+                          {v.category && <span className="text-[10px] text-sage-deep bg-sage-light/50 rounded-full px-1.5 py-0.5">{v.category}</span>}
                           {v.estimated_duration && <span className="text-[10px] text-ink-lighter flex items-center gap-0.5"><Clock size={9} />{v.estimated_duration}分钟</span>}
                           {v.difficulty && <span className="text-[10px] text-ink-lighter">{v.difficulty}</span>}
                         </div>
+                        {(v.target_muscles?.length || v.tags?.length || v.equipment) && (
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            {v.target_muscles?.map((m) => (
+                              <span key={m} className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{m}</span>
+                            ))}
+                            {v.tags?.map((t) => (
+                              <span key={t} className="text-[10px] text-ink-lighter bg-accent-warm/5 rounded-full px-1.5 py-0.5">{t}</span>
+                            ))}
+                            {v.equipment && (
+                              <span className="text-[10px] text-ink-lighter flex items-center gap-0.5"><Zap size={9} />{v.equipment}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                         <button onClick={() => startEdit(v)} className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5" title="编辑">

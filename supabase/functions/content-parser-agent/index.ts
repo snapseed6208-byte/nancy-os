@@ -1,6 +1,7 @@
 // ============================================
-// Nancy OS — Content Parser Agent v3
+// Nancy OS — Content Parser Agent v4
 // v3: Unified content intelligence — auto-classifies + extracts
+// v4: Workout UPDATE mode + JSON schema validation
 // Accepts URL or text, routes to resources/workout_videos/recipes
 // ============================================
 
@@ -63,8 +64,19 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
 {
   "difficulty": "初级|中级|高级",
   "estimated_duration": 数字（分钟）,
-  "target_muscles": ["训练部位"]
+  "target_muscles": ["训练部位"],
+  "training_type": "力量训练|有氧|HIIT|拉伸|瑜伽|康复",
+  "category": "臀腿|背部|肩胸|核心|全身|有氧|拉伸",
+  "equipment": "训练器材（如：哑铃、弹力带、自重、杠铃、瑜伽垫）",
+  "tags": ["标签1", "标签2", "标签3"]
 }
+
+注意 workout 类型的重要规则:
+- training_type 是训练方式（力量训练/有氧/HIIT/拉伸/瑜伽/康复）
+- category 是训练部位（臀腿/背部/肩胸/核心/全身/有氧/拉伸），必须从给定值中选择
+- equipment 描述所需器材，多个器材用逗号分隔
+- tags 提供 3-6 个中文标签，描述训练特点
+- 如果无法从标题推断，基于健身常识合理推断
 
 ### 如果是 recipe 类型，metadata 必须包含:
 {
@@ -117,6 +129,37 @@ function isUrl(input: string): boolean {
   return /^https?:\/\//.test(input.trim());
 }
 
+// ── JSON Schema validation for workout output ──
+
+const WORKOUT_VALID_DIFFICULTY = ["初级", "中级", "高级"] as const;
+const WORKOUT_VALID_TRAINING_TYPE = ["力量训练", "有氧", "HIIT", "拉伸", "瑜伽", "康复"] as const;
+const WORKOUT_VALID_CATEGORY = ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"] as const;
+
+function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!metadata.difficulty || !WORKOUT_VALID_DIFFICULTY.includes(metadata.difficulty as string)) {
+    errors.push(`difficulty 值无效: ${metadata.difficulty}，允许: ${WORKOUT_VALID_DIFFICULTY.join("/")}`);
+  }
+
+  if (!metadata.training_type || !WORKOUT_VALID_TRAINING_TYPE.includes(metadata.training_type as string)) {
+    errors.push(`training_type 值无效: ${metadata.training_type}，允许: ${WORKOUT_VALID_TRAINING_TYPE.join("/")}`);
+  }
+
+  if (!metadata.category || !WORKOUT_VALID_CATEGORY.includes(metadata.category as string)) {
+    errors.push(`category 值无效: ${metadata.category}，允许: ${WORKOUT_VALID_CATEGORY.join("/")}`);
+  }
+
+  if (metadata.estimated_duration !== undefined && metadata.estimated_duration !== null) {
+    const d = metadata.estimated_duration as number;
+    if (typeof d !== "number" || d < 1 || d > 300) {
+      errors.push(`estimated_duration 超出范围: ${d}，允许 1-300`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: getCorsHeaders(req) });
@@ -140,10 +183,13 @@ serve(async (req: Request) => {
       url?: string;
       text?: string;
       preferred_module?: string;
+      workout_video_id?: string;
     };
 
+    const workoutVideoId = body.workout_video_id || "";
+
     const input = body.url || body.text || "";
-    if (!input || input.trim().length === 0) {
+    if (!input && !workoutVideoId) {
       return new Response(JSON.stringify({ error: "请提供 URL 链接或文本内容" }), {
         status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
@@ -183,7 +229,13 @@ serve(async (req: Request) => {
     });
 
     if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
+      // If this is an UPDATE for an existing workout video, mark as failed
+      if (workoutVideoId) {
+        await supabase
+          .from("workout_videos")
+          .update({ ai_analysis_status: "failed" })
+          .eq("id", workoutVideoId);
+      }
       return new Response(JSON.stringify({ error: `AI 服务异常 (${aiResponse.status})` }), {
         status: 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
@@ -197,6 +249,12 @@ serve(async (req: Request) => {
     try {
       parsed = parseAIJson(raw);
     } catch {
+      if (workoutVideoId) {
+        await supabase
+          .from("workout_videos")
+          .update({ ai_analysis_status: "failed" })
+          .eq("id", workoutVideoId);
+      }
       return new Response(JSON.stringify({
         error: "parse_error",
         raw: raw.slice(0, 500),
@@ -221,22 +279,68 @@ serve(async (req: Request) => {
 
     if (content_type === "workout") {
       targetTable = "workout_videos";
-      const { data: inserted } = await supabase
-        .from("workout_videos")
-        .insert({
-          user_id: user.id,
-          title: title,
-          category: category,
-          difficulty: (metadata.difficulty as string) || "初级",
-          estimated_duration: (metadata.estimated_duration as number) || null,
-          target_muscles: (metadata.target_muscles as string[]) || [],
-          platform: inputIsUrl ? platform : null,
-          url: inputIsUrl ? input : null,
-        })
-        .select("id")
-        .single();
 
-      if (inserted) recordId = inserted.id as string;
+      // Validate workout metadata against schema
+      const validation = validateWorkoutMetadata(metadata);
+      if (!validation.valid) {
+        if (workoutVideoId) {
+          await supabase
+            .from("workout_videos")
+            .update({ ai_analysis_status: "failed" })
+            .eq("id", workoutVideoId);
+        }
+        return new Response(JSON.stringify({
+          error: "schema_validation_failed",
+          message: "AI 输出不符合 schema",
+          validation_errors: validation.errors,
+        }), {
+          status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+
+      if (workoutVideoId) {
+        // ── UPDATE mode: enrich existing workout_video row ──
+        const { data: updated } = await supabase
+          .from("workout_videos")
+          .update({
+            title: title || undefined,
+            category: metadata.category as string,
+            difficulty: metadata.difficulty as string,
+            training_type: metadata.training_type as string,
+            estimated_duration: (metadata.estimated_duration as number) || null,
+            target_muscles: (metadata.target_muscles as string[]) || [],
+            equipment: (metadata.equipment as string) || null,
+            tags: (metadata.tags as string[]) || [],
+            ai_analysis_status: "completed",
+          })
+          .eq("id", workoutVideoId)
+          .select("id")
+          .single();
+
+        if (updated) recordId = updated.id as string;
+      } else {
+        // ── INSERT mode: create new workout_video row ──
+        const { data: inserted } = await supabase
+          .from("workout_videos")
+          .insert({
+            user_id: user.id,
+            title: title,
+            category: metadata.category as string,
+            difficulty: (metadata.difficulty as string) || "初级",
+            training_type: metadata.training_type as string,
+            estimated_duration: (metadata.estimated_duration as number) || null,
+            target_muscles: (metadata.target_muscles as string[]) || [],
+            equipment: (metadata.equipment as string) || null,
+            tags: (metadata.tags as string[]) || [],
+            platform: inputIsUrl ? platform : null,
+            url: inputIsUrl ? input : null,
+            ai_analysis_status: "completed",
+          })
+          .select("id")
+          .single();
+
+        if (inserted) recordId = inserted.id as string;
+      }
     } else if (content_type === "recipe") {
       targetTable = "recipes";
       const mealTimeRaw = metadata.meal_time as string[] || [];
@@ -294,6 +398,7 @@ serve(async (req: Request) => {
         input_length: input.length,
         platform: inputIsUrl ? platform : "text",
         preferred_module: preferredModule || null,
+        workout_video_id: workoutVideoId || null,
       },
       output_data: {
         content_type,
