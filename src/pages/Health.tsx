@@ -3,7 +3,7 @@ import {
   Heart, Sparkles, Dumbbell, Utensils, Calendar, Loader2, Plus,
   Trash2, ExternalLink, Play, Flame, Target, Activity, Apple,
   ChevronLeft, ChevronRight, Star, Clock, Zap, AlertTriangle, CheckCircle2,
-  Image, X,
+  Image, X, ArrowRight, Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -15,6 +15,7 @@ import {
   useWorkoutRecords, useCreateWorkoutRecord, useDeleteWorkoutRecord,
   useFoodRecords, useCreateFoodRecord, useDeleteFoodRecord,
   useMealAnalysis, useGenerateMealAnalysis,
+  useHealthGoals,
   type WorkoutVideo, type Recipe, type MealPlan, type MealPlanSlot, type FoodRecord,
 } from "@/lib/hooks/useHealth";
 
@@ -52,7 +53,7 @@ const FEELING_OPTIONS = [
 
 const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
-type Tab = "coach" | "workout" | "recipe" | "plan";
+type Tab = "coach" | "workout" | "recipe" | "plan" | "goals";
 
 function today() { return new Date().toISOString().split("T")[0]; }
 
@@ -90,6 +91,7 @@ export default function Health() {
           { key: "workout" as Tab, label: "训练库", icon: Dumbbell },
           { key: "recipe" as Tab, label: "食谱库", icon: Utensils },
           { key: "plan" as Tab, label: "周计划", icon: Calendar },
+          { key: "goals" as Tab, label: "健康目标", icon: Target },
         ]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -108,6 +110,7 @@ export default function Health() {
       {tab === "workout" && <WorkoutLibraryTab />}
       {tab === "recipe" && <RecipeBoxTab />}
       {tab === "plan" && <WeeklyPlanTab />}
+      {tab === "goals" && <GoalsTab />}
     </div>
   );
 }
@@ -1100,6 +1103,173 @@ function WeeklyPlanTab() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Tab 5: Health Goals ──
+
+function GoalsTab() {
+  const { data: bodyProfile, isLoading: loadingBody } = useBodyProfile();
+  const { data: healthGoals, isLoading: loadingGoals } = useHealthGoals();
+
+  const goto = (path: string) => {
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  const isLoading = loadingBody || loadingGoals;
+
+  const HEALTH_DIRECTIONS = [
+    { key: "减脂", icon: "🔥", desc: "降低体脂率，保持肌肉量" },
+    { key: "增肌", icon: "💪", desc: "增加肌肉量，提升力量" },
+    { key: "饮食改善", icon: "🥗", desc: "优化饮食结构，减少加工食品" },
+    { key: "睡眠改善", icon: "😴", desc: "保证7小时以上优质睡眠" },
+    { key: "生活习惯", icon: "✅", desc: "建立健康的日常routine" },
+  ] as const;
+
+  return (
+    <div className="space-y-4">
+      {/* Body Stats Summary (read-only) */}
+      {bodyProfile && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs font-semibold text-ink-lighter uppercase tracking-wider mb-3">身体档案</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter">当前体重</p>
+              <p className="text-lg font-bold text-ink">{bodyProfile.weight ?? "--"} <span className="text-xs font-normal text-ink-lighter">kg</span></p>
+            </div>
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter">目标体重</p>
+              <p className="text-lg font-bold text-ink">{bodyProfile.target_weight ?? "--"} <span className="text-xs font-normal text-ink-lighter">kg</span></p>
+            </div>
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter">体脂率</p>
+              <p className="text-lg font-bold text-ink">{bodyProfile.body_fat_percentage != null ? `${bodyProfile.body_fat_percentage}%` : "--"}</p>
+            </div>
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter">健身目标</p>
+              <p className="text-lg font-bold text-ink">{bodyProfile.fitness_goal || "未设置"}</p>
+            </div>
+          </div>
+          {bodyProfile.focus_areas && bodyProfile.focus_areas.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {bodyProfile.focus_areas.map((area) => (
+                <span key={area} className="text-[10px] px-2 py-1 rounded-full bg-sage-light/50 text-sage-deep font-medium">
+                  {area}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] text-ink-lighter mt-2">
+            在「今日建议」标签页中编辑身体档案
+          </p>
+        </div>
+      )}
+
+      {/* Health Directions */}
+      <div className="bg-card rounded-2xl border border-border p-4">
+        <p className="text-xs font-semibold text-ink-lighter uppercase tracking-wider mb-3">健康方向</p>
+        <div className="space-y-2">
+          {HEALTH_DIRECTIONS.map((dir) => (
+            <div key={dir.key} className="flex items-center gap-3 rounded-xl px-3 py-2.5 bg-ink/5">
+              <span className="text-lg shrink-0">{dir.icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-ink">{dir.key}</p>
+                <p className="text-[10px] text-ink-lighter">{dir.desc}</p>
+              </div>
+              <button
+                onClick={() => {
+                  goto("/plan");
+                }}
+                className="text-[10px] font-medium text-sage-deep bg-sage-light/50 rounded-full px-2 py-1 hover:bg-sage-light transition-colors shrink-0"
+              >
+                设定目标
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Active Health Goals from Plan OS */}
+      <div className="bg-card rounded-2xl border border-border p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-ink-lighter uppercase tracking-wider">
+            进行中的健康目标
+          </p>
+          <button
+            onClick={() => {
+              goto("/plan");
+            }}
+            className="flex items-center gap-1 text-[10px] font-medium text-sage-deep hover:underline"
+          >
+            在 Plan OS 中管理
+            <ArrowRight size={10} />
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 size={16} className="animate-spin text-sage-deep" />
+          </div>
+        ) : healthGoals && healthGoals.length > 0 ? (
+          <div className="space-y-2">
+            {healthGoals.map((goal) => (
+              <div
+                key={goal.id}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 bg-sage-light/10"
+              >
+                <Trophy size={16} className="text-sage-deep shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink truncate">{goal.title}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    {goal.target_metric && (
+                      <span className="text-[10px] text-ink-lighter">
+                        目标: {goal.target_metric}
+                        {goal.current_metric ? ` · 当前: ${goal.current_metric}` : ""}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-16 bg-ink/10 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-emerald-400 h-full rounded-full transition-all"
+                          style={{ width: `${Math.min(goal.progress || 0, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-ink-lighter">{goal.progress || 0}%</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    goto("/plan");
+                  }}
+                  className="shrink-0 text-ink-lighter hover:text-ink-light"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6">
+            <Target size={28} className="text-ink-lighter mx-auto mb-2 opacity-25" />
+            <p className="text-sm text-ink-lighter">暂无健康目标</p>
+            <p className="text-xs text-ink-lighter mt-1">
+              在 Plan OS 中创建目标，选择分类为「健康」
+            </p>
+            <button
+              onClick={() => {
+                goto("/plan");
+              }}
+              className="mt-3 inline-flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-4 py-2 text-xs font-semibold hover:bg-sage-light/80 transition-colors"
+            >
+              <Plus size={12} />
+              创建健康目标
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

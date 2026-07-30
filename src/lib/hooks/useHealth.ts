@@ -908,6 +908,225 @@ export function useDeleteWater() {
   });
 }
 
+// ── Daily Health Checklist ──
+
+export type DailyHealthItem = {
+  id: string;
+  checklist_id: string;
+  user_id: string;
+  title: string;
+  category: string;
+  item_type: "baseline" | "ai";
+  sort_order: number;
+  is_completed: boolean;
+  completed_at: string | null;
+  linked_goal_id: string | null;
+  created_at: string;
+};
+
+export type DailyHealthChecklist = {
+  id: string;
+  user_id: string;
+  date: string;
+  generated_by: "ai" | "manual" | "mixed";
+  ai_context: Record<string, unknown> | null;
+  items: DailyHealthItem[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type HealthChecklistTips = {
+  tips: Array<{
+    title: string;
+    detail: string;
+    category: string;
+  }>;
+  motivation: string;
+};
+
+const BASELINE_ITEMS = [
+  { title: "今日饮水达标", category: "water", sort_order: 0 },
+  { title: "完成今日饮食记录", category: "diet", sort_order: 1 },
+  { title: "今日训练/恢复", category: "workout", sort_order: 2 },
+  { title: "今晚早点休息", category: "sleep", sort_order: 3 },
+] as const;
+
+async function fetchDailyChecklist(date: string): Promise<DailyHealthChecklist | null> {
+  const { data: checklist, error } = await supabase
+    .from("daily_health_checklists")
+    .select("*")
+    .eq("date", date)
+    .limit(1)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw error;
+  }
+
+  const { data: items } = await supabase
+    .from("daily_health_items")
+    .select("*")
+    .eq("checklist_id", (checklist as Record<string, unknown>).id as string)
+    .order("sort_order");
+
+  return {
+    ...(checklist as Record<string, unknown>),
+    items: (items || []) as DailyHealthItem[],
+  } as DailyHealthChecklist;
+}
+
+export function useDailyChecklist(date?: string) {
+  const d = date || new Date().toISOString().split("T")[0];
+  return useQuery({
+    queryKey: ["daily_checklist", d],
+    queryFn: () => fetchDailyChecklist(d),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useInitChecklist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (date: string) => {
+      const userId = await getUserId();
+
+      // Create checklist
+      const { data: checklist, error } = await supabase
+        .from("daily_health_checklists")
+        .insert({ user_id: userId, date, generated_by: "mixed" })
+        .select()
+        .single();
+      if (error) throw error;
+
+      // Insert baseline items
+      const baselineRows = BASELINE_ITEMS.map((item) => ({
+        checklist_id: (checklist as Record<string, unknown>).id as string,
+        user_id: userId,
+        title: item.title,
+        category: item.category,
+        item_type: "baseline",
+        sort_order: item.sort_order,
+      }));
+
+      const { error: itemsErr } = await supabase
+        .from("daily_health_items")
+        .insert(baselineRows);
+      if (itemsErr) throw itemsErr;
+
+      return checklist as Record<string, unknown>;
+    },
+    onSuccess: (_data, date) => {
+      qc.invalidateQueries({ queryKey: ["daily_checklist", date] });
+    },
+  });
+}
+
+export function useGenerateChecklistTips() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { date: string; checklistId: string }) => {
+      // Delete old AI items
+      await supabase
+        .from("daily_health_items")
+        .delete()
+        .eq("checklist_id", input.checklistId)
+        .eq("item_type", "ai");
+
+      // Call AI
+      const { data, error } = await supabase.functions.invoke("health-checklist-agent", {
+        body: {},
+      });
+      if (error) throw error;
+      return data as HealthChecklistTips;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["daily_checklist", vars.date] });
+    },
+  });
+}
+
+export function useToggleChecklistItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { itemId: string; isCompleted: boolean; date: string }) => {
+      const { error } = await supabase
+        .from("daily_health_items")
+        .update({
+          is_completed: input.isCompleted,
+          completed_at: input.isCompleted ? new Date().toISOString() : null,
+        })
+        .eq("id", input.itemId);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["daily_checklist", vars.date] });
+    },
+  });
+}
+
+export function useInsertChecklistAiItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      date: string;
+      checklistId: string;
+      tips: HealthChecklistTips["tips"];
+    }) => {
+      const userId = await getUserId();
+      const rows = input.tips.map((tip, i) => ({
+        checklist_id: input.checklistId,
+        user_id: userId,
+        title: `${tip.title}：${tip.detail}`,
+        category: tip.category,
+        item_type: "ai",
+        sort_order: 10 + i,
+        is_completed: false,
+      }));
+
+      const { error } = await supabase
+        .from("daily_health_items")
+        .insert(rows);
+      if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["daily_checklist", vars.date] });
+    },
+  });
+}
+
+// ── Health Goals (from Plan OS goals table) ──
+
+export type HealthGoalSummary = {
+  id: string;
+  title: string;
+  target_metric: string | null;
+  current_metric: string | null;
+  status: string;
+  progress: number;
+  target_date: string | null;
+};
+
+async function fetchHealthGoals(): Promise<HealthGoalSummary[]> {
+  const { data, error } = await supabase
+    .from("goals")
+    .select("id,title,target_metric,current_metric,status,progress,target_date")
+    .eq("goal_category", "health")
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return (data || []) as HealthGoalSummary[];
+}
+
+export function useHealthGoals() {
+  return useQuery({
+    queryKey: ["health_goals"],
+    queryFn: fetchHealthGoals,
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
 // ── Helpers ──
 
 function detectPlatform(url: string): string {
