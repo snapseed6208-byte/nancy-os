@@ -343,6 +343,25 @@ export function useDeleteWorkoutVideo() {
   });
 }
 
+export function useRetryWorkoutAnalysis() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (video: { id: string; url: string }) => {
+      const { data, error } = await supabase.functions.invoke("content-parser-agent", {
+        body: {
+          url: video.url,
+          workout_video_id: video.id,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workout_videos"] });
+    },
+  });
+}
+
 // ── Recipes ──
 
 async function fetchRecipes(): Promise<Recipe[]> {

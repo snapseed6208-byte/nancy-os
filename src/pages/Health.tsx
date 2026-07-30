@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Heart, Sparkles, Dumbbell, Utensils, Calendar, Loader2, Plus,
   Trash2, ExternalLink, Play, Flame, Target, Activity, Apple,
   ChevronLeft, ChevronRight, Star, Clock, Zap, AlertTriangle, CheckCircle2,
-  Image, X, ArrowRight, Trophy, Brain,
+  Image, X, ArrowRight, Trophy, Brain, Search, RotateCw, SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/health/VideoPlayer";
 import {
   useBodyProfile, useUpdateBodyProfile,
-  useWorkoutVideos, useCreateWorkoutVideo, useUpdateWorkoutVideo, useDeleteWorkoutVideo,
+  useWorkoutVideos, useCreateWorkoutVideo, useUpdateWorkoutVideo, useDeleteWorkoutVideo, useRetryWorkoutAnalysis,
   useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe,
   useMealPlans, useUpsertMealPlan,
   useHealthContext, useCoachInsight, useGenerateCoachInsight,
@@ -662,13 +662,81 @@ function MealSection({
 
 // ── Tab 2: Workout Library ──
 
+const SEARCH_SYNONYMS: Record<string, string[]> = {
+  "臀": ["臀", "屁股", "翘臀", "臀腿", "臀大肌"],
+  "背": ["背", "背部", "背肌", "背阔肌"],
+  "腹": ["腹", "核心", "马甲线", "腹肌"],
+  "腿": ["腿", "腿部", "下肢"],
+};
+
+const DIFFICULTY_ORDER: Record<string, number> = { "初级": 0, "中级": 1, "高级": 2 };
+
+function expandSearchTerms(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const terms = new Set<string>([trimmed]);
+  for (const synonyms of Object.values(SEARCH_SYNONYMS)) {
+    if (synonyms.some((s) => trimmed.includes(s))) {
+      for (const s of synonyms) terms.add(s);
+    }
+  }
+  return [...terms];
+}
+
+function matchesSearch(video: WorkoutVideo, terms: string[]): boolean {
+  const searchable = [
+    video.title,
+    ...(video.tags || []),
+    ...(video.target_muscles || []),
+    video.equipment,
+    video.training_type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return terms.some((t) => searchable.includes(t.toLowerCase()));
+}
+
+const FILTER_TRAINING_TYPES = [
+  { key: "all", label: "全部" },
+  { key: "力量训练", label: "力量" },
+  { key: "有氧", label: "有氧" },
+  { key: "HIIT", label: "HIIT" },
+  { key: "拉伸", label: "拉伸" },
+  { key: "瑜伽", label: "瑜伽" },
+  { key: "康复", label: "康复" },
+];
+
+const FILTER_DIFFICULTIES = [
+  { key: "all", label: "全部" },
+  { key: "初级", label: "初级" },
+  { key: "中级", label: "中级" },
+  { key: "高级", label: "高级" },
+];
+
+const SORT_OPTIONS = [
+  { key: "newest", label: "最新" },
+  { key: "duration_asc", label: "最短时长" },
+  { key: "difficulty_asc", label: "难度↓→高" },
+  { key: "difficulty_desc", label: "难度高→低" },
+];
+
 function WorkoutLibraryTab() {
   const { data: videos, isLoading } = useWorkoutVideos();
   const createVideo = useCreateWorkoutVideo();
   const updateVideo = useUpdateWorkoutVideo();
   const deleteVideo = useDeleteWorkoutVideo();
+  const retryAnalysis = useRetryWorkoutAnalysis();
 
-  const [category, setCategory] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({
+    category: "all",
+    training_type: "all",
+    difficulty: "all",
+    equipment: "all",
+  });
+  const [sort, setSort] = useState("newest");
+  const [showFilters, setShowFilters] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [url, setUrl] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -677,9 +745,77 @@ function WorkoutLibraryTab() {
     training_type: "", equipment: "", tags: "",
   });
 
-  const filtered = category === "all"
-    ? (videos || [])
-    : (videos || []).filter((v) => v.category === category || v.training_type === category);
+  // Dynamic equipment list from existing data
+  const equipmentOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of videos || []) {
+      if (v.equipment) {
+        v.equipment.split(/[,，]/).forEach((e) => {
+          const trimmed = e.trim();
+          if (trimmed) set.add(trimmed);
+        });
+      }
+    }
+    return [...set];
+  }, [videos]);
+
+  // Client-side search → filter → sort
+  const filtered = useMemo(() => {
+    let result = videos || [];
+
+    // 1. Search with synonym expansion
+    const terms = expandSearchTerms(search);
+    if (terms.length > 0) {
+      result = result.filter((v) => matchesSearch(v, terms));
+    }
+
+    // 2. Multi-dimensional filter (AND logic)
+    if (filters.category !== "all") {
+      result = result.filter((v) => v.category === filters.category || v.training_type === filters.category);
+    }
+    if (filters.training_type !== "all") {
+      result = result.filter((v) => v.training_type === filters.training_type);
+    }
+    if (filters.difficulty !== "all") {
+      result = result.filter((v) => v.difficulty === filters.difficulty);
+    }
+    if (filters.equipment !== "all") {
+      result = result.filter((v) => v.equipment?.includes(filters.equipment));
+    }
+
+    // 3. Sort
+    switch (sort) {
+      case "duration_asc":
+        result = [...result].sort((a, b) => (a.estimated_duration ?? 999) - (b.estimated_duration ?? 999));
+        break;
+      case "difficulty_asc":
+        result = [...result].sort((a, b) => (DIFFICULTY_ORDER[a.difficulty ?? ""] ?? 99) - (DIFFICULTY_ORDER[b.difficulty ?? ""] ?? 99));
+        break;
+      case "difficulty_desc":
+        result = [...result].sort((a, b) => (DIFFICULTY_ORDER[b.difficulty ?? ""] ?? -1) - (DIFFICULTY_ORDER[a.difficulty ?? ""] ?? -1));
+        break;
+      // "newest" — preserved from query (created_at desc)
+    }
+
+    return result;
+  }, [videos, search, filters, sort]);
+
+  // Data quality stats
+  const qualityStats = useMemo(() => {
+    const all = videos || [];
+    const completed = all.filter((v) => v.ai_analysis_status === "completed").length;
+    const pending = all.filter((v) => v.ai_analysis_status === "pending" || v.ai_analysis_status === "failed").length;
+    return { completed, pending, total: all.length };
+  }, [videos]);
+
+  const handleRetryPending = () => {
+    const pending = (videos || []).filter(
+      (v) => v.ai_analysis_status === "pending" || v.ai_analysis_status === "failed",
+    );
+    for (const v of pending) {
+      retryAnalysis.mutate({ id: v.id, url: v.url });
+    }
+  };
 
   const handleAdd = () => {
     if (!url.trim()) return;
@@ -712,6 +848,10 @@ function WorkoutLibraryTab() {
     }, { onSuccess: () => setEditingId(null) });
   };
 
+  const setFilter = (key: keyof typeof filters, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
   const getPlatformBadge = (platform: string) => {
     const map: Record<string, string> = { bilibili: "B站", douyin: "抖音", youtube: "YT", xiaohongshu: "小红书" };
     return map[platform] || platform;
@@ -719,6 +859,169 @@ function WorkoutLibraryTab() {
 
   return (
     <div className="space-y-3">
+      {/* Search bar + sort */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-lighter" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索训练视频..."
+            className="w-full bg-card border border-border rounded-xl pl-9 pr-8 py-2.5 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-deep/50 transition-colors"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-ink/10 flex items-center justify-center hover:bg-ink/15"
+            >
+              <X size={10} className="text-ink-lighter" />
+            </button>
+          )}
+        </div>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          className="bg-card border border-border rounded-xl px-2.5 py-2.5 text-xs text-ink outline-none focus:border-sage-deep/50 transition-colors appearance-none cursor-pointer shrink-0"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Filter toggle */}
+      <button
+        onClick={() => setShowFilters(!showFilters)}
+        className="flex items-center gap-1 text-[10px] text-ink-lighter hover:text-ink-light transition-colors"
+      >
+        <SlidersHorizontal size={11} />
+        筛选
+        {showFilters ? null : ` · ${filters.category === "all" && filters.training_type === "all" && filters.difficulty === "all" && filters.equipment === "all" ? "全部" : "已选"}`}
+      </button>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="space-y-2 bg-card rounded-2xl border border-border p-3">
+          {/* Category (body part) */}
+          <div className="space-y-1">
+            <p className="text-[10px] text-ink-lighter font-medium">训练部位</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {WORKOUT_CATEGORIES.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setFilter("category", c.key)}
+                  className={cn(
+                    "shrink-0 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                    filters.category === c.key ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Training type */}
+          <div className="space-y-1">
+            <p className="text-[10px] text-ink-lighter font-medium">训练方式</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {FILTER_TRAINING_TYPES.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setFilter("training_type", c.key)}
+                  className={cn(
+                    "shrink-0 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                    filters.training_type === c.key ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Difficulty */}
+          <div className="space-y-1">
+            <p className="text-[10px] text-ink-lighter font-medium">难度</p>
+            <div className="flex gap-1.5 flex-wrap">
+              {FILTER_DIFFICULTIES.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setFilter("difficulty", c.key)}
+                  className={cn(
+                    "shrink-0 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                    filters.difficulty === c.key ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Equipment (dynamic) */}
+          {equipmentOptions.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[10px] text-ink-lighter font-medium">器材</p>
+              <div className="flex gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setFilter("equipment", "all")}
+                  className={cn(
+                    "shrink-0 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                    filters.equipment === "all" ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                  )}
+                >
+                  全部
+                </button>
+                {equipmentOptions.map((eq) => (
+                  <button
+                    key={eq}
+                    onClick={() => setFilter("equipment", eq)}
+                    className={cn(
+                      "shrink-0 px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                      filters.equipment === eq ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-light hover:bg-ink/10",
+                    )}
+                  >
+                    {eq}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Data quality toolstrip */}
+      {qualityStats.total > 0 && (
+        <div className={cn(
+          "flex items-center justify-between rounded-xl px-3 py-2 text-xs",
+          qualityStats.pending > 0 ? "bg-amber-50 border border-amber-100" : "bg-emerald-50 border border-emerald-100",
+        )}>
+          <span className={cn(
+            "font-medium",
+            qualityStats.pending > 0 ? "text-amber-700" : "text-emerald-700",
+          )}>
+            {qualityStats.pending > 0
+              ? `有 ${qualityStats.pending} 个训练等待AI整理`
+              : `已智能整理 ${qualityStats.completed} 个训练`}
+          </span>
+          {qualityStats.pending > 0 && (
+            <button
+              onClick={handleRetryPending}
+              disabled={retryAnalysis.isPending}
+              className="flex items-center gap-1 text-[10px] font-semibold bg-amber-600 text-white rounded-lg px-2.5 py-1 hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            >
+              {retryAnalysis.isPending ? (
+                <><Loader2 size={10} className="animate-spin" />整理中...</>
+              ) : (
+                <><RotateCw size={10} />立即整理</>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Add button */}
       {!showAdd ? (
         <button onClick={() => setShowAdd(true)} className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-sage-light/50 py-3.5 text-sm text-sage-deep hover:bg-sage-light/10 transition-colors">
@@ -745,18 +1048,12 @@ function WorkoutLibraryTab() {
         </div>
       )}
 
-      {/* Category filter */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {WORKOUT_CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setCategory(c.key)}
-            className={cn("shrink-0 px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors", category === c.key ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-light hover:bg-ink/10")}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
+      {/* Video count */}
+      {!isLoading && search && (
+        <p className="text-[10px] text-ink-lighter">
+          找到 {filtered.length} 个视频
+        </p>
+      )}
 
       {/* Video list */}
       {isLoading ? (
@@ -764,8 +1061,8 @@ function WorkoutLibraryTab() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-10">
           <Dumbbell size={32} className="text-ink-lighter mx-auto mb-3 opacity-25" />
-          <p className="text-sm text-ink-lighter">训练库为空</p>
-          <p className="text-xs text-ink-lighter mt-1">添加抖音或B站健身视频，替代收藏夹</p>
+          <p className="text-sm text-ink-lighter">{search || filters.category !== "all" || filters.training_type !== "all" || filters.difficulty !== "all" || filters.equipment !== "all" ? "没有匹配的训练视频" : "训练库为空"}</p>
+          <p className="text-xs text-ink-lighter mt-1">{search || filters.category !== "all" || filters.training_type !== "all" || filters.difficulty !== "all" || filters.equipment !== "all" ? "试试其他关键词或筛选条件" : "添加抖音或B站健身视频，替代收藏夹"}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -793,7 +1090,7 @@ function WorkoutLibraryTab() {
                     <input type="number" value={editForm.estimated_duration ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, estimated_duration: e.target.value ? parseInt(e.target.value) : null }))} placeholder="时长(分钟)" className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   </div>
                   <input type="text" value={editForm.equipment} onChange={(e) => setEditForm((f) => ({ ...f, equipment: e.target.value }))} placeholder="器材（如：哑铃、弹力带）" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
-                  <input type="text" value={editForm.tags} onChange={(e) => setEditForm((f) => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
+                  <input type="text" value={editForm.tags} onChange={(e) => setEditForm((f) => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔（如：翘臀, 无器械, 新手友好）" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   <div className="flex gap-2">
                     <button onClick={() => saveEdit(v.id)} className="flex-1 bg-sage-light text-sage-deep rounded-lg py-1.5 text-xs font-semibold">保存</button>
                     <button onClick={() => setEditingId(null)} className="px-3 py-1.5 text-xs text-ink-light hover:bg-ink/5 rounded-lg">取消</button>
