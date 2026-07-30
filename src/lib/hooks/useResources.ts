@@ -321,15 +321,18 @@ async function fetchResources(): Promise<ResourceRow[]> {
     .limit(50);
 
   if (error) throw error;
+  console.log("[DEBUG fetchResources] raw data count:", (data || []).length, "| error:", error, "| sample:", (data || []).slice(0, 2).map((r: Record<string, unknown>) => ({ id: r.id, title: r.title, user_id: r.user_id, is_archived: r.is_archived, category_id: r.category_id })));
   return (data || []) as ResourceRow[];
 }
 
 export function useResources() {
-  return useQuery({
+  const result = useQuery({
     queryKey: ["resources"],
     queryFn: fetchResources,
     staleTime: 60 * 1000,
   });
+  console.log("[DEBUG useResources] status:", result.status, "| dataLength:", (result.data || []).length, "| isError:", result.isError, "| error:", result.error, "| isLoading:", result.isLoading, "| isFetching:", result.isFetching);
+  return result;
 }
 
 // ── Resource Mutations ──

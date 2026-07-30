@@ -178,6 +178,8 @@ export default function Resources() {
     return result;
   }, [resources, activeCategory, statusFilter, searchQuery]);
 
+  console.log("[DEBUG Resources] resources.length:", resources?.length, "| isLoading:", isLoading, "| filteredResources.length:", filteredResources.length, "| activeCategory:", activeCategory, "| statusFilter:", statusFilter, "| searchQuery:", searchQuery, "| categories.length:", categories?.length, "| allResourceTags keys:", allResourceTags ? Object.keys(allResourceTags).length : "undefined");
+
   return (
     <div className="space-y-4">
       {/* Header */}
