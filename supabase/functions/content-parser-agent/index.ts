@@ -270,19 +270,15 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
 
 ## 你的任务
 你的任务不是创造食谱。
-你的任务只是整理——从提供的真实内容中提取已有的信息。
+你的任务只是整理——从提供的「来源素材」中提取已有的信息。
 
 ## 输入格式
-用户会提供 source_content，包含以下字段：
-{
-  title: "视频/笔记的标题",
-  description: "视频/笔记的简介",
-  subtitle: "原始字幕文字",
-  transcript: "完整文字记录",
-  ocr_text: "OCR识别的文字",
-  vision_result: "视觉识别结果",
-  platform: "来源平台"
-}
+用户会提供「来源素材」（source_material），格式如下：
+
+标题: <视频/笔记的标题>
+正文: <视频简介或笔记正文>
+字幕: <原始CC字幕文字>
+OCR: <从图片中OCR识别出的文字>
 
 ## 核心原则
 
@@ -291,11 +287,13 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
 2. ❌ 不允许根据经验补全不存在的信息
 3. ❌ 不允许创造来源中未出现的步骤
 4. ❌ 不允许为了"完整"而编造数据
+5. ❌ 如果正文和字幕都没有食谱内容，禁止凭空生成
 
 ### 必须遵守
-1. ✅ 只提取明确出现在来源内容中的食材和步骤
+1. ✅ 只提取明确出现在来源素材中的食材和步骤
 2. ✅ 如果某个信息在来源中不存在，该字段返回 null 或空数组
 3. ✅ 准确度优先于完整性
+4. ✅ 食材名称和用量必须能在来源素材中找到原文依据
 
 ## 输出格式 — 严格 JSON（不要 markdown 代码块）
 
@@ -308,35 +306,26 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱信息整理助手。
     { "order": 1, "text": "步骤描述" }
   ],
   "notes": "补充说明（可选，没有则为 null）",
-  "source_text": "AI 参考的原始内容摘要（保留关键信息）",
+  "source_text": "AI 参考的原始内容摘要（保留关键信息，方便人工验证）",
   "confidence": "high"
 }
 
-## 字段说明
+## confidence 规则
+- "high": 来源素材包含字幕或完整文字记录 — 信息充足，可以生成完整食谱
+- "medium": 来源素材来自 OCR 识别或简介中的食谱描述 — 信息可能不完整，需要谨慎
+- "low": 来源素材只有标题或极少量信息 — **禁止生成完整食谱**
 
-### source_text
-保存 AI 整理时参考的原始内容。用于用户验证 AI 是否基于真实内容。
-- 从 source_content 中提取关键部分
-- 保留食材清单和步骤的原文
-- 保留标题和简介中的关键描述
-- 不要添加原始内容中没有的信息
-
-### confidence 规则
-- "high": 有字幕、正文或完整的文字记录 — 信息充足，可以生成完整食谱
-- "medium": 来自 OCR 识别或视觉分析 — 信息可能不完整，需要谨慎
-- "low": 只有标题或极少量信息 — **禁止生成完整食谱**
-
-### 如果 confidence = "low"
+## 如果 confidence = "low"
 - ingredients 必须为空数组 []
 - steps 必须为空数组 []
 - name 只使用标题文字
-- notes 说明"信息不足，无法整理完整食谱"
+- notes 说明"信息不足，无法从来源整理完整食谱。建议手动补充食材和步骤。"
 - source_text 保留已有的少量原文
 
 ## 特别注意
-- 步骤中的时间信息（如"焖煮15分钟"）只在内容明确提及时才填写
+- 步骤中的时间信息（如"焖煮15分钟"）只在来源素材明确提及时才填写
 - 用量单位（g、ml、勺等）只使用原文中出现的
-- 不要从标题推断完整食谱——标题只是参考信息`;
+- 不要从标题推断完整食谱——标题只是参考信息，不能作为食材/步骤的依据`;
 
 // ── JSON Schema validation ──
 
@@ -579,17 +568,29 @@ serve(async (req: Request) => {
       const parts: string[] = [];
 
       if (sourceContext) {
-        parts.push(`## 用户提供的描述\n${sourceContext}`);
+        parts.push(`## 用户补充说明\n${sourceContext}`);
       }
 
       if (sourceContent) {
         const sc = sourceContent as Record<string, unknown>;
-        if (sc.title) parts.push(`## 来源标题\n${sc.title}`);
-        if (sc.description) parts.push(`## 来源简介\n${(sc.description as string).slice(0, 2000)}`);
-        if (sc.subtitle) parts.push(`## 原始字幕\n${(sc.subtitle as string).slice(0, 5000)}`);
-        if (sc.transcript) parts.push(`## 完整文字记录\n${(sc.transcript as string).slice(0, 5000)}`);
-        if (sc.ocr_text) parts.push(`## OCR识别文字\n${(sc.ocr_text as string).slice(0, 3000)}`);
-        if (sc.vision_result) parts.push(`## 视觉识别结果\n${(sc.vision_result as string).slice(0, 3000)}`);
+
+        // Prefer pre-built source_material from extractor, or build from fields
+        const sourceMaterial = (sc.vision_result as string) || (sc.source_material as string);
+        if (sourceMaterial && sourceMaterial.length > 20) {
+          parts.push(`## 来源素材（source_material）\n\n${sourceMaterial}`);
+        } else {
+          // Fallback: build source_material from individual fields
+          const materialParts: string[] = [];
+          if (sc.title) materialParts.push(`标题: ${sc.title}`);
+          if (sc.description) materialParts.push(`正文: ${(sc.description as string).slice(0, 3000)}`);
+          if (sc.subtitle) materialParts.push(`字幕: ${(sc.subtitle as string).slice(0, 5000)}`);
+          if (sc.transcript && sc.transcript !== sc.subtitle) materialParts.push(`文字记录: ${(sc.transcript as string).slice(0, 5000)}`);
+          if (sc.ocr_text) materialParts.push(`OCR: ${(sc.ocr_text as string).slice(0, 5000)}`);
+          if (materialParts.length > 0) {
+            parts.push(`## 来源素材（source_material）\n\n${materialParts.join("\n\n")}`);
+          }
+        }
+
         if (sc.platform) parts.push(`## 来源平台\n${sc.platform}`);
       }
 

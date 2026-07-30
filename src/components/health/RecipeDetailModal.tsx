@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   X, ExternalLink, Edit3, Trash2, RefreshCw,
   ChefHat, ListOrdered, Lightbulb, Clock, Loader2,
+  Subtitles, FileText, ScanText, AlertTriangle,
 } from "lucide-react";
 import type { Recipe, RecipeIngredient, RecipeStep, RecipeSourceType } from "@/lib/hooks/useHealth";
 import RecipeEditForm from "@/components/health/RecipeEditForm";
@@ -31,6 +32,76 @@ function getSourceTypeLabel(st: string | null) {
   const map: Record<string, string> = { bilibili: "B站视频", douyin: "抖音视频", xiaohongshu: "小红书笔记", manual: "手动输入" };
   return map[st || ""] || "";
 }
+
+type ContentSource = {
+  icon: typeof Subtitles;
+  label: string;
+  status: "yes" | "partial" | "none";
+};
+
+function deriveContentSources(
+  sourceContent: Record<string, unknown> | null,
+): ContentSource[] {
+  if (!sourceContent) return [];
+  const sc = sourceContent;
+
+  const sources: ContentSource[] = [];
+
+  // Check subtitle
+  const hasSubtitle = typeof sc.subtitle === "string" && sc.subtitle.trim().length > 50;
+  sources.push({
+    icon: Subtitles,
+    label: "视频字幕",
+    status: hasSubtitle ? "yes" : "none",
+  });
+
+  // Check description / body text
+  const hasDesc = typeof sc.description === "string" && sc.description.trim().length > 50;
+  sources.push({
+    icon: FileText,
+    label: "视频简介/正文",
+    status: hasDesc ? "yes" : "none",
+  });
+
+  // Check OCR
+  const hasOcr = typeof sc.ocr_text === "string" && sc.ocr_text.trim().length > 50;
+  sources.push({
+    icon: ScanText,
+    label: "OCR图片识别",
+    status: hasOcr ? (hasDesc ? "yes" : "partial") : "none",
+  });
+
+  // Check transcript (separate from subtitle)
+  const hasTranscript = typeof sc.transcript === "string"
+    && sc.transcript.trim().length > 50
+    && sc.transcript !== sc.subtitle;
+  if (hasTranscript) {
+    sources.push({
+      icon: FileText,
+      label: "完整文字记录",
+      status: "yes",
+    });
+  }
+
+  // Only title fallback
+  const hasTitle = typeof sc.title === "string" && sc.title.trim().length > 0;
+  const hasAnyContent = hasSubtitle || hasDesc || hasOcr || hasTranscript;
+  if (hasTitle && !hasAnyContent) {
+    sources.push({
+      icon: AlertTriangle,
+      label: "仅标题",
+      status: "none",
+    });
+  }
+
+  return sources;
+}
+
+const SOURCE_STATUS_STYLE: Record<string, string> = {
+  yes: "text-emerald-600",
+  partial: "text-amber-600",
+  none: "text-slate-300",
+};
 
 const CONFIDENCE_CONFIG: Record<string, { label: string; color: string }> = {
   high: { label: "高可信", color: "bg-emerald-50 text-emerald-600" },
@@ -62,6 +133,7 @@ export default function RecipeDetailModal({
   const confidence = CONFIDENCE_CONFIG[recipe.confidence || ""] || null;
   const ingredients = Array.isArray(recipe.ingredients_json) ? recipe.ingredients_json : [];
   const steps = Array.isArray(recipe.steps_json) ? recipe.steps_json : [];
+  const contentSources = deriveContentSources(recipe.source_content as Record<string, unknown> | null);
 
   const handleSave = async (input: {
     name: string;
@@ -172,6 +244,36 @@ export default function RecipeDetailModal({
                     </div>
                   )}
                 </div>
+
+                {/* Content Sources */}
+                {contentSources.length > 0 && (
+                  <div className="bg-ink/[0.02] rounded-xl p-3">
+                    <h3 className="text-[10px] font-semibold text-ink-lighter mb-2 uppercase tracking-wide">内容来源</h3>
+                    <div className="space-y-1">
+                      {contentSources.map((source, i) => {
+                        const Icon = source.icon;
+                        const statusIcon = source.status === "yes" ? "✓" : source.status === "partial" ? "~" : "✗";
+                        return (
+                          <div key={i} className="flex items-center gap-2 text-[11px]">
+                            <Icon size={12} className={SOURCE_STATUS_STYLE[source.status]} />
+                            <span className="text-ink-light flex-1">{source.label}</span>
+                            <span className={`font-mono text-[10px] font-semibold ${SOURCE_STATUS_STYLE[source.status]}`}>
+                              {statusIcon}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {confidence && (
+                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-ink/5">
+                        <span className="text-[10px] text-ink-lighter">综合可信度</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${confidence.color}`}>
+                          {confidence.label}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Ingredients */}
                 <div>
