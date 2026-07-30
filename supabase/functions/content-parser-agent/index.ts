@@ -321,16 +321,19 @@ OCR: <从图片中OCR识别出的文字>
 ## 输出格式 — 严格 JSON（不要 markdown 代码块）
 
 {
-  "name": "菜名（仅菜名，5-25字）",
-  "ingredients": [
-    { "name": "单个食材名称", "amount": "该食材用量" }
-  ],
-  "steps": [
-    { "order": 1, "text": "单一步骤描述" }
-  ],
-  "notes": "补充说明（可选，没有则为 null）",
-  "source_text": "AI 参考的原始内容摘要（保留关键信息，方便人工验证）",
-  "confidence": "high"
+  "content_type": "recipe",
+  "metadata": {
+    "name": "菜名（仅菜名，5-25字）",
+    "ingredients": [
+      { "name": "单个食材名称", "amount": "该食材用量" }
+    ],
+    "steps": [
+      { "order": 1, "text": "单一步骤描述" }
+    ],
+    "notes": "补充说明（可选，没有则为 null）",
+    "source_text": "AI 参考的原始内容摘要（保留关键信息，方便人工验证）",
+    "confidence": "high"
+  }
 }
 
 ## confidence 规则
@@ -339,11 +342,11 @@ OCR: <从图片中OCR识别出的文字>
 - "low": 来源素材只有标题或极少量信息 — **禁止生成完整食谱**
 
 ## 如果 confidence = "low"
-- ingredients 必须为空数组 []
-- steps 必须为空数组 []
-- name 只使用标题文字
-- notes 说明"信息不足，无法从来源整理完整食谱。建议手动补充食材和步骤。"
-- source_text 保留已有的少量原文
+- metadata.ingredients 必须为空数组 []
+- metadata.steps 必须为空数组 []
+- metadata.name 只使用标题文字
+- metadata.notes 说明"信息不足，无法从来源整理完整食谱。建议手动补充食材和步骤。"
+- metadata.source_text 保留已有的少量原文
 
 ## 特别注意
 - name 长度超过 30 字说明你放错内容了——name 不是食材/steps 的容器
@@ -403,7 +406,7 @@ function sanitizeRecipeOutput(metadata: Record<string, unknown>): Record<string,
     }
   }
   // Strip common suffixes that indicate pollution
-  cleaned.name = (cleaned.name as string)
+  cleaned.name = ((cleaned.name as string) || "")
     .replace(/食谱[\s\S]*$/i, "")
     .replace(/\s*[一二三四五六七八九十]、.*$/, "")
     .trim();
@@ -864,7 +867,13 @@ serve(async (req: Request) => {
     const key_points = (parsed.key_points as string[]) || [];
     const action_items = (parsed.action_items as Array<Record<string, unknown>>) || [];
     const tags = (parsed.tags as string[]) || [];
-    const metadata = (parsed.metadata as Record<string, unknown>) || {};
+    let metadata = (parsed.metadata as Record<string, unknown>) || {};
+
+    // Fallback: RECIPE_PARSER_PROMPT may return recipe fields at top level
+    // instead of nested under metadata. Detect and use top-level fields.
+    if (Object.keys(metadata).length === 0 && (parsed.name || parsed.ingredients || parsed.steps)) {
+      metadata = parsed;
+    }
 
     // ── Route to target table ──
     let targetTable = "resources";
