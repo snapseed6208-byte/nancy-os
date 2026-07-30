@@ -311,6 +311,7 @@ export type ParsedContent = {
   tokens_used: number;
   source_url: string | null;
   source_platform: string | null;
+  raw_content: string | null;
 };
 
 export function useContentParser() {

@@ -66,12 +66,12 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
     { "action": "具体可执行的行动建议", "priority": "high|medium|low" }
   ],
   "recommended_category": {
-    "name": "推荐放入的知识库分类名（如：阅读收藏、影视解读、健身健康、饮食管理、工作成长、人情世故、生活技巧、英语学习）",
+    "name": "从以下11个默认分类中选择最匹配的：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏",
     "confidence": 0.9
   },
   "applicable_scenarios": ["这些知识适用于哪些生活/工作场景"],
   "related_knowledge": ["关联的知识领域或主题"],
-  "tags": ["标签1", "标签2", "标签3"],
+  "tags": ["#关键词1", "#关键词2", "#关键词3"],
   "metadata": {}
 }
 
@@ -84,9 +84,10 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
 - 如果没有值得保留的原话，返回空数组 []
 
 **recommended_category（推荐分类）：**
-- 根据内容主题推荐一个用户知识库分类
-- name: 中文分类名，参考：阅读收藏、影视解读、健身健康、饮食管理、工作成长、人情世故、生活技巧、英语学习
+- 根据内容主题推荐一个分类
+- name: 必须从以下11个默认分类中选择：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏
 - confidence: 0.0-1.0，根据内容匹配度评估
+- 重要：不要推荐默认分类之外的分类名
 
 **applicable_scenarios（适用场景）：**
 - 这些知识在什么情况下可以使用
@@ -289,11 +290,13 @@ HIIT → **必须同时满足**以下条件之一：
 - important_quotes: 1-5条值得保留的原话或数据，没有则空数组
 - action_items: 1-3条，具体可执行
 - summary: 必须是中文，150-250字
-- recommended_category: 必须提供，根据内容主题推荐知识库分类
+- tags: 3-6个带#前缀的关键词标签，用于快速检索。格式示例：#英语口语 #减脂 #面试技巧。标签应具体、可检索
+- recommended_category: 必须提供。只能从以下11个默认分类中选择：学习成长、工作职业、健康健身、饮食生活、生活技巧、影视娱乐、财商投资、思维认知、人际关系、旅行体验、灵感收藏。不要建议新的分类名
 - applicable_scenarios: 1-3个具体使用场景
 - related_knowledge: 关联的知识领域，帮助建立知识连接
 - 如果无法从链接/文本推断内容，基于上下文合理推断
-- 如果输入为纯文本而非URL，优先分析文本内容本身`;
+- 如果输入为纯文本而非URL，优先分析文本内容本身
+- 重要：不要创建新的分类名称。分类只能从上述11个默认分类中选择`;
 
 // ═══════════════════════════════════════════
 // Recipe Parser Prompt v2 — structured, actionable recipes
@@ -1365,6 +1368,7 @@ serve(async (req: Request) => {
     // ── Return ──
     // v2: Include new knowledge extraction fields.
     // For resources (article/video/course), recordId is empty (no auto-save).
+    // Preserve raw text content when input is not a URL.
     return jsonResponse({
       content_type,
       title,
@@ -1383,6 +1387,7 @@ serve(async (req: Request) => {
       tokens_used: tokensUsed,
       source_url: body.url || input || null,
       source_platform: inputIsUrl ? platform : null,
+      raw_content: inputIsUrl ? null : (body.text || input || null),
     }, req);
 
   } catch (err) {

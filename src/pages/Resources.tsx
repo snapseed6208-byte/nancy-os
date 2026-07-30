@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Link2, Plus, Tag, Trash2, ExternalLink, Archive, Star,
   Loader2, FolderOpen, Sparkles, Lightbulb, Target, Check,
@@ -14,6 +14,20 @@ import {
 } from "@/lib/hooks/useResources";
 
 // ── Constants ──
+
+const DEFAULT_CATEGORIES = [
+  { name: "学习成长", icon: "📚", color: "text-accent-sky" },
+  { name: "工作职业", icon: "💼", color: "text-accent-rose" },
+  { name: "健康健身", icon: "💪", color: "text-emerald-600" },
+  { name: "饮食生活", icon: "🍽️", color: "text-amber-600" },
+  { name: "生活技巧", icon: "🔧", color: "text-purple-600" },
+  { name: "影视娱乐", icon: "🎬", color: "text-indigo-600" },
+  { name: "财商投资", icon: "💰", color: "text-teal-600" },
+  { name: "思维认知", icon: "🧠", color: "text-sage-deep" },
+  { name: "人际关系", icon: "🤝", color: "text-accent-warm" },
+  { name: "旅行体验", icon: "✈️", color: "text-cyan-600" },
+  { name: "灵感收藏", icon: "💡", color: "text-yellow-600" },
+] as const;
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   saved: { label: "已保存", color: "bg-slate-50 text-slate-500" },
@@ -65,6 +79,17 @@ export default function Resources() {
 
   // ── Handlers ──
 
+  // Seed default categories if user has none (runs once on mount)
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    if (!categories || categories.length > 0) return;
+    seededRef.current = true;
+    DEFAULT_CATEGORIES.forEach((cat) => {
+      createCategory.mutate({ name: cat.name, icon: cat.icon, color: cat.color });
+    });
+  }, [categories]);
+
   const handleParse = () => {
     if (!importInput.trim()) return;
     const isUrl = /^https?:\/\//.test(importInput.trim());
@@ -95,6 +120,7 @@ export default function Resources() {
         ai_recommended_category: parsed.recommended_category || undefined,
         ai_applicable_scenarios: parsed.applicable_scenarios,
         ai_related_knowledge: parsed.related_knowledge,
+        raw_content: parsed.raw_content || undefined,
         content_type: parsed.content_type,
         status: overrides?.status || "saved",
       },
@@ -324,10 +350,6 @@ export default function Resources() {
               isSaving={createResource.isPending}
               onSave={handleSaveParsed}
               onCancel={() => { setParsed(null); setImportInput(""); }}
-              onCreateCategory={(name) => {
-                const colorIdx = (categories?.length || 0) % DEFAULT_CATEGORY_COLORS.length;
-                createCategory.mutate({ name, icon: "📁", color: DEFAULT_CATEGORY_COLORS[colorIdx] });
-              }}
             />
           )}
         </div>
@@ -354,6 +376,7 @@ export default function Resources() {
             <ResourceCard
               key={r.id}
               resource={r}
+              categories={categories || []}
               onClick={() => setSelectedResource(r)}
               onToggleFavorite={(id) => updateResource.mutate({ id, is_favorite: !r.is_favorite })}
               onArchive={(id) => updateResource.mutate({ id, is_archived: true })}
@@ -389,22 +412,18 @@ function ImportConfirmPanel({
   isSaving,
   onSave,
   onCancel,
-  onCreateCategory,
 }: {
   parsed: ParsedContent;
   categories: Category[];
   isSaving: boolean;
   onSave: (overrides: { title?: string; category_id?: string; tags?: string[]; status?: string }) => void;
   onCancel: () => void;
-  onCreateCategory: (name: string) => void;
 }) {
   const [title, setTitle] = useState(p.title);
   const [categoryId, setCategoryId] = useState<string>("");
   const [tags, setTags] = useState(p.tags.join("，"));
-  const [showNewCatInput, setShowNewCatInput] = useState(false);
-  const [newCatName, setNewCatName] = useState("");
 
-  // Pre-select recommended category if confidence >= 0.7
+  // Pre-select recommended category if confidence >= 0.5
   const recCat = p.recommended_category;
   const preSelectedCat = recCat && recCat.confidence >= 0.5 ? recCat.name : null;
 
@@ -447,42 +466,17 @@ function ImportConfirmPanel({
               <span className="ml-1 text-amber-600">AI推荐: {recCat.name} ({Math.round(recCat.confidence * 100)}%)</span>
             )}
           </label>
-          <div className="flex items-center gap-1.5 mt-1">
+          <div className="mt-1">
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
-              className="flex-1 text-xs bg-transparent border border-border rounded-xl px-3 py-2 outline-none text-ink"
+              className="w-full text-xs bg-transparent border border-border rounded-xl px-3 py-2 outline-none text-ink"
             >
               <option value="">选择分类...</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.icon || "📁"} {c.name}</option>
               ))}
             </select>
-            {!showNewCatInput ? (
-              <button
-                onClick={() => setShowNewCatInput(true)}
-                className="shrink-0 text-xs text-sage-deep hover:underline"
-              >
-                +新增
-              </button>
-            ) : (
-              <div className="flex items-center gap-1">
-                <input
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newCatName.trim()) {
-                      onCreateCategory(newCatName.trim());
-                      setNewCatName("");
-                      setShowNewCatInput(false);
-                    }
-                  }}
-                  placeholder="分类名"
-                  className="text-xs w-20 border border-border rounded-lg px-2 py-1 outline-none"
-                  autoFocus
-                />
-              </div>
-            )}
           </div>
         </div>
         <div>
@@ -628,6 +622,7 @@ function ImportConfirmPanel({
 
 function ResourceCard({
   resource: r,
+  categories,
   onClick,
   onToggleFavorite,
   onArchive,
@@ -635,6 +630,7 @@ function ResourceCard({
   onStatusCycle,
 }: {
   resource: ResourceRow;
+  categories: Category[];
   onClick: () => void;
   onToggleFavorite: (id: string) => void;
   onArchive: (id: string) => void;
@@ -643,6 +639,9 @@ function ResourceCard({
 }) {
   const status = STATUS_CONFIG[r.status || "saved"] || STATUS_CONFIG.saved;
   const platformBadge = r.source_platform ? PLATFORM_BADGES[r.source_platform] : null;
+  const category = categories.find((c) => c.id === r.category_id);
+  // Combine ai_tags and user tags, deduplicate
+  const allTags = [...new Set([...(r.ai_tags || []), ...(r.tags || [])])];
 
   return (
     <div
@@ -730,13 +729,20 @@ function ResourceCard({
             </div>
           </div>
 
-          {/* Tags */}
-          {r.tags && r.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {r.tags.map((t, i) => (
-                <span key={i} className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-2 py-0.5 flex items-center gap-1">
-                  <Tag size={8} />
-                  {t}
+          {/* Category */}
+          {category && (
+            <div className="mt-2 flex items-center gap-1 text-[10px] text-ink-light">
+              <span className="text-ink-lighter shrink-0">分类：</span>
+              <span>{category.icon || "📁"} {category.name}</span>
+            </div>
+          )}
+
+          {/* Tags — AI generated + user tags, with # prefix */}
+          {allTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {allTags.map((t, i) => (
+                <span key={i} className="text-[10px] text-sage-deep bg-sage-light/30 rounded-full px-2 py-0.5">
+                  #{t.startsWith("#") ? t.slice(1) : t}
                 </span>
               ))}
             </div>
