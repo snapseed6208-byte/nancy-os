@@ -53,15 +53,24 @@ export type Recipe = {
   name: string;
   source_url: string | null;
   source_platform: string | null;
+  // legacy TEXT columns (preserved)
   ingredients: string | null;
   steps: string | null;
+  // v2 structured columns
+  ingredients_json: RecipeIngredient[];
+  steps_json: RecipeStep[];
+  cook_count: number;
+  last_cooked_at: string | null;
+  ai_analysis_status: string | null;
+  ai_analyzed_at: string | null;
+  ai_summary: string | null;
   calories_per_serving: number | null;
   protein_grams: number | null;
   carbs_grams: number | null;
   fat_grams: number | null;
   category: string | null;
   meal_time: string[] | null;
-  goal: string | null;
+  goal: string[] | null;
   health_level: string | null;
   budget_level: string | null;
   is_favorite: boolean;
@@ -69,6 +78,18 @@ export type Recipe = {
   image_url: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type RecipeIngredient = {
+  name: string;
+  amount: string;
+  category: string;
+};
+
+export type RecipeStep = {
+  order: number;
+  text: string;
+  duration?: number;
 };
 
 export type MealPlan = {
@@ -399,6 +420,7 @@ export function useCreateRecipe() {
       if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
       const platform = detectUrlPlatform(normalized);
 
+      // Step 1: Insert base recipe record
       const { data, error } = await supabase
         .from("recipes")
         .insert({
@@ -406,11 +428,25 @@ export function useCreateRecipe() {
           name: "",
           source_url: normalized,
           source_platform: platform,
+          ai_analysis_status: "pending",
         })
         .select()
         .single();
       if (error) throw error;
-      return data as Recipe;
+      const record = data as Recipe;
+
+      // Step 2: Trigger AI analysis (non-blocking)
+      supabase.functions.invoke("content-parser-agent", {
+        body: {
+          url: normalized,
+          content_type: "recipe",
+          recipe_id: record.id,
+        },
+      }).catch(() => {
+        // AI failure is non-blocking — record already saved
+      });
+
+      return record;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["recipes"] });
@@ -426,12 +462,17 @@ export function useUpdateRecipe() {
       name?: string;
       category?: string;
       meal_time?: string[];
-      goal?: string;
+      goal?: string[];
       ingredients?: string;
+      ingredients_json?: RecipeIngredient[];
+      steps_json?: RecipeStep[];
       calories_per_serving?: number;
       protein_grams?: number;
       carbs_grams?: number;
       fat_grams?: number;
+      health_level?: string;
+      budget_level?: string;
+      image_url?: string;
       is_favorite?: boolean;
       notes?: string;
     }) => {
@@ -462,6 +503,34 @@ export function useDeleteRecipe() {
       qc.invalidateQueries({ queryKey: ["recipes"] });
     },
   });
+}
+
+export function useRetryRecipeAnalysis() {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async (recipe: { id: string; source_url: string }) => {
+      if (!recipe.source_url) throw new Error("该食谱没有来源链接");
+      const result = await Promise.race([
+        supabase.functions.invoke("content-parser-agent", {
+          body: { url: recipe.source_url, content_type: "recipe", recipe_id: recipe.id },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 30_000),
+        ),
+      ]);
+      if (result.error) throw result.error;
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["recipes"] });
+    },
+  });
+
+  return {
+    retryRecipeAnalysis: mutation.mutateAsync,
+    isRetrying: mutation.isPending,
+    retryError: mutation.error,
+  };
 }
 
 // ── Meal Plans ──

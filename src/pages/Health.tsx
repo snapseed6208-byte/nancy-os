@@ -1333,7 +1333,7 @@ function RecipeBoxTab() {
   const filtered = (recipes || []).filter((r) => {
     if (filter === "all") return true;
     if (filter === "高蛋白") return (r.protein_grams ?? 0) >= 25;
-    if (filter === "减脂") return r.goal === "减脂" || r.category === "减脂";
+    if (filter === "减脂") return (Array.isArray(r.goal) ? r.goal.includes("减脂") : r.goal === "减脂") || r.category === "减脂";
     return (r.meal_time || []).includes(filter);
   });
 
@@ -1347,11 +1347,11 @@ function RecipeBoxTab() {
 
   const startEdit = (r: Recipe) => {
     setEditingId(r.id);
-    setEditForm({ name: r.name || "", category: r.category || "", goal: r.goal || "", calories_per_serving: r.calories_per_serving, protein_grams: r.protein_grams, ingredients: r.ingredients || "" });
+    setEditForm({ name: r.name || "", category: r.category || "", goal: Array.isArray(r.goal) ? r.goal[0] || "" : (r.goal || ""), calories_per_serving: r.calories_per_serving, protein_grams: r.protein_grams, ingredients: r.ingredients || "" });
   };
 
   const saveEdit = (id: string) => {
-    const update: Record<string, unknown> = { name: editForm.name, category: editForm.category, goal: editForm.goal, calories_per_serving: editForm.calories_per_serving ?? undefined, protein_grams: editForm.protein_grams ?? undefined, ingredients: editForm.ingredients || undefined };
+    const update: Record<string, unknown> = { name: editForm.name, category: editForm.category, goal: editForm.goal ? [editForm.goal] : [], calories_per_serving: editForm.calories_per_serving ?? undefined, protein_grams: editForm.protein_grams ?? undefined, ingredients: editForm.ingredients || undefined };
     updateRecipe.mutate({ id, ...update } as never, { onSuccess: () => setEditingId(null) });
   };
 
@@ -1464,7 +1464,7 @@ function RecipeBoxTab() {
                           {r.source_platform && <span className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{getPlatformBadge(r.source_platform)}</span>}
                           {r.calories_per_serving && <span className="text-[10px] text-ink-lighter">{r.calories_per_serving}千卡</span>}
                           {r.protein_grams && <span className="text-[10px] text-accent-sky bg-accent-sky/5 rounded-full px-1.5 py-0.5">{r.protein_grams}g蛋白</span>}
-                          {r.goal && <span className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{r.goal}</span>}
+                          {Array.isArray(r.goal) ? r.goal.map((g) => <span key={g} className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{g}</span>) : (r.goal && <span className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{r.goal}</span>)}
                           {r.meal_time && r.meal_time.map((mt) => <span key={mt} className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{MEAL_LABELS[mt] || mt}</span>)}
                         </div>
                         {r.ingredients && <p className="text-[11px] text-ink-light mt-1.5 line-clamp-1">食材: {r.ingredients}</p>}

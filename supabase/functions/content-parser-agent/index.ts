@@ -175,12 +175,76 @@ HIIT → **必须同时满足**以下条件之一：
 
 ### 如果是 recipe 类型，metadata 必须包含:
 {
-  "goal": "减脂|增肌|保持",
-  "ingredients": "食材清单，逗号分隔",
-  "calories_per_serving": 数字,
-  "protein_grams": 数字,
-  "meal_time": ["breakfast|lunch|dinner"]
+  "name": "食谱名称（中文，简洁准确）",
+  "image_url": "封面图URL（如有）",
+  "category": "高蛋白|减脂|快手|烘焙|汤品|主食|零食|饮品",
+  "meal_time": ["breakfast", "lunch", "dinner", "snack"],
+  "goal": ["减脂"],
+  "health_level": "清淡|均衡|indulgent",
+  "budget_level": "经济|适中|豪华",
+  "calories_per_serving": 数字（千卡）,
+  "protein_grams": 数字（克）,
+  "carbs_grams": 数字（克）,
+  "fat_grams": 数字（克）,
+  "ingredients_json": [
+    { "name": "鸡胸肉", "amount": "200g", "category": "蛋白质" }
+  ],
+  "steps_json": [
+    { "order": 1, "text": "藜麦洗净，加水煮15分钟至熟", "duration": 15 }
+  ],
+  "ai_summary": "2-3句话的食谱摘要，包含营养特点和适合人群"
 }
+
+## recipe 食谱分析规则
+
+### name 规则
+- 不要简单复制视频标题
+- 提取核心食材 + 烹饪方式
+- 例如：「减脂餐｜鸡胸肉藜麦沙拉，低卡又饱腹」→ 「鸡胸肉藜麦沙拉」
+
+### 食材分类 (ingredients_json.category)
+必须使用以下分类之一：
+- 蛋白质：肉类、鱼类、蛋类、豆制品、蛋白粉
+- 主食：米饭、面食、面包、薯类、谷物
+- 蔬菜：叶菜、根茎、菌菇、瓜果类蔬菜
+- 水果：新鲜水果、果干
+- 调味料：油、盐、酱、醋、香料
+- 油脂：烹饪油、黄油、坚果
+- 其他：无法归类的食材
+
+### 步骤格式 (steps_json)
+- order: 从1开始的步骤序号
+- text: 步骤描述（中文，包含关键动作和时间）
+- duration: 该步骤预计耗时（分钟，为0表示无需等待）
+
+### 营养估算规则
+- calories_per_serving: 根据食材和份量合理估算，一人份范围 100-1500
+- protein_grams: 主要来自蛋白质类食材
+- carbs_grams: 主要来自主食和水果
+- fat_grams: 主要来自油脂和坚果
+- 宁可低估也不要高估
+
+### health_level 规则
+- 清淡：少油少盐、蒸煮为主、蔬菜占比高
+- 均衡：荤素搭配、正常烹饪
+- indulgent：高油高糖、煎炸为主、甜品或大餐
+
+### budget_level 规则
+- 经济：常见食材、成本低
+- 适中：普通超市食材
+- 豪华：进口食材、海鲜、牛排等
+
+### goal 规则
+- 减脂：低卡、高蛋白、低碳水
+- 增肌：高蛋白、适中碳水
+- 保持：均衡营养
+- 可以同时匹配多个目标
+
+### ai_summary 规则
+2-3句话的中文摘要：
+- 第一句：食谱核心特点和风味
+- 第二句：营养亮点和适合人群
+- 第三句（可选）：烹饪难度或时间提示
 
 ### 如果是 course 类型，metadata 包含:
 {
@@ -224,11 +288,19 @@ function isUrl(input: string): boolean {
   return /^https?:\/\//.test(input.trim());
 }
 
-// ── JSON Schema validation for workout output ──
+// ── JSON Schema validation ──
 
+// Workout
 const WORKOUT_VALID_DIFFICULTY = ["初级", "中级", "高级"] as const;
 const WORKOUT_VALID_TRAINING_TYPE = ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "瑜伽", "康复"] as const;
 const WORKOUT_VALID_CATEGORY = ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"] as const;
+
+// Recipe
+const RECIPE_VALID_MEAL_TIME = ["breakfast", "lunch", "dinner", "snack"] as const;
+const RECIPE_VALID_GOAL = ["减脂", "增肌", "保持"] as const;
+const RECIPE_VALID_HEALTH_LEVEL = ["清淡", "均衡", "indulgent"] as const;
+const RECIPE_VALID_BUDGET_LEVEL = ["经济", "适中", "豪华"] as const;
+const RECIPE_VALID_INGREDIENT_CATEGORY = ["蛋白质", "主食", "蔬菜", "水果", "调味料", "油脂", "其他"] as const;
 
 function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
@@ -249,6 +321,45 @@ function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: bo
     const d = metadata.estimated_duration as number;
     if (typeof d !== "number" || d < 1 || d > 300) {
       errors.push(`estimated_duration 超出范围: ${d}，允许 1-300`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // ingredients_json must be an array
+  if (!metadata.ingredients_json || !Array.isArray(metadata.ingredients_json)) {
+    errors.push("ingredients_json 必须是数组");
+  } else {
+    for (const item of metadata.ingredients_json as Array<Record<string, unknown>>) {
+      if (!item.name || typeof item.name !== "string") {
+        errors.push(`ingredients_json 元素缺少 name: ${JSON.stringify(item)}`);
+      }
+    }
+  }
+
+  // steps_json must be an array
+  if (!metadata.steps_json || !Array.isArray(metadata.steps_json)) {
+    errors.push("steps_json 必须是数组");
+  } else {
+    for (const item of metadata.steps_json as Array<Record<string, unknown>>) {
+      if (item.order === undefined || typeof item.order !== "number") {
+        errors.push(`steps_json 元素缺少 order: ${JSON.stringify(item)}`);
+      }
+      if (!item.text || typeof item.text !== "string") {
+        errors.push(`steps_json 元素缺少 text: ${JSON.stringify(item)}`);
+      }
+    }
+  }
+
+  // calories_per_serving range check
+  if (metadata.calories_per_serving !== undefined && metadata.calories_per_serving !== null) {
+    const c = metadata.calories_per_serving as number;
+    if (typeof c !== "number" || c < 0 || c > 3000) {
+      errors.push(`calories_per_serving 超出范围: ${c}`);
     }
   }
 
@@ -283,9 +394,11 @@ serve(async (req: Request) => {
       text?: string;
       preferred_module?: string;
       workout_video_id?: string;
+      recipe_id?: string;
     };
 
     const workoutVideoId = body.workout_video_id || "";
+    const recipeId = body.recipe_id || "";
 
     const input = body.url || body.text || "";
     if (!input && !workoutVideoId) {
@@ -357,9 +470,12 @@ serve(async (req: Request) => {
       }, req, 500);
     }
 
-    // Force workout UPDATE mode when retrying (workout_video_id takes priority over AI classification)
+    // Force UPDATE mode when retrying (ID takes priority over AI classification)
     if (workoutVideoId) {
       parsed.content_type = "workout";
+    }
+    if (recipeId) {
+      parsed.content_type = "recipe";
     }
 
     const content_type = (parsed.content_type as string) || "article";
@@ -439,24 +555,93 @@ serve(async (req: Request) => {
       }
     } else if (content_type === "recipe") {
       targetTable = "recipes";
-      const mealTimeRaw = metadata.meal_time as string[] || [];
-      const { data: inserted } = await supabase
-        .from("recipes")
-        .insert({
-          user_id: user.id,
-          name: title,
-          category: category,
-          goal: (metadata.goal as string) || "减脂",
-          ingredients: (metadata.ingredients as string) || "",
-          calories_per_serving: (metadata.calories_per_serving as number) || null,
-          protein_grams: (metadata.protein_grams as number) || null,
-          meal_time: mealTimeRaw,
-          url: inputIsUrl ? input : null,
-        })
-        .select("id")
-        .single();
 
-      if (inserted) recordId = inserted.id as string;
+      // Validate recipe metadata against schema
+      const recipeValidation = validateRecipeMetadata(metadata);
+      if (!recipeValidation.valid) {
+        if (recipeId) {
+          await supabase
+            .from("recipes")
+            .update({ ai_analysis_status: "failed" })
+            .eq("id", recipeId);
+        }
+        return jsonResponse({
+          error: "schema_validation_failed",
+          message: "AI 输出的 recipe metadata 不符合 schema",
+          validation_errors: recipeValidation.errors,
+        }, req, 500);
+      }
+
+      // Extract recipe name from metadata or use title
+      const recipeName = (metadata.name as string) || title;
+
+      // Build goal array
+      let goalArray: string[] = [];
+      if (metadata.goal) {
+        goalArray = Array.isArray(metadata.goal)
+          ? (metadata.goal as string[]).filter((g: string) => RECIPE_VALID_GOAL.includes(g as typeof RECIPE_VALID_GOAL[number]))
+          : RECIPE_VALID_GOAL.includes(metadata.goal as typeof RECIPE_VALID_GOAL[number])
+            ? [metadata.goal as string]
+            : [];
+      }
+
+      if (recipeId) {
+        // ── UPDATE mode: enrich existing recipe row ──
+        const { data: updated } = await supabase
+          .from("recipes")
+          .update({
+            name: recipeName || undefined,
+            image_url: (metadata.image_url as string) || null,
+            category: metadata.category as string || category,
+            meal_time: (metadata.meal_time as string[]) || [],
+            goal: goalArray.length > 0 ? goalArray : null,
+            health_level: (metadata.health_level as string) || null,
+            budget_level: (metadata.budget_level as string) || null,
+            calories_per_serving: (metadata.calories_per_serving as number) || null,
+            protein_grams: (metadata.protein_grams as number) || null,
+            carbs_grams: (metadata.carbs_grams as number) || null,
+            fat_grams: (metadata.fat_grams as number) || null,
+            ingredients_json: (metadata.ingredients_json as unknown[]) || [],
+            steps_json: (metadata.steps_json as unknown[]) || [],
+            ai_summary: (metadata.ai_summary as string) || null,
+            ai_analysis_status: "completed",
+            ai_analyzed_at: new Date().toISOString(),
+          })
+          .eq("id", recipeId)
+          .select("id")
+          .single();
+
+        if (updated) recordId = updated.id as string;
+      } else {
+        // ── INSERT mode: create new recipe row ──
+        const { data: inserted } = await supabase
+          .from("recipes")
+          .insert({
+            user_id: user.id,
+            name: recipeName,
+            image_url: (metadata.image_url as string) || null,
+            category: metadata.category as string || category,
+            meal_time: (metadata.meal_time as string[]) || [],
+            goal: goalArray.length > 0 ? goalArray : null,
+            health_level: (metadata.health_level as string) || null,
+            budget_level: (metadata.budget_level as string) || null,
+            calories_per_serving: (metadata.calories_per_serving as number) || null,
+            protein_grams: (metadata.protein_grams as number) || null,
+            carbs_grams: (metadata.carbs_grams as number) || null,
+            fat_grams: (metadata.fat_grams as number) || null,
+            ingredients_json: (metadata.ingredients_json as unknown[]) || [],
+            steps_json: (metadata.steps_json as unknown[]) || [],
+            ai_summary: (metadata.ai_summary as string) || null,
+            source_url: inputIsUrl ? input : null,
+            source_platform: inputIsUrl ? platform : null,
+            ai_analysis_status: "completed",
+            ai_analyzed_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
+
+        if (inserted) recordId = inserted.id as string;
+      }
     } else {
       targetTable = "resources";
       const { data: inserted } = await supabase
