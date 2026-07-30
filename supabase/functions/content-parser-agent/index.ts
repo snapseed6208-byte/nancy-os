@@ -1,8 +1,9 @@
 // ============================================
-// Nancy OS — Content Parser Agent v5
+// Nancy OS — Content Parser Agent v6
 // v3: Unified content intelligence — auto-classifies + extracts
 // v4: Workout UPDATE mode + JSON schema validation
 // v5: Recipe UPDATE mode + error logging + failure status propagation
+// v6: URL content fetching + relaxed recipe validation + partial data saving
 // Accepts URL or text, routes to resources/workout_videos/recipes
 // ============================================
 
@@ -289,6 +290,68 @@ function isUrl(input: string): boolean {
   return /^https?:\/\//.test(input.trim());
 }
 
+// ── Fetch URL content for AI context ──
+async function fetchUrlContent(url: string): Promise<{
+  title: string;
+  description: string;
+  text: string;
+  error?: string;
+}> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; NancyOS/1.0; +https://nancy-os.pages.dev)",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      return { title: "", description: "", text: "", error: `HTTP ${resp.status}` };
+    }
+
+    const html = await resp.text();
+    const title = extractMeta(html, /<title[^>]*>([^<]*)<\/title>/i) || "";
+    const ogTitle = extractMeta(html, /<meta\s+property="og:title"\s+content="([^"]*)"/i) || "";
+    const description = extractMeta(html, /<meta\s+name="description"\s+content="([^"]*)"/i)
+      || extractMeta(html, /<meta\s+property="og:description"\s+content="([^"]*)"/i) || "";
+    // Strip tags and get meaningful text
+    const text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 2000);
+
+    return {
+      title: ogTitle || title,
+      description,
+      text,
+    };
+  } catch (err) {
+    return {
+      title: "",
+      description: "",
+      text: "",
+      error: (err as Error).message || "fetch failed",
+    };
+  }
+}
+
+function extractMeta(html: string, pattern: RegExp): string | null {
+  const match = html.match(pattern);
+  return match ? match[1].trim() : null;
+}
+
 // ── JSON Schema validation ──
 
 // Workout
@@ -328,12 +391,15 @@ function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: bo
   return { valid: errors.length === 0, errors };
 }
 
-function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[] } {
+function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
-  // ingredients_json must be an array
-  if (!metadata.ingredients_json || !Array.isArray(metadata.ingredients_json)) {
-    errors.push("ingredients_json 必须是数组");
+  // ingredients_json — warn if missing but don't block
+  if (!metadata.ingredients_json) {
+    warnings.push("ingredients_json 缺失（AI 无法从来源获取食材信息）");
+  } else if (!Array.isArray(metadata.ingredients_json)) {
+    warnings.push("ingredients_json 格式异常，已忽略");
   } else {
     for (const item of metadata.ingredients_json as Array<Record<string, unknown>>) {
       if (!item.name || typeof item.name !== "string") {
@@ -342,9 +408,11 @@ function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boo
     }
   }
 
-  // steps_json must be an array
-  if (!metadata.steps_json || !Array.isArray(metadata.steps_json)) {
-    errors.push("steps_json 必须是数组");
+  // steps_json — warn if missing but don't block
+  if (!metadata.steps_json) {
+    warnings.push("steps_json 缺失（AI 无法从来源获取步骤信息）");
+  } else if (!Array.isArray(metadata.steps_json)) {
+    warnings.push("steps_json 格式异常，已忽略");
   } else {
     for (const item of metadata.steps_json as Array<Record<string, unknown>>) {
       if (item.order === undefined || typeof item.order !== "number") {
@@ -364,7 +432,8 @@ function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boo
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  // Only truly invalid if there are hard errors (not warnings)
+  return { valid: errors.length === 0, errors, warnings };
 }
 
 serve(async (req: Request) => {
@@ -410,10 +479,28 @@ serve(async (req: Request) => {
     const platform = inputIsUrl ? detectPlatform(input) : "text";
     const preferredModule = body.preferred_module || "";
 
+    // ── Fetch URL content for AI context ──
+    let fetchedContent: { title: string; description: string; text: string } = { title: "", description: "", text: "" };
+    if (inputIsUrl) {
+      fetchedContent = await fetchUrlContent(input);
+      console.log(`[content-parser-agent] Fetched URL: title="${fetchedContent.title.slice(0, 80)}", text=${fetchedContent.text.length} chars`);
+    }
+
     // ── Build prompt ──
     let userMessage = "";
     if (inputIsUrl) {
       userMessage = `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+      if (fetchedContent.title) {
+        userMessage += `\n页面标题: ${fetchedContent.title}`;
+      }
+      if (fetchedContent.description) {
+        userMessage += `\n页面描述: ${fetchedContent.description}`;
+      }
+      if (fetchedContent.text) {
+        userMessage += `\n页面文本片段: ${fetchedContent.text}`;
+      } else if (!fetchedContent.title && !fetchedContent.description) {
+        userMessage += `\n注意：无法抓取此链接的网页内容，请根据URL和平台名称推断视频/内容主题。`;
+      }
     } else {
       userMessage = `输入类型: 文本内容\n文本: ${input.slice(0, 3000)}`;
     }
@@ -570,24 +657,10 @@ serve(async (req: Request) => {
     } else if (content_type === "recipe") {
       targetTable = "recipes";
 
-      // Validate recipe metadata against schema
+      // Validate recipe metadata — non-blocking for video/title-only sources
       const recipeValidation = validateRecipeMetadata(metadata);
-      if (!recipeValidation.valid) {
-        console.error(`[content-parser-agent] Recipe schema validation failed: ${recipeValidation.errors.join("; ")}`);
-        if (recipeId) {
-          await supabase
-            .from("recipes")
-            .update({ ai_analysis_status: "failed" })
-            .eq("id", recipeId);
-        }
-        return jsonResponse({
-          error: "schema_validation_failed",
-          message: "AI 输出的 recipe metadata 不符合 schema",
-          validation_errors: recipeValidation.errors,
-        }, req, 500);
-      }
 
-      // Extract recipe name from metadata or use title
+      // Extract recipe name from metadata or title
       const recipeName = (metadata.name as string) || title;
 
       // Build goal array
@@ -600,28 +673,38 @@ serve(async (req: Request) => {
             : [];
       }
 
+      // Build ai_summary: combine AI's summary, validation warnings, and fetch errors
+      const aiSummaryParts: string[] = [];
+      if (metadata.ai_summary) aiSummaryParts.push((metadata.ai_summary as string));
+      if (recipeValidation.warnings.length > 0) {
+        aiSummaryParts.push(`\n⚠️ 注意：${recipeValidation.warnings.join("；")}`);
+      }
+      const finalAiSummary = aiSummaryParts.join("") || null;
+
+      const updateFields = {
+        name: recipeName || undefined,
+        image_url: (metadata.image_url as string) || null,
+        category: metadata.category as string || category,
+        meal_time: (metadata.meal_time as string[]) || [],
+        goal: goalArray.length > 0 ? goalArray : null,
+        health_level: (metadata.health_level as string) || null,
+        budget_level: (metadata.budget_level as string) || null,
+        calories_per_serving: (metadata.calories_per_serving as number) || null,
+        protein_grams: (metadata.protein_grams as number) || null,
+        carbs_grams: (metadata.carbs_grams as number) || null,
+        fat_grams: (metadata.fat_grams as number) || null,
+        ingredients_json: (metadata.ingredients_json as unknown[]) || [],
+        steps_json: (metadata.steps_json as unknown[]) || [],
+        ai_summary: finalAiSummary,
+        ai_analysis_status: "completed",
+        ai_analyzed_at: new Date().toISOString(),
+      };
+
       if (recipeId) {
         // ── UPDATE mode: enrich existing recipe row ──
         const { data: updated } = await supabase
           .from("recipes")
-          .update({
-            name: recipeName || undefined,
-            image_url: (metadata.image_url as string) || null,
-            category: metadata.category as string || category,
-            meal_time: (metadata.meal_time as string[]) || [],
-            goal: goalArray.length > 0 ? goalArray : null,
-            health_level: (metadata.health_level as string) || null,
-            budget_level: (metadata.budget_level as string) || null,
-            calories_per_serving: (metadata.calories_per_serving as number) || null,
-            protein_grams: (metadata.protein_grams as number) || null,
-            carbs_grams: (metadata.carbs_grams as number) || null,
-            fat_grams: (metadata.fat_grams as number) || null,
-            ingredients_json: (metadata.ingredients_json as unknown[]) || [],
-            steps_json: (metadata.steps_json as unknown[]) || [],
-            ai_summary: (metadata.ai_summary as string) || null,
-            ai_analysis_status: "completed",
-            ai_analyzed_at: new Date().toISOString(),
-          })
+          .update(updateFields)
           .eq("id", recipeId)
           .select("id")
           .single();
@@ -632,25 +715,10 @@ serve(async (req: Request) => {
         const { data: inserted } = await supabase
           .from("recipes")
           .insert({
+            ...updateFields,
             user_id: user.id,
-            name: recipeName,
-            image_url: (metadata.image_url as string) || null,
-            category: metadata.category as string || category,
-            meal_time: (metadata.meal_time as string[]) || [],
-            goal: goalArray.length > 0 ? goalArray : null,
-            health_level: (metadata.health_level as string) || null,
-            budget_level: (metadata.budget_level as string) || null,
-            calories_per_serving: (metadata.calories_per_serving as number) || null,
-            protein_grams: (metadata.protein_grams as number) || null,
-            carbs_grams: (metadata.carbs_grams as number) || null,
-            fat_grams: (metadata.fat_grams as number) || null,
-            ingredients_json: (metadata.ingredients_json as unknown[]) || [],
-            steps_json: (metadata.steps_json as unknown[]) || [],
-            ai_summary: (metadata.ai_summary as string) || null,
             source_url: inputIsUrl ? input : null,
             source_platform: inputIsUrl ? platform : null,
-            ai_analysis_status: "completed",
-            ai_analyzed_at: new Date().toISOString(),
           })
           .select("id")
           .single();
