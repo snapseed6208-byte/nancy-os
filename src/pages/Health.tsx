@@ -1,12 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Heart, Sparkles, Dumbbell, Utensils, Calendar, Loader2, Plus,
   Trash2, ExternalLink, Play, Flame, Target, Activity, Apple,
   ChevronLeft, ChevronRight, Star, Clock, Zap, AlertTriangle, CheckCircle2,
   Image, X, ArrowRight, Trophy, Brain, Search, RotateCw, SlidersHorizontal,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/health/VideoPlayer";
+import WorkoutJournalTab from "@/components/health/WorkoutJournalTab";
 import {
   useBodyProfile, useUpdateBodyProfile,
   useWorkoutVideos, useCreateWorkoutVideo, useUpdateWorkoutVideo, useDeleteWorkoutVideo, useRetryWorkoutAnalysis,
@@ -17,7 +19,10 @@ import {
   useFoodRecords, useCreateFoodRecord, useDeleteFoodRecord,
   useMealAnalysis, useGenerateMealAnalysis,
   useHealthGoals,
+  useExerciseLibrary,
+  useWorkoutSessions, useWorkoutSession, useCreateWorkoutSession, useUpdateWorkoutSession, useDeleteWorkoutSession,
   type WorkoutVideo, type Recipe, type MealPlan, type MealPlanSlot, type FoodRecord,
+  type WorkoutSession, type WorkoutSessionInput,
 } from "@/lib/hooks/useHealth";
 
 // ── Constants ──
@@ -55,6 +60,7 @@ const FEELING_OPTIONS = [
 const DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 type Tab = "coach" | "workout" | "recipe" | "plan" | "goals";
+type WorkoutSubTab = "library" | "journal";
 
 function today() { return new Date().toISOString().split("T")[0]; }
 
@@ -77,6 +83,16 @@ function formatWeekRange(mondayStr: string): string {
 
 export default function Health() {
   const [tab, setTab] = useState<Tab>("coach");
+  const [workoutSubTab, setWorkoutSubTab] = useState<WorkoutSubTab>("library");
+
+  // Shared state for "start training from video"
+  const [startFromVideo, setStartFromVideo] = useState<WorkoutVideo | null>(null);
+
+  const handleStartFromVideo = useCallback((video: WorkoutVideo) => {
+    setStartFromVideo(video);
+    setTab("workout");
+    setWorkoutSubTab("journal");
+  }, []);
 
   return (
     <div className="space-y-5">
@@ -89,7 +105,7 @@ export default function Health() {
       <div className="flex bg-ink/5 rounded-xl p-1">
         {([
           { key: "coach" as Tab, label: "今日建议", icon: Sparkles },
-          { key: "workout" as Tab, label: "训练库", icon: Dumbbell },
+          { key: "workout" as Tab, label: "训练", icon: Dumbbell },
           { key: "recipe" as Tab, label: "食谱库", icon: Utensils },
           { key: "plan" as Tab, label: "周计划", icon: Calendar },
           { key: "goals" as Tab, label: "健康目标", icon: Target },
@@ -108,7 +124,36 @@ export default function Health() {
       </div>
 
       {tab === "coach" && <CoachTab />}
-      {tab === "workout" && <WorkoutLibraryTab />}
+      {tab === "workout" && (
+        <div className="space-y-3">
+          {/* Sub-tabs */}
+          <div className="flex bg-ink/5 rounded-xl p-1">
+            <button
+              onClick={() => setWorkoutSubTab("library")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all",
+                workoutSubTab === "library" ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
+              )}
+            >
+              <Dumbbell size={12} />训练库
+            </button>
+            <button
+              onClick={() => setWorkoutSubTab("journal")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all",
+                workoutSubTab === "journal" ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
+              )}
+            >
+              <BookOpen size={12} />训练日志
+            </button>
+          </div>
+          {workoutSubTab === "library" ? (
+            <WorkoutLibraryTab onStartTraining={handleStartFromVideo} />
+          ) : (
+            <WorkoutJournalSection startFromVideo={startFromVideo} onConsumedVideo={() => setStartFromVideo(null)} />
+          )}
+        </div>
+      )}
       {tab === "recipe" && <RecipeBoxTab />}
       {tab === "plan" && <WeeklyPlanTab />}
       {tab === "goals" && <GoalsTab />}
@@ -722,7 +767,7 @@ const SORT_OPTIONS = [
   { key: "difficulty_desc", label: "难度高→低" },
 ];
 
-function WorkoutLibraryTab() {
+function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: WorkoutVideo) => void }) {
   const { data: videos, isLoading } = useWorkoutVideos();
   const createVideo = useCreateWorkoutVideo();
   const updateVideo = useUpdateWorkoutVideo();
@@ -1164,6 +1209,13 @@ function WorkoutLibraryTab() {
                         )}
                       </div>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button
+                          onClick={() => onStartTraining(v)}
+                          className="h-7 px-2 rounded-lg flex items-center justify-center gap-1 text-[10px] font-medium text-sage-deep bg-sage-light hover:bg-sage-light/80 transition-colors"
+                          title="开始训练"
+                        >
+                          <Dumbbell size={11} />开始
+                        </button>
                         {v.ai_analysis_status === "completed" && (
                           <button
                             onClick={() => handleReanalyzeVideo(v)}
@@ -1210,6 +1262,57 @@ function WorkoutLibraryTab() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Workout Journal Section (hooks + WorkoutJournalTab) ──
+
+function WorkoutJournalSection({ startFromVideo, onConsumedVideo }: { startFromVideo: WorkoutVideo | null; onConsumedVideo: () => void }) {
+  const { data: sessions, isLoading: loadingSessions } = useWorkoutSessions();
+  const { data: exerciseLibrary } = useExerciseLibrary();
+  const createSession = useCreateWorkoutSession();
+  const updateSession = useUpdateWorkoutSession();
+  const deleteSession = useDeleteWorkoutSession();
+  const { data: ctx } = useHealthContext();
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { data: expandedSession } = useWorkoutSession(expandedId || "");
+
+  // Consume startFromVideo to pre-open the form
+  const [prefillVideo, setPrefillVideo] = useState<WorkoutVideo | null>(null);
+  if (startFromVideo && prefillVideo?.id !== startFromVideo.id) {
+    setPrefillVideo(startFromVideo);
+  }
+
+  const handleCreateSession = async (input: WorkoutSessionInput) => {
+    const result = await createSession.mutateAsync(input);
+    if (prefillVideo) { setPrefillVideo(null); onConsumedVideo(); }
+    return result;
+  };
+
+  const handleUpdateSession = async (input: { id: string } & Partial<WorkoutSessionInput>) => {
+    return updateSession.mutateAsync(input);
+  };
+
+  const handleDeleteSession = (id: string) => {
+    if (expandedId === id) setExpandedId(null);
+    deleteSession.mutate(id);
+  };
+
+  return (
+    <WorkoutJournalTab
+      sessions={(sessions || []) as WorkoutSession[]}
+      isLoading={loadingSessions}
+      exerciseLibrary={exerciseLibrary || []}
+      onCreateSession={handleCreateSession}
+      onUpdateSession={handleUpdateSession}
+      onDeleteSession={handleDeleteSession}
+      expandedSession={expandedSession as WorkoutSession | null}
+      onExpandSession={setExpandedId}
+      prefillVideo={prefillVideo}
+      onConsumedPrefill={() => { setPrefillVideo(null); onConsumedVideo(); }}
+      workoutsThisWeek={ctx?.workoutsThisWeek}
+    />
   );
 }
 

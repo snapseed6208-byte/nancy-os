@@ -1158,6 +1158,297 @@ export function useInsertChecklistAiItems() {
   });
 }
 
+// ── Workout Journal Types ──
+
+export type ExerciseLibraryItem = {
+  id: string;
+  name: string;
+  category: string;
+  target_muscles: string[];
+  equipment: string | null;
+  movement_pattern: string | null;
+  instruction: string | null;
+  created_at: string;
+};
+
+export type RepSet = {
+  set: number;
+  reps: number;
+  weight: number;
+  completed: boolean;
+};
+
+export type WorkoutExercise = {
+  id: string;
+  session_id: string;
+  user_id: string;
+  exercise_id: string | null;
+  exercise_name: string;
+  category: string | null;
+  equipment: string | null;
+  sets_completed: number | null;
+  reps: RepSet[];
+  weight_kg: number | null;
+  duration_seconds: number | null;
+  rest_seconds: number | null;
+  sort_order: number;
+  notes: string | null;
+  is_bodyweight: boolean;
+  created_at: string;
+};
+
+export type WorkoutSession = {
+  id: string;
+  user_id: string;
+  date: string;
+  title: string | null;
+  mode: "video_follow" | "free_training";
+  training_type: string | null;
+  location: "居家" | "健身房" | "户外" | null;
+  duration_minutes: number | null;
+  feeling: string | null;
+  perceived_effort: number | null;
+  notes: string | null;
+  source_video_id: string | null;
+  ai_summary: string | null;
+  ai_analyzed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  exercises?: WorkoutExercise[];
+  source_video?: WorkoutVideo | null;
+};
+
+export type WorkoutSessionInput = {
+  date: string;
+  title?: string;
+  mode: "video_follow" | "free_training";
+  training_type?: string;
+  location?: "居家" | "健身房" | "户外";
+  duration_minutes?: number;
+  feeling?: string;
+  perceived_effort?: number;
+  notes?: string;
+  source_video_id?: string;
+  exercises?: WorkoutExerciseInput[];
+};
+
+export type WorkoutExerciseInput = {
+  exercise_id?: string;
+  exercise_name: string;
+  category?: string;
+  equipment?: string;
+  sets_completed?: number;
+  reps?: RepSet[];
+  weight_kg?: number | null;
+  duration_seconds?: number;
+  rest_seconds?: number;
+  sort_order?: number;
+  notes?: string;
+  is_bodyweight?: boolean;
+};
+
+// ── Exercise Library ──
+
+async function fetchExerciseLibrary(): Promise<ExerciseLibraryItem[]> {
+  const { data, error } = await supabase
+    .from("exercise_library")
+    .select("*")
+    .order("category")
+    .order("name");
+  if (error) throw error;
+  return (data || []) as ExerciseLibraryItem[];
+}
+
+export function useExerciseLibrary() {
+  return useQuery({
+    queryKey: ["exercise_library"],
+    queryFn: fetchExerciseLibrary,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+// ── Workout Sessions ──
+
+async function fetchWorkoutSessions(startDate?: string, endDate?: string): Promise<WorkoutSession[]> {
+  let query = supabase
+    .from("workout_sessions")
+    .select("*")
+    .order("date", { ascending: false })
+    .limit(100);
+  if (startDate) query = query.gte("date", startDate);
+  if (endDate) query = query.lte("date", endDate);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as WorkoutSession[];
+}
+
+export function useWorkoutSessions(startDate?: string, endDate?: string) {
+  return useQuery({
+    queryKey: ["workout_sessions", startDate, endDate],
+    queryFn: () => fetchWorkoutSessions(startDate, endDate),
+    staleTime: 30 * 1000,
+  });
+}
+
+async function fetchWorkoutSession(id: string): Promise<WorkoutSession | null> {
+  const { data, error } = await supabase
+    .from("workout_sessions")
+    .select("*, exercises:workout_exercises(*), source_video:source_video_id(*)")
+    .eq("id", id)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw error;
+  }
+  return data as WorkoutSession;
+}
+
+export function useWorkoutSession(id: string) {
+  return useQuery({
+    queryKey: ["workout_session", id],
+    queryFn: () => fetchWorkoutSession(id),
+    staleTime: 30 * 1000,
+    enabled: !!id,
+  });
+}
+
+export function useCreateWorkoutSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: WorkoutSessionInput) => {
+      const userId = await getUserId();
+      const { exercises, ...sessionFields } = input;
+
+      const { data: session, error } = await supabase
+        .from("workout_sessions")
+        .insert({ ...sessionFields, user_id: userId })
+        .select()
+        .single();
+      if (error) throw error;
+
+      if (exercises && exercises.length > 0) {
+        const rows = exercises.map((ex, i) => ({
+          session_id: (session as Record<string, unknown>).id as string,
+          user_id: userId,
+          exercise_id: ex.exercise_id || null,
+          exercise_name: ex.exercise_name,
+          category: ex.category || null,
+          equipment: ex.equipment || null,
+          sets_completed: ex.sets_completed || null,
+          reps: ex.reps || [],
+          weight_kg: ex.weight_kg || null,
+          duration_seconds: ex.duration_seconds || null,
+          rest_seconds: ex.rest_seconds || null,
+          sort_order: ex.sort_order ?? i,
+          notes: ex.notes || null,
+          is_bodyweight: ex.is_bodyweight || false,
+        }));
+        const { error: exErr } = await supabase.from("workout_exercises").insert(rows);
+        if (exErr) throw exErr;
+      }
+
+      return session;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workout_sessions"] });
+    },
+  });
+}
+
+export function useUpdateWorkoutSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string } & Partial<WorkoutSessionInput>) => {
+      const { id, exercises, ...fields } = input;
+      const updateFields: Record<string, unknown> = { ...fields, updated_at: new Date().toISOString() };
+      delete (updateFields as Record<string, unknown>).exercises;
+
+      const { data, error } = await supabase
+        .from("workout_sessions")
+        .update(updateFields)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workout_sessions"] });
+    },
+  });
+}
+
+export function useDeleteWorkoutSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("workout_sessions").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workout_sessions"] });
+    },
+  });
+}
+
+// ── Workout Exercises ──
+
+export function useAddWorkoutExercise() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: WorkoutExerciseInput & { session_id: string }) => {
+      const userId = await getUserId();
+      const { data, error } = await supabase
+        .from("workout_exercises")
+        .insert({
+          session_id: input.session_id,
+          user_id: userId,
+          exercise_id: input.exercise_id || null,
+          exercise_name: input.exercise_name,
+          category: input.category || null,
+          equipment: input.equipment || null,
+          sets_completed: input.sets_completed || null,
+          reps: input.reps || [],
+          weight_kg: input.weight_kg || null,
+          duration_seconds: input.duration_seconds || null,
+          rest_seconds: input.rest_seconds || null,
+          sort_order: input.sort_order ?? 0,
+          notes: input.notes || null,
+          is_bodyweight: input.is_bodyweight || false,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["workout_session", vars.session_id] });
+      qc.invalidateQueries({ queryKey: ["workout_sessions"] });
+    },
+  });
+}
+
+export function useUpdateWorkoutExercise() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; session_id: string } & Partial<WorkoutExerciseInput>) => {
+      const { id, session_id: _sid, ...fields } = input;
+      const { data, error } = await supabase
+        .from("workout_exercises")
+        .update(fields)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["workout_session", vars.session_id] });
+      qc.invalidateQueries({ queryKey: ["workout_sessions"] });
+    },
+  });
+}
+
 // ── Health Goals (from Plan OS goals table) ──
 
 export type HealthGoalSummary = {
