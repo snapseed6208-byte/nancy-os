@@ -695,23 +695,11 @@ export function useGenerateMealAnalysis() {
         feeling?: string;
       }>;
     }) => {
-      const { data: session } = await supabase.auth.getSession();
-      const token = session.session?.access_token;
-      if (!token) throw new Error("Not authenticated");
-
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/diet-analyst-agent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(input),
-        },
-      );
-      if (!res.ok) throw new Error(`AI 分析失败 (${res.status})`);
-      return res.json();
+      const { data, error } = await supabase.functions.invoke("diet-analyst-agent", {
+        body: input,
+      });
+      if (error) throw error;
+      return data;
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({
@@ -895,7 +883,7 @@ export function useAddWater() {
       const userId = await getUserId();
       const { data, error } = await supabase
         .from("water_records")
-        .insert({ user_id: userId, ...input, recorded_at: new Date().toISOString() })
+        .insert({ user_id: userId, amount_ml: input.amount_ml, recorded_at: new Date().toISOString() })
         .select()
         .single();
       if (error) throw error;
