@@ -700,7 +700,8 @@ function matchesSearch(video: WorkoutVideo, terms: string[]): boolean {
 const FILTER_TRAINING_TYPES = [
   { key: "all", label: "全部" },
   { key: "力量训练", label: "力量" },
-  { key: "有氧", label: "有氧" },
+  { key: "塑形训练", label: "塑形" },
+  { key: "有氧燃脂", label: "有氧燃脂" },
   { key: "HIIT", label: "HIIT" },
   { key: "拉伸", label: "拉伸" },
   { key: "瑜伽", label: "瑜伽" },
@@ -745,6 +746,17 @@ function WorkoutLibraryTab() {
     training_type: "", equipment: "", tags: "",
   });
   const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0 });
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+
+  const handleReanalyzeVideo = async (video: WorkoutVideo) => {
+    setReanalyzingId(video.id);
+    try {
+      await retryWorkoutAnalysis({ id: video.id, url: video.url });
+    } catch {
+      // Error handled by hook
+    }
+    setReanalyzingId(null);
+  };
 
   // Dynamic equipment list from existing data
   const equipmentOptions = useMemo(() => {
@@ -1092,7 +1104,7 @@ function WorkoutLibraryTab() {
                     </select>
                     <select value={editForm.training_type} onChange={(e) => setEditForm((f) => ({ ...f, training_type: e.target.value }))} className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2 py-1.5">
                       <option value="">训练方式</option>
-                      <option value="力量训练">力量训练</option><option value="有氧">有氧</option><option value="HIIT">HIIT</option><option value="拉伸">拉伸</option><option value="瑜伽">瑜伽</option><option value="康复">康复</option>
+                      <option value="力量训练">力量训练</option><option value="塑形训练">塑形训练</option><option value="有氧燃脂">有氧燃脂</option><option value="HIIT">HIIT</option><option value="拉伸">拉伸</option><option value="瑜伽">瑜伽</option><option value="康复">康复</option>
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1152,6 +1164,20 @@ function WorkoutLibraryTab() {
                         )}
                       </div>
                       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        {v.ai_analysis_status === "completed" && (
+                          <button
+                            onClick={() => handleReanalyzeVideo(v)}
+                            disabled={reanalyzingId === v.id || isRetrying}
+                            className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-accent-sky hover:bg-accent-sky/5 disabled:opacity-50"
+                            title="重新智能分析"
+                          >
+                            {reanalyzingId === v.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Brain size={12} />
+                            )}
+                          </button>
+                        )}
                         <button onClick={() => startEdit(v)} className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5" title="编辑">
                           <Star size={12} />
                         </button>
