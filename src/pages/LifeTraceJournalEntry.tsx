@@ -1,7 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, Trash2, Plus, X, Loader2 } from "lucide-react";
-import { useJournalEntry, useUpsertJournalEntry, useDeleteJournalEntry } from "@/lib/hooks/useLifeTrace";
+import { ArrowLeft, Trash2, Plus, X, Loader2, Sparkles, Brain, Lightbulb } from "lucide-react";
+import {
+  useJournalEntry,
+  useUpsertJournalEntry,
+  useDeleteJournalEntry,
+  useTriggerLifeAnalysis,
+} from "@/lib/hooks/useLifeTrace";
+import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const MOODS = ["开心", "平静", "焦虑", "疲惫", "难过", "生气", "迷茫", "有动力", "放松", "想哭"];
@@ -46,6 +52,119 @@ function EnergyChip({ level, selected, onClick }: { level: string; selected: boo
   );
 }
 
+const ACTION_CATEGORY_LABELS: Record<string, string> = {
+  workout: "运动", work: "工作", social: "社交", learning: "学习", life: "生活", health: "健康", other: "其他",
+};
+
+const THOUGHT_CATEGORY_LABELS: Record<string, string> = {
+  "self-reflection": "自我反思", planning: "计划", worry: "担忧", gratitude: "感恩", learning: "认知", other: "其他",
+};
+
+// ── AI Analysis Display ──
+
+function AIAnalysisSection({ entry }: { entry: Record<string, unknown> }) {
+  const summary = entry.ai_summary as string | undefined;
+  const emotionAnalysis = entry.ai_emotion_analysis as string | undefined;
+  const actions = (entry.ai_actions as LifeAnalysisAction[]) || [];
+  const thoughts = (entry.ai_thoughts as LifeAnalysisThought[]) || [];
+  const themes = (entry.ai_themes as string[]) || [];
+  const events = (entry.ai_events as string[]) || [];
+  const patterns = (entry.ai_patterns as LifeAnalysisPattern[]) || [];
+  const version = entry.ai_analysis_version as string | undefined;
+
+  if (!summary && !emotionAnalysis && !actions.length && !thoughts.length) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-sage-light/5 to-white border border-sage-light/30 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Brain size={14} className="text-sage-deep" />
+        <span className="text-xs font-semibold text-sage-deep">
+          AI 理解 {version ? `(v${version})` : ""}
+        </span>
+      </div>
+
+      {/* Summary */}
+      {summary && (
+        <p className="text-sm text-ink font-medium leading-relaxed">{summary}</p>
+      )}
+
+      {/* Emotion */}
+      {emotionAnalysis && (
+        <div className="bg-sage-light/10 rounded-xl p-3">
+          <p className="text-xs text-ink-light leading-relaxed">{emotionAnalysis}</p>
+        </div>
+      )}
+
+      {/* Actions */}
+      {actions.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1.5">行动</p>
+          <div className="space-y-1">
+            {actions.map((a, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-ink-light">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <span>{a.action}</span>
+                <span className="text-[10px] text-ink-lighter bg-ink/5 rounded px-1.5 py-0.5">
+                  {ACTION_CATEGORY_LABELS[a.category] || a.category}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Thoughts */}
+      {thoughts.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1.5">想法</p>
+          <div className="space-y-1">
+            {thoughts.map((t, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-ink-light">
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-400 shrink-0" />
+                <span>{t.thought}</span>
+                <span className="text-[10px] text-ink-lighter bg-ink/5 rounded px-1.5 py-0.5">
+                  {THOUGHT_CATEGORY_LABELS[t.category] || t.category}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Themes & Events */}
+      {(themes.length > 0 || events.length > 0) && (
+        <div className="flex flex-wrap gap-1.5">
+          {themes.map((t, i) => (
+            <span key={`theme-${i}`} className="text-[10px] bg-sage-light/30 text-sage-deep rounded-full px-2 py-0.5 font-medium">
+              #{t}
+            </span>
+          ))}
+          {events.map((e, i) => (
+            <span key={`event-${i}`} className="text-[10px] bg-accent-sky/10 text-accent-sky rounded-full px-2 py-0.5">
+              {e}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Patterns */}
+      {patterns.length > 0 && (
+        <div className="border-t border-sage-light/20 pt-2">
+          <p className="text-[10px] font-semibold text-ink-lighter mb-1">重复模式</p>
+          {patterns.map((p, i) => (
+            <p key={i} className="text-[11px] text-ink-light">
+              {p.pattern}
+              <span className="text-[10px] text-ink-lighter ml-1">
+                (置信度 {Math.round(p.confidence * 100)}%)
+              </span>
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──
 
 export default function LifeTraceJournalEntry() {
@@ -56,6 +175,7 @@ export default function LifeTraceJournalEntry() {
   const { data: existingEntry, isLoading } = useJournalEntry(date);
   const upsertEntry = useUpsertJournalEntry();
   const deleteEntry = useDeleteJournalEntry();
+  const triggerAI = useTriggerLifeAnalysis();
 
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -66,6 +186,7 @@ export default function LifeTraceJournalEntry() {
   const [topThree, setTopThree] = useState(["", "", ""]);
   const [todos, setTodos] = useState<{ text: string; done: boolean }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [aiTriggered, setAiTriggered] = useState(false);
 
   const isFutureDate = new Date(date) > new Date(new Date().toDateString());
 
@@ -79,12 +200,25 @@ export default function LifeTraceJournalEntry() {
       setLocation((existingEntry.location as string) || "");
       try { setTopThree(JSON.parse((existingEntry.top_three as string) || "[]")); } catch { setTopThree(["", "", ""]); }
       try { setTodos(JSON.parse((existingEntry.todos as string) || "[]")); } catch { setTodos([]); }
+      // Determine if AI has already been triggered
+      if ((existingEntry.ai_summary as string) || (existingEntry.ai_analysis_version as string)) {
+        setAiTriggered(true);
+      }
     }
   }, [existingEntry]);
 
+  const triggerAIAnalysis = useCallback(async (entryId: string) => {
+    try {
+      await triggerAI.mutateAsync(entryId);
+      setAiTriggered(true);
+    } catch {
+      // AI analysis failure should not block the user
+    }
+  }, [triggerAI]);
+
   const handleSave = async () => {
     setSaving(true);
-    await upsertEntry.mutateAsync({
+    const result = await upsertEntry.mutateAsync({
       ...(existingEntry ? { id: existingEntry.id } : {}),
       date,
       title: title || null,
@@ -97,6 +231,11 @@ export default function LifeTraceJournalEntry() {
       todos: JSON.stringify(todos),
     });
     setSaving(false);
+
+    // Fire AI analysis asynchronously (non-blocking)
+    if (result?.id && content.trim().length > 0) {
+      triggerAIAnalysis(result.id as string);
+    }
     navigate("/life-trace/journal");
   };
 
@@ -285,6 +424,41 @@ export default function LifeTraceJournalEntry() {
       >
         {saving ? "保存中..." : "保存"}
       </button>
+
+      {/* AI Analysis (existing entry with AI data) */}
+      {existingEntry && (existingEntry.ai_summary || existingEntry.ai_analysis_version) && (
+        <AIAnalysisSection entry={existingEntry} />
+      )}
+
+      {/* AI Analysis pending (saved but no AI yet) */}
+      {existingEntry && !existingEntry.ai_summary && !existingEntry.ai_analysis_version && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <div className="flex items-start gap-3">
+            <div className="h-9 w-9 rounded-xl bg-sage-light/50 flex items-center justify-center shrink-0">
+              <Sparkles size={15} className="text-sage-deep" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-ink">AI 分析</p>
+              <p className="text-xs text-ink-lighter mt-1">
+                AI 可以分析这篇日记，区分你的行动和想法，识别主题和模式。
+              </p>
+              <button
+                onClick={() => existingEntry?.id && triggerAIAnalysis(existingEntry.id as string)}
+                disabled={triggerAI.isPending || aiTriggered}
+                className="mt-3 flex items-center gap-2 bg-sage-light text-sage-deep rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:bg-sage-light/80 transition-colors"
+              >
+                {triggerAI.isPending ? (
+                  <><Loader2 size={12} className="animate-spin" />分析中...</>
+                ) : aiTriggered ? (
+                  <><Lightbulb size={12} />分析已触发</>
+                ) : (
+                  <><Brain size={12} />开始 AI 分析</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

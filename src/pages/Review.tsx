@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   useDailyReview, useUpsertDailyReview, useRecentDailyReviews,
   useWeeklySummaries, useCurrentWeekSummary, useGenerateDailyReflection,
+  useJournalAIForReview,
   type DailyReview, type WeeklySummary,
 } from "@/lib/hooks/useReview";
 import { useReflections, useGenerateReflection } from "@/lib/hooks/useReflection";
@@ -109,6 +110,7 @@ const MOOD_OPTIONS = [
 function DailyTab({ date, review, loading }: { date: string; review: DailyReview | null; loading: boolean }) {
   const upsertReview = useUpsertDailyReview();
   const generateReflection = useGenerateDailyReflection();
+  const { data: journalAI } = useJournalAIForReview(date);
   const [form, setForm] = useState({
     q1_what_done: review?.q1_what_done ?? "",
     q2_best_thing: review?.q2_best_thing ?? "",
@@ -145,6 +147,27 @@ function DailyTab({ date, review, loading }: { date: string; review: DailyReview
         <p className="text-[11px] font-semibold text-ink-lighter uppercase tracking-wider">
           {date} 晚间复盘
         </p>
+
+        {/* Journal AI reference */}
+        {journalAI?.ai_summary && (
+          <div className="bg-sage-light/5 border border-sage-light/20 rounded-xl p-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Sparkles size={11} className="text-sage-deep" />
+              <span className="text-[10px] font-medium text-sage-deep">今日 AI 日记摘要</span>
+            </div>
+            <p className="text-xs text-ink-light leading-relaxed">{journalAI.ai_summary as string}</p>
+            {((journalAI.ai_actions as Array<{ action: string }>)?.length > 0 || (journalAI.ai_thoughts as Array<{ thought: string }>)?.length > 0) && (
+              <div className="flex items-center gap-3 mt-2 text-[10px] text-ink-lighter">
+                {(journalAI.ai_actions as Array<{ action: string }>)?.length > 0 && (
+                  <span>行动 {(journalAI.ai_actions as Array<{ action: string }>).length} 项</span>
+                )}
+                {(journalAI.ai_thoughts as Array<{ thought: string }>)?.length > 0 && (
+                  <span>想法 {(journalAI.ai_thoughts as Array<{ thought: string }>).length} 项</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="space-y-3">
           {/* Q1 */}

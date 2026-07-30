@@ -22,11 +22,13 @@ function MonthNav({ year, month, onPrev, onNext }: {
   );
 }
 
-function JournalDateCard({ day, weekday, hasEntry, preview, onClick }: {
+function JournalDateCard({ day, weekday, hasEntry, preview, hasAI, aiThemes, onClick }: {
   day: number;
   weekday: string;
   hasEntry: boolean;
   preview?: string;
+  hasAI?: boolean;
+  aiThemes?: string[];
   onClick: () => void;
 }) {
   return (
@@ -39,7 +41,12 @@ function JournalDateCard({ day, weekday, hasEntry, preview, onClick }: {
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-ink">{day}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-semibold text-ink">{day}</span>
+          {hasAI && (
+            <span className="text-[9px] bg-purple-100 text-purple-600 rounded-full px-1.5 py-0.5 font-medium">AI</span>
+          )}
+        </div>
         <span className="text-xs text-ink-lighter">{weekday}</span>
       </div>
       {hasEntry && preview ? (
@@ -50,6 +57,15 @@ function JournalDateCard({ day, weekday, hasEntry, preview, onClick }: {
           写日记
         </p>
       ) : null}
+      {aiThemes && aiThemes.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {aiThemes.slice(0, 2).map((t, i) => (
+            <span key={i} className="text-[9px] bg-sage-light/20 text-sage-deep rounded-full px-1.5 py-0.5">
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
     </button>
   );
 }
@@ -79,9 +95,14 @@ export default function LifeTraceJournal() {
 
   // Build date grid
   const daysInMonth = new Date(year, month, 0).getDate();
-  const entryByDate = new Map<string, { title?: string; content?: string }>();
+  const entryByDate = new Map<string, { title?: string; content?: string; ai_summary?: string; ai_themes?: string[] }>();
   (entries || []).forEach((e: Record<string, unknown>) => {
-    entryByDate.set(e.date as string, { title: e.title as string, content: e.content as string });
+    entryByDate.set(e.date as string, {
+      title: e.title as string,
+      content: e.content as string,
+      ai_summary: e.ai_summary as string,
+      ai_themes: e.ai_themes as string[],
+    });
   });
 
   const dates: { day: number; dateStr: string; weekday: string }[] = [];
@@ -134,7 +155,9 @@ export default function LifeTraceJournal() {
                 day={d.day}
                 weekday={d.weekday}
                 hasEntry={!!entry}
-                preview={entry?.title || entry?.content?.slice(0, 40)}
+                preview={entry?.ai_summary || entry?.title || entry?.content?.slice(0, 40)}
+                hasAI={!!entry?.ai_summary}
+                aiThemes={entry?.ai_themes}
                 onClick={() => navigate(`/life-trace/journal/${d.dateStr}`)}
               />
             );

@@ -183,6 +183,28 @@ export function useCurrentWeekSummary() {
   });
 }
 
+// ── Journal AI for Review (read-only reference) ──
+
+async function fetchJournalAIForDate(date: string) {
+  const { data, error } = await supabase
+    .from("journal_entries")
+    .select("id, ai_summary, ai_themes, ai_actions, ai_thoughts, ai_analysis_version")
+    .eq("date", date)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+export function useJournalAIForReview(date: string) {
+  return useQuery({
+    queryKey: ["journal_ai_for_review", date],
+    queryFn: () => fetchJournalAIForDate(date),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 // ── AI Daily Reflection ──
 
 export function useGenerateDailyReflection() {

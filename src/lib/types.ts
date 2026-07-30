@@ -47,10 +47,65 @@ export const MOODS = [
 ] as const;
 export type MoodType = (typeof MOODS)[number];
 
-export const ENTRY_TYPES = [
-  "心情", "想法", "备忘", "灵感", "待办", "复盘", "照片记录", "语音记录",
-] as const;
-export type EntryType = (typeof ENTRY_TYPES)[number];
+// ── Journal Entry ──
+
+export interface JournalEntry {
+  id: string;
+  userId: string;
+  date: string;
+  title?: string;
+  content?: string;
+  mood?: string;
+  energyLevel?: string;
+  weather?: string;
+  location?: string;
+  topThree: string[];
+  todos: { text: string; done: boolean }[];
+  // AI analysis fields
+  aiSummary?: string;
+  aiEmotionAnalysis?: string;
+  aiKeywords?: string[];
+  aiThemes?: string[];
+  aiEvents?: string[];
+  aiPatterns: LifeAnalysisPattern[];
+  aiActions: LifeAnalysisAction[];
+  aiThoughts: LifeAnalysisThought[];
+  aiAnalysisVersion?: string;
+  images?: string[];
+  audioUrls?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Life Analysis (AI understanding layer) ──
+
+export interface LifeAnalysisAction {
+  action: string;
+  category: "workout" | "work" | "social" | "learning" | "life" | "health" | "other";
+}
+
+export interface LifeAnalysisThought {
+  thought: string;
+  category: "self-reflection" | "planning" | "worry" | "gratitude" | "learning" | "other";
+}
+
+export interface LifeAnalysisPattern {
+  pattern: string;
+  confidence: number;
+  related_dates: string[];
+}
+
+export interface LifeAnalysisResult {
+  success: boolean;
+  summary?: string;
+  emotion_analysis?: string;
+  actions_count: number;
+  thoughts_count: number;
+  themes: string[];
+  events: string[];
+  patterns_count: number;
+  version: string;
+}
 
 export const ENERGY_LEVELS = ["energetic", "normal", "tired", "anxious", "lazy", "tried_best"] as const;
 export type EnergyLevel = (typeof ENERGY_LEVELS)[number];

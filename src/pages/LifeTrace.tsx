@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
-import { Footprints, Pen, Coins, Mic, ArrowRight, Loader2 } from "lucide-react";
-import { useLifeTraceStats } from "@/lib/hooks/useLifeTrace";
+import { Footprints, Pen, Coins, Mic, ArrowRight, Loader2, Brain } from "lucide-react";
+import { useLifeTraceStats, useRecentAIInsights } from "@/lib/hooks/useLifeTrace";
 
 // ── Sub-components ──
 
@@ -32,6 +32,77 @@ function ActionButton({ icon, label, onClick, primary }: {
     >
       {icon}
       {label}
+    </button>
+  );
+}
+
+function AIInsightsSection() {
+  const { data: insights, isLoading } = useRecentAIInsights();
+  const [, navigate] = useLocation();
+
+  if (isLoading) return null;
+
+  const latest = (insights || [])[0] as Record<string, unknown> | undefined;
+  if (!latest) {
+    return (
+      <div className="bg-card rounded-2xl border border-border p-4">
+        <div className="flex items-start gap-3">
+          <div className="h-9 w-9 rounded-xl bg-sage-light/30 flex items-center justify-center shrink-0">
+            <Brain size={15} className="text-sage-deep" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-ink">AI 生活洞察</p>
+            <p className="text-xs text-ink-lighter mt-1">
+              写一篇日记，AI 帮你理解生活模式 —— 区分你的行动和想法，发现隐藏的主题和趋势。
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const themes = (latest.ai_themes as string[]) || [];
+  const actions = (latest.ai_actions as Array<{ action: string }>) || [];
+  const thoughts = (latest.ai_thoughts as Array<{ thought: string }>) || [];
+
+  return (
+    <button
+      onClick={() => navigate(`/life-trace/journal/${latest.date}`)}
+      className="bg-gradient-to-br from-sage-light/10 to-white border border-sage-light/30 rounded-2xl p-4 text-left hover:border-sage-light/50 transition-colors w-full"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Brain size={14} className="text-sage-deep" />
+          <span className="text-[11px] font-semibold text-sage-deep">AI 洞察</span>
+          <span className="text-[10px] text-ink-lighter">
+            {new Date(latest.date as string).toLocaleDateString("zh-CN")}
+          </span>
+        </div>
+        <ArrowRight size={14} className="text-ink-lighter shrink-0" />
+      </div>
+
+      <p className="text-sm text-ink font-medium mb-2">{latest.ai_summary as string}</p>
+
+      {(actions.length > 0 || thoughts.length > 0) && (
+        <div className="flex items-center gap-3 text-[11px] text-ink-lighter mb-2">
+          {actions.length > 0 && (
+            <span>行动 {actions.length} 项</span>
+          )}
+          {thoughts.length > 0 && (
+            <span>想法 {thoughts.length} 项</span>
+          )}
+        </div>
+      )}
+
+      {themes.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {themes.slice(0, 3).map((t, i) => (
+            <span key={i} className="text-[10px] bg-sage-light/20 text-sage-deep rounded-full px-2 py-0.5 font-medium">
+              #{t}
+            </span>
+          ))}
+        </div>
+      )}
     </button>
   );
 }
@@ -146,6 +217,9 @@ export default function LifeTrace() {
           <ArrowRight size={14} className="text-ink-lighter shrink-0" />
         </button>
       </div>
+
+      {/* AI Insights */}
+      <AIInsightsSection />
 
       {/* Recent activity */}
       <div>

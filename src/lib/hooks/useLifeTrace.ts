@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import { dataUrlToBlob, uniqueFileName } from "@/lib/media";
 import type { PendingCapture } from "@/lib/db/indexedDb";
+import type { LifeAnalysisResult } from "@/lib/types";
 
 // ── Helpers ──
 
@@ -259,6 +260,52 @@ export function useDeleteJournalEntry() {
       qc.invalidateQueries({ queryKey: ["journal_entries"] });
       qc.invalidateQueries({ queryKey: ["life_trace_stats"] });
     },
+  });
+}
+
+// ── AI Life Analysis ──
+
+export function useTriggerLifeAnalysis() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (journalEntryId: string): Promise<LifeAnalysisResult> => {
+      const { data, error } = await supabase.functions.invoke("life-analysis-agent", {
+        body: { journal_entry_id: journalEntryId },
+      });
+      if (error) throw error;
+      return data as LifeAnalysisResult;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["journal_entries"] });
+      qc.invalidateQueries({ queryKey: ["journal_entry"] });
+      qc.invalidateQueries({ queryKey: ["life_trace_stats"] });
+      qc.invalidateQueries({ queryKey: ["recent_ai_insights"] });
+    },
+  });
+}
+
+async function fetchRecentAIInsights() {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sinceDate = sevenDaysAgo.toISOString().split("T")[0];
+
+  const { data, error } = await supabase
+    .from("journal_entries")
+    .select("id, date, title, content, ai_summary, ai_themes, ai_actions, ai_thoughts, ai_analysis_version")
+    .not("ai_summary", "is", null)
+    .gte("date", sinceDate)
+    .order("date", { ascending: false })
+    .limit(10);
+
+  if (error) throw error;
+  return data;
+}
+
+export function useRecentAIInsights() {
+  return useQuery({
+    queryKey: ["recent_ai_insights"],
+    queryFn: fetchRecentAIInsights,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
