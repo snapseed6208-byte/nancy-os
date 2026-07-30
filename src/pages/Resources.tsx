@@ -3,7 +3,7 @@ import {
   Link2, Plus, Tag, Trash2, ExternalLink, Archive, Star,
   Loader2, FolderOpen, Sparkles, Lightbulb, Target, Check,
   Search, ChevronDown, Quote, MapPin, GitBranch,
-  BookOpen, Edit3, X, Play, XCircle,
+  BookOpen, Edit3, X, Play, XCircle, SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -66,6 +66,7 @@ export default function Resources() {
   const [newCatName, setNewCatName] = useState("");
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editCatName, setEditCatName] = useState("");
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   // ── Handlers ──
 
@@ -195,18 +196,18 @@ export default function Resources() {
 
       {/* Category Navigation */}
       {categories && categories.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={() => setActiveCategory(null)}
             className={cn(
-              "shrink-0 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors",
+              "text-xs font-medium rounded-lg px-3 py-1.5 transition-colors",
               !activeCategory ? "bg-ink/10 text-ink" : "text-ink-lighter hover:bg-ink/5",
             )}
           >
             全部
           </button>
           {categories.map((cat) => (
-            <div key={cat.id} className="shrink-0 relative group">
+            <div key={cat.id} className="relative group">
               {editingCategory === cat.id ? (
                 <input
                   value={editCatName}
@@ -246,7 +247,7 @@ export default function Resources() {
               </div>
             </div>
           ))}
-          {/* Add category */}
+          {/* Quick add category */}
           {showNewCategory ? (
             <input
               value={newCatName}
@@ -254,19 +255,41 @@ export default function Resources() {
               onBlur={handleCreateCategory}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateCategory(); if (e.key === "Escape") { setShowNewCategory(false); setNewCatName(""); } }}
               placeholder="分类名称..."
-              className="shrink-0 text-xs rounded-lg px-3 py-1.5 bg-ink/5 outline-none border border-border w-24"
+              className="text-xs rounded-lg px-3 py-1.5 bg-ink/5 outline-none border border-border w-24"
               autoFocus
             />
           ) : (
             <button
               onClick={() => setShowNewCategory(true)}
-              className="shrink-0 text-xs text-ink-lighter hover:text-ink hover:bg-ink/5 rounded-lg px-2 py-1.5 flex items-center gap-0.5 transition-colors"
+              className="text-xs text-ink-lighter hover:text-ink hover:bg-ink/5 rounded-lg px-2 py-1.5 flex items-center gap-0.5 transition-colors"
             >
               <Plus size={12} />
               新建
             </button>
           )}
+          {/* Manage categories */}
+          <button
+            onClick={() => setShowCategoryManager(true)}
+            className="text-xs text-ink-lighter hover:text-ink hover:bg-ink/5 rounded-lg px-2 py-1.5 flex items-center gap-1 transition-colors"
+          >
+            <SlidersHorizontal size={11} />
+            管理
+          </button>
         </div>
+      )}
+
+      {/* Category Manager Modal */}
+      {showCategoryManager && (
+        <CategoryManagerModal
+          categories={categories || []}
+          onClose={() => setShowCategoryManager(false)}
+          onCreate={(name) => {
+            const colorIdx = (categories?.length || 0) % DEFAULT_CATEGORY_COLORS.length;
+            createCategory.mutate({ name, icon: "📁", color: DEFAULT_CATEGORY_COLORS[colorIdx] });
+          }}
+          onUpdate={(id, fields) => updateCategory.mutate({ id, ...fields })}
+          onDelete={(id) => { if (confirm("删除分类后，该分类下的资源将变为未分类。确定删除？")) deleteCategory.mutate(id); }}
+        />
       )}
 
       {/* Search & Filter Bar */}
@@ -390,6 +413,163 @@ export default function Resources() {
           onDetachTag={(tagId) => detachTag.mutate({ resourceId: selectedResource.id, tagId })}
         />
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Category Manager Modal
+// ═══════════════════════════════════════════
+
+function CategoryManagerModal({
+  categories,
+  onClose,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  categories: Category[];
+  onClose: () => void;
+  onCreate: (name: string) => void;
+  onUpdate: (id: string, fields: Record<string, unknown>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+
+  const systemCats = categories.filter((c) => c.type === "system");
+  const customCats = categories.filter((c) => c.type !== "system");
+
+  const handleCreate = () => {
+    if (!newName.trim()) return;
+    onCreate(newName.trim());
+    setNewName("");
+  };
+
+  const handleRename = (id: string) => {
+    if (!editValue.trim()) { setEditingId(null); return; }
+    onUpdate(id, { name: editValue.trim() });
+    setEditingId(null);
+    setEditValue("");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm max-h-[80vh] flex flex-col shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="shrink-0 px-4 py-3 border-b border-border flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink">管理分类</h2>
+          <button onClick={onClose} className="h-7 w-7 rounded-lg flex items-center justify-center hover:bg-ink/5">
+            <X size={16} className="text-ink-lighter" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Add new */}
+          <div className="flex items-center gap-2">
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+              placeholder="新增自定义分类..."
+              className="flex-1 text-xs border border-border rounded-xl px-3 py-2 outline-none focus:border-sage-deep/50"
+            />
+            <button
+              onClick={handleCreate}
+              disabled={!newName.trim()}
+              className="text-xs bg-sage-light text-sage-deep rounded-xl px-3 py-2 font-medium disabled:opacity-40 hover:bg-sage-light/80 transition-colors"
+            >
+              添加
+            </button>
+          </div>
+
+          {/* System categories */}
+          {systemCats.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">系统分类</p>
+              <div className="space-y-1">
+                {systemCats.map((cat) => (
+                  <div key={cat.id} className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2 text-xs text-ink">
+                      <span>{cat.icon || "📁"}</span>
+                      {editingId === cat.id ? (
+                        <input
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleRename(cat.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleRename(cat.id); if (e.key === "Escape") setEditingId(null); }}
+                          className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
+                          autoFocus
+                        />
+                      ) : (
+                        <span>{cat.name}</span>
+                      )}
+                      <span className="text-[9px] bg-ink/5 text-ink-lighter rounded px-1 py-0.5">系统</span>
+                    </div>
+                    <button
+                      onClick={() => { setEditingId(cat.id); setEditValue(cat.name); }}
+                      className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
+                    >
+                      <Edit3 size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Custom categories */}
+          {customCats.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-2">自定义分类</p>
+              <div className="space-y-1">
+                {customCats.map((cat) => (
+                  <div key={cat.id} className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2 text-xs text-ink">
+                      <span>{cat.icon || "📁"}</span>
+                      {editingId === cat.id ? (
+                        <input
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleRename(cat.id)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleRename(cat.id); if (e.key === "Escape") setEditingId(null); }}
+                          className="text-xs border border-border rounded-lg px-2 py-0.5 outline-none w-24"
+                          autoFocus
+                        />
+                      ) : (
+                        <span>{cat.name}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => { setEditingId(cat.id); setEditValue(cat.name); }}
+                        className="text-[10px] text-ink-lighter hover:text-ink px-1.5 py-1"
+                      >
+                        <Edit3 size={10} />
+                      </button>
+                      <button
+                        onClick={() => onDelete(cat.id)}
+                        className="text-[10px] text-ink-lighter hover:text-red-500 px-1.5 py-1"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {systemCats.length === 0 && customCats.length === 0 && (
+            <p className="text-xs text-ink-lighter text-center py-4">暂无分类</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
