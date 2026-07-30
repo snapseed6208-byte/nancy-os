@@ -292,44 +292,39 @@ async function extractBilibiliId(url: string): Promise<string | null> {
   const avMatch = url.match(/av(\d+)/i);
   if (avMatch) return `av${avMatch[1]}`;
 
-  // 3. b23.tv short link — follow redirect to get BV号
+  // 3. b23.tv short link — follow redirect chain to get BV号
   if (url.includes("b23.tv") || url.match(/b23\.tv\/[a-zA-Z0-9]+/)) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6_000);
+      const timeout = setTimeout(() => controller.abort(), 8_000);
+      // Use GET with redirect-follow (default) — resp.url will be the final URL
       const resp = await fetch(url, {
-        method: "HEAD",
         signal: controller.signal,
-        headers: { "User-Agent": UA },
+        headers: {
+          "User-Agent": UA,
+          "Accept": "text/html,application/xhtml+xml",
+        },
       });
       clearTimeout(timeout);
-      // After redirect, resp.url contains the final destination URL
+
+      // Check final URL after all redirects
       const finalUrl = resp.url || "";
-      const bvFromRedirect = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
-      if (bvFromRedirect) return bvFromRedirect[0];
-      // Fallback: check redirect headers
-      const bvFromBody = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
-      if (bvFromBody) return bvFromBody[0];
-    } catch {
-      // b23.tv redirect failed — try extracting BV号 from error message or response body
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6_000);
-        const resp = await fetch(url, {
-          signal: controller.signal,
-          headers: { "User-Agent": UA },
-        });
-        clearTimeout(timeout);
-        const html = await resp.text();
-        const bvFromHtml = html.match(/BV[a-zA-Z0-9]{10,12}/);
-        if (bvFromHtml) return bvFromHtml[0];
-        // Also check final URL from resp
-        const finalUrl = resp.url || "";
-        const bvFromFinal = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
-        if (bvFromFinal) return bvFromFinal[0];
-      } catch {
-        // All methods exhausted
+      const bvFromFinal = finalUrl.match(/BV[a-zA-Z0-9]{10,12}/);
+      if (bvFromFinal) return bvFromFinal[0];
+
+      // Check response body for BV号 (b23.tv pages sometimes embed the link in HTML)
+      const html = await resp.text();
+      const bvFromHtml = html.match(/BV[a-zA-Z0-9]{10,12}/);
+      if (bvFromHtml) return bvFromHtml[0];
+
+      // Check for redirect via meta refresh or JavaScript
+      const metaRedirect = html.match(/content="0;\s*url=([^"]+)/i);
+      if (metaRedirect?.[1]) {
+        const bvFromMeta = metaRedirect[1].match(/BV[a-zA-Z0-9]{10,12}/);
+        if (bvFromMeta) return bvFromMeta[0];
       }
+    } catch {
+      // b23.tv redirect failed — URL may be invalid or expired
     }
   }
 
