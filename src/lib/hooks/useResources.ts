@@ -313,6 +313,10 @@ export function useDetachTagFromResource() {
 // ── Fetch Resources ──
 
 async function fetchResources(): Promise<ResourceRow[]> {
+  const session = await supabase.auth.getSession();
+  const userId = session.data.session?.user.id || "no-session";
+  console.log("[DEBUG fetchResources] auth.uid:", userId);
+
   const { data, error } = await supabase
     .from("resources")
     .select("*")
