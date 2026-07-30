@@ -345,21 +345,29 @@ export function useDeleteWorkoutVideo() {
 
 export function useRetryWorkoutAnalysis() {
   const qc = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async (video: { id: string; url: string }) => {
-      const { data, error } = await supabase.functions.invoke("content-parser-agent", {
-        body: {
-          url: video.url,
-          workout_video_id: video.id,
-        },
-      });
-      if (error) throw error;
-      return data;
+      const result = await Promise.race([
+        supabase.functions.invoke("content-parser-agent", {
+          body: { url: video.url, workout_video_id: video.id },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 30_000),
+        ),
+      ]);
+      if (result.error) throw result.error;
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workout_videos"] });
     },
   });
+
+  return {
+    retryWorkoutAnalysis: mutation.mutateAsync,
+    isRetrying: mutation.isPending,
+    retryError: mutation.error,
+  };
 }
 
 // ── Recipes ──

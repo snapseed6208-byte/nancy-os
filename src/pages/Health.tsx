@@ -726,7 +726,7 @@ function WorkoutLibraryTab() {
   const createVideo = useCreateWorkoutVideo();
   const updateVideo = useUpdateWorkoutVideo();
   const deleteVideo = useDeleteWorkoutVideo();
-  const retryAnalysis = useRetryWorkoutAnalysis();
+  const { retryWorkoutAnalysis, isRetrying, retryError } = useRetryWorkoutAnalysis();
 
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
@@ -744,6 +744,7 @@ function WorkoutLibraryTab() {
     title: "", category: "", difficulty: "", estimated_duration: null as number | null,
     training_type: "", equipment: "", tags: "",
   });
+  const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0 });
 
   // Dynamic equipment list from existing data
   const equipmentOptions = useMemo(() => {
@@ -808,12 +809,21 @@ function WorkoutLibraryTab() {
     return { completed, pending, total: all.length };
   }, [videos]);
 
-  const handleRetryPending = () => {
+  const handleRetryPending = async () => {
     const pending = (videos || []).filter(
       (v) => v.ai_analysis_status === "pending" || v.ai_analysis_status === "failed",
     );
-    for (const v of pending) {
-      retryAnalysis.mutate({ id: v.id, url: v.url });
+    if (pending.length === 0) return;
+
+    setRetryProgress({ current: 0, total: pending.length });
+
+    for (let i = 0; i < pending.length; i++) {
+      try {
+        await retryWorkoutAnalysis({ id: pending[i].id, url: pending[i].url });
+      } catch {
+        // Individual failure — continue with remaining videos
+      }
+      setRetryProgress({ current: i + 1, total: pending.length });
     }
   };
 
@@ -1009,15 +1019,18 @@ function WorkoutLibraryTab() {
           {qualityStats.pending > 0 && (
             <button
               onClick={handleRetryPending}
-              disabled={retryAnalysis.isPending}
+              disabled={isRetrying}
               className="flex items-center gap-1 text-[10px] font-semibold bg-amber-600 text-white rounded-lg px-2.5 py-1 hover:bg-amber-700 disabled:opacity-50 transition-colors"
             >
-              {retryAnalysis.isPending ? (
-                <><Loader2 size={10} className="animate-spin" />整理中...</>
+              {isRetrying ? (
+                <><Loader2 size={10} className="animate-spin" />整理中 {retryProgress.current}/{retryProgress.total}</>
               ) : (
                 <><RotateCw size={10} />立即整理</>
               )}
             </button>
+          )}
+          {retryError && (
+            <p className="text-[10px] text-red-600 mt-1">{(retryError as Error).message || "重试失败"}</p>
           )}
         </div>
       )}

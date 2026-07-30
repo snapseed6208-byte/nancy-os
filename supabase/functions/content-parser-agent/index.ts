@@ -264,6 +264,11 @@ serve(async (req: Request) => {
       });
     }
 
+    // Force workout UPDATE mode when retrying (workout_video_id takes priority over AI classification)
+    if (workoutVideoId) {
+      parsed.content_type = "workout";
+    }
+
     const content_type = (parsed.content_type as string) || "article";
     const title = (parsed.title as string) || "";
     const category = (parsed.category as string) || "";
