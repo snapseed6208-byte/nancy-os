@@ -221,6 +221,7 @@ export default function LifeTraceDailyRecord() {
   const [energyLevel, setEnergyLevel] = useState("");
   const [saving, setSaving] = useState(false);
   const [aiState, setAiState] = useState<"idle" | "analyzing" | "done" | "error">("idle");
+  const [aiError, setAiError] = useState("");
   const [aiEntry, setAiEntry] = useState<Record<string, unknown> | null>(null);
 
   const hasExisting = !!(existingEntry?.content);
@@ -243,12 +244,14 @@ export default function LifeTraceDailyRecord() {
 
   const triggerAIAnalysis = useCallback(async (entryId: string) => {
     setAiState("analyzing");
+    setAiError("");
     try {
       await triggerAI.mutateAsync(entryId);
       setAiState("done");
       setAiEntry(existingEntry);
-    } catch {
+    } catch (err) {
       setAiState("error");
+      setAiError((err as Error).message || "AI 分析失败");
     }
   }, [triggerAI, existingEntry]);
 
@@ -373,8 +376,17 @@ export default function LifeTraceDailyRecord() {
 
       {/* AI Analysis: error */}
       {aiState === "error" && (
-        <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4">
-          <p className="text-xs text-accent-rose">AI 分析失败，请稍后重试</p>
+        <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4 space-y-2">
+          <p className="text-xs text-accent-rose font-medium">AI 分析失败</p>
+          {aiError && <p className="text-[10px] text-ink-lighter leading-relaxed">{aiError}</p>}
+          {existingEntry?.id && (
+            <button
+              onClick={() => triggerAIAnalysis(existingEntry.id as string)}
+              className="text-[10px] font-medium text-sage-deep bg-sage-light/50 rounded-full px-3 py-1 hover:bg-sage-light transition-colors"
+            >
+              重试
+            </button>
+          )}
         </div>
       )}
 

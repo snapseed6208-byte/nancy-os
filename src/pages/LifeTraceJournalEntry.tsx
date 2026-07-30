@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, Trash2, Loader2, Brain, Sparkles } from "lucide-react";
+import { ArrowLeft, Trash2, Loader2, Brain, Sparkles, AlertTriangle } from "lucide-react";
 import {
   useJournalEntry,
   useUpsertJournalEntry,
@@ -190,6 +190,7 @@ export default function LifeTraceJournalEntry() {
   const [energyLevel, setEnergyLevel] = useState("");
   const [saving, setSaving] = useState(false);
   const [aiTriggered, setAiTriggered] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const dateObj = new Date(date);
   const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -206,10 +207,13 @@ export default function LifeTraceJournalEntry() {
   }, [existingEntry]);
 
   const triggerAIAnalysis = useCallback(async (entryId: string) => {
+    setAiError("");
     try {
       await triggerAI.mutateAsync(entryId);
       setAiTriggered(true);
-    } catch { /* non-blocking */ }
+    } catch (err) {
+      setAiError((err as Error).message || "AI 分析失败");
+    }
   }, [triggerAI]);
 
   const handleSave = async () => {
@@ -351,6 +355,12 @@ export default function LifeTraceJournalEntry() {
                   <><Brain size={12} />开始 AI 分析</>
                 )}
               </button>
+              {aiError && (
+                <div className="mt-2 flex items-start gap-1.5 text-[10px] text-accent-rose bg-accent-rose/5 rounded-lg px-2 py-1.5">
+                  <AlertTriangle size={10} className="shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{aiError}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

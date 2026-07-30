@@ -123,13 +123,19 @@ serve(async (req: Request) => {
     const { error: insertErr } = await supabase.from("ai_insights").insert({
       user_id: user.id,
       agent_type: "health_coach",
+      insight_type: "daily_advice",
       title: "今日健康建议",
       content: parsed.training_advice || "",
       data: parsed,
       generated_at: new Date().toISOString(),
     });
 
-    if (insertErr) console.error("Failed to save insight:", insertErr);
+    if (insertErr) {
+      console.error("Failed to save insight:", insertErr);
+      return new Response(JSON.stringify({ error: "Failed to save insight", detail: insertErr.message }), {
+        status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
 
     return new Response(JSON.stringify(parsed), {
       headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },

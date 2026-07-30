@@ -286,6 +286,7 @@ function QuickLog() {
     record_time: "",
   });
   const [analyzingMeal, setAnalyzingMeal] = useState<string | null>(null);
+  const [mealAnalysisError, setMealAnalysisError] = useState<Record<string, string>>({});
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
@@ -513,9 +514,9 @@ function QuickLog() {
                 date={date}
                 foods={meals}
                 onDelete={(id) => deleteFood.mutate(id)}
-                analyzingMeal={analyzingMeal}
                 onAnalyze={(mt) => {
                   setAnalyzingMeal(mt);
+                  setMealAnalysisError((prev) => ({ ...prev, [mt]: "" }));
                   generateAnalysis.mutate({
                     date,
                     meal_type: mt,
@@ -525,10 +526,18 @@ function QuickLog() {
                       feeling: f.feeling ?? undefined,
                     })),
                   }, {
-                    onSettled: () => setAnalyzingMeal(null),
+                    onSuccess: () => {
+                      setAnalyzingMeal(null);
+                      setMealAnalysisError((prev) => ({ ...prev, [mt]: "" }));
+                    },
+                    onError: (err) => {
+                      setAnalyzingMeal(null);
+                      setMealAnalysisError((prev) => ({ ...prev, [mt]: (err as Error).message || "分析失败" }));
+                    },
                   });
                 }}
                 isAnalyzing={generateAnalysis.isPending && analyzingMeal === mt}
+                analysisError={mealAnalysisError[mt] || null}
               />
             );
           })}
@@ -545,17 +554,17 @@ function MealSection({
   date,
   foods,
   onDelete,
-  analyzingMeal,
   onAnalyze,
   isAnalyzing,
+  analysisError,
 }: {
   mealType: string;
   date: string;
   foods: FoodRecord[];
   onDelete: (id: string) => void;
-  analyzingMeal: string | null;
   onAnalyze: (mt: string) => void;
   isAnalyzing: boolean;
+  analysisError: string | null;
 }) {
   const { data: analysis } = useMealAnalysis(date, mealType);
   const analysisData = analysis?.data;
@@ -578,6 +587,14 @@ function MealSection({
           )}
         </button>
       </div>
+
+      {/* AI Analysis error */}
+      {analysisError && (
+        <div className="flex items-center gap-1.5 text-[10px] text-accent-rose bg-accent-rose/5 rounded-lg px-2 py-1.5">
+          <AlertTriangle size={10} className="shrink-0" />
+          <span className="leading-relaxed">{analysisError}</span>
+        </div>
+      )}
 
       {/* Food items */}
       {foods.map((f) => (
