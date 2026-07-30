@@ -4,15 +4,16 @@ import {
   Trash2, ExternalLink, Play, Flame, Target, Activity, Apple,
   ChevronLeft, ChevronRight, Star, Clock, Zap, AlertTriangle, CheckCircle2,
   Image, X, ArrowRight, Trophy, Brain, Search, RotateCw, SlidersHorizontal,
-  BookOpen,
+  BookOpen, ChefHat,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import VideoPlayer from "@/components/health/VideoPlayer";
 import WorkoutJournalTab from "@/components/health/WorkoutJournalTab";
+import RecipeDetailModal from "@/components/health/RecipeDetailModal";
 import {
   useBodyProfile, useUpdateBodyProfile,
   useWorkoutVideos, useCreateWorkoutVideo, useUpdateWorkoutVideo, useDeleteWorkoutVideo, useRetryWorkoutAnalysis,
-  useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe,
+  useRecipes, useCreateRecipe, useUpdateRecipe, useDeleteRecipe, useRetryRecipeAnalysis,
   useMealPlans, useUpsertMealPlan,
   useHealthContext, useCoachInsight, useGenerateCoachInsight,
   useWorkoutRecords, useCreateWorkoutRecord, useDeleteWorkoutRecord,
@@ -21,7 +22,7 @@ import {
   useHealthGoals,
   useExerciseLibrary,
   useWorkoutSessions, useWorkoutSession, useCreateWorkoutSession, useUpdateWorkoutSession, useDeleteWorkoutSession,
-  type WorkoutVideo, type Recipe, type MealPlan, type MealPlanSlot, type FoodRecord,
+  type WorkoutVideo, type Recipe, type RecipeIngredient, type RecipeStep, type MealPlan, type MealPlanSlot, type FoodRecord,
   type WorkoutSession, type WorkoutSessionInput,
 } from "@/lib/hooks/useHealth";
 
@@ -1323,12 +1324,12 @@ function RecipeBoxTab() {
   const createRecipe = useCreateRecipe();
   const updateRecipe = useUpdateRecipe();
   const deleteRecipe = useDeleteRecipe();
+  const { retryRecipeAnalysis, isRetrying } = useRetryRecipeAnalysis();
 
   const [filter, setFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
   const [url, setUrl] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", category: "", goal: "", calories_per_serving: null as number | null, protein_grams: null as number | null, ingredients: "" });
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   const filtered = (recipes || []).filter((r) => {
     if (filter === "all") return true;
@@ -1337,7 +1338,6 @@ function RecipeBoxTab() {
     return (r.meal_time || []).includes(filter);
   });
 
-  // Today's recommendations: pick 3 recipes (one per meal type)
   const todayPicks = (recipes || []).filter((r) => r.is_favorite).slice(0, 3);
 
   const handleAdd = () => {
@@ -1345,19 +1345,31 @@ function RecipeBoxTab() {
     createRecipe.mutate({ source_url: url.trim() }, { onSuccess: () => { setUrl(""); setShowAdd(false); } });
   };
 
-  const startEdit = (r: Recipe) => {
-    setEditingId(r.id);
-    setEditForm({ name: r.name || "", category: r.category || "", goal: Array.isArray(r.goal) ? r.goal[0] || "" : (r.goal || ""), calories_per_serving: r.calories_per_serving, protein_grams: r.protein_grams, ingredients: r.ingredients || "" });
-  };
-
-  const saveEdit = (id: string) => {
-    const update: Record<string, unknown> = { name: editForm.name, category: editForm.category, goal: editForm.goal ? [editForm.goal] : [], calories_per_serving: editForm.calories_per_serving ?? undefined, protein_grams: editForm.protein_grams ?? undefined, ingredients: editForm.ingredients || undefined };
-    updateRecipe.mutate({ id, ...update } as never, { onSuccess: () => setEditingId(null) });
-  };
-
   const getPlatformBadge = (platform: string | null) => {
     const map: Record<string, string> = { bilibili: "B站", douyin: "抖音", xiaohongshu: "小红书", youtube: "YT" };
     return map[platform || ""] || platform || "web";
+  };
+
+  const handleUpdate = async (input: {
+    id: string;
+    name?: string;
+    image_url?: string;
+    ingredients_json?: RecipeIngredient[];
+    steps_json?: RecipeStep[];
+  }) => {
+    await updateRecipe.mutateAsync(input);
+  };
+
+  const getStatusBadge = (status: string | null) => {
+    if (status === "completed") return { label: "AI已整理", cls: "bg-emerald-50 text-emerald-600" };
+    if (status === "failed") return { label: "分析失败", cls: "bg-red-50 text-red-500" };
+    return { label: "AI整理中", cls: "bg-amber-50 text-amber-600" };
+  };
+
+  const getIngredientsPreview = (r: Recipe): string => {
+    const items = Array.isArray(r.ingredients_json) ? r.ingredients_json : [];
+    if (items.length === 0) return "";
+    return items.slice(0, 3).map((i: { name: string }) => i.name).join("、") + (items.length > 3 ? "…" : "");
   };
 
   return (
@@ -1368,10 +1380,10 @@ function RecipeBoxTab() {
           <p className="text-xs font-semibold text-accent-rose mb-2 flex items-center gap-1.5"><Sparkles size={12} />今日推荐</p>
           <div className="space-y-1.5">
             {todayPicks.map((r) => (
-              <div key={r.id} className="flex items-center justify-between text-sm">
+              <button key={r.id} onClick={() => setSelectedRecipe(r)} className="w-full flex items-center justify-between text-sm text-left hover:bg-ink/5 rounded-lg px-1 -mx-1 py-0.5 transition-colors">
                 <span className="text-ink font-medium">{r.name}</span>
                 <span className="text-[11px] text-ink-lighter">{r.calories_per_serving ? `${r.calories_per_serving}千卡` : ""}{r.protein_grams ? ` · ${r.protein_grams}g蛋白` : ""}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -1422,69 +1434,76 @@ function RecipeBoxTab() {
         <div className="text-center py-10">
           <Utensils size={32} className="text-ink-lighter mx-auto mb-3 opacity-25" />
           <p className="text-sm text-ink-lighter">食谱库为空</p>
-          <p className="text-xs text-ink-lighter mt-1">收藏减脂食谱视频，AI 帮你解析营养信息</p>
+          <p className="text-xs text-ink-lighter mt-1">收藏食谱视频，AI 帮你解析食材和做法</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((r) => (
-            <div key={r.id} className="bg-card rounded-2xl border border-border p-3.5 hover:border-sage-light/30 transition-colors group">
-              {editingId === r.id ? (
-                <div className="space-y-2">
-                  <input type="text" value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} placeholder="食谱名称" className="w-full bg-transparent text-sm text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" autoFocus />
-                  <div className="grid grid-cols-2 gap-2">
-                    <select value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))} className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2 py-1.5">
-                      <option value="">分类</option>
-                      <option value="高蛋白">高蛋白</option><option value="减脂">减脂</option><option value="快手">快手</option>
-                    </select>
-                    <select value={editForm.goal} onChange={(e) => setEditForm((f) => ({ ...f, goal: e.target.value }))} className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2 py-1.5">
-                      <option value="">适合目标</option>
-                      <option value="减脂">减脂</option><option value="增肌">增肌</option><option value="保持">保持</option>
-                    </select>
+          {filtered.map((r) => {
+            const statusBadge = getStatusBadge(r.ai_analysis_status || null);
+            const ingPreview = getIngredientsPreview(r);
+            return (
+              <button
+                key={r.id}
+                onClick={() => setSelectedRecipe(r)}
+                className="w-full bg-card rounded-2xl border border-border hover:border-sage-light/30 transition-colors overflow-hidden text-left"
+              >
+                <div className="flex gap-3 p-3.5">
+                  {/* Thumbnail */}
+                  <div className="shrink-0 w-16 h-16 rounded-xl bg-ink/5 overflow-hidden">
+                    {r.image_url ? (
+                      <img src={r.image_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-2xl">
+                        {r.category === "高蛋白" ? "🥩" : r.category === "减脂" ? "🥗" : "🍳"}
+                      </div>
+                    )}
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input type="number" value={editForm.calories_per_serving ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, calories_per_serving: e.target.value ? parseInt(e.target.value) : null }))} placeholder="热量(千卡)" className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
-                    <input type="number" value={editForm.protein_grams ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, protein_grams: e.target.value ? parseInt(e.target.value) : null }))} placeholder="蛋白质(g)" className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
-                  </div>
-                  <textarea value={editForm.ingredients} onChange={(e) => setEditForm((f) => ({ ...f, ingredients: e.target.value }))} placeholder="食材清单" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5 h-14 resize-none" />
-                  <div className="flex gap-2">
-                    <button onClick={() => saveEdit(r.id)} className="flex-1 bg-sage-light text-sage-deep rounded-lg py-1.5 text-xs font-semibold">保存</button>
-                    <button onClick={() => setEditingId(null)} className="px-3 py-1.5 text-xs text-ink-light hover:bg-ink/5 rounded-lg">取消</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start gap-3">
-                  <div className="text-2xl shrink-0">
-                    {r.category === "高蛋白" ? "🥩" : r.category === "减脂" ? "🥗" : "🍳"}
-                  </div>
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-ink truncate">{r.name || "未命名食谱"}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {r.source_platform && <span className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{getPlatformBadge(r.source_platform)}</span>}
-                          {r.calories_per_serving && <span className="text-[10px] text-ink-lighter">{r.calories_per_serving}千卡</span>}
-                          {r.protein_grams && <span className="text-[10px] text-accent-sky bg-accent-sky/5 rounded-full px-1.5 py-0.5">{r.protein_grams}g蛋白</span>}
-                          {Array.isArray(r.goal) ? r.goal.map((g) => <span key={g} className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{g}</span>) : (r.goal && <span className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{r.goal}</span>)}
-                          {r.meal_time && r.meal_time.map((mt) => <span key={mt} className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{MEAL_LABELS[mt] || mt}</span>)}
-                        </div>
-                        {r.ingredients && <p className="text-[11px] text-ink-light mt-1.5 line-clamp-1">食材: {r.ingredients}</p>}
-                      </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button onClick={() => startEdit(r)} className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5" title="编辑"><Star size={12} /></button>
-                        <button onClick={() => deleteRecipe.mutate(r.id)} className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-accent-rose" title="删除"><Trash2 size={12} /></button>
-                      </div>
+                      <p className="text-sm font-semibold text-ink truncate">{r.name || "未命名食谱"}</p>
+                      <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${statusBadge.cls}`}>
+                        {statusBadge.label}
+                      </span>
                     </div>
-                    {r.source_url && (
-                      <a href={r.source_url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-sage-deep font-medium hover:underline">
-                        <ExternalLink size={10} />查看视频
-                      </a>
+
+                    {/* Goal tags */}
+                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                      {r.source_platform && (
+                        <span className="text-[9px] text-ink-lighter bg-ink/5 rounded-full px-1.5 py-0.5">{getPlatformBadge(r.source_platform)}</span>
+                      )}
+                      {Array.isArray(r.goal) && r.goal.map((g) => (
+                        <span key={g} className="text-[9px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{g}</span>
+                      ))}
+                      {!Array.isArray(r.goal) && r.goal && (
+                        <span className="text-[9px] text-accent-rose bg-accent-rose/5 rounded-full px-1.5 py-0.5">{r.goal}</span>
+                      )}
+                    </div>
+
+                    {/* Ingredients preview */}
+                    {ingPreview && (
+                      <p className="text-[10px] text-ink-lighter mt-1.5 line-clamp-1 flex items-center gap-1">
+                        <ChefHat size={10} className="shrink-0" />{ingPreview}
+                      </p>
                     )}
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
+              </button>
+            );
+          })}
         </div>
+      )}
+
+      {/* Detail modal */}
+      {selectedRecipe && (
+        <RecipeDetailModal
+          recipe={selectedRecipe}
+          onClose={() => setSelectedRecipe(null)}
+          onUpdate={handleUpdate}
+          onDelete={(id) => { deleteRecipe.mutate(id); }}
+          onRetryAnalysis={retryRecipeAnalysis}
+          isRetrying={isRetrying}
+        />
       )}
     </div>
   );
