@@ -24,7 +24,7 @@ function getPlatformMeta(platform: string) {
 export default function VideoPlayer({ embedUrl, thumbnailUrl, title, platform, sourceUrl }: VideoPlayerProps) {
   const [state, setState] = useState<PlayerState>("idle");
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handlePlay = useCallback(() => {
     setState("loading");
