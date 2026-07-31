@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 
 // ── Types ──
 
-type Step = "category" | "generating" | "record" | "review" | "analyzing" | "results" | "saved";
+type Step = "category" | "generating" | "record" | "review" | "analyzing" | "results" | "saved" | "empty_expression_practice";
 type ViewState = "home" | "new" | "detail";
 
 interface CategoryDef {
@@ -60,12 +60,15 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 // ── Audio Recorder Hook ──
 
+type MicErrorType = "denied" | "not_found" | "busy" | "unsupported" | "unknown";
+
 function useAudioRecorder() {
   const [state, setState] = useState<"idle" | "recording" | "done">("idle");
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<MicErrorType | null>(null);
 
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -76,6 +79,7 @@ function useAudioRecorder() {
   const start = useCallback(async () => {
     if (mediaRecorder.current && mediaRecorder.current.state === "recording") return;
     setError(null);
+    setErrorType(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream, {
@@ -113,8 +117,21 @@ function useAudioRecorder() {
           wakeLockRef.current = await navigator.wakeLock.request("screen");
         }
       } catch { /* not supported */ }
-    } catch {
-      setError("无法访问麦克风。请在浏览器设置中允许麦克风访问权限。");
+    } catch (err: unknown) {
+      const e = err as DOMException;
+      if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
+        setError("麦克风权限被拒绝。请在浏览器设置中允许麦克风访问，或切换至文本模式。");
+        setErrorType("denied");
+      } else if (e.name === "NotFoundError") {
+        setError("未检测到麦克风设备。请连接麦克风后重试，或切换至文本模式。");
+        setErrorType("not_found");
+      } else if (e.name === "NotReadableError") {
+        setError("麦克风被其他应用占用。请关闭其他使用麦克风的应用后重试。");
+        setErrorType("busy");
+      } else {
+        setError("无法访问麦克风。请检查浏览器权限设置，或切换至文本模式。");
+        setErrorType("unknown");
+      }
       setState("idle");
     }
   }, []);
@@ -129,10 +146,12 @@ function useAudioRecorder() {
     setAudioUrl(null);
     setBlob(null);
     setDuration(0);
+    setError(null);
+    setErrorType(null);
     setState("idle");
   }, [audioUrl]);
 
-  return { state, audioUrl, blob, duration, error, start, stop, reset };
+  return { state, audioUrl, blob, duration, error, errorType, start, stop, reset };
 }
 
 // ── Score Bar ──
@@ -245,6 +264,8 @@ export default function EnglishSpeaking() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
+  const [textMode, setTextMode] = useState(false);
+  const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
   const referenceAnswerPromise = useRef<Promise<void> | null>(null);
 
   // Data
@@ -276,6 +297,14 @@ export default function EnglishSpeaking() {
   };
 
   const handleStartExpressionPractice = () => {
+    if (!dueExpressions || dueExpressions.length === 0) {
+      setView("new");
+      setMode("expression_practice");
+      setCategory("expression_practice");
+      setSubCategory("");
+      setStep("empty_expression_practice");
+      return;
+    }
     setView("new");
     setMode("expression_practice");
     setCategory("expression_practice");
@@ -444,6 +473,19 @@ export default function EnglishSpeaking() {
 
   const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
     try {
+      // Dedup: check if expression already exists (case-insensitive)
+      const { data: existing } = await supabase
+        .from("expressions")
+        .select("id")
+        .ilike("english", upgrade.english.trim())
+        .eq("archived", false)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        setDuplicateUpgrades((prev) => new Set(prev).add(index));
+        return;
+      }
+
       await createExpression.mutateAsync({
         english: upgrade.english,
         chinese: upgrade.chinese,
@@ -476,6 +518,8 @@ export default function EnglishSpeaking() {
     setReferenceAnswer("");
     setAiError(null);
     setAddedUpgrades(new Set());
+    setDuplicateUpgrades(new Set());
+    setTextMode(false);
     referenceAnswerPromise.current = null;
     recorder.reset();
     asr.reset();
@@ -740,6 +784,52 @@ export default function EnglishSpeaking() {
         />
       )}
 
+      {/* Step: Empty Expression Practice */}
+      {step === "empty_expression_practice" && (
+        <div className="space-y-4">
+          <div className="bg-card rounded-2xl border border-amber-100 p-6 text-center space-y-4">
+            <div className="h-14 w-14 rounded-full bg-amber-50 flex items-center justify-center mx-auto">
+              <Target size={28} className="text-amber-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-ink">没有待复习的表达</p>
+              <p className="text-xs text-ink-lighter mt-2 leading-relaxed">
+                表达练习模式需要表达库中有到期复习（due）的表达。<br />
+                请先通过以下方式添加表达：
+              </p>
+            </div>
+            <div className="text-xs text-ink-lighter text-left space-y-1.5 max-w-xs mx-auto">
+              <p className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                自由口语练习后，将 AI 推荐的表达升级加入表达库
+              </p>
+              <p className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                通过导入功能批量导入表达
+              </p>
+              <p className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                手动创建新表达
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setView("home"); setStep("category"); }}
+                className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold"
+              >
+                先去自由口语练习
+              </button>
+              <button
+                onClick={() => { setView("home"); setStep("category"); setMode("free_speaking"); }}
+                className="flex-1 bg-ink/5 text-ink-light rounded-xl py-2.5 text-sm font-medium"
+              >
+                返回首页
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Step: Generating question */}
       {(step === "generating") && (
         <div className="space-y-4">
@@ -821,80 +911,159 @@ export default function EnglishSpeaking() {
           {/* Recording UI */}
           {step === "record" && (
             <div className="space-y-4">
-              <div className="bg-card rounded-2xl border border-border p-6 text-center space-y-4">
-                {/* Record button */}
-                <div className="relative inline-flex items-center justify-center">
-                  {recorder.state === "recording" && (
-                    <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping pointer-events-none" style={{ width: 80, height: 80, margin: "auto" }} />
-                  )}
-                  <button
-                    disabled={isStarting}
-                    onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : handleStartRecording}
-                    className={cn(
-                      "rounded-full flex items-center justify-center transition-all disabled:opacity-40 disabled:scale-95",
-                      recorder.state === "recording"
-                        ? "h-20 w-20 bg-accent-rose text-white shadow-lg"
-                        : recorder.state === "done"
-                          ? "h-16 w-16 bg-sage-light text-sage-deep"
-                          : "h-20 w-20 bg-accent-rose/10 text-accent-rose",
-                    )}
-                  >
-                    {recorder.state === "recording" ? (
-                      <Square size={28} />
-                    ) : recorder.state === "done" ? (
-                      <RefreshCw size={24} />
-                    ) : (
-                      <Mic size={32} />
-                    )}
-                  </button>
+              {/* Text mode: direct text input instead of recording */}
+              {textMode ? (
+                <div className="bg-card rounded-2xl border border-amber-100 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare size={14} className="text-amber-500" />
+                    <p className="text-xs font-medium text-amber-700">文本回答模式</p>
+                    <button
+                      onClick={() => { setTextMode(false); recorder.reset(); }}
+                      className="ml-auto text-[10px] text-ink-lighter hover:text-ink underline"
+                    >
+                      切换回录音模式
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full bg-white border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-amber-300 resize-none"
+                    rows={5}
+                    placeholder="在这里输入你的英语回答..."
+                    value={asr.transcript}
+                    onChange={(e) => asr.setTranscript(e.target.value)}
+                  />
                 </div>
+              ) : (
+                <div className="bg-card rounded-2xl border border-border p-6 text-center space-y-4">
+                  {/* Record button */}
+                  <div className="relative inline-flex items-center justify-center">
+                    {recorder.state === "recording" && (
+                      <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping pointer-events-none" style={{ width: 80, height: 80, margin: "auto" }} />
+                    )}
+                    <button
+                      disabled={isStarting}
+                      onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : handleStartRecording}
+                      className={cn(
+                        "rounded-full flex items-center justify-center transition-all disabled:opacity-40 disabled:scale-95",
+                        recorder.state === "recording"
+                          ? "h-20 w-20 bg-accent-rose text-white shadow-lg"
+                          : recorder.state === "done"
+                            ? "h-16 w-16 bg-sage-light text-sage-deep"
+                            : "h-20 w-20 bg-accent-rose/10 text-accent-rose",
+                      )}
+                    >
+                      {recorder.state === "recording" ? (
+                        <Square size={28} />
+                      ) : recorder.state === "done" ? (
+                        <RefreshCw size={24} />
+                      ) : (
+                        <Mic size={32} />
+                      )}
+                    </button>
+                  </div>
 
-                <div>
-                  {recorder.state === "idle" && (
-                    <p className="text-sm text-ink-light">点击麦克风开始录音</p>
-                  )}
-                  {recorder.state === "recording" && (
-                    <div className="space-y-1">
-                      <p className="text-lg font-bold text-accent-rose font-mono">{formatDuration(recorder.duration)}</p>
-                      <p className="text-xs text-ink-lighter">点击停止按钮结束录音</p>
-                    </div>
-                  )}
-                  {recorder.state === "done" && (
-                    <p className="text-sm text-sage-deep font-medium">录音完成 ({formatDuration(recorder.duration)})</p>
-                  )}
-                </div>
-
-                {recorder.error && (
-                  <p className="text-xs text-accent-rose">{recorder.error}</p>
-                )}
-
-                {/* ASR error */}
-                {asr.supported && asr.error && (
-                  <p className="text-xs text-accent-rose mt-1">语音识别错误: {asr.error}</p>
-                )}
-
-                {/* ASR status */}
-                {asr.supported && recorder.state === "recording" && (
-                  <div className="text-xs text-ink-lighter">
-                    {asr.isListening && <span className="text-sage-deep">语音识别中...</span>}
-                    {asr.interim && (
-                      <p className="text-ink-light mt-1 italic">"{asr.interim}"</p>
+                  <div>
+                    {recorder.state === "idle" && !recorder.error && (
+                      <p className="text-sm text-ink-light">点击麦克风开始录音</p>
+                    )}
+                    {recorder.state === "recording" && (
+                      <div className="space-y-1">
+                        <p className="text-lg font-bold text-accent-rose font-mono">{formatDuration(recorder.duration)}</p>
+                        <p className="text-xs text-ink-lighter">点击停止按钮结束录音</p>
+                      </div>
+                    )}
+                    {recorder.state === "done" && (
+                      <p className="text-sm text-sage-deep font-medium">录音完成 ({formatDuration(recorder.duration)})</p>
                     )}
                   </div>
-                )}
 
-                {/* Audio playback after recording */}
-                {recorder.state === "done" && recorder.audioUrl && (
-                  <audio controls src={recorder.audioUrl} className="w-full h-10" />
-                )}
-              </div>
+                  {/* Mic error with fallback options */}
+                  {recorder.error && (
+                    <div className="space-y-3">
+                      <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-left">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                          <p className="text-xs text-amber-700">{recorder.error}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {recorder.errorType === "denied" && (
+                          <button
+                            onClick={() => recorder.start()}
+                            className="flex-1 bg-ink/5 text-ink-light rounded-xl py-2.5 text-sm font-medium hover:bg-ink/10 transition-colors"
+                          >
+                            重新授权
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setTextMode(true); recorder.reset(); }}
+                          className="flex-1 bg-amber-50 text-amber-700 rounded-xl py-2.5 text-sm font-semibold hover:bg-amber-100 transition-colors border border-amber-200"
+                        >
+                          切换到文本模式
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
+                  {/* ASR error */}
+                  {asr.supported && asr.error && (
+                    <p className="text-xs text-accent-rose mt-1">语音识别错误: {asr.error}</p>
+                  )}
+
+                  {/* ASR status */}
+                  {asr.supported && recorder.state === "recording" && (
+                    <div className="text-xs text-ink-lighter">
+                      {asr.isListening && <span className="text-sage-deep">语音识别中...</span>}
+                      {asr.interim && (
+                        <p className="text-ink-light mt-1 italic">"{asr.interim}"</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Audio playback after recording */}
+                  {recorder.state === "done" && recorder.audioUrl && (
+                    <audio controls src={recorder.audioUrl} className="w-full h-10" />
+                  )}
+                </div>
+              )}
+
+              {/* Next step button: recording done */}
               {recorder.state === "done" && (
                 <button
                   onClick={handleGoToReview}
                   className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold"
                 >
                   下一步：查看转录
+                </button>
+              )}
+
+              {/* Text mode: confirm and create session */}
+              {textMode && asr.transcript.trim() && !sessionId && (
+                <button
+                  onClick={async () => {
+                    if (isStarting) return;
+                    setIsStarting(true);
+                    try {
+                      const result = await createSession.mutateAsync({
+                        prompt: question,
+                        context: questionContext,
+                        category: category || undefined,
+                        mode,
+                        recommended_expressions: suitableExpressions.length > 0 ? suitableExpressions : undefined,
+                      });
+                      setSessionId(result.id as string);
+                      setStep("review");
+                    } catch (err) {
+                      console.error("[EnglishSpeaking] textMode createSession failed:", err);
+                      setAiError("创建练习会话失败，请检查网络或重新登录。");
+                    } finally {
+                      setIsStarting(false);
+                    }
+                  }}
+                  disabled={isStarting}
+                  className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isStarting ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {isStarting ? "创建会话中..." : "确认回答，开始分析"}
                 </button>
               )}
             </div>
@@ -1093,16 +1262,18 @@ export default function EnglishSpeaking() {
                       </div>
                       <button
                         onClick={() => handleAddToBank(upgrade, i)}
-                        disabled={addedUpgrades.has(i) || createExpression.isPending}
-                        title={addedUpgrades.has(i) ? "已加入表达库" : "加入表达库"}
+                        disabled={addedUpgrades.has(i) || duplicateUpgrades.has(i) || createExpression.isPending}
+                        title={duplicateUpgrades.has(i) ? "已存在于表达库" : addedUpgrades.has(i) ? "已加入表达库" : "加入表达库"}
                         className={cn(
                           "shrink-0 rounded-lg p-1.5 transition-colors",
                           addedUpgrades.has(i)
                             ? "bg-emerald-50 border border-emerald-200 text-emerald-500"
-                            : "bg-white border border-violet-200 text-violet-500 hover:bg-violet-50",
+                            : duplicateUpgrades.has(i)
+                              ? "bg-ink/5 border border-ink/10 text-ink-lighter cursor-not-allowed"
+                              : "bg-white border border-violet-200 text-violet-500 hover:bg-violet-50",
                         )}
                       >
-                        {addedUpgrades.has(i) ? <CheckCircle2 size={14} /> : <Plus size={14} />}
+                        {duplicateUpgrades.has(i) ? <span className="text-[10px] font-medium">已存在</span> : addedUpgrades.has(i) ? <CheckCircle2 size={14} /> : <Plus size={14} />}
                       </button>
                     </div>
                   </div>
@@ -1238,6 +1409,14 @@ function GenerateQuestion({
             english: (e.english as string) || "",
             chinese: (e.chinese as string) || "",
           }));
+
+          // Safety net: if no due expressions, go back to empty state
+          if (exprList.length === 0) {
+            onGenerated("", "", []);
+            onReady();
+            return;
+          }
+
           const result = await generateExpressionPracticeQuestion(exprList, session.access_token);
           onGenerated(result.question, result.context, exprList);
         } else {
