@@ -6,7 +6,8 @@
   "packageManager": "pnpm@11.1.1",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run build:verify",
+    "build:verify": "node -e \"const fs=require('fs');const files=fs.readdirSync('dist/assets').filter(f=>f.endsWith('.js'));const found=files.some(f=>fs.readFileSync('dist/assets/'+f,'utf8').includes('placeholder.supabase'));if(found){console.error('BLOCKED: placeholder.supabase.co found in build output!');process.exit(1);}console.log('Build verified: no placeholder found.');\"",
     "preview": "vite preview",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
