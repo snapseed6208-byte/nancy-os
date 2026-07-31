@@ -672,45 +672,64 @@ export default function EnglishReview() {
           {mode === "cloze" && (
             <>
               {/* Front: sentence with blank */}
-              {getExprField(currentExpr, "example_sentence") ? (
-                <div
-                  onClick={() => !revealed && setRevealed(true)}
-                  className={cn(
-                    "bg-card rounded-2xl border border-border p-6 min-h-[140px] flex flex-col justify-center cursor-pointer transition-all",
-                    !revealed && "hover:border-sage-light/30",
-                  )}
-                >
-                  <p className="text-lg text-ink leading-relaxed text-center">
-                    {getExprField(currentExpr, "example_sentence").replace(
-                      new RegExp(getExprField(currentExpr, "english").replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-                      "_____",
+              {(() => {
+                const example = getExprField(currentExpr, "example_sentence");
+                const clozeSaved = getExprField(currentExpr, "cloze_sentence");
+                const expression = getExprField(currentExpr, "english");
+
+                // Build cloze sentence: prefer pre-generated, then regex, then fallback
+                let clozeText = "";
+                if (clozeSaved) {
+                  clozeText = clozeSaved;
+                } else if (example) {
+                  // Try regex replace
+                  const escaped = expression.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                  const regex = new RegExp(escaped, "gi");
+                  const afterReplace = example.replace(regex, "_____");
+                  if (afterReplace !== example) {
+                    clozeText = afterReplace;
+                  }
+                }
+
+                if (clozeText) {
+                  return (
+                    <div
+                      onClick={() => !revealed && setRevealed(true)}
+                      className={cn(
+                        "bg-card rounded-2xl border border-border p-6 min-h-[140px] flex flex-col justify-center cursor-pointer transition-all",
+                        !revealed && "hover:border-sage-light/30",
+                      )}
+                    >
+                      <p className="text-lg text-ink leading-relaxed text-center">{clozeText}</p>
+                      <p className="text-sm text-ink-lighter text-center mt-3">
+                        提示: {getExprField(currentExpr, "chinese")}
+                      </p>
+                      {!revealed && (
+                        <p className="text-xs text-sage-deep text-center mt-4">点击查看答案 (或按空格键)</p>
+                      )}
+                    </div>
+                  );
+                }
+
+                // Fall back to active recall
+                return (
+                  <div
+                    onClick={() => !revealed && setRevealed(true)}
+                    className={cn(
+                      "bg-card rounded-2xl border border-border p-6 min-h-[140px] flex flex-col justify-center cursor-pointer transition-all",
+                      !revealed && "hover:border-sage-light/30",
                     )}
-                  </p>
-                  <p className="text-sm text-ink-lighter text-center mt-3">
-                    提示: {getExprField(currentExpr, "chinese")}
-                  </p>
-                  {!revealed && (
-                    <p className="text-xs text-sage-deep text-center mt-4">点击查看答案 (或按空格键)</p>
-                  )}
-                </div>
-              ) : (
-                // Fall back to active recall if no example sentence
-                <div
-                  onClick={() => !revealed && setRevealed(true)}
-                  className={cn(
-                    "bg-card rounded-2xl border border-border p-6 min-h-[140px] flex flex-col justify-center cursor-pointer transition-all",
-                    !revealed && "hover:border-sage-light/30",
-                  )}
-                >
-                  <p className="text-2xl font-bold text-ink text-center">
-                    {getExprField(currentExpr, "chinese")}
-                  </p>
-                  <p className="text-[10px] text-ink-lighter text-center mt-2">(无例句，切换为主动回忆)</p>
-                  {!revealed && (
-                    <p className="text-xs text-sage-deep text-center mt-3">点击查看答案 (或按空格键)</p>
-                  )}
-                </div>
-              )}
+                  >
+                    <p className="text-2xl font-bold text-ink text-center">
+                      {getExprField(currentExpr, "chinese")}
+                    </p>
+                    <p className="text-[10px] text-ink-lighter text-center mt-2">(无例句，切换为主动回忆)</p>
+                    {!revealed && (
+                      <p className="text-xs text-sage-deep text-center mt-3">点击查看答案 (或按空格键)</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Back */}
               {revealed && (

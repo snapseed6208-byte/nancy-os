@@ -14,6 +14,7 @@ import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
 import {
   analyzeSpeaking, buildCombinedFeedback,
   generateCategoryQuestion, generateExpressionPracticeQuestion,
+  generateReferenceAnswer,
 } from "@/lib/ai/englishCoach";
 import type { SpeakingFeedback } from "@/lib/ai/englishCoach";
 import { supabase } from "@/lib/supabase";
@@ -210,6 +211,7 @@ export default function EnglishSpeaking() {
   const [transcript, setTranscript] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [feedback, setFeedback] = useState<SpeakingFeedback | null>(null);
+  const [referenceAnswer, setReferenceAnswer] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -290,6 +292,10 @@ export default function EnglishSpeaking() {
       if (!session?.access_token) throw new Error("请先登录");
       const result = await analyzeSpeaking(question, text, suitableExpressions, session.access_token);
       setFeedback(result);
+      // Generate reference answer in parallel
+      generateReferenceAnswer(question, session.access_token)
+        .then(setReferenceAnswer)
+        .catch(() => {});
       setStep("results");
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI 分析失败，请稍后重试");
@@ -335,6 +341,7 @@ export default function EnglishSpeaking() {
       audio_duration: recorder.duration,
       expressions_used: expressionsUsed,
       expressions_missed: expressionsMissed,
+      reference_answer: referenceAnswer || null,
     });
 
     // Auto-lower SRS levels for missed expressions
@@ -358,6 +365,7 @@ export default function EnglishSpeaking() {
     setSessionId(null);
     setTranscript("");
     setFeedback(null);
+    setReferenceAnswer("");
     setAiError(null);
     recorder.reset();
     asr.reset();
@@ -480,30 +488,66 @@ export default function EnglishSpeaking() {
           )}
 
           <div className="space-y-2">
-            {sessions?.map((s) => (
-              <button
-                key={s.id as string}
-                onClick={() => handleViewSession(s.id as string)}
-                className="w-full bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-ink truncate">{(s.prompt as string).slice(0, 60)}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-ink-lighter">
-                        {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
-                      </p>
-                      {(s.category as string) && (
-                        <span className="text-[10px] bg-ink/5 rounded-full px-2 py-0.5 text-ink-lighter">
-                          {(s.category as string).replace(/_/g, " ")}
+            {sessions?.map((s) => {
+              const attempts = (s.speaking_attempts as Record<string, unknown>[]) || [];
+              const first = attempts[0] as Record<string, unknown> | undefined;
+              const avgScore = first
+                ? [first.fluency_score, first.grammar_score, first.vocabulary_score, first.naturalness_score]
+                    .filter((v): v is number => typeof v === "number" && v > 0)
+                : [];
+              const scoreVal = avgScore.length > 0
+                ? (avgScore.reduce((a, b) => a + b, 0) / avgScore.length).toFixed(1)
+                : null;
+              const duration = (first?.audio_duration as number) || 0;
+              const usedCount = ((first?.expressions_used as unknown[]) || []).length;
+              return (
+                <button
+                  key={s.id as string}
+                  onClick={() => handleViewSession(s.id as string)}
+                  className="w-full bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink truncate">{(s.prompt as string).slice(0, 60)}</p>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <p className="text-[10px] text-ink-lighter">
+                          {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
+                        </p>
+                        {(s.mode as string) && (
+                          <span className={cn(
+                            "text-[10px] rounded-full px-2 py-0.5",
+                            (s.mode as string) === "expression_practice"
+                              ? "bg-amber-50 text-amber-600"
+                              : "bg-ink/5 text-ink-lighter",
+                          )}>
+                            {(s.mode as string) === "expression_practice" ? "表达练习" : "自由口语"}
+                          </span>
+                        )}
+                        {duration > 0 && (
+                          <span className="text-[10px] text-ink-lighter">{formatDuration(duration)}</span>
+                        )}
+                        {usedCount > 0 && (
+                          <span className="text-[10px] text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5">
+                            +{usedCount} 表达
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {scoreVal && (
+                        <span className={cn(
+                          "text-xs font-bold font-mono rounded-full px-2 py-1",
+                          parseFloat(scoreVal) >= 6.5 ? "bg-sage-light text-sage-deep" : "bg-amber-50 text-amber-600",
+                        )}>
+                          {scoreVal}
                         </span>
                       )}
+                      <ChevronRight size={14} className="text-ink-lighter shrink-0" />
                     </div>
                   </div>
-                  <ChevronRight size={14} className="text-ink-lighter shrink-0 ml-2" />
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1195,6 +1239,19 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
           <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
           <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
             {firstAttempt?.better_chunks as string}
+          </div>
+        </div>
+      )}
+
+      {/* Reference Answer */}
+      {(firstAttempt?.reference_answer as string) && (
+        <div className="bg-card rounded-2xl border border-purple-100 p-4">
+          <p className="text-xs font-medium text-purple-600 mb-2 flex items-center gap-1.5">
+            <Sparkles size={12} />
+            AI 参考回答
+          </p>
+          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+            {firstAttempt?.reference_answer as string}
           </div>
         </div>
       )}

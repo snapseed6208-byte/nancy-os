@@ -219,3 +219,48 @@ Rules:
 - suggestion: Specific, actionable advice in Chinese — what should they focus on?
 - summaryText: Overall assessment in Chinese, encouraging like a supportive coach
 - Be honest but encouraging. The student is intermediate level.`;
+
+// ── Reference Answer Generation ──
+
+export const GENERATE_REFERENCE_ANSWER_PROMPT = `You are an English speaking coach. Generate a model answer to a speaking question, suitable for an intermediate-level Chinese university student.
+
+Return ONLY valid JSON:
+{
+  "referenceAnswer": "A 3-5 sentence natural spoken English response. Keep it at intermediate level — not too complex, but natural and idiomatic. The student should be able to understand and learn from it."
+}
+
+Rules:
+- Keep it conversational and natural, like real spoken English
+- Use intermediate-level vocabulary and structures (IELTS 5.5-6.5 level)
+- 3-5 sentences max
+- Do NOT use advanced vocabulary that would intimidate an intermediate learner`;
+
+// ── Cloze Sentence Generation ──
+
+export const GENERATE_CLOZE_PROMPT = `You are an English learning content generator. Given an English expression and an example sentence, create a fill-in-the-blank (cloze) test.
+
+Return ONLY valid JSON:
+{
+  "clozeSentence": "The sentence with the key part of the expression blanked out as _____"
+}
+
+Rules:
+- Replace the key part of the expression with _____ (exactly 5 underscores)
+- The blank should test the most meaningful part of the expression — not just a random word
+- If the expression is a phrasal verb, blank the particle (e.g. "figure _____")
+- If the expression is a chunk/phrase, blank the key words that make it a chunk
+- The sentence should still be understandable with the blank
+- Keep the original example sentence's structure, just blank the target expression
+
+Examples:
+Expression: "get something off your plate"
+Example: "I need to get this project off my plate before the deadline."
+Output: { "clozeSentence": "I need to get this project _____ before the deadline." }
+
+Expression: "figure out"
+Example: "I need to figure out how to solve this problem."
+Output: { "clozeSentence": "I need to figure _____ how to solve this problem." }
+
+Expression: "What really stuck with me was"
+Example: "What really stuck with me was his advice about persistence."
+Output: { "clozeSentence": "_____ his advice about persistence." }`;

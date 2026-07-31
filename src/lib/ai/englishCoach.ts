@@ -11,6 +11,8 @@ import {
   GENERATE_CATEGORY_QUESTION_PROMPT,
   EXPRESSION_PRACTICE_PROMPT,
   SUMMARIZE_PROGRESS_PROMPT,
+  GENERATE_REFERENCE_ANSWER_PROMPT,
+  GENERATE_CLOZE_PROMPT,
   buildExtractPrompt,
   buildGeneratePrompt,
   buildFeedbackPrompt,
@@ -285,4 +287,47 @@ export async function summarizeProgress(
     suggestion: (raw.suggestion as string) || "",
     summaryText: (raw.summaryText as string) || "",
   };
+}
+
+// ── 9. Reference Answer Generation ──
+
+export async function generateReferenceAnswer(
+  question: string,
+  authToken: string,
+): Promise<string> {
+  const response = await callAI({
+    model: "deepseek-chat",
+    maxTokens: 512,
+    messages: [
+      { role: "system", content: GENERATE_REFERENCE_ANSWER_PROMPT },
+      { role: "user", content: `Speaking question: ${question}\n\nGenerate a natural model answer.` },
+    ],
+    injectContext: true,
+    authToken,
+  });
+
+  const raw = extractJSON(response.content, {} as Record<string, unknown>);
+  return (raw.referenceAnswer as string) || "";
+}
+
+// ── 10. Cloze Sentence Generation ──
+
+export async function generateClozeSentence(
+  expression: string,
+  exampleSentence: string,
+  authToken: string,
+): Promise<string> {
+  const response = await callAI({
+    model: "deepseek-chat",
+    maxTokens: 256,
+    messages: [
+      { role: "system", content: GENERATE_CLOZE_PROMPT },
+      { role: "user", content: `Expression: "${expression}"\nExample: "${exampleSentence}"\n\nGenerate a cloze sentence.` },
+    ],
+    injectContext: true,
+    authToken,
+  });
+
+  const raw = extractJSON(response.content, {} as Record<string, unknown>);
+  return (raw.clozeSentence as string) || "";
 }

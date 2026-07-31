@@ -197,7 +197,7 @@ export function useSubmitReview() {
 async function fetchSpeakingSessions() {
   const { data, error } = await supabase
     .from("speaking_sessions")
-    .select("*")
+    .select("*, speaking_attempts(fluency_score, grammar_score, vocabulary_score, naturalness_score, audio_duration, expressions_used, expressions_missed)")
     .order("created_at", { ascending: false })
     .limit(50);
 
