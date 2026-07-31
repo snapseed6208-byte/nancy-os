@@ -1,31 +1,61 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Mic, MicOff, Square, Plus, ChevronRight, Sparkles,
-  Loader2, CheckCircle2, AlertTriangle,
+  Loader2, CheckCircle2, AlertTriangle, Play, Pause, RefreshCw,
+  Home, MessageSquare, Coffee, Briefcase, GraduationCap, Heart,
+  Target, Clock, BarChart3, Zap, X,
 } from "lucide-react";
 import {
-  useSpeakingSessions, useCreateSpeakingSession, useCreateSpeakingAttempt, uploadAudio,
+  useSpeakingSessions, useSpeakingSession, useCreateSpeakingSession,
+  useCreateSpeakingAttempt, uploadAudio, useDueExpressions, useSpeakingStats,
 } from "@/lib/hooks/useEnglish";
+import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
 import {
   analyzeSpeaking, buildCombinedFeedback,
+  generateCategoryQuestion, generateExpressionPracticeQuestion,
 } from "@/lib/ai/englishCoach";
 import type { SpeakingFeedback } from "@/lib/ai/englishCoach";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
-const PROMPTS = [
-  "Describe your typical morning routine.",
-  "What's your favorite book and why?",
-  "Tell me about a memorable trip you took.",
-  "What are your career goals for the next 5 years?",
-  "Describe a challenge you recently overcame.",
-  "What does a healthy lifestyle mean to you?",
-  "Tell me about someone who inspires you.",
-  "What's the best advice you've ever received?",
-  "Describe your ideal weekend.",
-  "What skill are you currently learning?",
+// ── Types ──
+
+type Step = "category" | "generating" | "record" | "review" | "analyzing" | "results" | "saved";
+type ViewState = "home" | "new" | "detail";
+
+interface CategoryDef {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  subs: string[];
+}
+
+const CATEGORIES: CategoryDef[] = [
+  {
+    key: "daily_life", label: "日常对话", icon: Coffee,
+    subs: ["Restaurant", "Shopping", "Travel", "Friends", "Hobbies", "Food"],
+  },
+  {
+    key: "work_business", label: "工作商务", icon: Briefcase,
+    subs: ["Job Interview", "Meeting", "Presentation", "Customer Communication"],
+  },
+  {
+    key: "ielts", label: "雅思口语", icon: GraduationCap,
+    subs: ["Part 1 Introduction", "Part 2 Long Turn", "Part 3 Discussion"],
+  },
+  {
+    key: "personal_growth", label: "个人成长", icon: Heart,
+    subs: ["Challenges", "Goals", "Learning", "Relationships"],
+  },
 ];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  daily_life: "bg-amber-50 text-amber-600",
+  work_business: "bg-blue-50 text-blue-600",
+  ielts: "bg-purple-50 text-purple-600",
+  personal_growth: "bg-emerald-50 text-emerald-600",
+};
 
 // ── Audio Recorder Hook ──
 
@@ -40,6 +70,7 @@ function useAudioRecorder() {
   const chunks = useRef<Blob[]>([]);
   const startTime = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const start = useCallback(async () => {
     setError(null);
@@ -65,6 +96,7 @@ function useAudioRecorder() {
         setState("done");
         stream.getTracks().forEach((t) => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
+        wakeLockRef.current?.release().catch(() => {});
       };
 
       mr.start();
@@ -72,6 +104,13 @@ function useAudioRecorder() {
       timerRef.current = setInterval(() => {
         setDuration(Math.round((Date.now() - startTime.current) / 1000));
       }, 200);
+
+      // Wake lock to prevent screen sleep during recording
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        }
+      } catch { /* not supported */ }
     } catch {
       setError("无法访问麦克风。请在浏览器设置中允许麦克风访问权限。");
       setState("idle");
@@ -110,53 +149,121 @@ function ScoreBar({ label, score }: { label: string; score: number }) {
   );
 }
 
-// ── Page ──
+// ── Format duration ──
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
+// ── Main Page ──
 
 export default function EnglishSpeaking() {
   const [, navigate] = useLocation();
-  const { data: sessions, isLoading } = useSpeakingSessions();
-  const createSession = useCreateSpeakingSession();
-  const createAttempt = useCreateSpeakingAttempt();
 
-  const [showNew, setShowNew] = useState(false);
-  const [prompt, setPrompt] = useState("");
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [context, setContext] = useState("");
-  const [step, setStep] = useState<"setup" | "record" | "analyze" | "saved">("setup");
+  // View management
+  const [view, setView] = useState<ViewState>("home");
+  const [viewingSessionId, setViewingSessionId] = useState<string | null>(null);
+
+  // New session state
+  const [step, setStep] = useState<Step>("category");
+  const [category, setCategory] = useState("");
+  const [subCategory, setSubCategory] = useState("");
+  const [mode, setMode] = useState<"free_speaking" | "expression_practice">("free_speaking");
+  const [question, setQuestion] = useState("");
+  const [questionContext, setQuestionContext] = useState("");
+  const [suitableExpressions, setSuitableExpressions] = useState<string[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const recorder = useAudioRecorder();
-
-  // ── AI analysis state ──
+  // AI analysis state
   const [transcript, setTranscript] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [feedback, setFeedback] = useState<SpeakingFeedback | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
-
   const [uploading, setUploading] = useState(false);
 
-  const finalPrompt = prompt || customPrompt || PROMPTS[0];
+  // Data
+  const { data: sessions, isLoading: sessionsLoading } = useSpeakingSessions();
+  const { data: stats } = useSpeakingStats();
+  const { data: dueExpressions } = useDueExpressions();
+  const createSession = useCreateSpeakingSession();
+  const createAttempt = useCreateSpeakingAttempt();
 
-  const handleStartSession = async () => {
+  const recorder = useAudioRecorder();
+  const asr = useSpeechRecognition();
+
+  // ── Handlers ──
+
+  const handlePickCategory = (catKey: string) => {
+    setView("new");
+    setCategory(catKey);
+    setStep("category");
+    if (catKey === "expression_practice") {
+      setMode("expression_practice");
+      setStep("generating");
+    }
+  };
+
+  const handlePickSub = (sub: string) => {
+    setSubCategory(sub);
+    setStep("generating");
+  };
+
+  const handleStartExpressionPractice = () => {
+    setView("new");
+    setMode("expression_practice");
+    setCategory("expression_practice");
+    setSubCategory("");
+    setStep("generating");
+  };
+
+  const handleStartRecording = async () => {
+    const exprSnapshot = suitableExpressions.length > 0
+      ? suitableExpressions.map((e) => ({ english: e, chinese: "" }))
+      : [];
     const result = await createSession.mutateAsync({
-      prompt: finalPrompt,
-      context: context || undefined,
+      prompt: question,
+      context: questionContext,
+      category: category || undefined,
+      mode,
+      recommended_expressions: exprSnapshot.length > 0 ? exprSnapshot : undefined,
     });
     setSessionId(result.id as string);
     setStep("record");
+
+    // Start both audio recorder and ASR
+    recorder.start();
+    asr.start();
+  };
+
+  const handleStopRecording = () => {
+    recorder.stop();
+    asr.stop();
+  };
+
+  const handleGoToReview = () => {
+    // Combine ASR transcript with any manual edits
+    if (asr.transcript) {
+      setTranscript(asr.transcript);
+    }
+    setStep("review");
   };
 
   const handleAnalyze = async () => {
-    const text = transcript.trim() || `[Audio response to: ${finalPrompt}]`;
+    const text = transcript.trim() || `[Audio response to: ${question}]`;
     setAnalyzing(true);
     setAiError(null);
+    setStep("analyzing");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("请先登录");
-      const result = await analyzeSpeaking(finalPrompt, text, [], session.access_token);
+      const result = await analyzeSpeaking(question, text, suitableExpressions, session.access_token);
       setFeedback(result);
+      setStep("results");
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI 分析失败，请稍后重试");
+      setStep("review");
     } finally {
       setAnalyzing(false);
     }
@@ -170,19 +277,17 @@ export default function EnglishSpeaking() {
     if (recorder.blob) {
       try {
         audioUrl = await uploadAudio(sessionId, recorder.blob);
-      } catch {
-        // Continue without audio URL
-      }
+      } catch { /* continue without audio */ }
     }
 
     const combined = feedback
       ? buildCombinedFeedback(feedback)
-      : "AI 反馈将在 Phase 7 接入后生成。当前为占位记录。";
+      : "Practice saved.";
 
     await createAttempt.mutateAsync({
       session_id: sessionId,
-      answer: transcript || `[Voice recording on: ${finalPrompt}]`,
-      transcribed_text: transcript || null,
+      answer: transcript || `[Voice recording on: ${question}]`,
+      transcribed_text: asr.transcript || transcript || null,
       natural_version: feedback?.naturalVersion || "",
       combined_feedback: combined,
       fluency_score: feedback?.fluencyScore ?? null,
@@ -202,34 +307,47 @@ export default function EnglishSpeaking() {
   };
 
   const handleNew = () => {
-    setShowNew(true);
-    setStep("setup");
-    setPrompt("");
-    setCustomPrompt("");
-    setContext("");
+    setView("new");
+    setStep("category");
+    setCategory("");
+    setSubCategory("");
+    setMode("free_speaking");
+    setQuestion("");
+    setQuestionContext("");
+    setSuitableExpressions([]);
     setSessionId(null);
     setTranscript("");
     setFeedback(null);
     setAiError(null);
     recorder.reset();
+    asr.reset();
+  };
+
+  const handleViewSession = (id: string) => {
+    setViewingSessionId(id);
+    setView("detail");
   };
 
   const handleBack = () => {
-    if (showNew) {
-      setShowNew(false);
-      setStep("setup");
+    if (view === "new") {
+      setView("home");
       recorder.reset();
+      asr.reset();
       setFeedback(null);
       setAiError(null);
+    } else if (view === "detail") {
+      setView("home");
+      setViewingSessionId(null);
     } else {
       navigate("/english");
     }
   };
 
-  // ── Session list view ──
-  if (!showNew) {
+  // ── HOME VIEW ──
+
+  if (view === "home") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -243,40 +361,151 @@ export default function EnglishSpeaking() {
               <h1 className="text-2xl font-semibold tracking-tight mt-0.5">口语练习</h1>
             </div>
           </div>
-          <button
-            onClick={handleNew}
-            className="flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-3 py-2 text-sm font-medium"
-          >
-            <Plus size={16} />
-            新练习
-          </button>
         </header>
 
-        {isLoading && <div className="text-center py-12 text-sm text-ink-lighter">加载中...</div>}
-
-        {!isLoading && (!sessions || sessions.length === 0) && (
-          <div className="text-center py-12">
-            <Mic size={40} className="text-ink-lighter mx-auto mb-3" />
-            <p className="text-sm text-ink-light">还没有口语练习记录</p>
-            <p className="text-xs text-ink-lighter mt-1">点击「新练习」开始你的第一次口语训练</p>
+        {/* Stats bar */}
+        {stats && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-card rounded-2xl border border-border p-3 text-center">
+              <p className="text-xl font-bold text-ink">{stats.totalSessions}</p>
+              <p className="text-[10px] text-ink-lighter mt-0.5">练习次数</p>
+            </div>
+            <div className="bg-card rounded-2xl border border-border p-3 text-center">
+              <p className="text-xl font-bold text-sage-deep">{stats.avgScore || "-"}</p>
+              <p className="text-[10px] text-ink-lighter mt-0.5">平均评分</p>
+            </div>
+            <div className="bg-card rounded-2xl border border-border p-3 text-center">
+              <p className="text-xl font-bold text-ink">{stats.practiceDays}</p>
+              <p className="text-[10px] text-ink-lighter mt-0.5">练习天数</p>
+            </div>
           </div>
         )}
 
+        {/* Category cards */}
         <div className="space-y-2">
-          {sessions?.map((s) => (
-            <button
-              key={s.id as string}
-              className="w-full bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-ink truncate">{(s.prompt as string).slice(0, 60)}</p>
-                  <p className="text-xs text-ink-lighter mt-1">
-                    {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
-                  </p>
+          <p className="text-xs font-medium text-ink-light">选择口语类别</p>
+          <div className="grid grid-cols-2 gap-2">
+            {CATEGORIES.map((cat) => {
+              const Icon = cat.icon;
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => { handlePickCategory(cat.key); }}
+                  className="bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
+                >
+                  <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center mb-2", CATEGORY_COLORS[cat.key] || "bg-ink/5 text-ink-light")}>
+                    <Icon size={18} />
+                  </div>
+                  <p className="text-sm font-semibold text-ink">{cat.label}</p>
+                  <p className="text-[10px] text-ink-lighter mt-0.5">{cat.subs.slice(0, 2).join(" · ")}...</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Expression Practice */}
+        <button
+          onClick={handleStartExpressionPractice}
+          className="w-full bg-card rounded-2xl border-2 border-dashed border-sage-light/50 p-4 text-left hover:border-sage-light transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center shrink-0">
+              <Target size={20} className="text-sage-deep" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-ink">表达练习 Expression Practice</p>
+              <p className="text-xs text-ink-lighter mt-0.5">
+                练习使用你最近学的表达 · {dueExpressions?.length || 0} 条待复习表达
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-ink-lighter shrink-0" />
+          </div>
+        </button>
+
+        {/* Recent sessions */}
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-ink-light">最近练习</p>
+
+          {sessionsLoading && (
+            <div className="text-center py-8 text-sm text-ink-lighter">加载中...</div>
+          )}
+
+          {!sessionsLoading && (!sessions || sessions.length === 0) && (
+            <div className="text-center py-8">
+              <Mic size={32} className="text-ink-lighter mx-auto mb-2" />
+              <p className="text-sm text-ink-light">还没有口语练习记录</p>
+              <p className="text-xs text-ink-lighter mt-1">选择一个类别开始你的第一次口语训练</p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {sessions?.map((s) => (
+              <button
+                key={s.id as string}
+                onClick={() => handleViewSession(s.id as string)}
+                className="w-full bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-ink truncate">{(s.prompt as string).slice(0, 60)}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-xs text-ink-lighter">
+                        {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
+                      </p>
+                      {(s.category as string) && (
+                        <span className="text-[10px] bg-ink/5 rounded-full px-2 py-0.5 text-ink-lighter">
+                          {(s.category as string).replace(/_/g, " ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight size={14} className="text-ink-lighter shrink-0 ml-2" />
                 </div>
-                <ChevronRight size={14} className="text-ink-lighter shrink-0 ml-2" />
-              </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── DETAIL VIEW ──
+
+  if (view === "detail" && viewingSessionId) {
+    return (
+      <SessionDetail
+        sessionId={viewingSessionId}
+        onBack={handleBack}
+      />
+    );
+  }
+
+  // ── SUBCATEGORY PICKER ──
+
+  if (step === "category" && category && category !== "expression_practice") {
+    const cat = CATEGORIES.find((c) => c.key === category);
+    return (
+      <div className="space-y-4">
+        <header className="flex items-center gap-3">
+          <button onClick={() => { setView("home"); setCategory(""); setStep("category"); }} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
+            <ArrowLeft size={16} className="text-ink-light" />
+          </button>
+          <div>
+            <p className="text-sm text-ink-lighter">English OS</p>
+            <h1 className="text-xl font-semibold tracking-tight mt-0.5">{cat?.label} — 选择话题</h1>
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 gap-2">
+          {cat?.subs.map((sub) => (
+            <button
+              key={sub}
+              onClick={() => handlePickSub(sub)}
+              className="bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors flex items-center justify-between"
+            >
+              <span className="text-sm font-medium text-ink">{sub}</span>
+              <ChevronRight size={14} className="text-ink-lighter shrink-0" />
             </button>
           ))}
         </div>
@@ -284,7 +513,8 @@ export default function EnglishSpeaking() {
     );
   }
 
-  // ── New session flow ──
+  // ── NEW SESSION FLOW ──
+
   return (
     <div className="space-y-4">
       <header className="flex items-center gap-3">
@@ -294,290 +524,294 @@ export default function EnglishSpeaking() {
         <div>
           <p className="text-sm text-ink-lighter">English OS</p>
           <h1 className="text-2xl font-semibold tracking-tight mt-0.5">
-            {step === "saved" ? "练习完成" : "新练习"}
+            {step === "saved" ? "练习完成" : mode === "expression_practice" ? "表达练习" : "新练习"}
           </h1>
         </div>
       </header>
 
-      {/* Step 1: Setup */}
-      {step === "setup" && (
+      {/* Step: Generating question */}
+      {(step === "generating") && (
         <div className="space-y-4">
-          <div>
-            <label className="text-xs font-medium text-ink-light mb-2 block">选择话题</label>
-            <div className="grid grid-cols-2 gap-2">
-              {PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => { setPrompt(prompt === p ? "" : p); setCustomPrompt(""); }}
-                  className={cn(
-                    "rounded-xl border px-3 py-2 text-xs text-left transition-colors",
-                    prompt === p
-                      ? "border-sage-light bg-sage-light/30 text-sage-deep"
-                      : "border-border text-ink-light hover:border-sage-light/50",
-                  )}
-                >
-                  {p.slice(0, 40)}...
-                </button>
-              ))}
-            </div>
+          <div className="bg-card rounded-2xl border border-border p-6 text-center">
+            <Loader2 size={28} className="animate-spin text-sage-deep mx-auto mb-3" />
+            <p className="text-sm font-medium text-ink">AI 正在生成题目...</p>
+            <p className="text-xs text-ink-lighter mt-1">
+              {mode === "expression_practice" ? "基于你的表达库生成练习题目" : `类别: ${CATEGORIES.find((c) => c.key === category)?.label} — ${subCategory}`}
+            </p>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-ink-light mb-1 block">或自定义话题</label>
-            <textarea
-              className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light resize-none"
-              rows={2}
-              placeholder="输入你想练习的话题..."
-              value={customPrompt}
-              onChange={(e) => { setCustomPrompt(e.target.value); setPrompt(""); }}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-ink-light mb-1 block">场景说明 (可选)</label>
-            <input
-              className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light"
-              placeholder="e.g., 模拟雅思口语 Part 2"
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-            />
-          </div>
-
-          <button
-            onClick={handleStartSession}
-            disabled={createSession.isPending || (!prompt && !customPrompt)}
-            className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
-          >
-            {createSession.isPending ? "创建中..." : "开始录音"}
-          </button>
+          {/* Auto-trigger question generation */}
+          <GenerateQuestion
+            mode={mode}
+            category={category}
+            subCategory={subCategory}
+            dueExpressions={dueExpressions as Record<string, unknown>[] | undefined}
+            onGenerated={(q, ctx, exprs) => {
+              setQuestion(q);
+              setQuestionContext(ctx);
+              setSuitableExpressions(exprs);
+            }}
+            onReady={() => setStep("record")}
+          />
         </div>
       )}
 
-      {/* Step 2: Record */}
-      {step === "record" && (
-        <div className="space-y-4">
-          <div className="bg-card rounded-2xl border border-border p-4">
-            <p className="text-xs text-ink-lighter mb-1">话题</p>
-            <p className="text-sm font-medium text-ink">{finalPrompt}</p>
+      {/* Show expressions for expression practice mode */}
+      {mode === "expression_practice" && (step === "generating" || step === "record") && dueExpressions && dueExpressions.length > 0 && (
+        <div className="bg-card rounded-2xl border border-sage-light/30 p-4">
+          <p className="text-xs font-medium text-sage-deep mb-2 flex items-center gap-1.5">
+            <Target size={12} />
+            尝试使用以下表达
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {(dueExpressions as Record<string, unknown>[]).slice(0, 8).map((e, i) => (
+              <span key={i} className="text-[11px] bg-sage-light/20 text-sage-deep rounded-full px-2.5 py-1">
+                {e.english as string}
+              </span>
+            ))}
           </div>
+        </div>
+      )}
 
-          <div className="bg-card rounded-2xl border border-sage-light/50 p-6 text-center space-y-4">
-            <div className={cn(
-              "h-16 w-16 rounded-full flex items-center justify-center mx-auto transition-all",
-              recorder.state === "recording" ? "bg-accent-rose/10 animate-pulse" : "bg-ink/5",
-            )}>
-              {recorder.state === "recording" ? (
-                <Mic size={28} className="text-accent-rose" />
-              ) : recorder.state === "done" ? (
-                <CheckCircle2 size={28} className="text-sage-deep" />
-              ) : (
-                <MicOff size={28} className="text-ink-lighter" />
-              )}
+      {/* Step: Record */}
+      {(step === "record" || step === "generating") && question && (
+        <>
+          {/* Question card */}
+          <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare size={14} className="text-sage-deep" />
+              <span className="text-[10px] font-medium text-sage-deep bg-sage-light px-2 py-0.5 rounded-full">Question</span>
             </div>
-
-            <div>
-              {recorder.state === "idle" && (
-                <p className="text-sm text-ink-light">点击下方按钮开始录音</p>
-              )}
-              {recorder.state === "recording" && (
-                <p className="text-sm font-semibold text-accent-rose">正在录音... {recorder.duration}秒</p>
-              )}
-              {recorder.state === "done" && (
-                <p className="text-sm text-sage-deep font-medium">录音完成 ({recorder.duration}秒)</p>
-              )}
-            </div>
-
-            {recorder.error && (
-              <p className="text-xs text-accent-rose">{recorder.error}</p>
+            <p className="text-sm font-semibold text-ink leading-relaxed">{question}</p>
+            {questionContext && (
+              <p className="text-xs text-ink-lighter mt-1.5">{questionContext}</p>
             )}
-
-            <div className="flex items-center justify-center gap-3">
-              {recorder.state === "idle" && (
-                <button
-                  onClick={recorder.start}
-                  className="bg-accent-rose/10 text-accent-rose rounded-full h-12 w-12 flex items-center justify-center"
-                >
-                  <Mic size={20} />
-                </button>
-              )}
-              {recorder.state === "recording" && (
-                <button
-                  onClick={recorder.stop}
-                  className="bg-accent-rose/20 text-accent-rose rounded-full h-12 w-12 flex items-center justify-center"
-                >
-                  <Square size={18} />
-                </button>
-              )}
-              {recorder.state === "done" && (
-                <>
-                  <button
-                    onClick={recorder.reset}
-                    className="bg-ink/5 text-ink-light rounded-full h-10 w-10 flex items-center justify-center"
-                  >
-                    <MicOff size={16} />
-                  </button>
-                  {recorder.audioUrl && (
-                    <audio controls src={recorder.audioUrl} className="h-10 max-w-[180px]" />
-                  )}
-                </>
-              )}
-            </div>
           </div>
 
-          {recorder.state === "done" && (
-            <button
-              onClick={() => setStep("analyze")}
-              className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold"
-            >
-              下一步：AI 分析
-            </button>
+          {/* Recording UI */}
+          {step === "record" && (
+            <div className="space-y-4">
+              <div className="bg-card rounded-2xl border border-border p-6 text-center space-y-4">
+                {/* Record button */}
+                <div className="relative inline-flex items-center justify-center">
+                  {recorder.state === "recording" && (
+                    <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping" style={{ width: 80, height: 80, margin: "auto" }} />
+                  )}
+                  <button
+                    onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : recorder.start}
+                    className={cn(
+                      "rounded-full flex items-center justify-center transition-all",
+                      recorder.state === "recording"
+                        ? "h-20 w-20 bg-accent-rose text-white shadow-lg"
+                        : recorder.state === "done"
+                          ? "h-16 w-16 bg-sage-light text-sage-deep"
+                          : "h-20 w-20 bg-accent-rose/10 text-accent-rose",
+                    )}
+                  >
+                    {recorder.state === "recording" ? (
+                      <Square size={28} />
+                    ) : recorder.state === "done" ? (
+                      <RefreshCw size={24} />
+                    ) : (
+                      <Mic size={32} />
+                    )}
+                  </button>
+                </div>
+
+                <div>
+                  {recorder.state === "idle" && (
+                    <p className="text-sm text-ink-light">点击麦克风开始录音</p>
+                  )}
+                  {recorder.state === "recording" && (
+                    <div className="space-y-1">
+                      <p className="text-lg font-bold text-accent-rose font-mono">{formatDuration(recorder.duration)}</p>
+                      <p className="text-xs text-ink-lighter">点击停止按钮结束录音</p>
+                    </div>
+                  )}
+                  {recorder.state === "done" && (
+                    <p className="text-sm text-sage-deep font-medium">录音完成 ({formatDuration(recorder.duration)})</p>
+                  )}
+                </div>
+
+                {recorder.error && (
+                  <p className="text-xs text-accent-rose">{recorder.error}</p>
+                )}
+
+                {/* ASR status */}
+                {asr.supported && recorder.state === "recording" && (
+                  <div className="text-xs text-ink-lighter">
+                    {asr.isListening && <span className="text-sage-deep">语音识别中...</span>}
+                    {asr.interim && (
+                      <p className="text-ink-light mt-1 italic">"{asr.interim}"</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Audio playback after recording */}
+                {recorder.state === "done" && recorder.audioUrl && (
+                  <audio controls src={recorder.audioUrl} className="w-full h-10" />
+                )}
+              </div>
+
+              {recorder.state === "done" && (
+                <button
+                  onClick={handleGoToReview}
+                  className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold"
+                >
+                  下一步：查看转录
+                </button>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* Step 3: Analyze */}
-      {step === "analyze" && (
+      {/* Step: Review transcript */}
+      {step === "review" && (
         <div className="space-y-4">
           {/* Audio playback */}
           {recorder.audioUrl && (
             <div className="bg-card rounded-2xl border border-border p-4">
-              <p className="text-xs text-ink-lighter mb-2">你的录音</p>
+              <p className="text-xs text-ink-lighter mb-2">你的录音 ({formatDuration(recorder.duration)})</p>
               <audio controls src={recorder.audioUrl} className="w-full h-10" />
             </div>
           )}
 
-          {/* Transcript input */}
+          {/* ASR transcript */}
+          {asr.supported && (
+            <div className="bg-card rounded-2xl border border-sage-light/30 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles size={14} className="text-sage-deep" />
+                <p className="text-xs font-medium text-sage-deep">语音识别转录</p>
+              </div>
+              <p className="text-sm text-ink leading-relaxed">
+                {asr.transcript || "(未检测到语音，请手动输入)"}
+              </p>
+              {asr.transcript && (
+                <p className="text-[10px] text-ink-lighter mt-2">转录可能有误，请检查并修改</p>
+              )}
+            </div>
+          )}
+
+          {/* Editable transcript */}
           <div>
             <label className="text-xs font-medium text-ink-light mb-1 block">
-              转录你的回答 (可选 — 不填则 AI 仅根据话题给出建议)
+              {asr.supported ? "修改转录内容" : "输入你说的话（AI 将据此给出反馈）"}
             </label>
             <textarea
               className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light resize-none"
               rows={4}
-              placeholder="输入你说的话，AI 会给出针对性反馈..."
-              value={transcript}
+              placeholder="输入或修改你说的话..."
+              value={transcript || asr.transcript}
               onChange={(e) => setTranscript(e.target.value)}
             />
           </div>
 
-          {/* Analyze button */}
-          {!feedback && (
-            <button
-              onClick={handleAnalyze}
-              disabled={analyzing}
-              className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {analyzing ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  AI 分析中...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={16} />
-                  AI 分析
-                </>
-              )}
-            </button>
-          )}
+          <button
+            onClick={handleAnalyze}
+            disabled={analyzing}
+            className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {analyzing ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                AI 分析中...
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} />
+                AI 分析
+              </>
+            )}
+          </button>
 
-          {/* AI Error */}
-          {aiError && (
-            <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4 flex items-start gap-3">
-              <AlertTriangle size={16} className="text-accent-rose shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-accent-rose">AI 分析暂不可用</p>
-                <p className="text-xs text-ink-lighter mt-1">{aiError}</p>
-                <button
-                  onClick={handleAnalyze}
-                  className="text-xs text-sage-deep font-medium mt-2 hover:underline"
-                >
-                  重试
-                </button>
+          <button
+            onClick={handleSave}
+            className="w-full bg-ink/5 text-ink-light rounded-xl py-2 text-sm font-medium"
+          >
+            跳过分析，直接保存
+          </button>
+        </div>
+      )}
+
+      {/* Step: Analyzing */}
+      {step === "analyzing" && (
+        <div className="bg-card rounded-2xl border border-border p-8 text-center space-y-3">
+          <Loader2 size={32} className="animate-spin text-sage-deep mx-auto" />
+          <p className="text-sm font-medium text-ink">AI 正在分析你的回答...</p>
+          <p className="text-xs text-ink-lighter">四维评分 + 纠错 + 推荐表达</p>
+        </div>
+      )}
+
+      {/* Step: Results */}
+      {step === "results" && feedback && (
+        <div className="space-y-3">
+          {/* Scores */}
+          <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+            <p className="text-xs font-medium text-ink-light mb-1">四维评分</p>
+            <ScoreBar label="流利度 Fluency" score={feedback.fluencyScore} />
+            <ScoreBar label="语法 Grammar" score={feedback.grammarScore} />
+            <ScoreBar label="词汇 Vocabulary" score={feedback.vocabularyScore} />
+            <ScoreBar label="自然度 Naturalness" score={feedback.naturalnessScore} />
+          </div>
+
+          {/* Natural version */}
+          <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
+            <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
+            <p className="text-sm text-ink leading-relaxed">{feedback.naturalVersion}</p>
+          </div>
+
+          {/* Main problems */}
+          {feedback.mainProblems && (
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs font-medium text-ink-light mb-2">主要问题</p>
+              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                {feedback.mainProblems}
               </div>
             </div>
           )}
 
-          {/* AI Feedback Results */}
-          {feedback && (
-            <div className="space-y-3">
-              {/* Scores */}
-              <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
-                <p className="text-xs font-medium text-ink-light mb-1">四维评分</p>
-                <ScoreBar label="流利度 Fluency" score={feedback.fluencyScore} />
-                <ScoreBar label="语法 Grammar" score={feedback.grammarScore} />
-                <ScoreBar label="词汇 Vocabulary" score={feedback.vocabularyScore} />
-                <ScoreBar label="自然度 Naturalness" score={feedback.naturalnessScore} />
+          {/* Useful corrections */}
+          {feedback.usefulCorrections && (
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs font-medium text-ink-light mb-2">纠错建议</p>
+              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                {feedback.usefulCorrections}
               </div>
-
-              {/* Natural version */}
-              <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
-                <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
-                <p className="text-sm text-ink leading-relaxed">{feedback.naturalVersion}</p>
-              </div>
-
-              {/* Main problems */}
-              {feedback.mainProblems && (
-                <div className="bg-card rounded-2xl border border-border p-4">
-                  <p className="text-xs font-medium text-ink-light mb-2">主要问题</p>
-                  <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                    {feedback.mainProblems}
-                  </div>
-                </div>
-              )}
-
-              {/* Useful corrections */}
-              {feedback.usefulCorrections && (
-                <div className="bg-card rounded-2xl border border-border p-4">
-                  <p className="text-xs font-medium text-ink-light mb-2">纠错建议</p>
-                  <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                    {feedback.usefulCorrections}
-                  </div>
-                </div>
-              )}
-
-              {/* Better chunks */}
-              {feedback.betterChunks && (
-                <div className="bg-card rounded-2xl border border-border p-4">
-                  <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
-                  <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                    {feedback.betterChunks}
-                  </div>
-                </div>
-              )}
-
-              {/* One better example */}
-              {feedback.oneBetterExample && (
-                <div className="bg-card rounded-2xl border border-border p-4">
-                  <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
-                  <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                    {feedback.oneBetterExample}
-                  </div>
-                </div>
-              )}
-
-              {/* Re-analyze button */}
-              <button
-                onClick={handleAnalyze}
-                disabled={analyzing}
-                className="w-full bg-ink/5 text-ink-light rounded-xl py-2 text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {analyzing ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    重新分析中...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={14} />
-                    重新分析
-                  </>
-                )}
-              </button>
             </div>
           )}
 
-          {/* Save button */}
+          {/* Better chunks */}
+          {feedback.betterChunks && (
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
+              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                {feedback.betterChunks}
+              </div>
+            </div>
+          )}
+
+          {/* One better example */}
+          {feedback.oneBetterExample && (
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
+              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                {feedback.oneBetterExample}
+              </div>
+            </div>
+          )}
+
+          {/* Re-analyze */}
+          <button
+            onClick={handleAnalyze}
+            disabled={analyzing}
+            className="w-full bg-ink/5 text-ink-light rounded-xl py-2 text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <RefreshCw size={14} />
+            重新分析
+          </button>
+
+          {/* Save */}
           <button
             onClick={handleSave}
             disabled={uploading}
@@ -585,17 +819,27 @@ export default function EnglishSpeaking() {
           >
             {uploading ? "保存中..." : "保存练习记录"}
           </button>
-
-          {/* Skip AI hint */}
-          {!feedback && !analyzing && !aiError && (
-            <p className="text-xs text-ink-lighter text-center">
-              也可以直接保存，AI 反馈可在之后补充
-            </p>
-          )}
         </div>
       )}
 
-      {/* Step 4: Saved */}
+      {/* AI Error */}
+      {aiError && step === "review" && (
+        <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-accent-rose shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-accent-rose">AI 分析暂不可用</p>
+            <p className="text-xs text-ink-lighter mt-1">{aiError}</p>
+            <button
+              onClick={handleAnalyze}
+              className="text-xs text-sage-deep font-medium mt-2 hover:underline"
+            >
+              重试
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step: Saved */}
       {step === "saved" && (
         <div className="text-center py-8 space-y-4">
           <div className="h-16 w-16 rounded-full bg-sage-light flex items-center justify-center mx-auto">
@@ -619,11 +863,218 @@ export default function EnglishSpeaking() {
               再练一次
             </button>
             <button
-              onClick={() => { setShowNew(false); }}
+              onClick={() => { setView("home"); }}
               className="flex-1 bg-ink/5 text-ink-light rounded-xl py-2.5 text-sm font-medium"
             >
-              返回列表
+              返回首页
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Auto-generate question component ──
+
+function GenerateQuestion({
+  mode, category, subCategory, dueExpressions, onGenerated, onReady,
+}: {
+  mode: string;
+  category: string;
+  subCategory: string;
+  dueExpressions?: Record<string, unknown>[];
+  onGenerated: (q: string, ctx: string, exprs: string[]) => void;
+  onReady: () => void;
+}) {
+  const triggered = useRef(false);
+
+  useEffect(() => {
+    if (triggered.current) return;
+    triggered.current = true;
+
+    async function generate() {
+      const exprList = (dueExpressions || []).slice(0, 10).map((e) => ({
+        english: (e.english as string) || "",
+        chinese: (e.chinese as string) || "",
+      }));
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) throw new Error("No session");
+
+        if (mode === "expression_practice") {
+          const result = await generateExpressionPracticeQuestion(exprList, session.access_token);
+          onGenerated(result.question, result.context, []);
+        } else {
+          const cat = CATEGORIES.find((c) => c.key === category);
+          const result = await generateCategoryQuestion(
+            cat?.label || category, subCategory, exprList, session.access_token,
+          );
+          onGenerated(result.question, result.context, result.suitableExpressions);
+        }
+      } catch {
+        if (mode === "expression_practice") {
+          onGenerated(
+            "Describe a recent experience using some expressions you've learned.",
+            "Try to naturally use expressions from your expression bank.",
+            [],
+          );
+        } else {
+          onGenerated(
+            `Talk about ${subCategory} in English.`,
+            `Share your experience and opinions about ${subCategory}.`,
+            [],
+          );
+        }
+      }
+      onReady();
+    }
+
+    generate();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
+// ── Session Detail Component ──
+
+function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
+  const { data: session, isLoading } = useSpeakingSession(sessionId);
+  const s = session as Record<string, unknown> | undefined;
+  const attempts = (s?.attempts as Record<string, unknown>[]) || [];
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-12">
+        <Loader2 size={24} className="animate-spin text-ink-lighter mx-auto" />
+      </div>
+    );
+  }
+
+  if (!s) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-sm text-ink-lighter">未找到该练习记录</p>
+        <button onClick={onBack} className="text-xs text-sage-deep mt-2">返回</button>
+      </div>
+    );
+  }
+
+  const firstAttempt = attempts[0] as Record<string, unknown> | undefined;
+
+  return (
+    <div className="space-y-4">
+      <header className="flex items-center gap-3">
+        <button onClick={onBack} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
+          <ArrowLeft size={16} className="text-ink-light" />
+        </button>
+        <div>
+          <p className="text-sm text-ink-lighter">English OS</p>
+          <h1 className="text-xl font-semibold tracking-tight mt-0.5">练习详情</h1>
+        </div>
+      </header>
+
+      {/* Question */}
+      <div className="bg-card rounded-2xl border border-border p-4">
+        <p className="text-xs text-ink-lighter mb-1">题目</p>
+        <p className="text-sm font-medium text-ink">{(s.prompt as string) || "N/A"}</p>
+        {(s.context as string) && (
+          <p className="text-xs text-ink-lighter mt-1">{s.context as string}</p>
+        )}
+        <div className="flex items-center gap-2 mt-2">
+          {(s.category as string) && (
+            <span className="text-[10px] bg-ink/5 rounded-full px-2 py-0.5 text-ink-lighter">
+              {(s.category as string).replace(/_/g, " ")}
+            </span>
+          )}
+          {(s.mode as string) && (
+            <span className="text-[10px] bg-sage-light rounded-full px-2 py-0.5 text-sage-deep">
+              {(s.mode as string).replace(/_/g, " ")}
+            </span>
+          )}
+          <span className="text-[10px] text-ink-lighter ml-auto">
+            {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
+          </span>
+        </div>
+      </div>
+
+      {/* Audio playback */}
+      {(firstAttempt?.audio_url as string) && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs text-ink-lighter mb-2">录音回放</p>
+          <audio controls src={firstAttempt?.audio_url as string} className="w-full h-10" />
+          {(firstAttempt?.audio_duration as number) ? (
+            <p className="text-[10px] text-ink-lighter mt-1">
+              时长: {formatDuration(firstAttempt?.audio_duration as number)}
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      {/* Transcript */}
+      {(firstAttempt?.transcribed_text as string) && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs text-ink-lighter mb-1">转录文本</p>
+          <p className="text-sm text-ink leading-relaxed">{firstAttempt?.transcribed_text as string}</p>
+        </div>
+      )}
+
+      {/* Scores */}
+      {((firstAttempt?.fluency_score as number) || (firstAttempt?.grammar_score as number) || (firstAttempt?.vocabulary_score as number) || (firstAttempt?.naturalness_score as number)) ? (
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+          <p className="text-xs font-medium text-ink-light mb-1">四维评分</p>
+          <ScoreBar label="流利度 Fluency" score={(firstAttempt?.fluency_score as number) || 0} />
+          <ScoreBar label="语法 Grammar" score={(firstAttempt?.grammar_score as number) || 0} />
+          <ScoreBar label="词汇 Vocabulary" score={(firstAttempt?.vocabulary_score as number) || 0} />
+          <ScoreBar label="自然度 Naturalness" score={(firstAttempt?.naturalness_score as number) || 0} />
+        </div>
+      ) : null}
+
+      {/* Natural version */}
+      {(firstAttempt?.natural_version as string) && (
+        <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
+          <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
+          <p className="text-sm text-ink leading-relaxed">{firstAttempt?.natural_version as string}</p>
+        </div>
+      )}
+
+      {/* Main problems */}
+      {(firstAttempt?.main_problems as string) && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs font-medium text-ink-light mb-2">主要问题</p>
+          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+            {firstAttempt?.main_problems as string}
+          </div>
+        </div>
+      )}
+
+      {/* Useful corrections */}
+      {(firstAttempt?.useful_corrections as string) && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs font-medium text-ink-light mb-2">纠错建议</p>
+          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+            {firstAttempt?.useful_corrections as string}
+          </div>
+        </div>
+      )}
+
+      {/* Better chunks */}
+      {(firstAttempt?.better_chunks as string) && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
+          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+            {firstAttempt?.better_chunks as string}
+          </div>
+        </div>
+      )}
+
+      {/* One better example */}
+      {(firstAttempt?.one_better_example as string) && (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
+          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+            {firstAttempt?.one_better_example as string}
           </div>
         </div>
       )}

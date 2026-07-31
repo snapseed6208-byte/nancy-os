@@ -244,7 +244,14 @@ export function useSpeakingSession(id: string | undefined) {
 export function useCreateSpeakingSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { prompt: string; context?: string; expression_ids?: string }) => {
+    mutationFn: async (input: {
+      prompt: string;
+      context?: string;
+      expression_ids?: string;
+      category?: string;
+      mode?: string;
+      recommended_expressions?: Record<string, unknown>[];
+    }) => {
       const userId = await getUserId();
       const { data, error } = await supabase
         .from("speaking_sessions")
@@ -455,4 +462,66 @@ export function useBatchImportExpressions() {
 
 export function useExpressionCategories() {
   return useCategories();
+}
+
+// ── Speaking Stats ──
+
+async function fetchSpeakingStats() {
+  const userId = await getUserId();
+
+  const [sessionsRes, attemptsRes, recentRes] = await Promise.all([
+    supabase
+      .from("speaking_sessions")
+      .select("id, created_at")
+      .eq("user_id", userId),
+    supabase
+      .from("speaking_attempts")
+      .select("fluency_score, grammar_score, vocabulary_score, naturalness_score, created_at")
+      .eq("user_id", userId),
+    supabase
+      .from("speaking_sessions")
+      .select("id, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+
+  const sessions = sessionsRes.data || [];
+  const attempts = attemptsRes.data || [];
+
+  const totalSessions = sessions.length;
+  const totalAttempts = attempts.length;
+
+  const scores = attempts.filter(
+    (a) => a.fluency_score || a.grammar_score || a.vocabulary_score || a.naturalness_score,
+  );
+
+  const avgScore = scores.length > 0
+    ? scores.reduce((sum, a) => {
+        const avg = ((a.fluency_score || 0) + (a.grammar_score || 0) + (a.vocabulary_score || 0) + (a.naturalness_score || 0)) / 4;
+        return sum + avg;
+      }, 0) / scores.length
+    : 0;
+
+  // Count unique practice days
+  const practiceDays = new Set(
+    sessions.map((s) => s.created_at.split("T")[0]),
+  ).size;
+
+  const lastSessionDate = recentRes.data?.[0]?.created_at || null;
+
+  return {
+    totalSessions,
+    totalAttempts,
+    avgScore: Math.round(avgScore * 10) / 10,
+    practiceDays,
+    lastSessionDate,
+  };
+}
+
+export function useSpeakingStats() {
+  return useQuery({
+    queryKey: ["speaking_stats"],
+    queryFn: fetchSpeakingStats,
+  });
 }

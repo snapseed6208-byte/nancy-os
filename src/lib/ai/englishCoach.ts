@@ -8,9 +8,13 @@ import {
   EXTRACT_EXPRESSIONS_PROMPT,
   GENERATE_QUESTION_PROMPT,
   SPEAKING_FEEDBACK_PROMPT,
+  GENERATE_CATEGORY_QUESTION_PROMPT,
+  EXPRESSION_PRACTICE_PROMPT,
   buildExtractPrompt,
   buildGeneratePrompt,
   buildFeedbackPrompt,
+  buildCategoryPrompt,
+  buildExpressionPracticePrompt,
 } from "./prompts";
 
 // ── Types ──
@@ -151,7 +155,59 @@ export async function generateBetterVersion(
   return feedback.naturalVersion;
 }
 
-// ── 5. build combined feedback string ──
+// ── 5. generateCategoryQuestion ──
+
+export async function generateCategoryQuestion(
+  category: string,
+  subCategory: string,
+  expressions: { english: string; chinese: string }[],
+  authToken: string,
+): Promise<GeneratedQuestion> {
+  const response = await callAI({
+    model: "deepseek-chat",
+    maxTokens: 512,
+    messages: [
+      { role: "system", content: GENERATE_CATEGORY_QUESTION_PROMPT },
+      { role: "user", content: buildCategoryPrompt(category, subCategory, expressions) },
+    ],
+    injectContext: true,
+    authToken,
+  });
+
+  const raw = extractJSON(response.content, {} as Record<string, unknown>);
+  return {
+    question: (raw.question as string) || "Describe a recent experience.",
+    context: (raw.context as string) || "",
+    suitableExpressions: (raw.suitableExpressions as string[]) || [],
+  };
+}
+
+// ── 6. generateExpressionPracticeQuestion ──
+
+export async function generateExpressionPracticeQuestion(
+  expressions: { english: string; chinese: string }[],
+  authToken: string,
+): Promise<{ question: string; context: string; targetCheck: string }> {
+  const response = await callAI({
+    model: "deepseek-chat",
+    maxTokens: 512,
+    messages: [
+      { role: "system", content: EXPRESSION_PRACTICE_PROMPT },
+      { role: "user", content: buildExpressionPracticePrompt(expressions) },
+    ],
+    injectContext: true,
+    authToken,
+  });
+
+  const raw = extractJSON(response.content, {} as Record<string, unknown>);
+  return {
+    question: (raw.question as string) || "Describe a recent experience using the expressions you've learned.",
+    context: (raw.context as string) || "",
+    targetCheck: (raw.targetCheck as string) || "",
+  };
+}
+
+// ── 7. build combined feedback string ──
 
 export function buildCombinedFeedback(fb: SpeakingFeedback): string {
   const sections = [

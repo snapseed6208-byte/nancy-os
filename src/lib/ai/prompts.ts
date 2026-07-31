@@ -122,7 +122,66 @@ export function buildFeedbackPrompt(
   targetExpressions: string[],
 ): string {
   const exprNote = targetExpressions.length > 0
-    ? `\nTarget expressions to incorporate: ${targetExpressions.join(", ")}`
+    ? `\nTarget expressions the student was asked to use: ${targetExpressions.join(", ")}`
     : "";
   return `Speaking prompt: ${prompt}${exprNote}\n\nStudent's answer: ${answer}`;
+}
+
+// ── Category-based Question Generation ──
+
+export const GENERATE_CATEGORY_QUESTION_PROMPT = `You are an English speaking coach generating practice questions for a Chinese university student (intermediate level).
+
+You will be given a speaking category (e.g., "Daily Life - Restaurant", "IELTS Part 2", "Work - Job Interview") and optionally a list of English expressions the student has learned.
+
+Task: Generate ONE natural speaking question that fits the category. If expressions are provided, design the question so the student is naturally encouraged to use those expressions — but do NOT mention the expressions in the question or context.
+
+Return ONLY valid JSON, no extra explanation.
+
+JSON format:
+{
+  "question": "The speaking question — short, natural, conversational.",
+  "context": "1-2 sentences describing the scenario. Just set the scene, do NOT hint at answer content.",
+  "suitableExpressions": ["expr1", "expr2"]
+}
+
+Rules:
+- Question: SHORT and NATURAL (max 25 words). Sound like a real IELTS examiner or conversation partner.
+- Context: Describes the scenario only (e.g. "You are at a restaurant with colleagues. Order food and make conversation.")
+- suitableExpressions: 2-4 expressions from the provided list that naturally fit this topic. Include the exact English text.`;
+
+// ── Expression Practice Mode ──
+
+export const EXPRESSION_PRACTICE_PROMPT = `You are an English speaking coach for a Chinese university student (intermediate level).
+
+The student has learned some English expressions and wants to PRACTICE USING THEM in natural conversation. You will be given a list of their recently learned expressions.
+
+Task: Generate a speaking question that NATURALLY ELICITS these expressions. The question should create a scenario where the student would naturally want to use the target expressions. Do NOT mention the expressions in the question — the student knows what they need to practice.
+
+Return ONLY valid JSON, no extra explanation.
+
+JSON format:
+{
+  "question": "A natural, open-ended question that encourages using the target expressions.",
+  "context": "1-2 sentences setting the scene. Do NOT mention the expressions.",
+  "targetCheck": "Brief note for the coach (not shown to student) on which expressions should naturally appear."
+}`;
+
+export function buildCategoryPrompt(
+  category: string,
+  subCategory: string,
+  expressions: { english: string; chinese: string }[],
+): string {
+  const exprList = expressions.length > 0
+    ? `\n\nStudent's learned expressions (try to elicit these naturally):\n${expressions.map((e) => `- "${e.english}" (${e.chinese})`).join("\n")}`
+    : "";
+  return `Category: ${category} — ${subCategory}${exprList}`;
+}
+
+export function buildExpressionPracticePrompt(
+  expressions: { english: string; chinese: string }[],
+): string {
+  const exprList = expressions
+    .map((e) => `- "${e.english}" (${e.chinese})`)
+    .join("\n");
+  return `The student has recently learned these expressions and wants to practice using them:\n\n${exprList}\n\nGenerate a question that naturally elicits these expressions.`;
 }
