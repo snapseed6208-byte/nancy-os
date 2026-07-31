@@ -320,8 +320,13 @@ export function useCreateWorkoutVideo() {
             content_type: "workout",
             workout_video_id: record.id,
           },
-        }).catch(() => {
-          // AI failure is non-blocking — record already saved
+        }).then((r) => {
+          if (r.error) {
+            const detail = extractEdgeFunctionError(r);
+            console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, detail });
+          }
+        }).catch((err) => {
+          console.error("[useCreateWorkoutVideo] AI trigger network error", { videoId: record.id, error: err });
         });
       }
 
@@ -378,6 +383,30 @@ export function useDeleteWorkoutVideo() {
   });
 }
 
+function extractEdgeFunctionError(result: { error: unknown; data: unknown }): string {
+  const err = result.error as Record<string, unknown> | null;
+  if (!err) return "";
+
+  // supabase-js FunctionsHttpError has .context with the response body as text
+  const ctx = err.context;
+  if (typeof ctx === "string") {
+    try {
+      const body = JSON.parse(ctx);
+      // Extract from body.error (string or object)
+      const inner = body?.error;
+      if (typeof inner === "string") return inner;
+      if (inner && typeof inner === "object") return inner.message || inner.error || "";
+      // Fallback: body.message
+      if (body?.message) return body.message as string;
+    } catch {
+      // ctx is not JSON, use it raw if short enough
+      if (ctx.length < 200) return ctx;
+    }
+  }
+
+  return (err.message as string) || "";
+}
+
 export function useRetryWorkoutAnalysis() {
   const qc = useQueryClient();
   const mutation = useMutation({
@@ -390,7 +419,21 @@ export function useRetryWorkoutAnalysis() {
           setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 30_000),
         ),
       ]);
-      if (result.error) throw result.error;
+      if (result.error) {
+        const detail = extractEdgeFunctionError(result);
+        console.error("[useRetryWorkoutAnalysis] Edge Function error", {
+          videoId: video.id,
+          rawMessage: (result.error as Error)?.message,
+          detail,
+        });
+        throw new Error(detail || `AI 整理失败: ${(result.error as Error)?.message || "未知错误"}`);
+      }
+      if (result.data?.error) {
+        // Edge Function returned HTTP 200 but body has error field
+        const body = result.data as Record<string, unknown>;
+        const msg = typeof body.error === "string" ? body.error : (body.message as string) || JSON.stringify(body.error);
+        throw new Error(msg || "AI 整理返回异常");
+      }
       return result.data;
     },
     onSuccess: () => {

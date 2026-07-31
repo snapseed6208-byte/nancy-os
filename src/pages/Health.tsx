@@ -1241,7 +1241,7 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                         <button
                           onClick={() => onStartTraining(v)}
                           className="h-7 px-2 rounded-lg flex items-center justify-center gap-1 text-[10px] font-medium text-sage-deep bg-sage-light hover:bg-sage-light/80 transition-colors"
