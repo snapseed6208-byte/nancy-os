@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 const STATUS_TABS = [
   { key: "", label: "全部" },
   { key: "inbox", label: "收件箱" },
+  { key: "processed", label: "已处理" },
   { key: "archived", label: "已归档" },
   { key: "converted", label: "已转换" },
 ] as const;

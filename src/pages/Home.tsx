@@ -3,11 +3,9 @@ import { useLocation } from "wouter";
 import { getGreeting, getDateLabel, today } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
-  Mic,
   Lightbulb,
   CheckSquare,
   Utensils,
-  MessageCircle,
   Sparkles,
   ChevronRight,
   Clock,
@@ -57,11 +55,9 @@ import {
 import type { DailyBrief, DailyBriefSuggestion, DailyBriefWarning } from "@/lib/types";
 
 const QUICK_ACTIONS = [
-  { key: "voice-journal", label: "语音记录", icon: Mic, color: "bg-accent-rose/10 text-accent-rose", path: "/life-trace/capture" },
-  { key: "idea", label: "灵感记录", icon: Lightbulb, color: "bg-accent-warm/10 text-accent-warm", path: "/life-trace/capture?type=灵感" },
-  { key: "english", label: "英语练习", icon: MessageCircle, color: "bg-accent-sky/10 text-accent-sky", path: "/english/speaking" },
-  { key: "review", label: "英语复习", icon: Languages, color: "bg-accent-sky/10 text-accent-sky", path: "/english/review" },
-  { key: "task", label: "任务创建", icon: CheckSquare, color: "bg-ink/5 text-ink-light", path: "/plan" },
+  { key: "ideas", label: "灵感库", icon: Lightbulb, color: "bg-accent-warm/10 text-accent-warm", path: "/ideas" },
+  { key: "daily", label: "每日日记", icon: FileText, color: "bg-accent-rose/10 text-accent-rose", path: "/life-trace/daily" },
+  { key: "review", label: "每日复盘", icon: Sparkles, color: "bg-sage-light text-sage-deep", path: "/review" },
 ] as const;
 
 const WARNING_ICONS: Record<string, string> = {
@@ -161,7 +157,7 @@ export default function Home() {
     const text = quickCaptureText.trim();
     if (!text || createIdea.isPending) return;
     createIdea.mutate(
-      { content: text, category: "quick_capture", status: "new" },
+      { content: text, category: "quick_capture" },
       {
         onSuccess: () => {
           setQuickCaptureText("");
@@ -292,7 +288,7 @@ export default function Home() {
       {/* Quick Record — bound to routes */}
       <section>
         <h2 className="text-[13px] font-semibold text-ink mb-3">快速记录</h2>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {QUICK_ACTIONS.map((action) => {
             const Icon = action.icon;
             return (
