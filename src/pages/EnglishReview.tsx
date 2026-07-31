@@ -21,18 +21,22 @@ function sm2(
   let newEF = currentEF + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02));
   if (newEF < MIN_EF) newEF = MIN_EF;
 
-  if (quality < 2) {
-    // Again or Hard: reset
-    const newInterval = quality === 0 ? 1 : Math.max(1, Math.round(currentInterval * 1.2));
-    return { newInterval, newEF, newReps: quality === 0 ? 0 : currentReps };
+  if (quality < 3) {
+    // quality 0, 1, 2: all reset repetitions (only Easy/3 counts as success)
+    if (quality === 0) {
+      return { newInterval: 1, newEF, newReps: 0 };
+    }
+    // Hard (1) or Good (2): short interval, reps reset
+    const factor = quality === 1 ? 1.2 : 1.5;
+    return { newInterval: Math.max(1, Math.round(currentInterval * factor)), newEF, newReps: 0 };
   }
 
-  // Good or Easy
+  // quality 3 (Easy): success — increment reps
   const newReps = currentReps + 1;
   if (currentInterval === 0) {
-    return { newInterval: quality === 3 ? 4 : 1, newEF, newReps };
+    return { newInterval: 4, newEF, newReps };
   }
-  const interval = Math.round(currentInterval * newEF * (quality === 3 ? 1.3 : 1));
+  const interval = Math.round(currentInterval * newEF * 1.3);
   return { newInterval: Math.min(interval, 365), newEF, newReps };
 }
 
@@ -148,13 +152,12 @@ export default function EnglishReview() {
     }
   }, [mode, started, done, currentIndex, queue, generateRecogOptions]);
 
-  const handleRate = useCallback(
-    async (quality: number, label: string) => {
-      if (isRating) return;
-      setIsRating(true);
+  // ── Shared submitRating: SM-2 calc + DB update + queue management ──
 
+  const submitRating = useCallback(
+    async (quality: number, label: string) => {
       const expr = queue[currentIndex] as Record<string, unknown> | undefined;
-      if (!expr) { setIsRating(false); return; }
+      if (!expr) return;
 
       const currentInterval = (expr.review_count as number) === 0
         ? 0
@@ -167,6 +170,7 @@ export default function EnglishReview() {
       const nextReviewDate = addDays(newInterval);
       const newStatus = newReps >= 5 ? "mastered" : newInterval >= 21 ? "review" : "learning";
       const reviewCount = ((expr.review_count as number) || 0) + 1;
+      const newStreak = quality >= 3 ? currentStreak + 1 : 0;
 
       setSession((prev) => [
         ...prev,
@@ -182,7 +186,7 @@ export default function EnglishReview() {
           nextReviewDate,
           newStatus,
           masteryLevel: Math.min(newReps, 5),
-          streak: currentStreak + (quality >= 2 ? 1 : 0),
+          streak: newStreak,
           reviewCount,
           easeFactor: newEF,
           repetitions: newReps,
@@ -191,30 +195,49 @@ export default function EnglishReview() {
         // continue even if one fails
       }
 
-      // Re-queue on Again (quality 0): insert back at currentIndex + 3
+      // Re-queue on Again (quality 0) only
       if (quality === 0) {
         setReviewQueue((prev) => {
           const next = [...prev];
-          const reinsertIdx = Math.min(currentIndex + 3, next.length);
-          next.splice(reinsertIdx, 0, expr);
+          next.splice(Math.min(currentIndex + 3, next.length), 0, expr);
           return next;
         });
       }
+    },
+    [queue, currentIndex, submitReview],
+  );
 
-      // Advance
+  // ── Advance to next card ──
+
+  const advanceCard = useCallback(
+    (quality: number) => {
+      const addedCards = quality === 0 ? 1 : 0;
       const nextIdx = currentIndex + 1;
-      if (nextIdx >= queue.length + (quality === 0 ? 1 : 0)) {
+      if (nextIdx >= queue.length + addedCards) {
         setDone(true);
       } else {
         setCurrentIndex(nextIdx);
         setRevealed(false);
       }
-      setIsRating(false);
     },
-    [queue, currentIndex, submitReview, isRating],
+    [queue.length, currentIndex],
   );
 
-  // Recognition: select an option
+  // ── Active recall / Cloze: 4-button rating ──
+
+  const handleRate = useCallback(
+    async (quality: number, label: string) => {
+      if (isRating) return;
+      setIsRating(true);
+      await submitRating(quality, label);
+      advanceCard(quality);
+      setIsRating(false);
+    },
+    [submitRating, advanceCard, isRating],
+  );
+
+  // ── Recognition: correct/wrong → quality 3/0, delayed advance ──
+
   const handleRecogSelect = useCallback(
     async (idx: number) => {
       if (recogSelected !== null) return;
@@ -228,68 +251,20 @@ export default function EnglishReview() {
       setRecogSelected(idx);
       setRecogCorrect(correctIdx);
 
-      // Record and auto-rate
-      const quality = isCorrect ? 2 : 0; // Good : Again
-      const label = isCorrect ? "good" : "again";
+      const quality = isCorrect ? 3 : 0;
+      const label = isCorrect ? "easy" : "again";
 
-      const currentInterval = (expr.review_count as number) === 0
-        ? 0
-        : estimateInterval(expr.next_review_date as string | null);
-      const currentEF = (expr.ease_factor as number) || 2.5;
-      const currentReps = (expr.repetitions as number) || 0;
-      const currentStreak = (expr.streak as number) || 0;
+      // Rate immediately (DB update, queue, session)
+      await submitRating(quality, label);
 
-      const { newInterval, newEF, newReps } = sm2(quality, currentInterval, currentEF, currentReps);
-      const nextReviewDate = addDays(newInterval);
-      const newStatus = newReps >= 5 ? "mastered" : newInterval >= 21 ? "review" : "learning";
-      const reviewCount = ((expr.review_count as number) || 0) + 1;
-
-      setSession((prev) => [
-        ...prev,
-        { expressionId: expr.id as string, english: expr.english as string, result: label, oldInterval: currentInterval, newInterval },
-      ]);
-
-      try {
-        await submitReview.mutateAsync({
-          expressionId: expr.id as string,
-          result: label,
-          previousInterval: currentInterval,
-          newInterval,
-          nextReviewDate,
-          newStatus,
-          masteryLevel: Math.min(newReps, 5),
-          streak: currentStreak + (quality >= 2 ? 1 : 0),
-          reviewCount,
-          easeFactor: newEF,
-          repetitions: newReps,
-        });
-      } catch {
-        // continue
-      }
-
-      if (!isCorrect) {
-        setReviewQueue((prev) => {
-          const next = [...prev];
-          const reinsertIdx = Math.min(currentIndex + 3, next.length);
-          next.splice(reinsertIdx, 0, expr);
-          return next;
-        });
-      }
-
-      // Delay to show feedback, then advance
+      // Delay visual advancement for feedback
       setTimeout(() => {
-        const nextIdx = currentIndex + 1;
-        if (nextIdx >= queue.length + (!isCorrect ? 1 : 0)) {
-          setDone(true);
-        } else {
-          setCurrentIndex(nextIdx);
-          setRevealed(false);
-        }
+        advanceCard(quality);
         setRecogSelected(null);
         setRecogCorrect(-1);
       }, 800);
     },
-    [queue, currentIndex, submitReview, recogOptions],
+    [queue, currentIndex, submitRating, advanceCard, recogOptions, recogSelected],
   );
 
   // Keyboard shortcuts
