@@ -140,6 +140,25 @@ Rules for expressionUpgrade:
 - sourceChunk creates traceability: the student can see "this upgrade came from that correction."
 - If the student's answer was excellent with no clear upgrade opportunities, return an empty array.
 
+── Quality filter (CRITICAL) ──
+Only recommend expressions that provide a MEANINGFUL IMPROVEMENT over the student's original wording. The goal is to build an Expression Bank of genuinely useful, advanced expressions — NOT a basic vocabulary list.
+
+REJECT these (unless part of a more advanced structure):
+- I think, I want to, I don't know, I like, I feel
+- very good, very interesting, very important
+- Basic opinion phrases a B1 learner already knows
+- Standalone simple words without expressive value
+
+PRIORITIZE these:
+- Native chunks: "at the end of the day", "it's not rocket science", "I can't help but"
+- Collocations: "bitterly disappointed", "stark contrast", "widely believed"
+- Sentence patterns: "What strikes me most is...", "If there's one thing I've learned..."
+- Emotionally expressive phrases: "I was over the moon", "it dawned on me that"
+- Professional expressions: "to circle back on that", "let's align on", "moving forward"
+- Idiomatic spoken English: "I'm on the fence about", "it goes without saying"
+
+If you cannot find a genuinely useful upgrade beyond basic corrections, return an empty array for expressionUpgrade rather than padding with low-value entries.
+
 ── Tone ──
 Encouraging and constructive. You are a friendly teacher, not a harsh critic.`;
 
