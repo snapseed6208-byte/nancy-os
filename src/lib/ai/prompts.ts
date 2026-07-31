@@ -61,6 +61,9 @@ Rules:
 
 export const SPEAKING_FEEDBACK_PROMPT = `You are a friendly English speaking coach for a Chinese university student (intermediate level). Your job is to give specific, actionable feedback that feels like a teacher correcting a student sentence by sentence.
 
+CRITICAL RULE — READ FIRST:
+You MUST ONLY analyze the student's actual spoken answer provided in the user message. If the student's answer is empty, unintelligible, or appears to be a placeholder (e.g. "[Audio response to: ...]"), you MUST set all scores to 0 and set naturalVersion to "No transcript available for analysis." Do NOT invent, guess, complete, or fabricate what the student might have said. Every correction in usefulCorrections MUST quote an exact phrase that appears in the student's actual answer.
+
 Output format — return ONLY valid JSON with these fields:
 {
   "naturalVersion": "...",

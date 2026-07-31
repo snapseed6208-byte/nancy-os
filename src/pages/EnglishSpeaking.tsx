@@ -283,7 +283,11 @@ export default function EnglishSpeaking() {
   };
 
   const handleAnalyze = async () => {
-    const text = transcript.trim() || `[Audio response to: ${question}]`;
+    const text = transcript.trim();
+    if (!text) {
+      setAiError("请先输入或确认你说的话，AI 无法分析空白内容。");
+      return;
+    }
     setAnalyzing(true);
     setAiError(null);
     setStep("analyzing");
@@ -306,14 +310,19 @@ export default function EnglishSpeaking() {
   };
 
   const handleSave = async () => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      console.error("[EnglishSpeaking] handleSave: sessionId is null — was handleStartRecording called?");
+      return;
+    }
     setUploading(true);
 
     let audioUrl = "";
     if (recorder.blob) {
       try {
         audioUrl = await uploadAudio(sessionId, recorder.blob);
-      } catch { /* continue without audio */ }
+      } catch (err) {
+        console.error("[EnglishSpeaking] Audio upload failed:", err);
+      }
     }
 
     const combined = feedback
@@ -323,30 +332,40 @@ export default function EnglishSpeaking() {
     const expressionsUsed = feedback?.expressionsUsed || [];
     const expressionsMissed = feedback?.expressionsMissed || [];
 
-    await createAttempt.mutateAsync({
-      session_id: sessionId,
-      answer: transcript || `[Voice recording on: ${question}]`,
-      transcribed_text: asr.transcript || transcript || null,
-      natural_version: feedback?.naturalVersion || "",
-      combined_feedback: combined,
-      fluency_score: feedback?.fluencyScore ?? null,
-      grammar_score: feedback?.grammarScore ?? null,
-      vocabulary_score: feedback?.vocabularyScore ?? null,
-      naturalness_score: feedback?.naturalnessScore ?? null,
-      main_problems: feedback?.mainProblems || null,
-      useful_corrections: feedback?.usefulCorrections || null,
-      better_chunks: feedback?.betterChunks || null,
-      one_better_example: feedback?.oneBetterExample || null,
-      audio_url: audioUrl || null,
-      audio_duration: recorder.duration,
-      expressions_used: expressionsUsed,
-      expressions_missed: expressionsMissed,
-      reference_answer: referenceAnswer || null,
-    });
+    try {
+      await createAttempt.mutateAsync({
+        session_id: sessionId,
+        answer: transcript || `[Voice recording on: ${question}]`,
+        transcribed_text: asr.transcript || transcript || null,
+        natural_version: feedback?.naturalVersion || "",
+        combined_feedback: combined,
+        fluency_score: feedback?.fluencyScore ?? null,
+        grammar_score: feedback?.grammarScore ?? null,
+        vocabulary_score: feedback?.vocabularyScore ?? null,
+        naturalness_score: feedback?.naturalnessScore ?? null,
+        main_problems: feedback?.mainProblems || null,
+        useful_corrections: feedback?.usefulCorrections || null,
+        better_chunks: feedback?.betterChunks || null,
+        one_better_example: feedback?.oneBetterExample || null,
+        audio_url: audioUrl || null,
+        audio_duration: recorder.duration,
+        expressions_used: expressionsUsed,
+        expressions_missed: expressionsMissed,
+        reference_answer: referenceAnswer || null,
+      });
+    } catch (err) {
+      console.error("[EnglishSpeaking] createAttempt failed:", err);
+      setUploading(false);
+      throw err;
+    }
 
     // Auto-lower SRS levels for missed expressions
     if (expressionsMissed.length > 0) {
-      await lowerMissedExpressions(expressionsMissed);
+      try {
+        await lowerMissedExpressions(expressionsMissed);
+      } catch (err) {
+        console.error("[EnglishSpeaking] lowerMissedExpressions failed:", err);
+      }
     }
 
     setUploading(false);
@@ -613,6 +632,21 @@ export default function EnglishSpeaking() {
         </div>
       </header>
 
+      {/* Dev Debug Panel */}
+      {import.meta.env.DEV && (
+        <DebugPanel
+          step={step}
+          recorderState={recorder.state}
+          isListening={asr.isListening}
+          transcript={asr.transcript || transcript}
+          audioBlob={recorder.blob}
+          sessionId={sessionId}
+          question={question}
+          feedback={feedback}
+          hasTranscriptForAnalysis={!!transcript.trim()}
+        />
+      )}
+
       {/* Step: Generating question */}
       {(step === "generating") && (
         <div className="space-y-4">
@@ -701,7 +735,7 @@ export default function EnglishSpeaking() {
                     <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping pointer-events-none" style={{ width: 80, height: 80, margin: "auto" }} />
                   )}
                   <button
-                    onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : recorder.start}
+                    onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : handleStartRecording}
                     className={cn(
                       "rounded-full flex items-center justify-center transition-all",
                       recorder.state === "recording"
@@ -1264,6 +1298,44 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
             {firstAttempt?.one_better_example as string}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Dev Debug Panel ──
+
+function DebugPanel({
+  step, recorderState, isListening, transcript, audioBlob, sessionId, question, feedback, hasTranscriptForAnalysis,
+}: {
+  step: string;
+  recorderState: string;
+  isListening: boolean;
+  transcript: string;
+  audioBlob: Blob | null;
+  sessionId: string | null;
+  question: string;
+  feedback: SpeakingFeedback | null;
+  hasTranscriptForAnalysis: boolean;
+}) {
+  return (
+    <div className="bg-gray-900 text-green-400 rounded-xl p-3 text-[11px] font-mono leading-relaxed space-y-1 border border-gray-700">
+      <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wider mb-1">Dev Debug</p>
+      <p>Step: <span className="text-yellow-300">{step}</span></p>
+      <p>Recording: <span className={recorderState === "recording" ? "text-red-400" : "text-green-400"}>{String(recorderState === "recording")}</span> <span className="text-gray-500">({recorderState})</span></p>
+      <p>ASR Listening: <span className={isListening ? "text-green-400" : "text-gray-500"}>{String(isListening)}</span></p>
+      <p>Transcript: <span className={transcript ? "text-green-400" : "text-red-400"}>{transcript ? `"${transcript.slice(0, 80)}${transcript.length > 80 ? "..." : ""}"` : "(empty)"}</span></p>
+      <p>Audio Blob: <span className={audioBlob ? "text-green-400" : "text-red-400"}>{audioBlob ? `exists (${(audioBlob.size / 1024).toFixed(1)} KB)` : "null"}</span></p>
+      <p>Session ID: <span className={sessionId ? "text-green-400" : "text-red-400"}>{sessionId || "null (save will fail)"}</span></p>
+      <p>Question: <span className="text-gray-300">"{question.slice(0, 60)}{question.length > 60 ? "..." : ""}"</span></p>
+      <p>Analysis Ready: <span className={hasTranscriptForAnalysis ? "text-green-400" : "text-red-400"}>{String(hasTranscriptForAnalysis)}</span></p>
+      {feedback && (
+        <>
+          <p className="text-gray-500 mt-1">--- Feedback ---</p>
+          <p>Scores: F{feedback.fluencyScore} G{feedback.grammarScore} V{feedback.vocabularyScore} N{feedback.naturalnessScore}</p>
+          <p>Used: [{feedback.expressionsUsed.join(", ")}]</p>
+          <p>Missed: [{feedback.expressionsMissed.join(", ")}]</p>
+        </>
       )}
     </div>
   );
