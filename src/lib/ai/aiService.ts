@@ -41,23 +41,36 @@ interface SupabaseFunctionError {
  * When an Edge Function returns non-2xx, supabase-js wraps the response
  * body in `error.context`. This unwraps it.
  */
-function extractErrorMessage(err: unknown): { message: string; status?: number } {
+function extractErrorMessage(err: unknown): { message: string; status?: number; stage?: string } {
   const e = err as SupabaseFunctionError;
 
   // Try to parse the response body from FunctionsHttpError.context
   if (typeof e.context === "string") {
     try {
       const body = JSON.parse(e.context) as Record<string, unknown>;
+
+      // Build prefix from stage if present
+      const stage = typeof body?.stage === "string" ? body.stage : undefined;
+      const stageLabels: Record<string, string> = {
+        payload: "请求参数",
+        auth: "认证",
+        deepseek: "DeepSeek调用",
+        parse: "AI结果解析",
+        database: "数据库",
+        internal: "内部错误",
+      };
+      const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
+
       // Prefer body.error (string or object with .message)
       const inner = body?.error;
-      if (typeof inner === "string" && inner) return { message: inner };
+      if (typeof inner === "string" && inner) return { message: `${stagePrefix}${inner}`, stage };
       if (inner && typeof inner === "object") {
         const msg = (inner as Record<string, string>).message || (inner as Record<string, string>).error;
-        if (msg) return { message: msg };
+        if (msg) return { message: `${stagePrefix}${msg}`, stage };
       }
       // Fallback: body.message or body.detail
-      if (typeof body?.message === "string" && body.message) return { message: body.message };
-      if (typeof body?.detail === "string" && body.detail) return { message: body.detail };
+      if (typeof body?.message === "string" && body.message) return { message: `${stagePrefix}${body.message}`, stage };
+      if (typeof body?.detail === "string" && body.detail) return { message: `${stagePrefix}${body.detail}`, stage };
     } catch {
       // context is not JSON — use raw text if short enough
       if (e.context.length < 200) return { message: e.context };
@@ -160,12 +173,18 @@ export async function invokeAI<T = unknown>(
       // ── Case 2: HTTP 200 but body has error envelope ──
       const data = result.data as Record<string, unknown> | null;
       if (data && typeof data === "object" && data.error) {
+        const stageLabels: Record<string, string> = {
+          payload: "请求参数", auth: "认证", deepseek: "DeepSeek调用",
+          parse: "AI结果解析", database: "数据库", internal: "内部错误",
+        };
+        const stage = typeof data.stage === "string" ? data.stage : undefined;
+        const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
         const msg = typeof data.error === "string"
           ? data.error
           : (data.error as Record<string, unknown>)?.message
             || JSON.stringify(data.error);
-        console.error(`[aiService] ${callId} app error`, { message: msg });
-        finalResult = { success: false, error: String(msg) };
+        console.error(`[aiService] ${callId} app error`, { message: msg, stage });
+        finalResult = { success: false, error: `${stagePrefix}${String(msg)}` };
         break;
       }
 

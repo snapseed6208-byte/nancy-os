@@ -861,39 +861,51 @@ serve(async (req: Request) => {
     });
   }
 
+  // ── Stage: payload ──
+  let body: {
+    url?: string;
+    text?: string;
+    preferred_module?: string;
+    workout_video_id?: string;
+    recipe_id?: string;
+    source_context?: string;
+    source_content?: Record<string, unknown>;
+    source_type?: string;
+  };
   try {
-    // ── Auth ──
-    const authHeader = req.headers.get("Authorization") || "";
-    const token = authHeader.replace("Bearer ", "");
+    body = await req.json();
+  } catch {
+    return jsonResponse({
+      stage: "payload",
+      error: "请求格式错误，无法解析 JSON",
+    }, req, 400);
+  }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-    if (authErr || !user) {
-      return jsonResponse({ error: "Unauthorized" }, req, 401);
-    }
+  const workoutVideoId = body.workout_video_id || "";
+  const recipeId = body.recipe_id || "";
+  const sourceContext = body.source_context || "";
+  const sourceContent = body.source_content || null;
+  const sourceType = body.source_type || "";
 
-    // ── Parse input ──
-    const body = await req.json() as {
-      url?: string;
-      text?: string;
-      preferred_module?: string;
-      workout_video_id?: string;
-      recipe_id?: string;
-      source_context?: string;
-      source_content?: Record<string, unknown>;
-      source_type?: string;
-    };
+  const input = body.url || body.text || "";
+  if (!input && !workoutVideoId && !recipeId) {
+    return jsonResponse({
+      stage: "payload",
+      error: "请提供 URL 链接或文本内容",
+    }, req, 400);
+  }
 
-    const workoutVideoId = body.workout_video_id || "";
-    const recipeId = body.recipe_id || "";
-    const sourceContext = body.source_context || "";
-    const sourceContent = body.source_content || null;
-    const sourceType = body.source_type || "";
+  // ── Stage: auth ──
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace("Bearer ", "");
 
-    const input = body.url || body.text || "";
-    if (!input && !workoutVideoId && !recipeId) {
-      return jsonResponse({ error: "请提供 URL 链接或文本内容" }, req, 400);
-    }
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) {
+    return jsonResponse({ stage: "auth", error: "Unauthorized" }, req, 401);
+  }
+
+  try {
 
     const inputIsUrl = body.url ? true : isUrl(input);
     const platform = inputIsUrl ? detectPlatform(input) : "text";
@@ -1002,30 +1014,7 @@ serve(async (req: Request) => {
     ], { temperature: isRecipePipeline ? 0.3 : 0.5, maxTokens: 2048 });
 
     if (!aiResult.success) {
-      console.error(`[content-parser-agent] DeepSeek error: ${aiResult.error}`);
-      if (workoutVideoId) {
-        await supabase
-          .from("workout_videos")
-          .update({ ai_analysis_status: "failed" })
-          .eq("id", workoutVideoId);
-      }
-      if (recipeId) {
-        await supabase
-          .from("recipes")
-          .update({ ai_analysis_status: "failed" })
-          .eq("id", recipeId);
-      }
-      return jsonResponse({ error: aiResult.error, detail: aiResult.detail }, req, aiResult.status || 502);
-    }
-
-    const raw = aiResult.data;
-    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
-
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = parseAIJson(raw);
-    } catch {
-      console.error(`[content-parser-agent] JSON parse error. Raw (first 500): ${raw.slice(0, 500)}`);
+      console.error(`[content-parser-agent] DeepSeek error: ${aiResult.error} detail=${aiResult.detail || "none"}`);
       if (workoutVideoId) {
         await supabase
           .from("workout_videos")
@@ -1039,6 +1028,34 @@ serve(async (req: Request) => {
           .eq("id", recipeId);
       }
       return jsonResponse({
+        stage: "deepseek",
+        error: aiResult.error,
+        detail: aiResult.detail,
+      }, req, aiResult.status || 502);
+    }
+
+    const raw = aiResult.data;
+    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = parseAIJson(raw);
+    } catch (parseErr) {
+      console.error(`[content-parser-agent] JSON parse error: ${(parseErr as Error).message}. Raw (first 500): ${raw.slice(0, 500)}`);
+      if (workoutVideoId) {
+        await supabase
+          .from("workout_videos")
+          .update({ ai_analysis_status: "failed" })
+          .eq("id", workoutVideoId);
+      }
+      if (recipeId) {
+        await supabase
+          .from("recipes")
+          .update({ ai_analysis_status: "failed" })
+          .eq("id", recipeId);
+      }
+      return jsonResponse({
+        stage: "parse",
         error: "parse_error",
         raw: raw.slice(0, 500),
         message: "AI 返回格式异常，请重试",
@@ -1375,8 +1392,9 @@ serve(async (req: Request) => {
     }, req);
 
   } catch (err) {
-    console.error("Content parser error:", err);
+    console.error(`[content-parser-agent] internal error: ${(err as Error).message}`, (err as Error).stack);
     return jsonResponse({
+      stage: "internal",
       error: (err as Error).message || "服务器内部错误",
     }, req, 500);
   }
