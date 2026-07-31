@@ -101,7 +101,7 @@ export default function Plan() {
       </div>
 
       {/* Tab content */}
-      {tab === "today" && <TodayPlan />}
+      {tab === "today" && <TodayPlan onTabChange={handleTabChange} />}
       {tab === "goals" && <GoalHierarchy />}
       {tab === "tasks" && <TaskList />}
       {tab === "habits" && <HabitTracker />}
@@ -112,7 +112,7 @@ export default function Plan() {
 
 // ── Today Plan ──
 
-function TodayPlan() {
+function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const { data: tasks, isLoading } = useTodayTasks();
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
@@ -201,7 +201,7 @@ function TodayPlan() {
             <p className="text-center text-[11px] text-ink-lighter py-2">
               今日已完成 {doneTasks.length} 项 ·
               <button
-                onClick={() => handleTabChange("tasks")}
+                onClick={() => onTabChange("tasks")}
                 className="text-sage-deep underline ml-1"
               >
                 查看全部任务
