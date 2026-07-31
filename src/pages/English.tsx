@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import {
   BookOpen, Mic, Library, Brain, Eye, Edit3,
-  ChevronRight, Zap, Upload,
+  ChevronRight, Zap, Upload, TrendingUp,
 } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -77,6 +77,12 @@ export default function English() {
           label="口语练习"
           desc={`${stats?.totalSessions ?? 0} 次练习记录`}
           onClick={() => navigate("/english/speaking")}
+        />
+        <ActionCard
+          icon={TrendingUp}
+          label="My Progress"
+          desc="口语成长轨迹 · 弱点分析 · 高频错误"
+          onClick={() => navigate("/english/progress")}
         />
         <ActionCard
           icon={Upload}

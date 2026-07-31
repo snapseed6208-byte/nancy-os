@@ -525,3 +525,145 @@ export function useSpeakingStats() {
     queryFn: fetchSpeakingStats,
   });
 }
+
+// ── Progress & Growth Data ──
+
+export interface ProgressDataPoint {
+  id: string;
+  created_at: string;
+  fluency_score: number | null;
+  grammar_score: number | null;
+  vocabulary_score: number | null;
+  naturalness_score: number | null;
+  audio_duration: number | null;
+  session_prompt: string;
+  session_category: string | null;
+  session_mode: string | null;
+}
+
+async function fetchProgressData(days: number): Promise<ProgressDataPoint[]> {
+  const userId = await getUserId();
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const { data, error } = await supabase
+    .from("speaking_attempts")
+    .select(`
+      id, created_at, fluency_score, grammar_score, vocabulary_score,
+      naturalness_score, audio_duration,
+      speaking_sessions!inner(prompt, category, mode)
+    `)
+    .eq("user_id", userId)
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((a: Record<string, unknown>) => {
+    const session = a.speaking_sessions as Record<string, unknown> | undefined;
+    return {
+      id: a.id as string,
+      created_at: a.created_at as string,
+      fluency_score: a.fluency_score as number | null,
+      grammar_score: a.grammar_score as number | null,
+      vocabulary_score: a.vocabulary_score as number | null,
+      naturalness_score: a.naturalness_score as number | null,
+      audio_duration: a.audio_duration as number | null,
+      session_prompt: (session?.prompt as string) || "",
+      session_category: (session?.category as string) || null,
+      session_mode: (session?.mode as string) || null,
+    };
+  });
+}
+
+export function useProgressData(days: number = 30) {
+  return useQuery({
+    queryKey: ["speaking_progress", days],
+    queryFn: () => fetchProgressData(days),
+  });
+}
+
+export interface FrequentError {
+  original: string;
+  correction: string;
+  count: number;
+}
+
+async function fetchFrequentErrors(days: number): Promise<FrequentError[]> {
+  const userId = await getUserId();
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const { data, error } = await supabase
+    .from("speaking_attempts")
+    .select("useful_corrections")
+    .eq("user_id", userId)
+    .gte("created_at", since.toISOString())
+    .not("useful_corrections", "is", null);
+
+  if (error) throw error;
+
+  // Parse corrections and count occurrences
+  const errorMap = new Map<string, { correction: string; count: number }>();
+  for (const row of data || []) {
+    const text = row.useful_corrections as string;
+    if (!text) continue;
+    // Parse lines like: - "original" → "better" (explanation)
+    const matches = text.matchAll(/- "([^"]+)" → "([^"]+)"/g);
+    for (const m of matches) {
+      const original = m[1].trim();
+      const correction = m[2].trim();
+      const key = original.toLowerCase();
+      const existing = errorMap.get(key);
+      if (existing) {
+        existing.count++;
+      } else {
+        errorMap.set(key, { correction, count: 1 });
+      }
+    }
+  }
+
+  return Array.from(errorMap.entries())
+    .map(([key, val]) => ({
+      original: key,
+      correction: val.correction,
+      count: val.count,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+}
+
+export function useFrequentErrors(days: number = 30) {
+  return useQuery({
+    queryKey: ["frequent_errors", days],
+    queryFn: () => fetchFrequentErrors(days),
+  });
+}
+
+// ── Common Problems aggregation ──
+
+async function fetchCommonProblems(days: number): Promise<string[]> {
+  const userId = await getUserId();
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const { data, error } = await supabase
+    .from("speaking_attempts")
+    .select("main_problems, created_at")
+    .eq("user_id", userId)
+    .gte("created_at", since.toISOString())
+    .not("main_problems", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) throw error;
+
+  return (data || []).map((r: Record<string, unknown>) => (r.main_problems as string) || "").filter(Boolean);
+}
+
+export function useCommonProblems(days: number = 30) {
+  return useQuery({
+    queryKey: ["common_problems", days],
+    queryFn: () => fetchCommonProblems(days),
+  });
+}

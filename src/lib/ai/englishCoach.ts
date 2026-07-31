@@ -10,6 +10,7 @@ import {
   SPEAKING_FEEDBACK_PROMPT,
   GENERATE_CATEGORY_QUESTION_PROMPT,
   EXPRESSION_PRACTICE_PROMPT,
+  SUMMARIZE_PROGRESS_PROMPT,
   buildExtractPrompt,
   buildGeneratePrompt,
   buildFeedbackPrompt,
@@ -223,4 +224,65 @@ export function buildCombinedFeedback(fb: SpeakingFeedback): string {
   return sections.length > 0
     ? sections.join("\n\n---\n\n")
     : "Great effort! Keep practicing and your English will improve.";
+}
+
+// ── 8. Progress Summary ──
+
+export interface ProgressSummary {
+  commonProblems: string[];
+  strengthsObserved: string[];
+  suggestion: string;
+  summaryText: string;
+}
+
+export async function summarizeProgress(
+  recentProblems: string[],
+  frequentErrors: { original: string; correction: string; count: number }[],
+  scoreData: { fluency: number[]; grammar: number[]; vocabulary: number[]; naturalness: number[] },
+  authToken: string,
+): Promise<ProgressSummary> {
+  const problemsText = recentProblems.length > 0
+    ? recentProblems.map((p, i) => `Session ${i + 1}:\n${p}`).join("\n\n---\n\n")
+    : "No problem data yet.";
+
+  const errorsText = frequentErrors.length > 0
+    ? frequentErrors.map((e) => `- "${e.original}" → "${e.correction}" (appeared ${e.count} times)`).join("\n")
+    : "No frequent error data yet.";
+
+  const avgFluency = scoreData.fluency.length > 0
+    ? (scoreData.fluency.reduce((a, b) => a + b, 0) / scoreData.fluency.length).toFixed(1)
+    : "N/A";
+  const avgGrammar = scoreData.grammar.length > 0
+    ? (scoreData.grammar.reduce((a, b) => a + b, 0) / scoreData.grammar.length).toFixed(1)
+    : "N/A";
+  const avgVocab = scoreData.vocabulary.length > 0
+    ? (scoreData.vocabulary.reduce((a, b) => a + b, 0) / scoreData.vocabulary.length).toFixed(1)
+    : "N/A";
+  const avgNatural = scoreData.naturalness.length > 0
+    ? (scoreData.naturalness.reduce((a, b) => a + b, 0) / scoreData.naturalness.length).toFixed(1)
+    : "N/A";
+
+  const scoresText = `Average scores: Fluency ${avgFluency}, Grammar ${avgGrammar}, Vocabulary ${avgVocab}, Naturalness ${avgNatural}. Total sessions analyzed: ${scoreData.fluency.length}`;
+
+  const userMessage = `RECENT PROBLEMS:\n${problemsText}\n\nFREQUENT ERRORS:\n${errorsText}\n\nSCORE DATA:\n${scoresText}`;
+
+  const response = await callAI({
+    model: "deepseek-chat",
+    maxTokens: 1024,
+    messages: [
+      { role: "system", content: SUMMARIZE_PROGRESS_PROMPT },
+      { role: "user", content: userMessage },
+    ],
+    injectContext: true,
+    authToken,
+  });
+
+  const raw = extractJSON(response.content, {} as Record<string, unknown>);
+
+  return {
+    commonProblems: Array.isArray(raw.commonProblems) ? (raw.commonProblems as string[]) : [],
+    strengthsObserved: Array.isArray(raw.strengthsObserved) ? (raw.strengthsObserved as string[]) : [],
+    suggestion: (raw.suggestion as string) || "",
+    summaryText: (raw.summaryText as string) || "",
+  };
 }
