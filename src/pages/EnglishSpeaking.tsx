@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import {
   useSpeakingSessions, useSpeakingSession, useCreateSpeakingSession,
-  useCreateSpeakingAttempt, uploadAudio, useDueExpressions, useSpeakingStats,
+  useCreateSpeakingAttempt, useCreateExpression, uploadAudio, useDueExpressions, useSpeakingStats,
 } from "@/lib/hooks/useEnglish";
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
 import {
@@ -16,7 +16,7 @@ import {
   generateCategoryQuestion, generateExpressionPracticeQuestion,
   generateReferenceAnswer,
 } from "@/lib/ai/englishCoach";
-import type { SpeakingFeedback } from "@/lib/ai/englishCoach";
+import type { SpeakingFeedback, ExpressionUpgrade } from "@/lib/ai/englishCoach";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -164,7 +164,6 @@ function formatDuration(seconds: number): string {
 async function lowerMissedExpressions(missedExpressions: string[]) {
   const now = new Date().toISOString();
   for (const expr of missedExpressions) {
-    // Find expressions matching this english text
     const { data: matches } = await supabase
       .from("expressions")
       .select("id, ease_factor")
@@ -183,6 +182,36 @@ async function lowerMissedExpressions(missedExpressions: string[]) {
           ease_factor: newEF,
           next_review_date: now,
           updated_at: now,
+        })
+        .eq("id", row.id);
+    }
+  }
+}
+
+async function boostUsedExpressions(usedExpressions: string[]) {
+  const future = new Date();
+  future.setDate(future.getDate() + 3);
+  const futureStr = future.toISOString();
+  for (const expr of usedExpressions) {
+    const { data: matches } = await supabase
+      .from("expressions")
+      .select("id, ease_factor, review_count")
+      .eq("archived", false)
+      .eq("english", expr.trim())
+      .limit(5);
+
+    if (!matches || matches.length === 0) continue;
+
+    for (const row of matches) {
+      const currentEF = (row.ease_factor as number) || 2.5;
+      const newEF = Math.min(3.0, currentEF + 0.1);
+      await supabase
+        .from("expressions")
+        .update({
+          ease_factor: newEF,
+          review_count: ((row.review_count as number) || 0) + 1,
+          next_review_date: futureStr,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", row.id);
     }
@@ -215,6 +244,7 @@ export default function EnglishSpeaking() {
   const [referenceAnswer, setReferenceAnswer] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
   const referenceAnswerPromise = useRef<Promise<void> | null>(null);
 
   // Data
@@ -223,6 +253,7 @@ export default function EnglishSpeaking() {
   const { data: dueExpressions } = useDueExpressions();
   const createSession = useCreateSpeakingSession();
   const createAttempt = useCreateSpeakingAttempt();
+  const createExpression = useCreateExpression();
 
   const recorder = useAudioRecorder();
   const asr = useSpeechRecognition();
@@ -381,6 +412,7 @@ export default function EnglishSpeaking() {
         expressions_used: expressionsUsed,
         expressions_missed: expressionsMissed,
         reference_answer: referenceAnswer || null,
+        expression_upgrade: feedback?.expressionUpgrade || [],
       });
     } catch (err) {
       console.error("[EnglishSpeaking] createAttempt failed:", err);
@@ -397,9 +429,37 @@ export default function EnglishSpeaking() {
         console.error("[EnglishSpeaking] lowerMissedExpressions failed:", err);
       }
     }
+    // Boost SRS levels for successfully used expressions
+    if (expressionsUsed.length > 0) {
+      try {
+        await boostUsedExpressions(expressionsUsed);
+      } catch (err) {
+        console.error("[EnglishSpeaking] boostUsedExpressions failed:", err);
+      }
+    }
 
     setUploading(false);
     setStep("saved");
+  };
+
+  const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
+    try {
+      await createExpression.mutateAsync({
+        english: upgrade.english,
+        chinese: upgrade.chinese,
+        type: upgrade.type,
+        scene: upgrade.scene,
+        example_sentence: upgrade.exampleSentence || null,
+        formality: upgrade.formality || null,
+        notes: upgrade.usageNote || null,
+        source_text: upgrade.sourceChunk || null,
+        source: "speaking-upgrade",
+        usefulness_level: 3,
+      });
+      setAddedUpgrades((prev) => new Set(prev).add(index));
+    } catch (err) {
+      console.error("[EnglishSpeaking] handleAddToBank failed:", err);
+    }
   };
 
   const handleNew = () => {
@@ -415,6 +475,7 @@ export default function EnglishSpeaking() {
     setFeedback(null);
     setReferenceAnswer("");
     setAiError(null);
+    setAddedUpgrades(new Set());
     referenceAnswerPromise.current = null;
     recorder.reset();
     asr.reset();
@@ -1002,6 +1063,54 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
+          {/* Expression Upgrade */}
+          {feedback.expressionUpgrade && feedback.expressionUpgrade.length > 0 && (
+            <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-violet-500" />
+                <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
+              </div>
+              <div className="space-y-2">
+                {feedback.expressionUpgrade.map((upgrade: ExpressionUpgrade, i: number) => (
+                  <div key={i} className="bg-violet-50/50 rounded-xl border border-violet-100 p-3 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-[11px] font-bold text-ink truncate">{upgrade.english}</span>
+                          <span className="text-[10px] bg-white text-ink-lighter border rounded-full px-1.5 py-px shrink-0">{upgrade.type}</span>
+                          <span className="text-[10px] text-ink-lighter shrink-0">{upgrade.formality}</span>
+                        </div>
+                        <p className="text-[11px] text-ink-lighter">{upgrade.chinese}</p>
+                        <p className="text-[11px] text-ink-lighter mt-1">
+                          <span className="font-medium text-ink-light">Scene: </span>{upgrade.scene}
+                        </p>
+                        <p className="text-[11px] text-ink-lighter italic mt-0.5">
+                          "{upgrade.exampleSentence}"
+                        </p>
+                        <p className="text-[10px] text-ink-lighter mt-0.5 leading-relaxed">
+                          {upgrade.usageNote}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleAddToBank(upgrade, i)}
+                        disabled={addedUpgrades.has(i) || createExpression.isPending}
+                        title={addedUpgrades.has(i) ? "已加入表达库" : "加入表达库"}
+                        className={cn(
+                          "shrink-0 rounded-lg p-1.5 transition-colors",
+                          addedUpgrades.has(i)
+                            ? "bg-emerald-50 border border-emerald-200 text-emerald-500"
+                            : "bg-white border border-violet-200 text-violet-500 hover:bg-violet-50",
+                        )}
+                      >
+                        {addedUpgrades.has(i) ? <CheckCircle2 size={14} /> : <Plus size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* One better example */}
           {feedback.oneBetterExample && (
             <div className="bg-card rounded-2xl border border-border p-4">
@@ -1327,6 +1436,40 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
           <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
           <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
             {firstAttempt?.better_chunks as string}
+          </div>
+        </div>
+      )}
+
+      {/* Expression Upgrade */}
+      {((firstAttempt?.expression_upgrade as unknown[] | undefined)?.length ?? 0) > 0 && (
+        <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className="text-violet-500" />
+            <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
+          </div>
+          <div className="space-y-2">
+            {(firstAttempt?.expression_upgrade as unknown[]).map((upgrade: unknown, i: number) => {
+              const u = upgrade as Record<string, unknown>;
+              return (
+                <div key={i} className="bg-violet-50/50 rounded-xl border border-violet-100 p-3 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-ink">{u.english as string}</span>
+                    <span className="text-[10px] bg-white text-ink-lighter border rounded-full px-1.5 py-px">{u.type as string}</span>
+                    <span className="text-[10px] text-ink-lighter">{u.formality as string}</span>
+                  </div>
+                  <p className="text-[11px] text-ink-lighter">{u.chinese as string}</p>
+                  <p className="text-[11px] text-ink-lighter">
+                    <span className="font-medium text-ink-light">Scene: </span>{u.scene as string}
+                  </p>
+                  {(u.exampleSentence as string) && (
+                    <p className="text-[11px] text-ink-lighter italic">"{u.exampleSentence as string}"</p>
+                  )}
+                  {(u.usageNote as string) && (
+                    <p className="text-[10px] text-ink-lighter leading-relaxed">{u.usageNote as string}</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

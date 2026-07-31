@@ -47,6 +47,17 @@ export interface GeneratedQuestion {
   suitableExpressions: string[];
 }
 
+export interface ExpressionUpgrade {
+  english: string;
+  chinese: string;
+  type: "vocabulary" | "chunk" | "sentencePattern" | "speakingExpression";
+  scene: string;
+  exampleSentence: string;
+  formality: "casual" | "semi-formal" | "formal";
+  usageNote: string;
+  sourceChunk: string;
+}
+
 export interface SpeakingFeedback {
   naturalVersion: string;
   fluencyScore: number;
@@ -59,6 +70,7 @@ export interface SpeakingFeedback {
   oneBetterExample: string;
   expressionsUsed: string[];
   expressionsMissed: string[];
+  expressionUpgrade: ExpressionUpgrade[];
 }
 
 // ── 1. analyzeSpeaking / extractExpressions ──
@@ -148,6 +160,9 @@ export async function analyzeSpeaking(
     oneBetterExample: (raw.oneBetterExample as string) || "",
     expressionsUsed: Array.isArray(raw.expressionsUsed) ? (raw.expressionsUsed as string[]) : [],
     expressionsMissed: Array.isArray(raw.expressionsMissed) ? (raw.expressionsMissed as string[]) : [],
+    expressionUpgrade: Array.isArray(raw.expressionUpgrade)
+      ? (raw.expressionUpgrade as ExpressionUpgrade[])
+      : [],
   };
 }
 

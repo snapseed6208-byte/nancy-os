@@ -76,7 +76,8 @@ Output format — return ONLY valid JSON with these fields:
   "betterChunks": "Better Chunks:\\n- natural chunk (中文)\\n- natural chunk (中文)",
   "oneBetterExample": "One Better Example:\\n[4-5 sentence answer]",
   "expressionsUsed": [],
-  "expressionsMissed": []
+  "expressionsMissed": [],
+  "expressionUpgrade": []
 }
 
 ── Scoring (0-9 scale, like IELTS) ──
@@ -113,6 +114,31 @@ If target expressions were provided to the student, check which ones they actual
 - expressionsUsed: string array — target expressions the student successfully incorporated (exact or close match)
 - expressionsMissed: string array — target expressions the student did NOT use at all
 Only include expressions from the provided target list. If no target expressions were given, return empty arrays.
+
+── Field 12: expressionUpgrade ──
+The MOST IMPORTANT new field. Transform the natural expression ideas from betterChunks and usefulCorrections into actionable, savable expression entries the student can add to their expression bank.
+
+Return an array of 2-5 expression upgrade objects. Each object MUST have:
+{
+  "english": "the natural English expression (a complete, usable chunk/phrase/sentence pattern)",
+  "chinese": "natural Chinese translation",
+  "type": "one of: vocabulary, chunk, sentencePattern, speakingExpression",
+  "scene": "usage scenario in English (e.g. 'daily life - apologizing', 'work - meeting', 'IELTS speaking')",
+  "exampleSentence": "ONE natural example sentence showing how to use this expression in conversation",
+  "formality": "one of: casual, semi-formal, formal",
+  "usageNote": "short usage note in Chinese — when/why/how to use this naturally, any nuance to watch for",
+  "sourceChunk": "which betterChunk or correction this expression is based on — the raw text it was derived from"
+}
+
+Rules for expressionUpgrade:
+- Each entry MUST be a COMPLETE, READY-TO-USE expression. Not a grammar rule, not a vague suggestion.
+- Prioritize NATURAL, SPOKEN English expressions the student can immediately use in conversation.
+- Focus on what the student was TRYING to say but couldn't express naturally — fill their expressive gaps.
+- The chinese translation should be colloquial and natural, not literal.
+- exampleSentence should be a realistic sentence the student might actually say, not a dictionary example.
+- usageNote should be practical: tell the student when to use it and what nuance it carries.
+- sourceChunk creates traceability: the student can see "this upgrade came from that correction."
+- If the student's answer was excellent with no clear upgrade opportunities, return an empty array.
 
 ── Tone ──
 Encouraging and constructive. You are a friendly teacher, not a harsh critic.`;
