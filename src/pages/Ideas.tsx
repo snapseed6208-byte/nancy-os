@@ -32,21 +32,39 @@ const MIME_MAP: Record<string, string> = {
 // ── Helpers ──
 
 async function uploadImages(files: File[]): Promise<string[]> {
+  const results = await Promise.allSettled(
+    files.map(async (file) => {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const fileName = uniqueFileName(ext);
+      const contentType = MIME_MAP[ext] || "image/jpeg";
+      console.log("[uploadImages] upload start", file.name, { fileName, contentType });
+      const { error } = await supabase.storage
+        .from("idea-images")
+        .upload(fileName, file, { contentType });
+      if (error) {
+        console.error("[uploadImages] upload failed", { fileName, ext, contentType, error });
+        throw new Error(`图片上传失败: ${error.message}`);
+      }
+      const { data: urlData } = supabase.storage.from("idea-images").getPublicUrl(fileName);
+      console.log("[uploadImages] upload success", urlData.publicUrl);
+      return urlData.publicUrl;
+    }),
+  );
+
   const urls: string[] = [];
-  for (const file of files) {
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const fileName = uniqueFileName(ext);
-    const contentType = MIME_MAP[ext] || "image/jpeg";
-    const { error } = await supabase.storage
-      .from("idea-images")
-      .upload(fileName, file, { contentType });
-    if (error) {
-      console.error("[uploadImages] upload failed", { fileName, ext, contentType, error });
-      throw new Error(`图片上传失败: ${error.message}`);
+  const failures: string[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") {
+      urls.push(r.value);
+    } else {
+      failures.push(r.reason?.message || "未知错误");
     }
-    const { data: urlData } = supabase.storage.from("idea-images").getPublicUrl(fileName);
-    urls.push(urlData.publicUrl);
   }
+
+  if (failures.length > 0) {
+    throw new Error(`${failures.length} 张图片上传失败: ${failures.join("; ")}`);
+  }
+
   return urls;
 }
 
