@@ -900,9 +900,16 @@ serve(async (req: Request) => {
   const token = authHeader.replace("Bearer ", "");
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-  if (authErr || !user) {
-    return jsonResponse({ stage: "auth", error: "Unauthorized" }, req, 401);
+  let user: { id: string };
+  try {
+    const authResult = await supabase.auth.getUser(token);
+    if (authResult.error || !authResult.data?.user) {
+      return jsonResponse({ stage: "auth", error: "Unauthorized" }, req, 401);
+    }
+    user = authResult.data.user;
+  } catch (authCatchErr) {
+    console.error(`[content-parser-agent] Auth error: ${(authCatchErr as Error).message}`);
+    return jsonResponse({ stage: "auth", error: "认证服务异常", detail: (authCatchErr as Error).message }, req, 500);
   }
 
   try {

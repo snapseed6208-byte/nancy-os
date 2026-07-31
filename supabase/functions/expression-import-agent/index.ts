@@ -82,134 +82,137 @@ Rules:
 - Extract 10-30 expressions total, prioritizing quality over quantity
 - All expressions must have proper chinese translation`;
 
+function errResponse(body: Record<string, unknown>, req: Request, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: getCorsHeaders(req) });
   }
 
-  // ── Stage: payload ──
-  let body: { text?: string };
   try {
-    body = await req.json() as { text?: string };
-  } catch {
+    // ── Stage: payload ──
+    let body: { text?: string };
+    try {
+      body = await req.json() as { text?: string };
+    } catch {
+      return errResponse({ stage: "payload", error: "请求格式错误，无法解析 JSON" }, req, 400);
+    }
+
+    const text = body.text || "";
+    if (!text || text.trim().length === 0) {
+      return errResponse({ stage: "payload", error: "请提供文本内容" }, req, 400);
+    }
+
+    // ── Stage: auth ──
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace("Bearer ", "");
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    let user: { id: string };
+    try {
+      const authResult = await supabase.auth.getUser(token);
+      if (authResult.error || !authResult.data?.user) {
+        return errResponse({ stage: "auth", error: "Unauthorized" }, req, 401);
+      }
+      user = authResult.data.user;
+    } catch (authCatchErr) {
+      console.error(`[expression-import-agent] Auth error: ${(authCatchErr as Error).message}`);
+      return errResponse({ stage: "auth", error: "认证服务异常", detail: (authCatchErr as Error).message }, req, 500);
+    }
+
+    let tokensUsed = 0;
+
+    // ── Stage: deepseek ──
+    console.log(`[expression-import-agent] Calling DeepSeek with text length=${text.length}`);
+    const truncated = text.slice(0, 8000);
+    const aiResult = await callDeepSeek([
+      { role: "system", content: EXTRACT_PROMPT },
+      { role: "user", content: `Please analyze this English text and extract useful learning expressions:\n\n${truncated}` },
+    ], { temperature: 0.5, maxTokens: 4096 });
+
+    if (!aiResult.success) {
+      return errResponse({ stage: "deepseek", error: aiResult.error, detail: aiResult.detail }, req, aiResult.status || 502);
+    }
+
+    const raw = aiResult.data as string;
+    tokensUsed = aiResult.usage?.totalTokens || 0;
+    console.log(`[expression-import-agent] DeepSeek success. tokens=${tokensUsed} raw_length=${raw.length}`);
+
+    // ── Stage: parse ──
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = parseAIJson<Record<string, unknown>>(raw);
+    } catch (parseErr) {
+      console.error(`[expression-import-agent] parse error: ${(parseErr as Error).message}. Raw (first 500): ${raw.slice(0, 500)}`);
+      return errResponse({
+        stage: "parse",
+        error: "parse_error",
+        raw: raw.slice(0, 500),
+        message: "AI 返回格式异常，请重试",
+      }, req, 500);
+    }
+
+    console.log(`[expression-import-agent] Parse success. keys=${Object.keys(parsed).join(",")}`);
+
+    const expressions = (parsed.expressions as Array<Record<string, unknown>>) || [];
+
+    // Build stats
+    const stats = {
+      total: expressions.length,
+      vocabulary: 0,
+      chunk: 0,
+      sentencePattern: 0,
+      speakingExpression: 0,
+    };
+    for (const expr of expressions) {
+      const t = expr.type as string;
+      if (t === "vocabulary") stats.vocabulary++;
+      else if (t === "chunk") stats.chunk++;
+      else if (t === "sentencePattern") stats.sentencePattern++;
+      else if (t === "speakingExpression") stats.speakingExpression++;
+    }
+
+    // ── Stage: database ──
+    try {
+      await supabase.from("agent_logs").insert({
+        user_id: user.id,
+        agent_type: "expression_import",
+        action: "extract_expressions",
+        input_data: {
+          text_length: text.length,
+          text_preview: text.slice(0, 100),
+        },
+        output_data: {
+          expression_count: expressions.length,
+          stats,
+          tokens_used: tokensUsed,
+        },
+        model: "deepseek-chat",
+        tokens_used: tokensUsed,
+      });
+    } catch (dbErr) {
+      console.error(`[expression-import-agent] DB log insert failed: ${(dbErr as Error).message}`);
+    }
+
     return new Response(JSON.stringify({
-      stage: "payload",
-      error: "请求格式错误，无法解析 JSON",
+      expressions,
+      stats,
+      tokens_used: tokensUsed,
     }), {
-      status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    });
-  }
-
-  const text = body.text || "";
-  if (!text || text.trim().length === 0) {
-    return new Response(JSON.stringify({
-      stage: "payload",
-      error: "请提供文本内容",
-    }), {
-      status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    });
-  }
-
-  // ── Stage: auth ──
-  const authHeader = req.headers.get("Authorization") || "";
-  const token = authHeader.replace("Bearer ", "");
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-  if (authErr || !user) {
-    return new Response(JSON.stringify({
-      stage: "auth",
-      error: "Unauthorized",
-    }), {
-      status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    });
-  }
-
-  let tokensUsed = 0;
-
-  // ── Stage: deepseek ──
-  const truncated = text.slice(0, 8000);
-  const aiResult = await callDeepSeek([
-    { role: "system", content: EXTRACT_PROMPT },
-    { role: "user", content: `Please analyze this English text and extract useful learning expressions:\n\n${truncated}` },
-  ], { temperature: 0.5, maxTokens: 4096 });
-
-  if (!aiResult.success) {
-    return new Response(JSON.stringify({
-      stage: "deepseek",
-      error: aiResult.error,
-      detail: aiResult.detail,
-    }), {
-      status: aiResult.status || 502,
       headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
+
+  } catch (err) {
+    console.error(`[expression-import-agent] UNHANDLED exception: ${(err as Error).message}`, (err as Error).stack);
+    return errResponse({
+      stage: "internal",
+      error: (err as Error).message || "服务器内部错误",
+      detail: (err as Error).stack?.slice(0, 500),
+    }, req, 500);
   }
-
-  const raw = aiResult.data as string;
-  tokensUsed = aiResult.usage?.totalTokens || 0;
-
-  // ── Stage: parse ──
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = parseAIJson<Record<string, unknown>>(raw);
-  } catch (parseErr) {
-    console.error(`[expression-import-agent] parse error: ${(parseErr as Error).message}. Raw (first 500): ${raw.slice(0, 500)}`);
-    return new Response(JSON.stringify({
-      stage: "parse",
-      error: "parse_error",
-      raw: raw.slice(0, 500),
-      message: "AI 返回格式异常，请重试",
-    }), {
-      status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-    });
-  }
-
-  const expressions = (parsed.expressions as Array<Record<string, unknown>>) || [];
-
-  // Build stats
-  const stats = {
-    total: expressions.length,
-    vocabulary: 0,
-    chunk: 0,
-    sentencePattern: 0,
-    speakingExpression: 0,
-  };
-  for (const expr of expressions) {
-    const t = expr.type as string;
-    if (t === "vocabulary") stats.vocabulary++;
-    else if (t === "chunk") stats.chunk++;
-    else if (t === "sentencePattern") stats.sentencePattern++;
-    else if (t === "speakingExpression") stats.speakingExpression++;
-  }
-
-  // ── Stage: database ──
-  try {
-    await supabase.from("agent_logs").insert({
-      user_id: user.id,
-      agent_type: "expression_import",
-      action: "extract_expressions",
-      input_data: {
-        text_length: text.length,
-        text_preview: text.slice(0, 100),
-      },
-      output_data: {
-        expression_count: expressions.length,
-        stats,
-        tokens_used: tokensUsed,
-      },
-      model: "deepseek-chat",
-      tokens_used: tokensUsed,
-    });
-  } catch (dbErr) {
-    console.error(`[expression-import-agent] DB log insert failed: ${(dbErr as Error).message}`);
-    // Non-fatal — still return success
-  }
-
-  return new Response(JSON.stringify({
-    expressions,
-    stats,
-    tokens_used: tokensUsed,
-  }), {
-    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-  });
 });
