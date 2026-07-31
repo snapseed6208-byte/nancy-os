@@ -7,7 +7,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
+import { callDeepSeek, safeJsonParse } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -144,19 +144,18 @@ serve(async (req: Request) => {
     console.log(`[expression-import-agent] DeepSeek success. tokens=${tokensUsed} raw_length=${raw.length}`);
 
     // ── Stage: parse ──
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = parseAIJson<Record<string, unknown>>(raw);
-    } catch (parseErr) {
-      console.error(`[expression-import-agent] parse error: ${(parseErr as Error).message}. Raw (first 500): ${raw.slice(0, 500)}`);
+    const parseResult = safeJsonParse<{ expressions: Array<Record<string, unknown>> }>(raw);
+    if (!parseResult.success) {
+      console.error(`[expression-import-agent] parse failed: ${parseResult.error}`);
       return errResponse({
         stage: "parse",
         error: "parse_error",
-        raw: raw.slice(0, 500),
+        raw_sample: parseResult.raw_sample,
         message: "AI 返回格式异常，请重试",
       }, req, 500);
     }
 
+    const parsed = parseResult.data as unknown as Record<string, unknown>;
     console.log(`[expression-import-agent] Parse success. keys=${Object.keys(parsed).join(",")}`);
 
     const expressions = (parsed.expressions as Array<Record<string, unknown>>) || [];

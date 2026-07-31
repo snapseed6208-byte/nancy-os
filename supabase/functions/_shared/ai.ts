@@ -51,49 +51,133 @@ const DEFAULT_MODEL = "deepseek-chat";
 const DEFAULT_TIMEOUT = 60_000;
 const DEFAULT_MAX_TOKENS = 2048;
 
-// ── JSON parse helper ──
+// ── Stage type for agent error reporting ──
+
+export type AgentStage = "payload" | "auth" | "deepseek" | "parse" | "database" | "internal";
+
+export function stageError(stage: AgentStage, error: string, detail?: string, extra?: Record<string, unknown>) {
+  return { stage, error, ...(detail ? { detail } : {}), ...(extra || {}) };
+}
+
+// ── JSON parse helpers ──
 
 /**
- * Extract and parse JSON from AI response text.
- * Handles markdown code fences and prose-wrapped JSON.
+ * Attempt to repair truncated JSON by closing unclosed brackets.
+ * Handles the most common case: AI response cut off at max_tokens.
  */
-export function parseAIJson<T = unknown>(raw: string): T {
+function repairTruncatedJson(text: string): string {
+  let repaired = text.trim();
+
+  // Count brackets
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (const ch of repaired) {
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") braceDepth++;
+    if (ch === "}") braceDepth--;
+    if (ch === "[") bracketDepth++;
+    if (ch === "]") bracketDepth--;
+  }
+
+  // Close any unclosed strings
+  if (inString) repaired += '"';
+
+  // Close unclosed brackets (inner first: arrays then objects)
+  while (bracketDepth > 0) { repaired += "]"; bracketDepth--; }
+  while (braceDepth > 0) { repaired += "}"; braceDepth--; }
+
+  return repaired;
+}
+
+/**
+ * Fix common AI JSON mistakes: trailing commas, missing commas.
+ */
+function repairJsonSyntax(text: string): string {
+  // Remove trailing commas before ] or }
+  let repaired = text.replace(/,(\s*[}\]])/g, "$1");
+  // Remove trailing comma at end of string
+  repaired = repaired.replace(/,(\s*)$/gm, "$1");
+  return repaired;
+}
+
+/**
+ * Robust JSON extraction and parse. Never throws.
+ *
+ * Tries, in order:
+ * 1. Direct parse
+ * 2. Strip markdown fences then parse
+ * 3. Extract { } object from prose then parse
+ * 4. Extract [ ] array from prose then parse
+ * 5. Repair truncated JSON then parse
+ * 6. Syntax repair + retry
+ */
+export function safeJsonParse<T = unknown>(raw: string): { success: true; data: T } | { success: false; error: string; raw_sample: string } {
   let text = raw.trim();
 
-  // Strip markdown code fences
+  // Strip BOM
+  text = text.replace(/^﻿/, "");
+
+  // Strategy 1: Direct parse
+  try { return { success: true, data: JSON.parse(text) as T }; } catch { /* continue */ }
+
+  // Strategy 2: Strip markdown fences
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenceMatch) {
-    text = fenceMatch[1].trim();
+    try { return { success: true, data: JSON.parse(fenceMatch[1].trim()) as T }; } catch { /* continue */ }
   }
 
-  // Try direct parse first
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    // Fall through
-  }
-
-  // Try to find JSON object in prose
+  // Strategy 3: Extract { } object
   const objMatch = text.match(/\{[\s\S]*\}/);
   if (objMatch) {
-    try {
-      return JSON.parse(objMatch[0]) as T;
-    } catch {
-      // Fall through
-    }
+    try { return { success: true, data: JSON.parse(objMatch[0]) as T }; } catch { /* continue */ }
   }
 
-  // Try array
+  // Strategy 4: Extract [ ] array
   const arrMatch = text.match(/\[[\s\S]*\]/);
   if (arrMatch) {
-    try {
-      return JSON.parse(arrMatch[0]) as T;
-    } catch {
-      // Fall through
-    }
+    try { return { success: true, data: JSON.parse(arrMatch[0]) as T }; } catch { /* continue */ }
   }
 
-  throw new Error(`无法解析 AI 返回的 JSON。原始内容 (前200字符): ${raw.slice(0, 200)}`);
+  // Strategy 5: Repair truncated JSON
+  {
+    const repaired = repairTruncatedJson(text);
+    try { return { success: true, data: JSON.parse(repaired) as T }; } catch { /* continue */ }
+  }
+
+  // Strategy 6: Syntax fix on extracted object
+  if (objMatch) {
+    const synFixed = repairJsonSyntax(objMatch[0]);
+    try { return { success: true, data: JSON.parse(synFixed) as T }; } catch { /* continue */ }
+  }
+
+  // Strategy 7: Syntax fix on repaired text
+  {
+    const repaired = repairTruncatedJson(text);
+    const synFixed = repairJsonSyntax(repaired);
+    try { return { success: true, data: JSON.parse(synFixed) as T }; } catch { /* continue */ }
+  }
+
+  return {
+    success: false,
+    error: "AI 返回格式异常，无法解析 JSON",
+    raw_sample: raw.slice(0, 500),
+  };
+}
+
+/**
+ * Extract and parse JSON from AI response text. Throws on failure.
+ * For new code, prefer safeJsonParse which never throws.
+ */
+export function parseAIJson<T = unknown>(raw: string): T {
+  const result = safeJsonParse<T>(raw);
+  if (result.success) return result.data;
+  throw new Error(result.error);
 }
 
 // ── Core call ──

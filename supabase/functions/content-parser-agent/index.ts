@@ -9,7 +9,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { callDeepSeek } from "../_shared/ai.ts";
+import { callDeepSeek, safeJsonParse } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -507,24 +507,6 @@ const RECIPE_PARSER_PROMPT = `你是一个食谱结构化整理助手。
 - 步骤中的时间信息只在来源明确提及时才填写
 - 用量单位只使用原文中出现的
 - 不要从标题推断完整食谱——标题只是参考`;
-
-// ── JSON Schema validation ──
-
-function parseAIJson(raw: string): Record<string, unknown> {
-  let cleaned = raw.trim().replace(/^﻿/, "");
-
-  try { return JSON.parse(cleaned); } catch { /* continue */ }
-
-  cleaned = cleaned.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "");
-
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-  }
-
-  return JSON.parse(cleaned);
-}
 
 // ── Recipe output sanitization ──
 // Post-process AI output to prevent field pollution:
@@ -1044,11 +1026,9 @@ serve(async (req: Request) => {
     const raw = aiResult.data;
     const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = parseAIJson(raw);
-    } catch (parseErr) {
-      console.error(`[content-parser-agent] JSON parse error: ${(parseErr as Error).message}. Raw (first 500): ${raw.slice(0, 500)}`);
+    const parseResult = safeJsonParse<Record<string, unknown>>(raw);
+    if (!parseResult.success) {
+      console.error(`[content-parser-agent] JSON parse error: ${parseResult.error}`);
       if (workoutVideoId) {
         await supabase
           .from("workout_videos")
@@ -1064,10 +1044,12 @@ serve(async (req: Request) => {
       return jsonResponse({
         stage: "parse",
         error: "parse_error",
-        raw: raw.slice(0, 500),
+        raw_sample: parseResult.raw_sample,
         message: "AI 返回格式异常，请重试",
       }, req, 500);
     }
+
+    const parsed = parseResult.data;
 
     // Force UPDATE mode when retrying (ID takes priority over AI classification)
     if (workoutVideoId) {
