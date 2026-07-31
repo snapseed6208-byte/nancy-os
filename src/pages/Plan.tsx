@@ -765,6 +765,9 @@ function AiReviewSection() {
 
   if (isLoading || pendingTasks.length === 0) return null;
 
+  const reviewError = reviewTask.error;
+  const batchError = batchReview.error;
+
   return (
     <div className="bg-amber-50/50 border border-amber-200 rounded-2xl p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -792,6 +795,12 @@ function AiReviewSection() {
           全部删除
         </button>
       </div>
+      {reviewError && (
+        <p className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-lg px-2 py-1">操作失败: {(reviewError as Error).message}</p>
+      )}
+      {batchError && (
+        <p className="text-[10px] text-accent-rose bg-accent-rose/5 rounded-lg px-2 py-1">批量操作失败: {(batchError as Error).message}</p>
+      )}
       <div className="space-y-1.5">
         {pendingTasks.map((t) => (
           <div key={t.id} className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 border border-amber-100">

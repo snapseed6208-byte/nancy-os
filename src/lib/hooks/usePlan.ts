@@ -697,6 +697,9 @@ export function useReviewAiTask() {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["tasks", "aiReview"] });
     },
+    onError: (err) => {
+      console.error("AI task review action failed:", err);
+    },
   });
 }
 
@@ -725,6 +728,9 @@ export function useBatchReviewAiTasks() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["tasks", "aiReview"] });
+    },
+    onError: (err) => {
+      console.error("Batch AI task review failed:", err);
     },
   });
 }
