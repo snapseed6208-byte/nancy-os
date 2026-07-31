@@ -21,15 +21,29 @@ const CATEGORY_OPTIONS = ["创业", "学习", "工作", "生活", "创意", "技
 
 type MediaAttachment = { type: "image" | "link"; url: string };
 
+const MIME_MAP: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
 // ── Helpers ──
 
 async function uploadImages(files: File[]): Promise<string[]> {
   const urls: string[] = [];
   for (const file of files) {
-    const ext = file.name.split(".").pop() || "jpg";
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const fileName = uniqueFileName(ext);
-    const { error } = await supabase.storage.from("idea-images").upload(fileName, file);
-    if (error) throw new Error(`图片上传失败: ${error.message}`);
+    const contentType = MIME_MAP[ext] || "image/jpeg";
+    const { error } = await supabase.storage
+      .from("idea-images")
+      .upload(fileName, file, { contentType });
+    if (error) {
+      console.error("[uploadImages] upload failed", { fileName, ext, contentType, error });
+      throw new Error(`图片上传失败: ${error.message}`);
+    }
     const { data: urlData } = supabase.storage.from("idea-images").getPublicUrl(fileName);
     urls.push(urlData.publicUrl);
   }
