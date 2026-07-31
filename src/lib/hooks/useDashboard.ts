@@ -100,10 +100,11 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     { count: journalMonth, error: jmErr },
     { data: habitStreak, error: streakErr },
   ] = await Promise.all([
-    // Tasks: pending + in_progress (includes recurring)
+    // Tasks: pending + in_progress (excludes AI-pending review tasks)
     supabase.from("tasks")
       .select("id,title,status,priority,module,task_type,completed_count,target_count,frequency_type")
       .in("status", ["pending", "in_progress"])
+      .or("ai_review_status.is.null,ai_review_status.neq.pending")
       .order("priority", { ascending: true })
       .limit(20),
     // Tasks completed today

@@ -226,7 +226,13 @@ async function fetchTasks(filters?: {
     .order("created_at", { ascending: false })
     .limit(filters?.limit || 50);
 
-  if (filters?.status) query = query.eq("status", filters.status);
+  if (filters?.status) {
+    query = query.eq("status", filters.status);
+  } else {
+    // Default: only active tasks (exclude done, exclude ai_pending)
+    query = query.in("status", ["pending", "in_progress"])
+      .or("ai_review_status.is.null,ai_review_status.neq.pending");
+  }
   if (filters?.dueDate) query = query.eq("due_date", filters.dueDate);
   if (filters?.goalId) query = query.eq("goal_id", filters.goalId);
   if (filters?.isTodayFocus) query = query.eq("is_today_focus", true);
@@ -262,6 +268,7 @@ export function useTodayTasks() {
           .or(`due_date.eq.${today},is_today_focus.eq.true`)
           .eq("task_type", "one_time")
           .in("status", ["pending", "in_progress"])
+          .or("ai_review_status.is.null,ai_review_status.neq.pending")
           .order("priority", { ascending: true })
           .limit(30),
         supabase
@@ -269,6 +276,7 @@ export function useTodayTasks() {
           .select("*")
           .eq("task_type", "recurring")
           .neq("status", "done")
+          .or("ai_review_status.is.null,ai_review_status.neq.pending")
           .order("priority", { ascending: true })
           .limit(30),
       ]);
