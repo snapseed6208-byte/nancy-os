@@ -675,7 +675,12 @@ export function useReviewAiTask() {
       } else {
         const { error } = await supabase
           .from("tasks")
-          .update({ ai_review_status: "confirmed", updated_at: new Date().toISOString() })
+          .update({
+            ai_review_status: "confirmed",
+            status: "pending",
+            approved_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", id);
         if (error) throw error;
       }

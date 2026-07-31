@@ -47,7 +47,11 @@ async function fetchIdeas(filters: IdeaFilters = {}) {
     .limit(100);
 
   if (filters.category) query = query.eq("category", filters.category);
-  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  } else {
+    query = query.neq("status", "archived");
+  }
   if (filters.search) query = query.ilike("content", `%${filters.search}%`);
 
   const { data, error } = await query;

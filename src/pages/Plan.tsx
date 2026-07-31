@@ -196,17 +196,17 @@ function TodayPlan() {
             />
           )}
 
-          {/* Completed */}
+          {/* Completed — hidden from today view, accessible via Task List */}
           {doneTasks.length > 0 && (
-            <TaskSection
-              icon={CheckCircle2}
-              label="已完成"
-              color="text-emerald-500"
-              tasks={doneTasks}
-              onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
-              onDelete={(id) => deleteTask.mutate(id)}
-              defaultCollapsed
-            />
+            <p className="text-center text-[11px] text-ink-lighter py-2">
+              今日已完成 {doneTasks.length} 项 ·
+              <button
+                onClick={() => handleTabChange("tasks")}
+                className="text-sage-deep underline ml-1"
+              >
+                查看全部任务
+              </button>
+            </p>
           )}
         </>
       )}
@@ -742,8 +742,7 @@ function AiReviewSection() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
-  const pendingTasks = ((aiTasks || []) as (TaskRow & { time_slot?: string; ai_review_status?: string })[])
-    .filter((t) => !t.ai_review_status || t.ai_review_status === "pending");
+  const pendingTasks = (aiTasks || []) as (TaskRow & { time_slot?: string; ai_review_status?: string })[];
 
   if (isLoading || pendingTasks.length === 0) return null;
 
