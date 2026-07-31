@@ -74,6 +74,7 @@ function useAudioRecorder() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const start = useCallback(async () => {
+    if (mediaRecorder.current && mediaRecorder.current.state === "recording") return;
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -208,7 +209,7 @@ export default function EnglishSpeaking() {
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // AI analysis state
-  const [transcript, setTranscript] = useState("");
+  const [isStarting, setIsStarting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [feedback, setFeedback] = useState<SpeakingFeedback | null>(null);
   const [referenceAnswer, setReferenceAnswer] = useState("");
@@ -251,22 +252,30 @@ export default function EnglishSpeaking() {
   };
 
   const handleStartRecording = async () => {
-    const exprSnapshot = suitableExpressions.length > 0
-      ? suitableExpressions.map((e) => ({ english: e, chinese: "" }))
-      : [];
-    const result = await createSession.mutateAsync({
-      prompt: question,
-      context: questionContext,
-      category: category || undefined,
-      mode,
-      recommended_expressions: exprSnapshot.length > 0 ? exprSnapshot : undefined,
-    });
-    setSessionId(result.id as string);
-    setStep("record");
+    if (isStarting || recorder.state !== "idle") return;
+    setIsStarting(true);
+    try {
+      const exprSnapshot = suitableExpressions.length > 0
+        ? suitableExpressions.map((e) => ({ english: e, chinese: "" }))
+        : [];
+      const result = await createSession.mutateAsync({
+        prompt: question,
+        context: questionContext,
+        category: category || undefined,
+        mode,
+        recommended_expressions: exprSnapshot.length > 0 ? exprSnapshot : undefined,
+      });
+      setSessionId(result.id as string);
 
-    // Start both audio recorder and ASR
-    recorder.start();
-    asr.start();
+      // Start both audio recorder and ASR
+      recorder.start();
+      asr.start();
+    } catch (err) {
+      console.error("[EnglishSpeaking] handleStartRecording failed:", err);
+      setAiError("创建练习会话失败，请检查网络或重新登录。");
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const handleStopRecording = () => {
@@ -275,15 +284,11 @@ export default function EnglishSpeaking() {
   };
 
   const handleGoToReview = () => {
-    // Combine ASR transcript with any manual edits
-    if (asr.transcript) {
-      setTranscript(asr.transcript);
-    }
     setStep("review");
   };
 
   const handleAnalyze = async () => {
-    const text = transcript.trim();
+    const text = asr.transcript.trim();
     if (!text) {
       setAiError("请先输入或确认你说的话，AI 无法分析空白内容。");
       return;
@@ -335,8 +340,8 @@ export default function EnglishSpeaking() {
     try {
       await createAttempt.mutateAsync({
         session_id: sessionId,
-        answer: transcript || `[Voice recording on: ${question}]`,
-        transcribed_text: asr.transcript || transcript || null,
+        answer: asr.transcript || `[Voice recording on: ${question}]`,
+        transcribed_text: asr.transcript || null,
         natural_version: feedback?.naturalVersion || "",
         combined_feedback: combined,
         fluency_score: feedback?.fluencyScore ?? null,
@@ -382,7 +387,6 @@ export default function EnglishSpeaking() {
     setQuestionContext("");
     setSuitableExpressions([]);
     setSessionId(null);
-    setTranscript("");
     setFeedback(null);
     setReferenceAnswer("");
     setAiError(null);
@@ -638,12 +642,14 @@ export default function EnglishSpeaking() {
           step={step}
           recorderState={recorder.state}
           isListening={asr.isListening}
-          transcript={asr.transcript || transcript}
+          transcript={asr.transcript}
           audioBlob={recorder.blob}
+          audioUrl={recorder.audioUrl}
           sessionId={sessionId}
           question={question}
           feedback={feedback}
-          hasTranscriptForAnalysis={!!transcript.trim()}
+          canAnalyze={!!asr.transcript.trim()}
+          canSave={!!sessionId}
         />
       )}
 
@@ -735,9 +741,10 @@ export default function EnglishSpeaking() {
                     <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping pointer-events-none" style={{ width: 80, height: 80, margin: "auto" }} />
                   )}
                   <button
+                    disabled={isStarting}
                     onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : handleStartRecording}
                     className={cn(
-                      "rounded-full flex items-center justify-center transition-all",
+                      "rounded-full flex items-center justify-center transition-all disabled:opacity-40 disabled:scale-95",
                       recorder.state === "recording"
                         ? "h-20 w-20 bg-accent-rose text-white shadow-lg"
                         : recorder.state === "done"
@@ -839,8 +846,8 @@ export default function EnglishSpeaking() {
               className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light resize-none"
               rows={4}
               placeholder="输入或修改你说的话..."
-              value={transcript || asr.transcript}
-              onChange={(e) => setTranscript(e.target.value)}
+              value={asr.transcript}
+              onChange={(e) => asr.setTranscript(e.target.value)}
             />
           </div>
 
@@ -1306,29 +1313,34 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
 // ── Dev Debug Panel ──
 
 function DebugPanel({
-  step, recorderState, isListening, transcript, audioBlob, sessionId, question, feedback, hasTranscriptForAnalysis,
+  step, recorderState, isListening, transcript, audioBlob, audioUrl, sessionId, question, feedback, canAnalyze, canSave,
 }: {
   step: string;
   recorderState: string;
   isListening: boolean;
   transcript: string;
   audioBlob: Blob | null;
+  audioUrl: string | null;
   sessionId: string | null;
   question: string;
   feedback: SpeakingFeedback | null;
-  hasTranscriptForAnalysis: boolean;
+  canAnalyze: boolean;
+  canSave: boolean;
 }) {
+  const boolIcon = (v: boolean) => v ? "✅" : "❌";
   return (
-    <div className="bg-gray-900 text-green-400 rounded-xl p-3 text-[11px] font-mono leading-relaxed space-y-1 border border-gray-700">
-      <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wider mb-1">Dev Debug</p>
+    <div className="bg-gray-900 text-green-400 rounded-xl p-3 text-[11px] font-mono leading-relaxed space-y-0.5 border border-gray-700">
+      <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wider mb-1">Speaking Debug</p>
       <p>Step: <span className="text-yellow-300">{step}</span></p>
-      <p>Recording: <span className={recorderState === "recording" ? "text-red-400" : "text-green-400"}>{String(recorderState === "recording")}</span> <span className="text-gray-500">({recorderState})</span></p>
-      <p>ASR Listening: <span className={isListening ? "text-green-400" : "text-gray-500"}>{String(isListening)}</span></p>
-      <p>Transcript: <span className={transcript ? "text-green-400" : "text-red-400"}>{transcript ? `"${transcript.slice(0, 80)}${transcript.length > 80 ? "..." : ""}"` : "(empty)"}</span></p>
-      <p>Audio Blob: <span className={audioBlob ? "text-green-400" : "text-red-400"}>{audioBlob ? `exists (${(audioBlob.size / 1024).toFixed(1)} KB)` : "null"}</span></p>
-      <p>Session ID: <span className={sessionId ? "text-green-400" : "text-red-400"}>{sessionId || "null (save will fail)"}</span></p>
-      <p>Question: <span className="text-gray-300">"{question.slice(0, 60)}{question.length > 60 ? "..." : ""}"</span></p>
-      <p>Analysis Ready: <span className={hasTranscriptForAnalysis ? "text-green-400" : "text-red-400"}>{String(hasTranscriptForAnalysis)}</span></p>
+      <p>Recording state: <span className={recorderState === "recording" ? "text-red-400" : recorderState === "done" ? "text-green-400" : "text-gray-300"}>{recorderState}</span></p>
+      <p>MediaRecorder: <span className="text-gray-300">(via recorder.state)</span></p>
+      <p>SpeechRecognition: <span className={isListening ? "text-green-400" : "text-gray-500"}>{isListening ? "listening" : "stopped"}</span></p>
+      <p>AudioBlob: {boolIcon(!!audioBlob)} {audioBlob ? <span className="text-gray-500">({(audioBlob.size / 1024).toFixed(1)} KB)</span> : <span className="text-red-400">no</span>}</p>
+      <p>AudioURL: {boolIcon(!!audioUrl)} {audioUrl ? "yes" : <span className="text-red-400">no</span>}</p>
+      <p>Transcript: <span className={transcript.length > 0 ? "text-green-400" : "text-red-400"}>{transcript.length > 0 ? `${transcript.length} chars` : "0 chars"}</span></p>
+      <p>SessionId: {boolIcon(!!sessionId)} {sessionId ? "exists" : <span className="text-red-400">不存在</span>}</p>
+      <p>CanAnalyze: {boolIcon(canAnalyze)} {canAnalyze ? <span className="text-green-400">true</span> : <span className="text-red-400">false</span>}</p>
+      <p>CanSave: {boolIcon(canSave)} {canSave ? <span className="text-green-400">true</span> : <span className="text-red-400">false</span>}</p>
       {feedback && (
         <>
           <p className="text-gray-500 mt-1">--- Feedback ---</p>

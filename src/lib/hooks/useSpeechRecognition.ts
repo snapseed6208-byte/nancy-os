@@ -119,5 +119,5 @@ export function useSpeechRecognition() {
     setError(null);
   }, []);
 
-  return { start, stop, reset, transcript, interim, isListening, error, supported };
+  return { start, stop, reset, transcript, setTranscript, interim, isListening, error, supported };
 }
