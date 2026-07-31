@@ -65,21 +65,25 @@ type Tab = "coach" | "workout" | "diet" | "plan" | "goals";
 type WorkoutSubTab = "library" | "journal";
 type DietSubTab = "journal" | "recipe";
 
-function today() { return new Date().toISOString().split("T")[0]; }
+function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+
+function toLocalDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function getWeekMonday(date?: Date): string {
   const t = date || new Date();
   const dow = t.getDay();
   const mon = new Date(t);
   mon.setDate(t.getDate() - (dow === 0 ? 6 : dow - 1));
-  return mon.toISOString().split("T")[0];
+  return toLocalDateStr(mon);
 }
 
 function formatWeekRange(mondayStr: string): string {
   const mon = new Date(mondayStr + "T00:00:00");
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
-  return `${mon.toISOString().split("T")[0]} → ${sun.toISOString().split("T")[0]}`;
+  return `${toLocalDateStr(mon)} → ${toLocalDateStr(sun)}`;
 }
 
 // ── Page ──
