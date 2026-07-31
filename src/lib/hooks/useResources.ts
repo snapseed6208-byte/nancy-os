@@ -81,6 +81,7 @@ async function fetchCategories(): Promise<Category[]> {
   const { data, error } = await supabase
     .from("categories")
     .select("*")
+    .eq("scope", "resource")
     .order("created_at", { ascending: true });
 
   if (error) throw error;

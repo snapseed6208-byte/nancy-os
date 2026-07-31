@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
-import { useCategories } from "@/lib/hooks/useResources";
 
 // ── Helpers ──
 
@@ -460,8 +459,23 @@ export function useBatchImportExpressions() {
 
 // ── Expression Categories ──
 
+async function fetchExpressionCategories() {
+  const { data, error } = await supabase
+    .from("categories")
+    .select("*")
+    .eq("scope", "expression")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data || []) as { id: string; name: string; icon: string | null; color: string | null }[];
+}
+
 export function useExpressionCategories() {
-  return useCategories();
+  return useQuery({
+    queryKey: ["expression_categories"],
+    queryFn: fetchExpressionCategories,
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 // ── Speaking Stats ──

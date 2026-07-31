@@ -988,22 +988,23 @@ function GenerateQuestion({
     triggered.current = true;
 
     async function generate() {
-      const exprList = (dueExpressions || []).slice(0, 10).map((e) => ({
-        english: (e.english as string) || "",
-        chinese: (e.chinese as string) || "",
-      }));
-
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) throw new Error("No session");
 
         if (mode === "expression_practice") {
+          // Only Expression Practice reads from the Expression Bank
+          const exprList = (dueExpressions || []).slice(0, 10).map((e) => ({
+            english: (e.english as string) || "",
+            chinese: (e.chinese as string) || "",
+          }));
           const result = await generateExpressionPracticeQuestion(exprList, session.access_token);
           onGenerated(result.question, result.context, []);
         } else {
+          // Other modes: pure category-based questions, no expression bank
           const cat = CATEGORIES.find((c) => c.key === category);
           const result = await generateCategoryQuestion(
-            cat?.label || category, subCategory, exprList, session.access_token,
+            cat?.label || category, subCategory, [], session.access_token,
           );
           onGenerated(result.question, result.context, result.suitableExpressions);
         }
