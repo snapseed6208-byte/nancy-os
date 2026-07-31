@@ -266,6 +266,7 @@ export default function EnglishSpeaking() {
   const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
   const [textMode, setTextMode] = useState(false);
   const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
+  const [addBankError, setAddBankError] = useState<string | null>(null);
   const referenceAnswerPromise = useRef<Promise<void> | null>(null);
 
   // Data
@@ -472,6 +473,7 @@ export default function EnglishSpeaking() {
   };
 
   const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
+    setAddBankError(null);
     try {
       // Dedup: check if expression already exists (case-insensitive)
       const { data: existing } = await supabase
@@ -500,7 +502,9 @@ export default function EnglishSpeaking() {
       });
       setAddedUpgrades((prev) => new Set(prev).add(index));
     } catch (err) {
-      console.error("[EnglishSpeaking] handleAddToBank failed:", err);
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error("[EnglishSpeaking] handleAddToBank failed:", msg);
+      setAddBankError(`加入表达库失败：${msg}`);
     }
   };
 
@@ -519,6 +523,7 @@ export default function EnglishSpeaking() {
     setAiError(null);
     setAddedUpgrades(new Set());
     setDuplicateUpgrades(new Set());
+    setAddBankError(null);
     setTextMode(false);
     referenceAnswerPromise.current = null;
     recorder.reset();
@@ -1239,6 +1244,14 @@ export default function EnglishSpeaking() {
                 <Sparkles size={14} className="text-violet-500" />
                 <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
               </div>
+
+              {/* Add-to-bank error */}
+              {addBankError && (
+                <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2.5 flex items-start gap-2">
+                  <AlertTriangle size={13} className="text-accent-rose shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-accent-rose">{addBankError}</p>
+                </div>
+              )}
               <div className="space-y-2">
                 {feedback.expressionUpgrade.map((upgrade: ExpressionUpgrade, i: number) => (
                   <div key={i} className="bg-violet-50/50 rounded-xl border border-violet-100 p-3 space-y-1.5">
