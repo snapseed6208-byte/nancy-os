@@ -329,11 +329,20 @@ export default function EnglishSpeaking() {
 
     let audioUrl = "";
     if (recorder.blob) {
+      console.log("[EnglishSpeaking] handleSave blob:", {
+        size: recorder.blob.size,
+        type: recorder.blob.type,
+        duration: recorder.duration,
+      });
       try {
         audioUrl = await uploadAudio(sessionId, recorder.blob);
+        console.log("[EnglishSpeaking] Audio upload OK:", audioUrl);
       } catch (err) {
         console.error("[EnglishSpeaking] Audio upload failed:", err);
+        setAiError("录音上传失败，但练习记录已保存。Storage bucket 可能未配置正确。");
       }
+    } else {
+      console.warn("[EnglishSpeaking] handleSave: recorder.blob is null — audio not saved");
     }
 
     const combined = feedback
@@ -1046,6 +1055,15 @@ export default function EnglishSpeaking() {
               {feedback ? "AI 反馈已生成并保存" : "练习记录已保存"}
             </p>
           </div>
+          {aiError && (
+            <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4 flex items-start gap-3 text-left">
+              <AlertTriangle size={16} className="text-accent-rose shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-accent-rose">上传提示</p>
+                <p className="text-xs text-ink-lighter mt-1">{aiError}</p>
+              </div>
+            </div>
+          )}
           <div className="flex gap-3">
             <button
               onClick={handleNew}

@@ -285,11 +285,25 @@ export function useCreateSpeakingAttempt() {
 
 export async function uploadAudio(sessionId: string, blob: Blob): Promise<string> {
   const fileName = `${sessionId}/${Date.now()}.webm`;
-  const { error } = await supabase.storage.from("speaking-audio").upload(fileName, blob);
-  if (error) throw error;
+  console.log("[uploadAudio] Uploading:", { fileName, blobSize: blob.size, blobType: blob.type });
 
-  const { data } = supabase.storage.from("speaking-audio").getPublicUrl(fileName);
-  return data.publicUrl;
+  const { data, error } = await supabase.storage
+    .from("speaking-audio")
+    .upload(fileName, blob, {
+      contentType: blob.type || "audio/webm",
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("[uploadAudio] Upload failed:", error);
+    throw error;
+  }
+
+  console.log("[uploadAudio] Upload success:", { path: data?.path, id: data?.id });
+
+  const { data: urlData } = supabase.storage.from("speaking-audio").getPublicUrl(fileName);
+  console.log("[uploadAudio] Public URL:", urlData.publicUrl);
+  return urlData.publicUrl;
 }
 
 // ── Dashboard Stats ──
