@@ -4,13 +4,15 @@ import {
   RefreshCw, Brain,
   Sparkles, ChevronRight, ChevronLeft, Circle, CircleDot, CheckCircle2, Trash2,
   Target, Clock, Zap, Lightbulb, ArrowRight, AlertTriangle, Heart,
-  Edit3, Eye, Sun, Moon, Sunrise,
+  Edit3, Eye, Sun, Moon, Sunrise, CheckCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useQuery } from "@tanstack/react-query";
 import {
   useGoalHierarchy, useCreateGoal,
   useTasks, useTodayTasks, useCreateTask, useUpdateTask, useToggleTaskComplete, useDeleteTask,
-  useTaskBreakdown, useBatchCreateTasks, useAiReviewTasks, useReviewAiTask,
+  useTaskBreakdown, useBatchCreateTasks, useAiReviewTasks, useReviewAiTask, useBatchReviewAiTasks,
   useWeeklyThemes, useCreateWeeklyTheme, useUpdateWeeklyTheme, useGoalProgress,
   type GoalRow, type TaskRow, type TaskBreakdownItem, type GoalWithProgress,
 } from "@/lib/hooks/usePlan";
@@ -116,12 +118,27 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const { data: tasks, isLoading } = useTodayTasks();
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
+  const today = new Date().toISOString().split("T")[0];
 
   const taskList = (tasks || []) as TaskRow[];
   const highTasks = taskList.filter((t) => t.priority === "high");
   const medTasks = taskList.filter((t) => t.priority === "medium");
   const lowTasks = taskList.filter((t) => t.priority === "low");
-  const doneTasks = taskList.filter((t) => t.status === "done");
+
+  // Separate lightweight query for today's completed count
+  const { data: doneToday } = useQuery({
+    queryKey: ["tasks", "today", "doneCount"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "done")
+        .gte("completed_at", today)
+        .lte("completed_at", `${today}T23:59:59`);
+      return count ?? 0;
+    },
+    staleTime: 30 * 1000,
+  });
 
   if (isLoading) {
     return (
@@ -140,11 +157,11 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
           <p className="text-[10px] text-ink-lighter">待完成</p>
         </div>
         <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-emerald-500">{doneTasks.length}</p>
+          <p className="text-lg font-bold text-emerald-500">{doneToday ?? 0}</p>
           <p className="text-[10px] text-ink-lighter">已完成</p>
         </div>
         <div className="bg-sage-light/30 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-sage-deep">{taskList.length}</p>
+          <p className="text-lg font-bold text-sage-deep">{(highTasks.length + medTasks.length + lowTasks.length) + (doneToday ?? 0)}</p>
           <p className="text-[10px] text-ink-lighter">总计</p>
         </div>
       </div>
@@ -196,10 +213,10 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
             />
           )}
 
-          {/* Completed — hidden from today view, accessible via Task List */}
-          {doneTasks.length > 0 && (
+          {/* Completed summary */}
+          {(doneToday ?? 0) > 0 && (
             <p className="text-center text-[11px] text-ink-lighter py-2">
-              今日已完成 {doneTasks.length} 项 ·
+              今日已完成 {doneToday} 项 ·
               <button
                 onClick={() => onTabChange("tasks")}
                 className="text-sage-deep underline ml-1"
@@ -739,10 +756,12 @@ function TaskList() {
 function AiReviewSection() {
   const { data: aiTasks, isLoading } = useAiReviewTasks();
   const reviewTask = useReviewAiTask();
+  const batchReview = useBatchReviewAiTasks();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
   const pendingTasks = (aiTasks || []) as (TaskRow & { time_slot?: string; ai_review_status?: string })[];
+  const isBusy = reviewTask.isPending || batchReview.isPending;
 
   if (isLoading || pendingTasks.length === 0) return null;
 
@@ -754,6 +773,24 @@ function AiReviewSection() {
         <span className="text-[10px] text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">
           {pendingTasks.length}
         </span>
+        <div className="flex-1" />
+        <button
+          onClick={() => batchReview.mutate({ ids: pendingTasks.map((t) => t.id), action: "confirm" })}
+          disabled={isBusy}
+          className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded-lg font-medium hover:bg-emerald-200 transition-colors disabled:opacity-50 flex items-center gap-1"
+        >
+          <CheckCheck size={11} /> 全部确认
+        </button>
+        <button
+          onClick={() => {
+            if (!confirm(`确定删除全部 ${pendingTasks.length} 个待审核任务？`)) return;
+            batchReview.mutate({ ids: pendingTasks.map((t) => t.id), action: "delete" });
+          }}
+          disabled={isBusy}
+          className="text-[10px] bg-accent-rose/10 text-accent-rose px-2 py-1 rounded-lg font-medium hover:bg-accent-rose/20 transition-colors disabled:opacity-50"
+        >
+          全部删除
+        </button>
       </div>
       <div className="space-y-1.5">
         {pendingTasks.map((t) => (
