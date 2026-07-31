@@ -4,7 +4,7 @@
 // ============================================
 
 import { useState, useEffect } from "react";
-import { User, Mail, Clock, Database, ChevronRight, Loader2, CheckCircle2, ArrowLeft, Globe, Cpu, LogOut } from "lucide-react";
+import { User, Mail, Clock, Database, ChevronRight, Loader2, CheckCircle2, ArrowLeft, Globe, Cpu, LogOut, Activity } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -192,6 +192,23 @@ export default function Settings() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* AI Health */}
+      <section className="bg-white border border-border rounded-2xl overflow-hidden">
+        <button
+          onClick={() => navigate("/settings/ai-health")}
+          className="w-full px-4 py-3.5 flex items-center gap-3 hover:bg-card-hover transition-colors text-left"
+        >
+          <div className="h-9 w-9 rounded-xl bg-accent-sky/10 flex items-center justify-center shrink-0">
+            <Activity size={16} className="text-accent-sky" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-ink">AI 运行状态</p>
+            <p className="text-[11px] text-ink-lighter">查看 AI 服务健康状态与调用历史</p>
+          </div>
+          <ChevronRight size={14} className="text-ink-lighter shrink-0" />
+        </button>
       </section>
 
       {/* Data & Export */}

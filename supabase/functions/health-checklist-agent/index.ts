@@ -5,9 +5,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -161,23 +160,19 @@ serve(async (req: Request) => {
     context.thisWeek.food_records = weekFoodCount || 0;
 
     // Call DeepSeek
-    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${DEEPSEEK_API_KEY}` },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(context, null, 2) },
-        ],
-        temperature: 0.7,
-        max_tokens: 600,
-      }),
-    });
+    const aiResult = await callDeepSeek([
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(context, null, 2) },
+    ], { temperature: 0.7, maxTokens: 600 });
 
-    const result = await response.json();
-    const raw = result.choices?.[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw);
+    if (!aiResult.success) {
+      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
+        status: aiResult.status || 502,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
+
+    const parsed = parseAIJson<Record<string, unknown>>(aiResult.data);
 
     return new Response(JSON.stringify(parsed), {
       headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },

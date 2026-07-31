@@ -5,9 +5,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -136,31 +135,19 @@ serve(async (req: Request) => {
     };
 
     // Call DeepSeek
-    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${DEEPSEEK_API_KEY}` },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(input, null, 2) },
-        ],
-        temperature: 0.7,
-        max_tokens: 1200,
-      }),
-    });
+    const aiResult = await callDeepSeek([
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(input, null, 2) },
+    ], { temperature: 0.7, maxTokens: 1200 });
 
-    const result = await response.json();
-    const raw = result.choices?.[0]?.message?.content || "{}";
-
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      // Try to extract JSON from markdown code block
-      const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-      parsed = match ? JSON.parse(match[1]) : {};
+    if (!aiResult.success) {
+      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
+        status: aiResult.status || 502,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
     }
+
+    const parsed = parseAIJson<Record<string, unknown>>(aiResult.data);
 
     // Update the daily review with AI insight
     await supabase

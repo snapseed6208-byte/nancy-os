@@ -26,6 +26,7 @@ import Review from "@/pages/Review";
 import Reflection from "@/pages/Reflection";
 import MemoryCenter from "@/pages/MemoryCenter";
 import Settings from "@/pages/Settings";
+import AIHealth from "@/pages/AIHealth";
 import Resources from "@/pages/Resources";
 import { Loader2 } from "lucide-react";
 
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Route path="/memory-center" component={MemoryCenter} />
         <Route path="/resources" component={Resources} />
         <Route path="/settings" component={Settings} />
+        <Route path="/settings/ai-health" component={AIHealth} />
       </Switch>
     </AppShell>
   );
