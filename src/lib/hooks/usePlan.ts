@@ -677,7 +677,7 @@ export function useReviewAiTask() {
       } else if (action === "edit" && edits) {
         const { error } = await supabase
           .from("tasks")
-          .update({ ...edits, ai_review_status: "edited", updated_at: new Date().toISOString() })
+          .update({ ...edits, ai_review_status: "confirmed", updated_at: new Date().toISOString() })
           .eq("id", id);
         if (error) throw error;
       } else {
