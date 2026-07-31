@@ -698,7 +698,7 @@ export default function EnglishSpeaking() {
                 {/* Record button */}
                 <div className="relative inline-flex items-center justify-center">
                   {recorder.state === "recording" && (
-                    <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping" style={{ width: 80, height: 80, margin: "auto" }} />
+                    <div className="absolute inset-0 rounded-full bg-accent-rose/20 animate-ping pointer-events-none" style={{ width: 80, height: 80, margin: "auto" }} />
                   )}
                   <button
                     onClick={recorder.state === "recording" ? handleStopRecording : recorder.state === "done" ? recorder.reset : recorder.start}
