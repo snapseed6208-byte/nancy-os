@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 
 // ── Types ──
@@ -211,11 +212,9 @@ export function useGenerateDailyReflection() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { date: string }) => {
-      const { data, error } = await supabase.functions.invoke("daily-reflection-agent", {
-        body: { date: input.date },
-      });
-      if (error) throw error;
-      return data;
+      const result = await invokeAI("daily-reflection-agent", { date: input.date });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["daily_review", vars.date] });

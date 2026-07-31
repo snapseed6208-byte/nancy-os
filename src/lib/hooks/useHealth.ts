@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
 
@@ -314,16 +315,13 @@ export function useCreateWorkoutVideo() {
 
       // Step 2: Trigger AI analysis (non-blocking)
       if (platform === "bilibili" || platform === "youtube") {
-        supabase.functions.invoke("content-parser-agent", {
-          body: {
-            url: normalized,
-            content_type: "workout",
-            workout_video_id: record.id,
-          },
-        }).then((r) => {
-          if (r.error) {
-            const detail = extractEdgeFunctionError(r);
-            console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, detail });
+        invokeAI("content-parser-agent", {
+          url: normalized,
+          content_type: "workout",
+          workout_video_id: record.id,
+        }).then((result) => {
+          if (!result.success) {
+            console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, error: result.error, detail: result.detail });
           }
         }).catch((err) => {
           console.error("[useCreateWorkoutVideo] AI trigger network error", { videoId: record.id, error: err });
@@ -383,56 +381,17 @@ export function useDeleteWorkoutVideo() {
   });
 }
 
-function extractEdgeFunctionError(result: { error: unknown; data: unknown }): string {
-  const err = result.error as Record<string, unknown> | null;
-  if (!err) return "";
-
-  // supabase-js FunctionsHttpError has .context with the response body as text
-  const ctx = err.context;
-  if (typeof ctx === "string") {
-    try {
-      const body = JSON.parse(ctx);
-      // Extract from body.error (string or object)
-      const inner = body?.error;
-      if (typeof inner === "string") return inner;
-      if (inner && typeof inner === "object") return inner.message || inner.error || "";
-      // Fallback: body.message
-      if (body?.message) return body.message as string;
-    } catch {
-      // ctx is not JSON, use it raw if short enough
-      if (ctx.length < 200) return ctx;
-    }
-  }
-
-  return (err.message as string) || "";
-}
-
 export function useRetryWorkoutAnalysis() {
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: async (video: { id: string; url: string }) => {
-      const result = await Promise.race([
-        supabase.functions.invoke("content-parser-agent", {
-          body: { url: video.url, workout_video_id: video.id },
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("AI整理超时，请稍后重试")), 30_000),
-        ),
-      ]);
-      if (result.error) {
-        const detail = extractEdgeFunctionError(result);
-        console.error("[useRetryWorkoutAnalysis] Edge Function error", {
-          videoId: video.id,
-          rawMessage: (result.error as Error)?.message,
-          detail,
-        });
-        throw new Error(detail || `AI 整理失败: ${(result.error as Error)?.message || "未知错误"}`);
-      }
-      if (result.data?.error) {
-        // Edge Function returned HTTP 200 but body has error field
-        const body = result.data as Record<string, unknown>;
-        const msg = typeof body.error === "string" ? body.error : (body.message as string) || JSON.stringify(body.error);
-        throw new Error(msg || "AI 整理返回异常");
+      const result = await invokeAI("content-parser-agent",
+        { url: video.url, workout_video_id: video.id },
+        { timeout: 30_000 },
+      );
+      if (!result.success) {
+        console.error("[useRetryWorkoutAnalysis] AI failed", { videoId: video.id, error: result.error, detail: result.detail });
+        throw new Error(result.error);
       }
       return result.data;
     },
@@ -561,10 +520,8 @@ async function invokeRecipePipeline(
     }).eq("id", recipeId);
   } else {
     try {
-      const extractResult = await supabase.functions.invoke("source-extractor-agent", {
-        body: { url, source_type: sourceType, recipe_id: recipeId },
-      });
-      if (!extractResult.error && extractResult.data) {
+      const extractResult = await invokeAI("source-extractor-agent", { url, source_type: sourceType, recipe_id: recipeId });
+      if (extractResult.success && extractResult.data) {
         sourceContent = extractResult.data as Record<string, unknown>;
         extractionError = (extractResult.data as { extraction_error?: string }).extraction_error;
         // Save source_content to recipe
@@ -621,16 +578,14 @@ async function invokeRecipePipeline(
 
   // Step C: AI parsing
   try {
-    const parseResult = await supabase.functions.invoke("content-parser-agent", {
-      body: {
-        content_type: "recipe",
-        recipe_id: recipeId,
-        source_type: sourceType,
-        source_context: sourceContext || undefined,
-        source_content: sourceContent,
-      },
+    const parseResult = await invokeAI("content-parser-agent", {
+      content_type: "recipe",
+      recipe_id: recipeId,
+      source_type: sourceType,
+      source_context: sourceContext || undefined,
+      source_content: sourceContent,
     });
-    if (parseResult.error) throw parseResult.error;
+    if (!parseResult.success) throw new Error(parseResult.error);
   } catch {
     await supabase.from("recipes").update({
       ai_analysis_status: "failed",
@@ -1035,14 +990,12 @@ export function useGenerateDailyDietSummary() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { date: string }) => {
-      const { data, error } = await supabase.functions.invoke("diet-analyst-agent", {
-        body: {
-          date: input.date,
-          mode: "daily_summary",
-        },
+      const result = await invokeAI("diet-analyst-agent", {
+        date: input.date,
+        mode: "daily_summary",
       });
-      if (error) throw error;
-      return data;
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["daily_diet_summary", variables.date] });
@@ -1111,11 +1064,11 @@ export function useGenerateMealAnalysis() {
         feeling?: string;
       }>;
     }) => {
-      const { data, error } = await supabase.functions.invoke("diet-analyst-agent", {
-        body: input,
+      const result = await invokeAI("diet-analyst-agent", {
+        ...input,
       });
-      if (error) throw error;
-      return data;
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({
@@ -1208,11 +1161,9 @@ export function useGenerateCoachInsight() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("health-coach-agent", {
-        body: {},
-      });
-      if (error) throw error;
-      return data;
+      const result = await invokeAI("health-coach-agent", {});
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["health_coach_insight"] });
@@ -1226,11 +1177,9 @@ export function useParseContent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { url: string; type: "workout" | "recipe" }) => {
-      const { data, error } = await supabase.functions.invoke("content-parser-agent", {
-        body: { url: input.url, type: input.type },
-      });
-      if (error) throw error;
-      return data as {
+      const result = await invokeAI("content-parser-agent", { url: input.url, type: input.type });
+      if (!result.success) throw new Error(result.error);
+      return result.data as {
         title: string;
         category?: string;
         difficulty?: string;
@@ -1450,11 +1399,9 @@ export function useGenerateChecklistTips() {
         .eq("item_type", "ai");
 
       // Call AI
-      const { data, error } = await supabase.functions.invoke("health-checklist-agent", {
-        body: {},
-      });
-      if (error) throw error;
-      return data as HealthChecklistTips;
+      const result = await invokeAI<HealthChecklistTips>("health-checklist-agent", {});
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["daily_checklist", vars.date] });

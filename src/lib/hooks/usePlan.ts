@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 
 // ── Types ──
@@ -553,17 +554,13 @@ export function useTaskBreakdown() {
       goalDescription?: string;
       goalLevel?: string;
     }): Promise<{ tasks: TaskBreakdownItem[] }> => {
-      const { data, error } = await supabase.functions.invoke("task-breakdown-agent", {
-        body: {
-          goal_title: input.goalTitle,
-          goal_description: input.goalDescription,
-          goal_level: input.goalLevel,
-        },
+      const result = await invokeAI<{ tasks: TaskBreakdownItem[] }>("task-breakdown-agent", {
+        goal_title: input.goalTitle,
+        goal_description: input.goalDescription,
+        goal_level: input.goalLevel,
       });
-
-      if (error) throw new Error(error.message || "调用 AI 服务失败");
-      if (data?.error) throw new Error(data.message || data.error);
-      return data;
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });

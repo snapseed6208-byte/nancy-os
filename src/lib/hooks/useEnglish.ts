@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
 
@@ -390,11 +391,9 @@ export type ImportResult = {
 export function useParseFile() {
   return useMutation({
     mutationFn: async (input: { file: string; mime_type: string }) => {
-      const { data, error } = await supabase.functions.invoke("file-parser-agent", {
-        body: { file: input.file, mime_type: input.mime_type },
-      });
-      if (error) throw new Error(error.message || "文件解析失败");
-      return data as { text: string; char_count: number; warning?: string };
+      const result = await invokeAI("file-parser-agent", { file: input.file, mime_type: input.mime_type });
+      if (!result.success) throw new Error(result.error);
+      return result.data as { text: string; char_count: number; warning?: string };
     },
   });
 }
@@ -402,11 +401,9 @@ export function useParseFile() {
 export function useExtractExpressions() {
   return useMutation({
     mutationFn: async (input: { text: string }): Promise<ImportResult> => {
-      const { data, error } = await supabase.functions.invoke("expression-import-agent", {
-        body: { text: input.text },
-      });
-      if (error) throw new Error(error.message || "表达式提取失败");
-      return data as ImportResult;
+      const result = await invokeAI<ImportResult>("expression-import-agent", { text: input.text });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
   });
 }

@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import { normalizeUrl } from "@/lib/utils";
 
@@ -495,23 +496,13 @@ export function useContentParser() {
       text?: string;
       preferred_module?: string;
     }): Promise<ParsedContent> => {
-      const { data, error } = await supabase.functions.invoke("content-parser-agent", {
-        body: {
-          url: input.url || undefined,
-          text: input.text || undefined,
-          preferred_module: input.preferred_module || undefined,
-        },
+      const result = await invokeAI<ParsedContent>("content-parser-agent", {
+        url: input.url || undefined,
+        text: input.text || undefined,
+        preferred_module: input.preferred_module || undefined,
       });
-
-      if (error) {
-        const ctx = (error as { context?: { status?: number } }).context;
-        if (ctx?.status) {
-          throw new Error(`AI 服务异常 (${ctx.status})`);
-        }
-        throw new Error(error.message || "AI 解析失败");
-      }
-
-      return data as ParsedContent;
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["resources"] });

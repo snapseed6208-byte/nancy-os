@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import { dataUrlToBlob, uniqueFileName } from "@/lib/media";
 import type { PendingCapture } from "@/lib/db/indexedDb";
@@ -273,11 +274,9 @@ export function useTriggerLifeAnalysis() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (journalEntryId: string): Promise<LifeAnalysisResult> => {
-      const { data, error } = await supabase.functions.invoke("life-analysis-agent", {
-        body: { journal_entry_id: journalEntryId },
-      });
-      if (error) throw error;
-      return data as LifeAnalysisResult;
+      const result = await invokeAI<LifeAnalysisResult>("life-analysis-agent", { journal_entry_id: journalEntryId });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["journal_entries"] });

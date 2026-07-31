@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 
 // ── Types ──
@@ -76,12 +77,9 @@ export function useGenerateReflection() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (): Promise<ReflectionResult> => {
-      const { data, error } = await supabase.functions.invoke("reflection-agent", {
-        body: {},
-      });
-      if (error) throw new Error(error.message || "调用 AI 服务失败");
-      if (data?.error) throw new Error(data.message || data.error);
-      return data as ReflectionResult;
+      const result = await invokeAI<ReflectionResult>("reflection-agent", {});
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["reflections"] });
@@ -120,14 +118,12 @@ export function useGenerateDailyBrief() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("daily-brief-agent", {
-        body: {},
-      });
-      if (error) throw new Error(error.message || "调用 AI 服务失败");
-      if (data?.error && data.error !== "already_exists") {
-        throw new Error(data.message || data.error);
+      const result = await invokeAI("daily-brief-agent", {});
+      if (!result.success) {
+        if (result.detail === "already_exists") return { error: "already_exists" };
+        throw new Error(result.error);
       }
-      return data;
+      return result.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["daily_brief"] });

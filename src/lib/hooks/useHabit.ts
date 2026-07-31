@@ -5,6 +5,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 
 // ── Types ──
@@ -458,15 +459,12 @@ export function useGenerateHabitAnalysis() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input?: { habitId?: string; days?: number }) => {
-      const { data, error } = await supabase.functions.invoke("habit-analyst-agent", {
-        body: {
-          habit_id: input?.habitId || undefined,
-          days: input?.days || 30,
-        },
+      const result = await invokeAI<HabitAnalysis>("habit-analyst-agent", {
+        habit_id: input?.habitId || undefined,
+        days: input?.days || 30,
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error as string);
-      return data as HabitAnalysis;
+      if (!result.success) throw new Error(result.error);
+      return result.data;
     },
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: ["habitAnalysis", variables?.habitId || "overall"] });
