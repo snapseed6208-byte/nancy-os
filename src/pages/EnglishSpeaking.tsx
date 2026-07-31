@@ -254,6 +254,7 @@ export default function EnglishSpeaking() {
   const handleStartRecording = async () => {
     if (isStarting || recorder.state !== "idle") return;
     setIsStarting(true);
+    setAiError(null);
     try {
       const exprSnapshot = suitableExpressions.length > 0
         ? suitableExpressions.map((e) => ({ english: e, chinese: "" }))
@@ -267,13 +268,13 @@ export default function EnglishSpeaking() {
       });
       setSessionId(result.id as string);
 
-      // Start both audio recorder and ASR
-      recorder.start();
+      // Await recorder so state transitions to "recording" before releasing guard
+      await recorder.start();
       asr.start();
+      setIsStarting(false);
     } catch (err) {
       console.error("[EnglishSpeaking] handleStartRecording failed:", err);
       setAiError("创建练习会话失败，请检查网络或重新登录。");
-    } finally {
       setIsStarting(false);
     }
   };
@@ -283,7 +284,12 @@ export default function EnglishSpeaking() {
     asr.stop();
   };
 
-  const handleGoToReview = () => {
+  const handleGoToReview = async () => {
+    // Ensure ASR onend has fired before showing review
+    // (onend fires ~100ms after stop(), MediaRecorder.onstop takes 200-500ms)
+    if (asr.supported && asr.isListening) {
+      await new Promise<void>((r) => setTimeout(r, 500));
+    }
     setStep("review");
   };
 
@@ -360,8 +366,9 @@ export default function EnglishSpeaking() {
       });
     } catch (err) {
       console.error("[EnglishSpeaking] createAttempt failed:", err);
+      setAiError("保存练习记录失败，请稍后重试。你的录音和分析结果仍然保留在当前页面。");
       setUploading(false);
-      throw err;
+      return;
     }
 
     // Auto-lower SRS levels for missed expressions
@@ -871,9 +878,10 @@ export default function EnglishSpeaking() {
 
           <button
             onClick={handleSave}
-            className="w-full bg-ink/5 text-ink-light rounded-xl py-2 text-sm font-medium"
+            disabled={uploading}
+            className="w-full bg-ink/5 text-ink-light rounded-xl py-2 text-sm font-medium disabled:opacity-50"
           >
-            跳过分析，直接保存
+            {uploading ? "保存中..." : "跳过分析，直接保存"}
           </button>
         </div>
       )}
@@ -986,8 +994,12 @@ export default function EnglishSpeaking() {
             disabled={analyzing}
             className="w-full bg-ink/5 text-ink-light rounded-xl py-2 text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            <RefreshCw size={14} />
-            重新分析
+            {analyzing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+            {analyzing ? "分析中..." : "重新分析"}
           </button>
 
           {/* Save */}
@@ -1002,11 +1014,11 @@ export default function EnglishSpeaking() {
       )}
 
       {/* AI Error */}
-      {aiError && step === "review" && (
+      {aiError && (
         <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-2xl p-4 flex items-start gap-3">
           <AlertTriangle size={16} className="text-accent-rose shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-accent-rose">AI 分析暂不可用</p>
+            <p className="text-sm font-medium text-accent-rose">出错了</p>
             <p className="text-xs text-ink-lighter mt-1">{aiError}</p>
             <button
               onClick={handleAnalyze}
