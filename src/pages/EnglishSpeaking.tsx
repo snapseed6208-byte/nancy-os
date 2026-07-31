@@ -169,7 +169,7 @@ async function lowerMissedExpressions(missedExpressions: string[]) {
       .from("expressions")
       .select("id, ease_factor")
       .eq("archived", false)
-      .ilike("english", expr.trim())
+      .eq("english", expr.trim())
       .limit(5);
 
     if (!matches || matches.length === 0) continue;
@@ -205,7 +205,7 @@ export default function EnglishSpeaking() {
   const [mode, setMode] = useState<"free_speaking" | "expression_practice">("free_speaking");
   const [question, setQuestion] = useState("");
   const [questionContext, setQuestionContext] = useState("");
-  const [suitableExpressions, setSuitableExpressions] = useState<string[]>([]);
+  const [suitableExpressions, setSuitableExpressions] = useState<{ english: string; chinese: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // AI analysis state
@@ -256,15 +256,12 @@ export default function EnglishSpeaking() {
     setIsStarting(true);
     setAiError(null);
     try {
-      const exprSnapshot = suitableExpressions.length > 0
-        ? suitableExpressions.map((e) => ({ english: e, chinese: "" }))
-        : [];
       const result = await createSession.mutateAsync({
         prompt: question,
         context: questionContext,
         category: category || undefined,
         mode,
-        recommended_expressions: exprSnapshot.length > 0 ? exprSnapshot : undefined,
+        recommended_expressions: suitableExpressions.length > 0 ? suitableExpressions : undefined,
       });
       setSessionId(result.id as string);
 
@@ -305,7 +302,7 @@ export default function EnglishSpeaking() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("请先登录");
-      const result = await analyzeSpeaking(question, text, suitableExpressions, session.access_token);
+      const result = await analyzeSpeaking(question, text, suitableExpressions.map(e => e.english), session.access_token);
       setFeedback(result);
       // Generate reference answer in parallel
       generateReferenceAnswer(question, session.access_token)
@@ -725,7 +722,7 @@ export default function EnglishSpeaking() {
             {suitableExpressions.map((e, i) => (
               <span key={i} className="text-[12px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1.5 flex items-center gap-1.5 font-medium">
                 <span className="text-amber-400">⭐</span>
-                {e}
+                {e.english}
               </span>
             ))}
           </div>
@@ -795,6 +792,11 @@ export default function EnglishSpeaking() {
 
                 {recorder.error && (
                   <p className="text-xs text-accent-rose">{recorder.error}</p>
+                )}
+
+                {/* ASR error */}
+                {asr.supported && asr.error && (
+                  <p className="text-xs text-accent-rose mt-1">语音识别错误: {asr.error}</p>
                 )}
 
                 {/* ASR status */}
@@ -1093,14 +1095,15 @@ function GenerateQuestion({
   category: string;
   subCategory: string;
   dueExpressions?: Record<string, unknown>[];
-  onGenerated: (q: string, ctx: string, exprs: string[]) => void;
+  onGenerated: (q: string, ctx: string, exprs: { english: string; chinese: string }[]) => void;
   onReady: () => void;
 }) {
-  const triggered = useRef(false);
+  const generatedKey = useRef("");
 
   useEffect(() => {
-    if (triggered.current) return;
-    triggered.current = true;
+    const key = `${mode}|${category}|${subCategory}`;
+    if (generatedKey.current === key) return;
+    generatedKey.current = key;
 
     async function generate() {
       try {
@@ -1114,14 +1117,15 @@ function GenerateQuestion({
             chinese: (e.chinese as string) || "",
           }));
           const result = await generateExpressionPracticeQuestion(exprList, session.access_token);
-          onGenerated(result.question, result.context, []);
+          onGenerated(result.question, result.context, exprList);
         } else {
           // Other modes: pure category-based questions, no expression bank
           const cat = CATEGORIES.find((c) => c.key === category);
           const result = await generateCategoryQuestion(
             cat?.label || category, subCategory, [], session.access_token,
           );
-          onGenerated(result.question, result.context, result.suitableExpressions);
+          const exprs = (result.suitableExpressions || []).map((e: string) => ({ english: e, chinese: "" }));
+          onGenerated(result.question, result.context, exprs);
         }
       } catch {
         if (mode === "expression_practice") {
@@ -1142,7 +1146,7 @@ function GenerateQuestion({
     }
 
     generate();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, category, subCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }
