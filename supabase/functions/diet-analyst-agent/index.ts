@@ -11,9 +11,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -107,22 +106,6 @@ Review ALL meals for a given day and provide a comprehensive daily diet summary 
 - If meals are skipped, note it with concern
 - Be warm and supportive — like a caring friend who happens to be a nutrition expert`;
 
-function parseAIJson(raw: string): Record<string, unknown> {
-  let cleaned = raw.trim().replace(/^﻿/, "");
-
-  try { return JSON.parse(cleaned); } catch { /* continue */ }
-
-  cleaned = cleaned.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "");
-
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-  }
-
-  return JSON.parse(cleaned);
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: getCorsHeaders(req) });
@@ -212,37 +195,24 @@ serve(async (req: Request) => {
 请给出今日总体评价、亮点、注意事项和明天建议。`;
 
       // Call DeepSeek for daily summary
-      const aiResponse = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          messages: [
-            { role: "system", content: DAILY_SUMMARY_PROMPT },
-            { role: "user", content: summaryUserMessage },
-          ],
-          temperature: 0.5,
-          max_tokens: 1024,
-        }),
-      });
+      const aiResult = await callDeepSeek([
+        { role: "system", content: DAILY_SUMMARY_PROMPT },
+        { role: "user", content: summaryUserMessage },
+      ], { temperature: 0.5, maxTokens: 1024 });
 
-      if (!aiResponse.ok) {
-        console.error(`[diet-analyst-agent] DeepSeek API error (daily_summary): ${aiResponse.status}`);
-        return new Response(JSON.stringify({ error: `AI 服务异常 (${aiResponse.status})` }), {
-          status: 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      if (!aiResult.success) {
+        return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
+          status: aiResult.status || 502,
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
 
-      const result = await aiResponse.json();
-      const raw = result.choices?.[0]?.message?.content || "{}";
-      const tokensUsed: number = result.usage?.total_tokens || 0;
+      const raw = aiResult.data as string;
+      const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
       let parsed: Record<string, unknown>;
       try {
-        parsed = parseAIJson(raw);
+        parsed = parseAIJson<Record<string, unknown>>(raw);
       } catch {
         console.error(`[diet-analyst-agent] JSON parse error (daily_summary). Raw: ${raw.slice(0, 500)}`);
         return new Response(JSON.stringify({
@@ -361,37 +331,24 @@ serve(async (req: Request) => {
 请给出营养估算和评价。`;
 
     // Call DeepSeek
-    const aiResponse = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: ANALYSIS_PROMPT },
-          { role: "user", content: userMessage },
-        ],
-        temperature: 0.5,
-        max_tokens: 1024,
-      }),
-    });
+    const aiResult = await callDeepSeek([
+      { role: "system", content: ANALYSIS_PROMPT },
+      { role: "user", content: userMessage },
+    ], { temperature: 0.5, maxTokens: 1024 });
 
-    if (!aiResponse.ok) {
-      console.error(`[diet-analyst-agent] DeepSeek API error (meal_analysis): ${aiResponse.status}`);
-      return new Response(JSON.stringify({ error: `AI 服务异常 (${aiResponse.status})` }), {
-        status: 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+    if (!aiResult.success) {
+      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
+        status: aiResult.status || 502,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
-    const result = await aiResponse.json();
-    const raw = result.choices?.[0]?.message?.content || "{}";
-    const tokensUsed: number = result.usage?.total_tokens || 0;
+    const raw = aiResult.data as string;
+    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
     let parsed: Record<string, unknown>;
     try {
-      parsed = parseAIJson(raw);
+      parsed = parseAIJson<Record<string, unknown>>(raw);
     } catch {
       console.error(`[diet-analyst-agent] JSON parse error (meal_analysis). Raw: ${raw.slice(0, 500)}`);
       return new Response(JSON.stringify({

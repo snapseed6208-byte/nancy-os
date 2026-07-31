@@ -6,9 +6,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
+import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const AI_VERSION = "v1.0.0";
@@ -189,45 +187,18 @@ serve(async (req: Request) => {
     };
 
     // Call DeepSeek
-    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(aiInput, null, 2) },
-        ],
-        temperature: 0.5,
-        max_tokens: 800,
-      }),
-    });
+    const aiResult = await callDeepSeek([
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(aiInput, null, 2) },
+    ], { temperature: 0.5, maxTokens: 800 });
 
-    const result = await response.json();
-
-    if (!result.choices?.[0]?.message?.content) {
-      console.error("DeepSeek returned no content:", JSON.stringify(result));
-      return new Response(JSON.stringify({ error: "AI returned empty response" }), {
-        status: 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+    if (!aiResult.success) {
+      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
+        status: aiResult.status || 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
-    const raw = result.choices[0].message.content;
-
-    let parsed: Record<string, unknown>;
-    try {
-      // Handle markdown code blocks
-      const jsonStr = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      console.error("Failed to parse AI response:", raw);
-      return new Response(JSON.stringify({ error: "AI response parse error" }), {
-        status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
-    }
+    const parsed = parseAIJson<Record<string, unknown>>(aiResult.data);
 
     // Validate and sanitize output
     const summary = typeof parsed.summary === "string" ? parsed.summary.slice(0, 100) : "";

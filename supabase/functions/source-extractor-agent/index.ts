@@ -14,10 +14,10 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
 
 const ALLOWED_ORIGINS = [
   "https://nancy-os.pages.dev",
@@ -198,7 +198,7 @@ function buildSourceMaterial(parts: { label: string; content: string }[]): strin
 // ── XHS: Image OCR via DeepSeek Vision ──
 
 async function ocrImagesWithDeepSeek(imageUrls: string[]): Promise<string> {
-  if (!imageUrls.length || !DEEPSEEK_API_KEY) return "";
+  if (!imageUrls.length) return "";
 
   const maxImages = 5;
   const urls = imageUrls.slice(0, maxImages);
@@ -230,51 +230,28 @@ async function ocrImagesWithDeepSeek(imageUrls: string[]): Promise<string> {
   if (imageParts.length === 0) return "";
 
   // Call DeepSeek Vision for OCR
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25_000);
+  const aiResult = await callDeepSeek([
+    {
+      role: "system",
+      content: "你是一个OCR文字提取工具。只提取图片中的中文文字，包括食材名称、用量、步骤编号和描述。以纯文本输出，保持原文格式。不要添加任何解释。如果没有文字，回复'无文字'。",
+    },
+    {
+      role: "user",
+      content: [
+        ...imageParts,
+        { type: "text", text: "请提取这些图片中的食谱相关文字内容，包括食材清单和制作步骤。" },
+      ],
+    },
+  ], { temperature: 0, maxTokens: 2000 });
 
-    const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        max_tokens: 2000,
-        temperature: 0,
-        messages: [
-          {
-            role: "system",
-            content: "你是一个OCR文字提取工具。只提取图片中的中文文字，包括食材名称、用量、步骤编号和描述。以纯文本输出，保持原文格式。不要添加任何解释。如果没有文字，回复'无文字'。",
-          },
-          {
-            role: "user",
-            content: [
-              ...imageParts,
-              { type: "text", text: "请提取这些图片中的食谱相关文字内容，包括食材清单和制作步骤。" },
-            ],
-          },
-        ],
-      }),
-    });
-    clearTimeout(timeout);
-
-    if (!resp.ok) {
-      console.log(`[source-extractor] OCR API error: ${resp.status}`);
-      return "";
-    }
-
-    const json = await resp.json();
-    const text = json?.choices?.[0]?.message?.content || "";
-    if (text === "无文字" || text === "") return "";
-    return text;
-  } catch (err) {
-    console.log(`[source-extractor] OCR failed: ${(err as Error).message}`);
+  if (!aiResult.success) {
+    console.log(`[source-extractor] OCR failed: ${aiResult.error}${aiResult.detail ? ` - ${aiResult.detail}` : ""}`);
     return "";
   }
+
+  const text = aiResult.data || "";
+  if (text === "无文字" || text === "") return "";
+  return text;
 }
 
 // ── B站: Extract BV号 ──
@@ -696,7 +673,7 @@ async function extractXiaohongshu(url: string): Promise<ExtractionResult> {
   const images = extractXiaohongshuImages(html);
   let ocrText = "";
 
-  if (images.length > 0 && DEEPSEEK_API_KEY) {
+  if (images.length > 0) {
     console.log(`[source-extractor] XHS: ${images.length} images, running OCR on up to 5...`);
     ocrText = await ocrImagesWithDeepSeek(images);
     if (ocrText) {

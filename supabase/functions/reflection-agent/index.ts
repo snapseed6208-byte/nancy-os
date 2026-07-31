@@ -7,9 +7,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -80,26 +79,6 @@ function jsonResponse(req: Request, data: unknown, status = 200) {
     status,
     headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
-}
-
-function parseAIJson(raw: string): Record<string, unknown> {
-  // Remove BOM and trim
-  let cleaned = raw.trim().replace(/^﻿/, "");
-
-  // Try direct parse first (most common case)
-  try { return JSON.parse(cleaned); } catch { /* continue */ }
-
-  // Strip code fences anywhere in the string
-  cleaned = cleaned.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "");
-
-  // Find the first { and last } to extract JSON object
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-  }
-
-  return JSON.parse(cleaned);
 }
 
 /** Determine memory status based on confidence + reinforcement count */
@@ -250,36 +229,22 @@ serve(async (req: Request) => {
 
     messages.push({ role: "user", content: userData });
 
-    const aiResponse = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages,
-        max_tokens: 4096,
-        temperature: 0.5,
-      }),
-    });
+    const aiResult = await callDeepSeek(messages, { temperature: 0.5, maxTokens: 4096 });
 
-    if (!aiResponse.ok) {
-      return jsonResponse(req,{ error: `AI 服务异常 (${aiResponse.status})` }, 502);
+    if (!aiResult.success) {
+      return jsonResponse(req, { error: aiResult.error, detail: aiResult.detail }, aiResult.status || 502);
     }
 
-    const aiData = await aiResponse.json();
-    const rawContent: string = aiData.choices?.[0]?.message?.content || "";
-    const tokensUsed: number = aiData.usage?.total_tokens || 0;
+    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
     // 5 ─ Parse AI response (robust: strips text around JSON)
     let analysis: Record<string, unknown>;
     try {
-      analysis = parseAIJson(rawContent);
+      analysis = parseAIJson<Record<string, unknown>>(aiResult.data);
     } catch {
-      return jsonResponse(req,{
+      return jsonResponse(req, {
         error: "parse_error",
-        raw: rawContent.slice(0, 500),
+        raw: (aiResult.data as string).slice(0, 500),
         message: "AI 返回格式异常，请重试",
       }, 500);
     }

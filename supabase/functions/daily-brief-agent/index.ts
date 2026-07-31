@@ -7,9 +7,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -77,22 +76,6 @@ function jsonResponse(req: Request, data: unknown, status = 200) {
     status,
     headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
-}
-
-function parseAIJson(raw: string): Record<string, unknown> {
-  let cleaned = raw.trim().replace(/^﻿/, "");
-
-  try { return JSON.parse(cleaned); } catch { /* continue */ }
-
-  cleaned = cleaned.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "");
-
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-  }
-
-  return JSON.parse(cleaned);
 }
 
 // ── Memory → Preference Profile ──
@@ -278,7 +261,7 @@ serve(async (req: Request) => {
       })),
     });
 
-    const messages: Array<{ role: string; content: string }> = [
+    const messages = [
       { role: "system", content: SYSTEM_PROMPT },
     ];
 
@@ -288,32 +271,20 @@ serve(async (req: Request) => {
 
     messages.push({ role: "user", content: userData });
 
-    const aiResponse = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages,
-        max_tokens: 2048,
-        temperature: 0.5,
-      }),
-    });
-
-    if (!aiResponse.ok) {
-      return jsonResponse(req,{ error: `AI 服务异常 (${aiResponse.status})` }, 502);
+    const aiResult = await callDeepSeek(messages, { temperature: 0.5, maxTokens: 2048 });
+    if (!aiResult.success) {
+      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
+        status: aiResult.status || 502,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
     }
-
-    const aiData = await aiResponse.json();
-    const rawContent: string = aiData.choices?.[0]?.message?.content || "";
-    const tokensUsed: number = aiData.usage?.total_tokens || 0;
+    const rawContent: string = aiResult.data as string;
+    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
     // 8 ─ Parse AI response
     let analysis: Record<string, unknown>;
     try {
-      analysis = parseAIJson(rawContent);
+      analysis = parseAIJson<Record<string, unknown>>(rawContent);
     } catch {
       return jsonResponse(req,{
         error: "parse_error",

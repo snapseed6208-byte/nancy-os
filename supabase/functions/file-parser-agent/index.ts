@@ -7,9 +7,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -64,41 +63,25 @@ async function parseDOCX(base64: string): Promise<string> {
 }
 
 async function parseImage(base64: string, mimeType: string): Promise<string> {
-  if (!DEEPSEEK_API_KEY) return "";
-
   try {
     const dataUrl = `data:${mimeType};base64,${base64}`;
-    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
+    const aiResult = await callDeepSeek([
+      {
+        role: "user",
+        content: [
           {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: dataUrl },
-              },
-              {
-                type: "text",
-                text: "Please extract all English text from this image. Return ONLY the extracted text, preserving paragraphs and line breaks where possible. If there is Chinese text mixed in, include it too. Output the raw text directly without any additional commentary.",
-              },
-            ],
+            type: "image_url",
+            image_url: { url: dataUrl },
+          },
+          {
+            type: "text",
+            text: "Please extract all English text from this image. Return ONLY the extracted text, preserving paragraphs and line breaks where possible. If there is Chinese text mixed in, include it too. Output the raw text directly without any additional commentary.",
           },
         ],
-        temperature: 0.1,
-        max_tokens: 4096,
-      }),
-    });
-
-    if (!response.ok) return "";
-    const result = await response.json();
-    return result.choices?.[0]?.message?.content || "";
+      },
+    ], { temperature: 0.1, maxTokens: 4096 });
+    if (!aiResult.success) return "";
+    return aiResult.data || "";
   } catch {
     return "";
   }

@@ -7,9 +7,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -186,28 +185,12 @@ serve(async (req: Request) => {
     }
 
     // ── Call DeepSeek ──
-    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: finalMessages,
-        max_tokens: maxTokens,
-        temperature,
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      return jsonResponse(req,{ error: `DeepSeek API error (${response.status}): ${err}` }, 502);
+    const aiResult = await callDeepSeek(finalMessages, { model, temperature, maxTokens });
+    if (!aiResult.success) {
+      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), { status: aiResult.status || 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } });
     }
 
-    const data = await response.json();
-
-    const tokensUsed: number = data.usage?.total_tokens || 0;
+    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
     // ── Log ──
     await supabase.from("agent_logs").insert({
@@ -227,9 +210,9 @@ serve(async (req: Request) => {
     });
 
     return jsonResponse(req,{
-      content: data.choices?.[0]?.message?.content || "",
-      model: data.model || model,
-      tokensUsed: data.usage?.total_tokens,
+      content: aiResult.data || "",
+      model: model,
+      tokensUsed: aiResult.usage?.totalTokens,
       context_injected: true,
       context_sources: learningContext ? {
         memories_count: (confirmedMemories || []).length,

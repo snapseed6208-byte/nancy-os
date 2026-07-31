@@ -9,9 +9,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek } from "../_shared/ai.ts";
 
-const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -997,25 +996,13 @@ serve(async (req: Request) => {
     }
 
     // ── Call DeepSeek ──
-    const aiResponse = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        temperature: isRecipePipeline ? 0.3 : 0.5,
-        max_tokens: 2048,
-      }),
-    });
+    const aiResult = await callDeepSeek([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ], { temperature: isRecipePipeline ? 0.3 : 0.5, maxTokens: 2048 });
 
-    if (!aiResponse.ok) {
-      console.error(`[content-parser-agent] DeepSeek API error: ${aiResponse.status} ${aiResponse.statusText}`);
+    if (!aiResult.success) {
+      console.error(`[content-parser-agent] DeepSeek error: ${aiResult.error}`);
       if (workoutVideoId) {
         await supabase
           .from("workout_videos")
@@ -1028,12 +1015,11 @@ serve(async (req: Request) => {
           .update({ ai_analysis_status: "failed" })
           .eq("id", recipeId);
       }
-      return jsonResponse({ error: `AI 服务异常 (${aiResponse.status})` }, req, 502);
+      return jsonResponse({ error: aiResult.error, detail: aiResult.detail }, req, aiResult.status || 502);
     }
 
-    const result = await aiResponse.json();
-    const raw = result.choices?.[0]?.message?.content || "{}";
-    const tokensUsed: number = result.usage?.total_tokens || 0;
+    const raw = aiResult.data;
+    const tokensUsed: number = aiResult.usage?.totalTokens || 0;
 
     let parsed: Record<string, unknown>;
     try {
