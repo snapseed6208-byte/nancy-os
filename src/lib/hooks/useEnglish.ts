@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
+import { useCategories } from "@/lib/hooks/useResources";
 
 // ── Helpers ──
 
@@ -21,6 +22,7 @@ export type ExpressionFilters = {
   scene?: string;
   search?: string;
   topic?: string;
+  category_id?: string;
 };
 
 async function fetchExpressions(filters: ExpressionFilters) {
@@ -34,6 +36,7 @@ async function fetchExpressions(filters: ExpressionFilters) {
   if (filters.status) query = query.eq("status", filters.status);
   if (filters.scene) query = query.eq("scene", filters.scene);
   if (filters.topic) query = query.eq("topic", filters.topic);
+  if (filters.category_id) query = query.eq("category_id", filters.category_id);
   if (filters.search) query = query.or(`english.ilike.%${filters.search}%,chinese.ilike.%${filters.search}%`);
 
   const { data, error } = await query;
@@ -138,6 +141,8 @@ export function useSubmitReview() {
       masteryLevel,
       streak,
       reviewCount,
+      easeFactor,
+      repetitions,
     }: {
       expressionId: string;
       result: string;
@@ -148,8 +153,10 @@ export function useSubmitReview() {
       masteryLevel: number;
       streak: number;
       reviewCount: number;
+      easeFactor: number;
+      repetitions: number;
     }) => {
-      // 1. Update expression
+      const now = nowISO();
       const { error: exprError } = await supabase
         .from("expressions")
         .update({
@@ -159,20 +166,22 @@ export function useSubmitReview() {
           streak,
           review_count: reviewCount,
           last_review_result: result,
-          updated_at: nowISO(),
+          ease_factor: easeFactor,
+          repetitions,
+          last_reviewed_at: now,
+          updated_at: now,
         })
         .eq("id", expressionId);
 
       if (exprError) throw exprError;
 
-      // 2. Insert review record
       const userId = await getUserId();
       const { error: revError } = await supabase.from("expression_reviews").insert({
         expression_id: expressionId,
         result,
         previous_interval: previousInterval,
         new_interval: newInterval,
-        reviewed_at: nowISO(),
+        reviewed_at: now,
         user_id: userId,
       });
 
@@ -339,6 +348,10 @@ export type ParsedExpression = {
   difficulty_level?: string;
   usefulness_level?: number;
   usage_note?: string;
+  memory_tip?: string;
+  common_mistakes?: string;
+  context?: string;
+  common_patterns?: string;
 };
 
 export type ImportResult = {
@@ -413,8 +426,15 @@ export function useBatchImportExpressions() {
         example_sentence: expr.example_sentence || null,
         scene: expr.scene || null,
         topic: expr.topic || null,
-        difficulty_level: expr.difficulty_level || null,
+        difficulty_level: expr.difficulty_level || "intermediate",
+        usefulness_level: expr.usefulness_level || null,
+        usage_note: expr.usage_note || null,
+        memory_tip: expr.memory_tip || null,
+        common_mistakes: expr.common_mistakes || null,
+        context: expr.context || null,
+        common_patterns: expr.common_patterns || null,
         status: "new",
+        ease_factor: 2.5,
         source: input.source_name || "import",
         import_batch_id: batch.id,
       }));
@@ -429,4 +449,10 @@ export function useBatchImportExpressions() {
       qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
+}
+
+// ── Expression Categories ──
+
+export function useExpressionCategories() {
+  return useCategories();
 }

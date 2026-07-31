@@ -149,6 +149,20 @@ export type ExpressionType = (typeof EXPRESSION_TYPES)[number];
 export const EXPRESSION_STATUSES = ["new", "learning", "review", "mastered"] as const;
 export type ExpressionStatus = (typeof EXPRESSION_STATUSES)[number];
 
+export const EXPRESSION_DIFFICULTY_LEVELS = ["beginner", "intermediate", "advanced"] as const;
+export type ExpressionDifficultyLevel = (typeof EXPRESSION_DIFFICULTY_LEVELS)[number];
+
+export const REVIEW_MODES = ["active_recall", "recognition", "cloze"] as const;
+export type ReviewMode = (typeof REVIEW_MODES)[number];
+
+export const REVIEW_RESULTS = ["again", "hard", "good", "easy"] as const;
+export type ReviewResult = (typeof REVIEW_RESULTS)[number];
+
+export const EXPRESSION_CATEGORIES = [
+  "生活", "工作", "社交", "情绪", "旅行", "学习", "商务", "影视",
+] as const;
+export type ExpressionCategory = (typeof EXPRESSION_CATEGORIES)[number];
+
 export const MONEY_CATEGORIES = [
   "dining", "transport", "study", "ai_tools", "rent_life", "fashion", "social", "tutoring_income", "other",
 ] as const;

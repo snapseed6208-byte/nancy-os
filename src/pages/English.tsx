@@ -1,11 +1,16 @@
 import { useLocation } from "wouter";
-import { BookOpen, Mic, Library, Brain, TrendingUp, Clock, ChevronRight, Zap, Upload } from "lucide-react";
+import {
+  BookOpen, Mic, Library, Brain, Eye, Edit3,
+  ChevronRight, Zap, Upload,
+} from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
 
 export default function English() {
   const [, navigate] = useLocation();
   const { data: stats, isLoading } = useEnglishStats();
+
+  const dueCount = stats?.due ?? 0;
 
   return (
     <div className="space-y-6">
@@ -17,18 +22,47 @@ export default function English() {
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="表达库" value={isLoading ? "-" : stats?.total ?? 0} color="ink" />
-        <StatCard label="待复习" value={isLoading ? "-" : stats?.due ?? 0} color={stats?.due ? "sage" : "ink"} />
+        <StatCard label="待复习" value={isLoading ? "-" : dueCount} color={dueCount ? "sage" : "ink"} />
         <StatCard label="已掌握" value={isLoading ? "-" : stats?.mastered ?? 0} color="sage" />
       </div>
+
+      {/* Quick review modes */}
+      {dueCount > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-ink-light">选择复习模式 ({dueCount} 条待复习)</p>
+          <div className="grid grid-cols-3 gap-2">
+            <ModeCard
+              icon={Brain}
+              label="主动回忆"
+              desc="看中文说英文"
+              color="purple"
+              onClick={() => navigate("/english/review")}
+            />
+            <ModeCard
+              icon={Eye}
+              label="识别模式"
+              desc="看英文选中文"
+              color="blue"
+              onClick={() => navigate("/english/review")}
+            />
+            <ModeCard
+              icon={Edit3}
+              label="填空模式"
+              desc="例句中填空"
+              color="amber"
+              onClick={() => navigate("/english/review")}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 gap-3">
         <ActionCard
           icon={Brain}
           label="SRS 复习"
-          desc={stats?.due ? `${stats.due} 条待复习` : "全部掌握!"}
-          highlight={!!(stats?.due && stats.due > 0)}
-          color="purple"
+          desc={dueCount ? `${dueCount} 条待复习` : "全部掌握!"}
+          highlight={!!(dueCount > 0)}
           onClick={() => navigate("/english/review")}
           extra={stats?.todayReviewed ? `今日已复习 ${stats.todayReviewed} 条` : undefined}
         />
@@ -78,15 +112,49 @@ export default function English() {
         <div className="flex items-center gap-2 mb-3">
           <BookOpen size={18} className="text-sage-deep" />
           <span className="text-xs font-medium text-sage-deep bg-sage-light px-2 py-0.5 rounded-full">
-            Phase 2 — 进行中
+            Phase 3 — 主动输出训练
           </span>
         </div>
         <p className="text-sm text-ink-light leading-relaxed">
-          AI 口语练习支持录音 → ASR → 四维评分（Fluency / Grammar / Vocabulary / Naturalness）→ Better Version 生成。
-          表达库管理表达数据，SRS 间隔复习系统。AI 反馈和语音识别将在 Phase 7 全面接入。
+          3种复习模式：主动回忆（看中文说英文）、识别模式（看英文选中文）、填空模式（例句填空）。
+          AI 驱动的间隔重复系统 + 口语练习四维评分。从"看到英文认识"到"看到场景主动说英文"。
         </p>
       </div>
     </div>
+  );
+}
+
+// ── Mode Card (small, for quick mode select) ──
+
+function ModeCard({
+  icon: Icon,
+  label,
+  desc,
+  color,
+  onClick,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  desc: string;
+  color: string;
+  onClick: () => void;
+}) {
+  const colorMap: Record<string, string> = {
+    purple: "bg-purple-50 text-purple-600",
+    blue: "bg-blue-50 text-blue-600",
+    amber: "bg-amber-50 text-amber-600",
+  };
+  return (
+    <button
+      onClick={onClick}
+      className="bg-card rounded-xl border border-border p-3 text-center hover:border-sage-light/50 transition-colors"
+    >
+      <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center mx-auto mb-1.5", colorMap[color] || colorMap.purple)}>
+        <Icon size={14} />
+      </div>
+      <p className="text-xs font-medium text-ink">{label}</p>
+      <p className="text-[10px] text-ink-lighter mt-0.5">{desc}</p>
+    </button>
   );
 }
 

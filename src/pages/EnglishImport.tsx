@@ -231,12 +231,23 @@ export default function EnglishImport() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".txt,.pdf,.docx,.md"
+                accept=".txt,.pdf,.docx,.md,image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleFile(file);
                 }}
                 className="hidden"
+              />
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFile(file);
+                }}
+                className="hidden"
+                id="camera-input"
               />
               {parseFile.isPending ? (
                 <div className="space-y-2">
@@ -262,9 +273,37 @@ export default function EnglishImport() {
                 <div className="space-y-2">
                   <Upload size={28} className="text-ink-lighter mx-auto" />
                   <p className="text-sm text-ink-light">拖拽文件到此处或点击上传</p>
-                  <p className="text-xs text-ink-lighter">支持 TXT / PDF / DOCX / Markdown</p>
+                  <p className="text-xs text-ink-lighter">支持 TXT / PDF / DOCX / Markdown / 图片</p>
                 </div>
               )}
+            </div>
+
+          )}
+
+          {/* Mobile quick actions — file mode only */}
+          {mode === "file" && (
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => document.getElementById("camera-input")?.click()}
+                className="bg-card border border-border rounded-xl py-2.5 text-xs font-medium text-ink-light hover:border-sage-light/30 transition-colors flex items-center justify-center gap-1"
+              >
+                拍照
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-card border border-border rounded-xl py-2.5 text-xs font-medium text-ink-light hover:border-sage-light/30 transition-colors flex items-center justify-center gap-1"
+              >
+                相册
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("text")}
+                className="bg-card border border-border rounded-xl py-2.5 text-xs font-medium text-ink-light hover:border-sage-light/30 transition-colors flex items-center justify-center gap-1"
+              >
+                文本
+              </button>
             </div>
           )}
 
@@ -405,6 +444,38 @@ export default function EnglishImport() {
                       <input
                         value={editForm.usage_note || ""}
                         onChange={(e) => updateEditField("usage_note", e.target.value)}
+                        className="w-full bg-transparent text-sm text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-sage-light/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-ink-lighter">记忆技巧</label>
+                      <input
+                        value={editForm.memory_tip || ""}
+                        onChange={(e) => updateEditField("memory_tip", e.target.value)}
+                        className="w-full bg-transparent text-sm text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-sage-light/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-ink-lighter">常见错误</label>
+                      <input
+                        value={editForm.common_mistakes || ""}
+                        onChange={(e) => updateEditField("common_mistakes", e.target.value)}
+                        className="w-full bg-transparent text-sm text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-sage-light/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-ink-lighter">使用语境</label>
+                      <input
+                        value={editForm.context || ""}
+                        onChange={(e) => updateEditField("context", e.target.value)}
+                        className="w-full bg-transparent text-sm text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-sage-light/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-ink-lighter">常用搭配/句型</label>
+                      <input
+                        value={editForm.common_patterns || ""}
+                        onChange={(e) => updateEditField("common_patterns", e.target.value)}
                         className="w-full bg-transparent text-sm text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-sage-light/50"
                       />
                     </div>

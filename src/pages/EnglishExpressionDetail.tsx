@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Trash2 } from "lucide-react";
-import { useExpression, useCreateExpression, useUpdateExpression, useDeleteExpression } from "@/lib/hooks/useEnglish";
+import { useExpression, useCreateExpression, useUpdateExpression, useDeleteExpression, useExpressionCategories } from "@/lib/hooks/useEnglish";
 import { EXPRESSION_TYPES } from "@/lib/types";
 
 const SCENES = [
@@ -19,6 +19,7 @@ export default function EnglishExpressionDetail() {
   const createExpr = useCreateExpression();
   const updateExpr = useUpdateExpression();
   const deleteExpr = useDeleteExpression();
+  const { data: categories } = useExpressionCategories();
 
   const [form, setForm] = useState({
     english: "",
@@ -29,6 +30,12 @@ export default function EnglishExpressionDetail() {
     pronunciation: "",
     source_text: "",
     notes: "",
+    usage_note: "",
+    memory_tip: "",
+    common_mistakes: "",
+    context: "",
+    common_patterns: "",
+    category_id: "",
   });
 
   useEffect(() => {
@@ -42,6 +49,12 @@ export default function EnglishExpressionDetail() {
         pronunciation: (existing.pronunciation as string) || "",
         source_text: (existing.source_text as string) || "",
         notes: (existing.notes as string) || "",
+        usage_note: (existing.usage_note as string) || "",
+        memory_tip: (existing.memory_tip as string) || "",
+        common_mistakes: (existing.common_mistakes as string) || "",
+        context: (existing.context as string) || "",
+        common_patterns: (existing.common_patterns as string) || "",
+        category_id: (existing.category_id as string) || "",
       });
     }
   }, [existing, isNew]);
@@ -184,13 +197,85 @@ export default function EnglishExpressionDetail() {
           />
         </div>
 
+        {/* Category */}
+        {categories && categories.length > 0 && (
+          <div>
+            <label className="text-xs font-medium text-ink-light mb-1 block">分类</label>
+            <select
+              className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink outline-none focus:border-sage-light"
+              value={form.category_id}
+              onChange={(e) => set("category_id", e.target.value)}
+            >
+              <option value="">未分类</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ""}{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Usage note */}
+        <div>
+          <label className="text-xs font-medium text-ink-light mb-1 block">使用说明</label>
+          <input
+            className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light"
+            placeholder="何时使用、语体正式度、常用搭配..."
+            value={form.usage_note}
+            onChange={(e) => set("usage_note", e.target.value)}
+          />
+        </div>
+
+        {/* Memory tip */}
+        <div>
+          <label className="text-xs font-medium text-ink-light mb-1 block">记忆技巧</label>
+          <input
+            className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light"
+            placeholder="联想、词根、谐音、场景关联..."
+            value={form.memory_tip}
+            onChange={(e) => set("memory_tip", e.target.value)}
+          />
+        </div>
+
+        {/* Common mistakes */}
+        <div>
+          <label className="text-xs font-medium text-ink-light mb-1 block">常见错误</label>
+          <input
+            className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light"
+            placeholder="中国学生常犯的使用错误..."
+            value={form.common_mistakes}
+            onChange={(e) => set("common_mistakes", e.target.value)}
+          />
+        </div>
+
+        {/* Context */}
+        <div>
+          <label className="text-xs font-medium text-ink-light mb-1 block">使用语境</label>
+          <input
+            className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light"
+            placeholder="典型使用场景..."
+            value={form.context}
+            onChange={(e) => set("context", e.target.value)}
+          />
+        </div>
+
+        {/* Common patterns */}
+        <div>
+          <label className="text-xs font-medium text-ink-light mb-1 block">常用搭配/句型</label>
+          <input
+            className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light"
+            placeholder="e.g., It is [adjective] that..."
+            value={form.common_patterns}
+            onChange={(e) => set("common_patterns", e.target.value)}
+          />
+        </div>
+
         {/* Notes */}
         <div>
           <label className="text-xs font-medium text-ink-light mb-1 block">笔记</label>
           <textarea
             className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light resize-none"
             rows={2}
-            placeholder="用法说明、注意事项..."
+            placeholder="个人笔记、用法说明、注意事项..."
             value={form.notes}
             onChange={(e) => set("notes", e.target.value)}
           />

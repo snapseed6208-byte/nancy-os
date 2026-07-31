@@ -63,7 +63,11 @@ Return ONLY valid JSON:
       "topic": "topic keyword",
       "difficulty_level": "beginner|intermediate|advanced",
       "usefulness_level": 1-5,
-      "usage_note": "中文使用说明"
+      "usage_note": "中文使用说明，包括适用场景、语体正式度、常见搭配",
+      "memory_tip": "中文记忆技巧，用联想、词根、谐音、场景关联等方式帮助记忆该表达",
+      "common_mistakes": "中国学生使用该表达时常犯的错误，如语法、搭配、语境误用等",
+      "context": "该表达最典型的实际使用语境和场景",
+      "common_patterns": "该表达最常用的句型结构或搭配模式，如 'It is [adjective] that...'"
     }
   ]
 }
@@ -71,7 +75,11 @@ Return ONLY valid JSON:
 Rules:
 - difficulty_level: beginner = common/basic expressions, intermediate = college-level, advanced = academic/professional
 - usefulness_level: 1 = rarely used, 5 = highly practical for daily communication
-- usage_note: brief note in Chinese about when/how to use this expression
+- usage_note: brief note in Chinese about when/how to use this expression, including register and common collocations
+- memory_tip: creative memorization aid in Chinese — use association, etymology, homophones, scene visualization etc.
+- common_mistakes: typical errors Chinese university students make with this expression
+- context: the most typical real-life situation where this expression is used
+- common_patterns: common sentence structures or collocation patterns
 - Extract 10-30 expressions total, prioritizing quality over quantity
 - All expressions must have proper chinese translation`;
 

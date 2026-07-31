@@ -1,13 +1,15 @@
 // ============================================
 // Nancy OS — File Parser Agent
-// Extracts plain text from PDF / DOCX / TXT
-// Input: { file: "<base64>", mime_type: "application/pdf|...|text/plain" }
+// Extracts plain text from PDF / DOCX / TXT / Images
+// Input: { file: "<base64>", mime_type: "application/pdf|...|image/..." }
 // Output: { text: "..." }
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") || "";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -30,7 +32,6 @@ function getCorsHeaders(req: Request): Record<string, string> {
 
 async function parsePDF(base64: string): Promise<string> {
   try {
-    // Dynamic import — only loaded when needed
     const pdfjsLib = await import("npm:pdfjs-dist@4.0.379");
     const binary = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const doc = await pdfjsLib.getDocument({ data: binary }).promise;
@@ -62,6 +63,47 @@ async function parseDOCX(base64: string): Promise<string> {
   }
 }
 
+async function parseImage(base64: string, mimeType: string): Promise<string> {
+  if (!DEEPSEEK_API_KEY) return "";
+
+  try {
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    const response = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: dataUrl },
+              },
+              {
+                type: "text",
+                text: "Please extract all English text from this image. Return ONLY the extracted text, preserving paragraphs and line breaks where possible. If there is Chinese text mixed in, include it too. Output the raw text directly without any additional commentary.",
+              },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 4096,
+      }),
+    });
+
+    if (!response.ok) return "";
+    const result = await response.json();
+    return result.choices?.[0]?.message?.content || "";
+  } catch {
+    return "";
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: getCorsHeaders(req) });
@@ -81,8 +123,8 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json() as {
-      file?: string;       // base64 encoded
-      mime_type?: string;  // MIME type
+      file?: string;
+      mime_type?: string;
     };
 
     const file = body.file || "";
@@ -95,12 +137,20 @@ serve(async (req: Request) => {
     }
 
     let text = "";
+    let warning: string | undefined;
 
-    if (mimeType === "application/pdf") {
+    // Image types — use DeepSeek Vision for OCR
+    const imageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"];
+    if (imageTypes.includes(mimeType)) {
+      text = await parseImage(file, mimeType);
+      if (!text) {
+        warning = "图片文字提取失败，请尝试粘贴文本";
+      }
+    } else if (mimeType === "application/pdf") {
       text = await parsePDF(file);
       if (!text) {
         return new Response(JSON.stringify({
-          text: file, // Return base64 as-is; caller can use raw bytes
+          text: file,
           warning: "PDF 解析失败，已返回原始内容",
         }), {
           headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
@@ -132,10 +182,13 @@ serve(async (req: Request) => {
       }
     }
 
-    return new Response(JSON.stringify({
-      text: text,
+    const response = {
+      text,
       char_count: text.length,
-    }), {
+      ...(warning ? { warning } : {}),
+    };
+
+    return new Response(JSON.stringify(response), {
       headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
 

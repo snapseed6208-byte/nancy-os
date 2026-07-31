@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Search, Plus, BookOpen, ChevronRight, Clock, Tag, X } from "lucide-react";
-import { useExpressions } from "@/lib/hooks/useEnglish";
+import { useExpressions, useExpressionCategories } from "@/lib/hooks/useEnglish";
 import { EXPRESSION_TYPES, EXPRESSION_STATUSES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -31,16 +31,20 @@ export default function EnglishExpressions() {
   const [, navigate] = useLocation();
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
 
   const { data: expressions, isLoading, error } = useExpressions({
     type: typeFilter || undefined,
     status: statusFilter || undefined,
+    category_id: categoryFilter || undefined,
     search: search || undefined,
   });
 
-  const hasFilters = typeFilter || statusFilter || search;
+  const { data: categories } = useExpressionCategories();
+
+  const hasFilters = typeFilter || statusFilter || categoryFilter || search;
 
   return (
     <div className="space-y-4">
@@ -100,6 +104,19 @@ export default function EnglishExpressions() {
             </FilterChip>
           ))}
         </div>
+
+        {categories && categories.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            <FilterChip active={!categoryFilter} onClick={() => setCategoryFilter("")}>
+              全部分类
+            </FilterChip>
+            {categories.map((c) => (
+              <FilterChip key={c.id} active={categoryFilter === c.id} onClick={() => setCategoryFilter(categoryFilter === c.id ? "" : c.id)}>
+                {c.icon && <span className="mr-1">{c.icon}</span>}{c.name}
+              </FilterChip>
+            ))}
+          </div>
+        )}
 
         {hasFilters && (
           <p className="text-xs text-ink-lighter">
