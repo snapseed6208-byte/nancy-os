@@ -157,6 +157,36 @@ function formatDuration(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+// ── SRS auto-lowering for missed expressions ──
+
+async function lowerMissedExpressions(missedExpressions: string[]) {
+  const now = new Date().toISOString();
+  for (const expr of missedExpressions) {
+    // Find expressions matching this english text
+    const { data: matches } = await supabase
+      .from("expressions")
+      .select("id, ease_factor")
+      .eq("archived", false)
+      .ilike("english", expr.trim())
+      .limit(5);
+
+    if (!matches || matches.length === 0) continue;
+
+    for (const row of matches) {
+      const currentEF = (row.ease_factor as number) || 2.5;
+      const newEF = Math.max(1.3, currentEF * 0.8);
+      await supabase
+        .from("expressions")
+        .update({
+          ease_factor: newEF,
+          next_review_date: now,
+          updated_at: now,
+        })
+        .eq("id", row.id);
+    }
+  }
+}
+
 // ── Main Page ──
 
 export default function EnglishSpeaking() {
@@ -284,6 +314,9 @@ export default function EnglishSpeaking() {
       ? buildCombinedFeedback(feedback)
       : "Practice saved.";
 
+    const expressionsUsed = feedback?.expressionsUsed || [];
+    const expressionsMissed = feedback?.expressionsMissed || [];
+
     await createAttempt.mutateAsync({
       session_id: sessionId,
       answer: transcript || `[Voice recording on: ${question}]`,
@@ -300,7 +333,14 @@ export default function EnglishSpeaking() {
       one_better_example: feedback?.oneBetterExample || null,
       audio_url: audioUrl || null,
       audio_duration: recorder.duration,
+      expressions_used: expressionsUsed,
+      expressions_missed: expressionsMissed,
     });
+
+    // Auto-lower SRS levels for missed expressions
+    if (expressionsMissed.length > 0) {
+      await lowerMissedExpressions(expressionsMissed);
+    }
 
     setUploading(false);
     setStep("saved");
@@ -559,14 +599,33 @@ export default function EnglishSpeaking() {
       {/* Show expressions for expression practice mode */}
       {mode === "expression_practice" && (step === "generating" || step === "record") && dueExpressions && dueExpressions.length > 0 && (
         <div className="bg-card rounded-2xl border border-sage-light/30 p-4">
-          <p className="text-xs font-medium text-sage-deep mb-2 flex items-center gap-1.5">
-            <Target size={12} />
-            尝试使用以下表达
+          <p className="text-xs font-medium text-sage-deep mb-2.5 flex items-center gap-1.5">
+            <Sparkles size={12} />
+            Recommended expressions — Try to use:
           </p>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-2">
             {(dueExpressions as Record<string, unknown>[]).slice(0, 8).map((e, i) => (
-              <span key={i} className="text-[11px] bg-sage-light/20 text-sage-deep rounded-full px-2.5 py-1">
+              <span key={i} className="text-[12px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1.5 flex items-center gap-1.5 font-medium">
+                <span className="text-amber-400">⭐</span>
                 {e.english as string}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Show AI-recommended expressions for free_speaking mode */}
+      {mode === "free_speaking" && step === "record" && suitableExpressions.length > 0 && (
+        <div className="bg-card rounded-2xl border border-amber-100 p-4">
+          <p className="text-xs font-medium text-ink-light mb-2.5 flex items-center gap-1.5">
+            <Sparkles size={12} className="text-amber-500" />
+            Recommended expressions — Try to use:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {suitableExpressions.map((e, i) => (
+              <span key={i} className="text-[12px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1.5 flex items-center gap-1.5 font-medium">
+                <span className="text-amber-400">⭐</span>
+                {e}
               </span>
             ))}
           </div>
@@ -760,6 +819,41 @@ export default function EnglishSpeaking() {
             <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
             <p className="text-sm text-ink leading-relaxed">{feedback.naturalVersion}</p>
           </div>
+
+          {/* Expression Usage */}
+          {(feedback.expressionsUsed.length > 0 || feedback.expressionsMissed.length > 0) && (
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs font-medium text-ink-light mb-3">表达使用 Expression Usage</p>
+              <div className="space-y-3">
+                {feedback.expressionsUsed.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-medium text-emerald-600 mb-1.5">Used</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {feedback.expressionsUsed.map((e, i) => (
+                        <span key={i} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-2.5 py-1 flex items-center gap-1">
+                          <CheckCircle2 size={11} />
+                          {e}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {feedback.expressionsMissed.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-medium text-amber-600 mb-1.5">Missed</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {feedback.expressionsMissed.map((e, i) => (
+                        <span key={i} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-2.5 py-1 flex items-center gap-1">
+                          <X size={11} />
+                          {e}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Main problems */}
           {feedback.mainProblems && (
@@ -1038,6 +1132,41 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
           <p className="text-sm text-ink leading-relaxed">{firstAttempt?.natural_version as string}</p>
         </div>
       )}
+
+      {/* Expression Usage */}
+      {((firstAttempt?.expressions_used as unknown[] | undefined)?.length || (firstAttempt?.expressions_missed as unknown[] | undefined)?.length) ? (
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs font-medium text-ink-light mb-3">表达使用 Expression Usage</p>
+          <div className="space-y-3">
+            {((firstAttempt?.expressions_used as unknown[] | undefined)?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[11px] font-medium text-emerald-600 mb-1.5">Used</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(firstAttempt?.expressions_used as unknown[]).map((e, i) => (
+                    <span key={i} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-2.5 py-1 flex items-center gap-1">
+                      <CheckCircle2 size={11} />
+                      {e as string}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {((firstAttempt?.expressions_missed as unknown[] | undefined)?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[11px] font-medium text-amber-600 mb-1.5">Missed</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(firstAttempt?.expressions_missed as unknown[]).map((e, i) => (
+                    <span key={i} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-2.5 py-1 flex items-center gap-1">
+                      <X size={11} />
+                      {e as string}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {/* Main problems */}
       {(firstAttempt?.main_problems as string) && (

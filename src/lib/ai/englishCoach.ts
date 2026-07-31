@@ -54,6 +54,8 @@ export interface SpeakingFeedback {
   usefulCorrections: string;
   betterChunks: string;
   oneBetterExample: string;
+  expressionsUsed: string[];
+  expressionsMissed: string[];
 }
 
 // ── 1. analyzeSpeaking / extractExpressions ──
@@ -141,6 +143,8 @@ export async function analyzeSpeaking(
     usefulCorrections: (raw.usefulCorrections as string) || "",
     betterChunks: (raw.betterChunks as string) || "",
     oneBetterExample: (raw.oneBetterExample as string) || "",
+    expressionsUsed: Array.isArray(raw.expressionsUsed) ? (raw.expressionsUsed as string[]) : [],
+    expressionsMissed: Array.isArray(raw.expressionsMissed) ? (raw.expressionsMissed as string[]) : [],
   };
 }
 
