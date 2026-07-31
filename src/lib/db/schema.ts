@@ -476,6 +476,8 @@ export const ideas = pgTable("ideas", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: userId(),
   content: text("content").notNull(),
+  contentType: text("content_type").default("text"),
+  mediaUrls: jsonb("media_urls").default([]),
   category: text("category"),
   aiCategory: text("ai_category"),
   status: text("status").notNull().default("inbox"),
