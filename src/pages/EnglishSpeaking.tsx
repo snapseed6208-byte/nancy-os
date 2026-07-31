@@ -215,6 +215,7 @@ export default function EnglishSpeaking() {
   const [referenceAnswer, setReferenceAnswer] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const referenceAnswerPromise = useRef<Promise<void> | null>(null);
 
   // Data
   const { data: sessions, isLoading: sessionsLoading } = useSpeakingSessions();
@@ -304,10 +305,11 @@ export default function EnglishSpeaking() {
       if (!session?.access_token) throw new Error("请先登录");
       const result = await analyzeSpeaking(question, text, suitableExpressions.map(e => e.english), session.access_token);
       setFeedback(result);
-      // Generate reference answer in parallel
-      generateReferenceAnswer(question, session.access_token)
-        .then(setReferenceAnswer)
+      // Generate reference answer in parallel, store promise for save to await
+      const raPromise = generateReferenceAnswer(question, session.access_token)
+        .then((ra) => setReferenceAnswer(ra))
         .catch(() => {});
+      referenceAnswerPromise.current = raPromise;
       setStep("results");
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI 分析失败，请稍后重试");
@@ -323,6 +325,16 @@ export default function EnglishSpeaking() {
       return;
     }
     setUploading(true);
+
+    // Await pending reference answer with a 3s timeout so it's not lost on save
+    if (referenceAnswerPromise.current) {
+      try {
+        await Promise.race([
+          referenceAnswerPromise.current,
+          new Promise<void>((r) => setTimeout(r, 3000)),
+        ]);
+      } catch { /* already caught in handleAnalyze */ }
+    }
 
     let audioUrl = "";
     if (recorder.blob) {
@@ -403,6 +415,7 @@ export default function EnglishSpeaking() {
     setFeedback(null);
     setReferenceAnswer("");
     setAiError(null);
+    referenceAnswerPromise.current = null;
     recorder.reset();
     asr.reset();
   };
