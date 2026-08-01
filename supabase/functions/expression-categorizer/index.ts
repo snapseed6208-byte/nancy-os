@@ -163,6 +163,16 @@ serve(async (req: Request) => {
       // Build a map for fast lookup
       const classMap = new Map(classifications.map((c) => [c.id, c.category]));
 
+      // Resolve category UUIDs for this batch (one query, not per-expression)
+      const catNames = [...new Set(classifications.map((c) => c.category))];
+      const { data: catRows } = await supabase
+        .from("categories")
+        .select("id, name")
+        .eq("scope", "expression")
+        .eq("user_id", userId)
+        .in("name", catNames);
+      const catIdMap = new Map((catRows || []).map((c: { id: string; name: string }) => [c.name, c.id]));
+
       // Update each expression
       for (const expr of batch) {
         const category = classMap.get(expr.id);
@@ -171,28 +181,16 @@ serve(async (req: Request) => {
           continue;
         }
 
-        const { error: updateErr } = await supabase
-          .from("expressions")
-          .update({ category_id: null }) // Will be set below
-          .eq("id", expr.id);
-
-        // Resolve category UUID
-        const { data: catData } = await supabase
-          .from("categories")
-          .select("id")
-          .eq("scope", "expression")
-          .eq("name", category)
-          .eq("user_id", userId)
-          .maybeSingle();
-
-        if (!catData?.id) {
+        const catId = catIdMap.get(category);
+        if (!catId) {
           errors++;
+          console.error(`[categorizer] Category not found: ${category}`);
           continue;
         }
 
         const { error: upErr } = await supabase
           .from("expressions")
-          .update({ category_id: catData.id })
+          .update({ category_id: catId })
           .eq("id", expr.id);
 
         if (upErr) {
