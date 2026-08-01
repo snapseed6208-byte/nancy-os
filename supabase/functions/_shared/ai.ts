@@ -62,35 +62,55 @@ export function stageError(stage: AgentStage, error: string, detail?: string, ex
 // ── JSON parse helpers ──
 
 /**
- * Attempt to repair truncated JSON by closing unclosed brackets.
- * Handles the most common case: AI response cut off at max_tokens.
+ * Attempt to repair truncated JSON. Strategy:
+ * 1. Close unclosed strings, brackets
+ * 2. If that fails, remove the last incomplete element and re-close
+ * 3. If still failing, keep walking back commas
  */
 function repairTruncatedJson(text: string): string {
   let repaired = text.trim();
 
-  // Count brackets
-  let braceDepth = 0;
-  let bracketDepth = 0;
+  // Close unclosed strings
   let inString = false;
   let escaped = false;
-
   for (const ch of repaired) {
     if (escaped) { escaped = false; continue; }
     if (ch === "\\") { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === "{") braceDepth++;
-    if (ch === "}") braceDepth--;
-    if (ch === "[") bracketDepth++;
-    if (ch === "]") bracketDepth--;
+    if (ch === '"') { inString = !inString; }
   }
-
-  // Close any unclosed strings
   if (inString) repaired += '"';
 
-  // Close unclosed brackets (inner first: arrays then objects)
-  while (bracketDepth > 0) { repaired += "]"; bracketDepth--; }
-  while (braceDepth > 0) { repaired += "}"; braceDepth--; }
+  // Count and close brackets
+  function closeBrackets(s: string): string {
+    let bd = 0, bd2 = 0;
+    let str = false, esc = false;
+    for (const ch of s) {
+      if (esc) { esc = false; continue; }
+      if (ch === "\\") { esc = true; continue; }
+      if (ch === '"') { str = !str; continue; }
+      if (str) continue;
+      if (ch === "{") bd++;
+      if (ch === "}") bd--;
+      if (ch === "[") bd2++;
+      if (ch === "]") bd2--;
+    }
+    let result = s;
+    while (bd2 > 0) { result += "]"; bd2--; }
+    while (bd > 0) { result += "}"; bd--; }
+    return result;
+  }
+
+  // Try 1: just close brackets
+  repaired = closeBrackets(repaired);
+  try { JSON.parse(repaired); return repaired; } catch { /* continue */ }
+
+  // Try 2-N: walk back through commas, removing last incomplete element
+  for (let i = 0; i < 10; i++) {
+    const lastComma = repaired.lastIndexOf(",");
+    if (lastComma < 0) break;
+    repaired = closeBrackets(repaired.slice(0, lastComma));
+    try { JSON.parse(repaired); return repaired; } catch { /* continue */ }
+  }
 
   return repaired;
 }
@@ -299,7 +319,12 @@ export async function callDeepSeek<T = unknown>(
         }
       : undefined;
 
-    console.log(`[callDeepSeek] success elapsed=${elapsed}ms tokens=${usage?.totalTokens ?? "?"}`);
+    const finishReason = result.choices?.[0]?.finish_reason;
+    if (finishReason === "length") {
+      console.warn(`[callDeepSeek] response truncated (finish_reason=length) — consider increasing maxTokens`);
+    }
+
+    console.log(`[callDeepSeek] success elapsed=${elapsed}ms tokens=${usage?.totalTokens ?? "?"} finish=${finishReason || "?"}`);
 
     return {
       success: true,

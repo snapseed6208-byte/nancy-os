@@ -128,12 +128,17 @@ serve(async (req: Request) => {
     let tokensUsed = 0;
 
     // ── Stage: deepseek ──
-    console.log(`[expression-import-agent] Calling DeepSeek with text length=${text.length}`);
+    // Dynamic maxTokens: longer input → more expressions → needs more output tokens
+    // deepseek-chat supports up to 8192 output tokens
     const truncated = text.slice(0, 8000);
+    const inputLength = truncated.length;
+    const dynamicMaxTokens = inputLength > 3000 ? 8192 : 4096;
+
+    console.log(`[expression-import-agent] Calling DeepSeek input_length=${inputLength} maxTokens=${dynamicMaxTokens}`);
     const aiResult = await callDeepSeek([
       { role: "system", content: EXTRACT_PROMPT },
       { role: "user", content: `Please analyze this English text and extract useful learning expressions:\n\n${truncated}` },
-    ], { temperature: 0.5, maxTokens: 4096 });
+    ], { temperature: 0.5, maxTokens: dynamicMaxTokens });
 
     if (!aiResult.success) {
       return errResponse({ stage: "deepseek", error: aiResult.error, detail: aiResult.detail }, req, aiResult.status || 502);

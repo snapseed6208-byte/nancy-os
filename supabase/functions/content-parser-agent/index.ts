@@ -997,10 +997,18 @@ serve(async (req: Request) => {
     }
 
     // ── Call DeepSeek ──
+    // Dynamic maxTokens: recipe pipeline needs more tokens for structured output
+    // Also scale with user message length for long content
+    const contentLength = userMessage.length;
+    const dynamicMaxTokens = isRecipePipeline ? 4096
+      : contentLength > 3000 ? 4096
+      : 3072;
+
+    console.log(`[content-parser-agent] Calling DeepSeek content_length=${contentLength} maxTokens=${dynamicMaxTokens}`);
     const aiResult = await callDeepSeek([
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
-    ], { temperature: isRecipePipeline ? 0.3 : 0.5, maxTokens: 2048 });
+    ], { temperature: isRecipePipeline ? 0.3 : 0.5, maxTokens: dynamicMaxTokens });
 
     if (!aiResult.success) {
       console.error(`[content-parser-agent] DeepSeek error: ${aiResult.error} detail=${aiResult.detail || "none"}`);
