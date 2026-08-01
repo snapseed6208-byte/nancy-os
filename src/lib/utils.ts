@@ -142,6 +142,15 @@ export function getYouTubeThumbnail(videoId: string): string {
   return `https://img.youtube.com/vi/${encodeURIComponent(videoId)}/maxresdefault.jpg`;
 }
 
+/**
+ * B站缩略图 — B站 API (api.bilibili.com) 有 CORS 限制，
+ * 浏览器直接调用会被阻止。如需缩略图，可通过 Edge Function 代理。
+ * 当前返回 null，B站卡片使用渐变色占位。
+ */
+export function getBilibiliThumbnail(_videoId: string): null {
+  return null;
+}
+
 export function getDefaultVideoTitle(platform: string): string {
   const map: Record<string, string> = {
     bilibili: "B站训练视频",

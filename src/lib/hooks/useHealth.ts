@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
-import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
+import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail, getBilibiliThumbnail } from "@/lib/utils";
 
 // ── Types ──
 
@@ -290,7 +290,9 @@ export function useCreateWorkoutVideo() {
       const platform = detectUrlPlatform(normalized);
       const videoId = extractVideoId(normalized, platform);
       const embedUrl = videoId ? buildEmbedUrl(platform, videoId) : null;
-      const thumbnailUrl = platform === "youtube" && videoId ? getYouTubeThumbnail(videoId) : null;
+      const thumbnailUrl = platform === "youtube" && videoId ? getYouTubeThumbnail(videoId)
+        : platform === "bilibili" && videoId ? getBilibiliThumbnail(videoId)
+        : null;
 
       // Step 1: Insert basic record
       const { data, error } = await supabase

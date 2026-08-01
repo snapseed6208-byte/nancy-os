@@ -7,7 +7,7 @@ import {
   BookOpen, ChefHat,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import VideoPlayer from "@/components/health/VideoPlayer";
+import VideoPlayerModal from "@/components/health/VideoPlayerModal";
 import WorkoutJournalTab from "@/components/health/WorkoutJournalTab";
 import RecipeDetailModal from "@/components/health/RecipeDetailModal";
 import FoodJournalTab from "@/components/health/FoodJournalTab";
@@ -825,6 +825,7 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
   });
   const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0 });
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+  const [modalVideo, setModalVideo] = useState<WorkoutVideo | null>(null);
 
   const handleReanalyzeVideo = async (video: WorkoutVideo) => {
     setReanalyzingId(video.id);
@@ -1272,15 +1273,32 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
                       </div>
                     </div>
                     {v.embed_url ? (
-                      <div className="mt-3">
-                        <VideoPlayer
-                          embedUrl={v.embed_url}
-                          thumbnailUrl={v.thumbnail_url}
-                          title={v.title || ""}
-                          platform={v.platform}
-                          sourceUrl={v.url}
-                        />
-                      </div>
+                      <button
+                        onClick={() => setModalVideo(v)}
+                        className="mt-3 w-full relative overflow-hidden rounded-xl bg-ink/5 hover:bg-ink/10 transition-colors"
+                        style={{ aspectRatio: "16/9" }}
+                      >
+                        {v.thumbnail_url ? (
+                          <img
+                            src={v.thumbnail_url}
+                            alt={v.title || ""}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className={cn(
+                            "absolute inset-0 flex items-center justify-center",
+                            v.platform === "bilibili" ? "bg-[#fb7299]/10" : "bg-[#ff0000]/10",
+                          )} />
+                        )}
+                        <div className="absolute inset-0 bg-black/25 flex items-center justify-center">
+                          <div className="h-10 w-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                            <Play size={18} fill="currentColor" className={cn(
+                              v.platform === "bilibili" ? "text-[#fb7299]" : "text-[#ff0000]",
+                            )} />
+                          </div>
+                        </div>
+                      </button>
                     ) : (
                       <a href={v.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-sage-deep font-medium hover:underline">
                         <ExternalLink size={11} />
@@ -1293,6 +1311,13 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
             </div>
           ))}
         </div>
+      )}
+      {/* Video Player Modal */}
+      {modalVideo && (
+        <VideoPlayerModal
+          video={modalVideo}
+          onClose={() => setModalVideo(null)}
+        />
       )}
     </div>
   );
