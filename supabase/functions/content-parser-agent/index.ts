@@ -671,29 +671,55 @@ function isUrl(input: string): boolean {
 }
 
 // ── Fetch URL content for AI context ──
-async function fetchUrlContent(url: string): Promise<{
+// Uses standard browser UA to avoid platform blocking (B站 412, etc.)
+
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+interface UrlContentResult {
   title: string;
   description: string;
   text: string;
   error?: string;
-}> {
+  statusCode?: number;
+}
+
+async function fetchUrlContent(url: string): Promise<UrlContentResult> {
+  const platform = detectPlatform(url);
+  const referer = platform === "bilibili" ? "https://www.bilibili.com/"
+    : platform === "youtube" ? "https://www.youtube.com/"
+    : "";
+
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 10_000);
     const resp = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; NancyOS/1.0; +https://nancy-os.pages.dev)",
-        "Accept": "text/html,application/xhtml+xml",
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        ...(referer ? { "Referer": referer } : {}),
       },
     });
     clearTimeout(timeout);
 
     if (!resp.ok) {
-      return { title: "", description: "", text: "", error: `HTTP ${resp.status}` };
+      return {
+        title: "", description: "", text: "",
+        error: `HTTP ${resp.status}${resp.status === 412 ? " (平台反爬拦截)" : resp.status === 403 ? " (禁止访问)" : ""}`,
+        statusCode: resp.status,
+      };
     }
 
     const html = await resp.text();
+
+    if (html.length < 200) {
+      return {
+        title: "", description: "", text: "",
+        error: `页面内容过短 (${html.length} chars)，可能被拦截或需登录`,
+      };
+    }
+
     const title = extractMeta(html, /<title[^>]*>([^<]*)<\/title>/i) || "";
     const ogTitle = extractMeta(html, /<meta\s+property="og:title"\s+content="([^"]*)"/i) || "";
     const description = extractMeta(html, /<meta\s+name="description"\s+content="([^"]*)"/i)
@@ -710,7 +736,7 @@ async function fetchUrlContent(url: string): Promise<{
       .replace(/&#x27;/g, "'")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 2000);
+      .slice(0, 3000);
 
     return {
       title: ogTitle || title,
@@ -718,11 +744,13 @@ async function fetchUrlContent(url: string): Promise<{
       text,
     };
   } catch (err) {
+    const errMsg = (err as Error).message || "fetch failed";
+    const isTimeout = errMsg.includes("abort") || errMsg.includes("timeout");
     return {
       title: "",
       description: "",
       text: "",
-      error: (err as Error).message || "fetch failed",
+      error: isTimeout ? "页面请求超时 (10s)" : `网络错误: ${errMsg}`,
     };
   }
 }
@@ -746,29 +774,64 @@ const RECIPE_VALID_HEALTH_LEVEL = ["清淡", "均衡", "indulgent"] as const;
 const RECIPE_VALID_BUDGET_LEVEL = ["经济", "适中", "豪华"] as const;
 const RECIPE_VALID_INGREDIENT_CATEGORY = ["蛋白质", "主食", "蔬菜", "水果", "调味料", "油脂", "其他"] as const;
 
-function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[] } {
+function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[]; corrected: Record<string, unknown> } {
   const errors: string[] = [];
+  const corrected = { ...metadata };
 
-  if (!metadata.difficulty || !WORKOUT_VALID_DIFFICULTY.includes(metadata.difficulty as string)) {
-    errors.push(`difficulty 值无效: ${metadata.difficulty}，允许: ${WORKOUT_VALID_DIFFICULTY.join("/")}`);
+  // Auto-correct common AI mistakes: English → Chinese
+  const difficultyMap: Record<string, string> = {
+    "beginner": "初级", "easy": "初级", "初学": "初级",
+    "intermediate": "中级", "medium": "中级",
+    "advanced": "高级", "hard": "高级",
+  };
+  if (typeof corrected.difficulty === "string" && difficultyMap[corrected.difficulty.toLowerCase()]) {
+    corrected.difficulty = difficultyMap[corrected.difficulty.toLowerCase()];
   }
 
-  if (!metadata.training_type || !WORKOUT_VALID_TRAINING_TYPE.includes(metadata.training_type as string)) {
-    errors.push(`training_type 值无效: ${metadata.training_type}，允许: ${WORKOUT_VALID_TRAINING_TYPE.join("/")}`);
+  const trainingTypeMap: Record<string, string> = {
+    "strength": "力量训练", "weight training": "力量训练",
+    "bodyweight": "塑形训练", "sculpting": "塑形训练",
+    "cardio": "有氧燃脂", "aerobic": "有氧燃脂",
+    "yoga": "瑜伽", "stretching": "拉伸",
+    "rehab": "康复", "rehabilitation": "康复",
+  };
+  if (typeof corrected.training_type === "string" && trainingTypeMap[corrected.training_type.toLowerCase()]) {
+    corrected.training_type = trainingTypeMap[corrected.training_type.toLowerCase()];
   }
 
-  if (!metadata.category || !WORKOUT_VALID_CATEGORY.includes(metadata.category as string)) {
-    errors.push(`category 值无效: ${metadata.category}，允许: ${WORKOUT_VALID_CATEGORY.join("/")}`);
+  const categoryMap: Record<string, string> = {
+    "glutes": "臀腿", "legs": "臀腿", "lower body": "臀腿",
+    "back": "背部", "shoulders": "肩胸", "chest": "肩胸", "upper body": "肩胸",
+    "core": "核心", "abs": "核心",
+    "full body": "全身",
+    "cardio": "有氧",
+    "stretch": "拉伸", "stretching": "拉伸",
+  };
+  if (typeof corrected.category === "string" && categoryMap[corrected.category.toLowerCase()]) {
+    corrected.category = categoryMap[corrected.category.toLowerCase()];
   }
 
-  if (metadata.estimated_duration !== undefined && metadata.estimated_duration !== null) {
-    const d = metadata.estimated_duration as number;
+  // Validate
+  if (!corrected.difficulty || !WORKOUT_VALID_DIFFICULTY.includes(corrected.difficulty as string)) {
+    errors.push(`difficulty 值无效: ${corrected.difficulty}，允许: ${WORKOUT_VALID_DIFFICULTY.join("/")}`);
+  }
+
+  if (!corrected.training_type || !WORKOUT_VALID_TRAINING_TYPE.includes(corrected.training_type as string)) {
+    errors.push(`training_type 值无效: ${corrected.training_type}，允许: ${WORKOUT_VALID_TRAINING_TYPE.join("/")}`);
+  }
+
+  if (!corrected.category || !WORKOUT_VALID_CATEGORY.includes(corrected.category as string)) {
+    errors.push(`category 值无效: ${corrected.category}，允许: ${WORKOUT_VALID_CATEGORY.join("/")}`);
+  }
+
+  if (corrected.estimated_duration !== undefined && corrected.estimated_duration !== null) {
+    const d = corrected.estimated_duration as number;
     if (typeof d !== "number" || d < 1 || d > 300) {
       errors.push(`estimated_duration 超出范围: ${d}，允许 1-300`);
     }
   }
 
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, corrected };
 }
 
 function validateRecipeMetadata(metadata: Record<string, unknown>): { valid: boolean; errors: string[]; warnings: string[] } {
@@ -902,6 +965,18 @@ serve(async (req: Request) => {
 
     // Determine if this is a recipe pipeline call (has source_content from extractor)
     const isRecipePipeline = recipeId && (sourceContent || sourceContext);
+    const isWorkoutPath = !!workoutVideoId;
+
+    // ── Stage: input_receive ──
+    console.log("[content-parser-agent] stage=input_receive", {
+      url: body.url ? body.url.slice(0, 80) : null,
+      platform,
+      inputLen: input.length,
+      isRecipePipeline,
+      isWorkoutPath,
+      workoutVideoId: workoutVideoId || null,
+      recipeId: recipeId || null,
+    });
 
     let systemPrompt: string;
     let userMessage: string;
@@ -968,13 +1043,21 @@ serve(async (req: Request) => {
       // ═══════════════════════════════════════════
       systemPrompt = UNIFIED_PROMPT;
 
-      // Build prompt with fetched URL content (legacy behavior)
-      let fetchedContent: { title: string; description: string; text: string } = { title: "", description: "", text: "" };
+      // ── Stage: video_fetch ──
+      let fetchedContent: UrlContentResult = { title: "", description: "", text: "" };
       if (inputIsUrl) {
+        console.log("[content-parser-agent] stage=video_fetch start", { url: input.slice(0, 80), platform });
         fetchedContent = await fetchUrlContent(input);
-        console.log(`[content-parser-agent] URL fetch: title="${fetchedContent.title.slice(0, 80)}", text=${fetchedContent.text.length} chars`);
+        console.log("[content-parser-agent] stage=video_fetch done", {
+          title: fetchedContent.title.slice(0, 80),
+          textLen: fetchedContent.text.length,
+          descLen: fetchedContent.description.length,
+          error: fetchedContent.error || null,
+          statusCode: fetchedContent.statusCode || null,
+        });
       }
 
+      // ── Stage: content_extract ──
       userMessage = "";
       if (sourceContext) {
         userMessage = `用户提供的上下文:\n${sourceContext}\n\n`;
@@ -994,9 +1077,23 @@ serve(async (req: Request) => {
       if (preferredModule) {
         userMessage += `\n用户偏好模块: ${preferredModule}`;
       }
+
+      console.log("[content-parser-agent] stage=content_extract", {
+        userMessageLen: userMessage.length,
+        hasTitle: !!fetchedContent.title,
+        hasText: fetchedContent.text.length > 50,
+        fetchError: fetchedContent.error || null,
+      });
     }
 
-    // ── AI Runtime: deepseek + JSON parse ──
+    // ── Stage: deepseek_call ──
+    console.log("[content-parser-agent] stage=deepseek_call start", {
+      isRecipePipeline,
+      promptLen: systemPrompt.length,
+      msgLen: userMessage.length,
+      totalChars: systemPrompt.length + userMessage.length,
+    });
+
     const aiResult = await aiRuntime<Record<string, unknown>>(
       [
         { role: "system", content: systemPrompt },
@@ -1006,7 +1103,11 @@ serve(async (req: Request) => {
     );
 
     if (!aiResult.success) {
-      console.error(`[content-parser-agent] AI failed stage=${aiResult.stage}: ${aiResult.error}`);
+      console.error("[content-parser-agent] stage=deepseek_call FAILED", {
+        aiStage: aiResult.stage,
+        error: aiResult.error,
+        detail: aiResult.detail || null,
+      });
       if (workoutVideoId) {
         await supabase.from("workout_videos").update({ ai_analysis_status: "failed" }).eq("id", workoutVideoId);
       }
@@ -1016,8 +1117,18 @@ serve(async (req: Request) => {
       return jsonResponse({ stage: aiResult.stage, error: aiResult.error, detail: aiResult.detail }, req, 500);
     }
 
+    // ── Stage: response_parse ──
     const parsed = aiResult.data;
     const tokensUsed: number = aiResult.usage?.totalTokens || 0;
+
+    console.log("[content-parser-agent] stage=response_parse", {
+      tokensUsed,
+      content_type: parsed.content_type || "?",
+      title: (parsed.title as string)?.slice(0, 60) || "",
+      hasMetadata: !!parsed.metadata,
+      metadataKeys: parsed.metadata ? Object.keys(parsed.metadata as object) : [],
+      rawLen: aiResult.raw?.length || 0,
+    });
 
     // Force UPDATE mode when retrying (ID takes priority over AI classification)
     if (workoutVideoId) {
@@ -1049,9 +1160,13 @@ serve(async (req: Request) => {
     if (content_type === "workout") {
       targetTable = "workout_videos";
 
-      // Validate workout metadata against schema
+      // Validate workout metadata against schema (with auto-correction)
       const validation = validateWorkoutMetadata(metadata);
       if (!validation.valid) {
+        console.error("[content-parser-agent] stage=response_parse validation FAILED", {
+          errors: validation.errors,
+          rawMetadata: JSON.stringify(metadata).slice(0, 300),
+        });
         if (workoutVideoId) {
           await supabase
             .from("workout_videos")
@@ -1062,10 +1177,24 @@ serve(async (req: Request) => {
           error: "schema_validation_failed",
           message: "AI 输出不符合 schema",
           validation_errors: validation.errors,
+          received_metadata: metadata,
         }, req, 500);
       }
 
+      // Use corrected metadata
+      metadata = validation.corrected;
+
       if (workoutVideoId) {
+        // ── Stage: database_save ──
+        console.log("[content-parser-agent] stage=database_save workout", {
+          workoutVideoId,
+          title: title.slice(0, 60),
+          category: metadata.category,
+          difficulty: metadata.difficulty,
+          training_type: metadata.training_type,
+          duration: metadata.estimated_duration,
+          muscles: (metadata.target_muscles as string[])?.length || 0,
+        });
         // ── UPDATE mode: enrich existing workout_video row ──
         const { data: updated } = await supabase
           .from("workout_videos")
@@ -1084,7 +1213,12 @@ serve(async (req: Request) => {
           .select("id")
           .single();
 
-        if (updated) recordId = updated.id as string;
+        if (updated) {
+          recordId = updated.id as string;
+          console.log("[content-parser-agent] stage=database_save done", { recordId, status: "completed" });
+        } else {
+          console.error("[content-parser-agent] stage=database_save FAILED: no row updated", { workoutVideoId });
+        }
       } else {
         // ── INSERT mode: create new workout_video row ──
         const { data: inserted } = await supabase

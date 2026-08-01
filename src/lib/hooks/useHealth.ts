@@ -313,20 +313,18 @@ export function useCreateWorkoutVideo() {
       if (error) throw error;
       const record = data as WorkoutVideo;
 
-      // Step 2: Trigger AI analysis (non-blocking)
-      if (platform === "bilibili" || platform === "youtube") {
-        invokeAI("content-parser-agent", {
-          url: normalized,
-          content_type: "workout",
-          workout_video_id: record.id,
-        }).then((result) => {
-          if (!result.success) {
-            console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, error: result.error, detail: result.detail });
-          }
-        }).catch((err) => {
-          console.error("[useCreateWorkoutVideo] AI trigger network error", { videoId: record.id, error: err });
-        });
-      }
+      // Step 2: Trigger AI analysis (non-blocking) for all platforms
+      invokeAI("content-parser-agent", {
+        url: normalized,
+        content_type: "workout",
+        workout_video_id: record.id,
+      }).then((result) => {
+        if (!result.success) {
+          console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, platform, error: result.error, detail: result.detail });
+        }
+      }).catch((err) => {
+        console.error("[useCreateWorkoutVideo] AI trigger network error", { videoId: record.id, platform, error: err });
+      });
 
       return record;
     },
