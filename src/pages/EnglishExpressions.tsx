@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Search, Plus, BookOpen, ChevronRight, Clock, Tag, X } from "lucide-react";
-import { useExpressions, useExpressionCategories } from "@/lib/hooks/useEnglish";
+import { Search, Plus, BookOpen, ChevronRight, Clock, Tag, X, FolderSync } from "lucide-react";
+import { useExpressions, useExpressionCategories, useRecategorize } from "@/lib/hooks/useEnglish";
 import { EXPRESSION_TYPES, EXPRESSION_STATUSES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +43,7 @@ export default function EnglishExpressions() {
   });
 
   const { data: categories } = useExpressionCategories();
+  const recategorize = useRecategorize();
 
   const hasFilters = typeFilter || statusFilter || categoryFilter || search;
 
@@ -53,14 +54,55 @@ export default function EnglishExpressions() {
           <p className="text-sm text-ink-lighter">English OS</p>
           <h1 className="text-2xl font-semibold tracking-tight mt-0.5">表达库</h1>
         </div>
-        <button
-          onClick={() => navigate("/english/expressions/new")}
-          className="flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-3 py-2 text-sm font-medium"
-        >
-          <Plus size={16} />
-          添加
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => recategorize.mutate()}
+            disabled={recategorize.isPending}
+            className="flex items-center gap-1.5 bg-ink/5 text-ink-light rounded-xl px-3 py-2 text-xs font-medium hover:bg-ink/10 disabled:opacity-50"
+            title="对未分类的表达执行 AI 自动分类"
+          >
+            <FolderSync size={14} className={recategorize.isPending ? "animate-spin" : ""} />
+            {recategorize.isPending ? "分类中..." : "重新分类"}
+          </button>
+          <button
+            onClick={() => navigate("/english/expressions/new")}
+            className="flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-3 py-2 text-sm font-medium"
+          >
+            <Plus size={16} />
+            添加
+          </button>
+        </div>
       </header>
+
+      {/* Re-categorization result */}
+      {recategorize.isSuccess && recategorize.data && (
+        <div className="bg-sage-light/30 border border-sage-light/50 rounded-xl p-3 text-xs text-sage-deep">
+          {recategorize.data.message ? (
+            <p>{recategorize.data.message}</p>
+          ) : (
+            <div>
+              <p className="font-medium">分类完成: {recategorize.data.categorized}/{recategorize.data.total} 条</p>
+              {recategorize.data.errors > 0 && (
+                <p className="text-accent-rose mt-0.5">失败: {recategorize.data.errors} 条</p>
+              )}
+              {Object.keys(recategorize.data.per_category).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {Object.entries(recategorize.data.per_category).map(([name, count]) => (
+                    <span key={name} className="bg-white/60 rounded-full px-2 py-0.5 text-[10px]">
+                      {name}: {count}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {recategorize.isError && (
+        <div className="bg-accent-rose/10 border border-accent-rose/20 rounded-xl p-3 text-xs text-accent-rose">
+          分类失败: {(recategorize.error as Error)?.message || "未知错误"}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="space-y-2">

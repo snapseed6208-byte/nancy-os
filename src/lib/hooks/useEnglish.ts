@@ -65,12 +65,84 @@ export function useExpression(id: string | undefined) {
   });
 }
 
+// ── Auto-categorization ──
+
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  "生活": ["daily life", "daily", "life", "日常", "生活", "home", "family", "food", "cooking", "shopping", "health", "fitness", "housing", "rent", "租房", "家务", "housework", "起居", "作息", "饮食", "起居", "睡眠", "锻炼", "grocery", "recipe", "nutrition"],
+  "工作": ["work", "office", "job", "career", "工作", "职场", "internship", "实习", "meeting", "会议", "deadline", "截止", "升职", "promotion", "colleague", "同事", "boss", "老板", "salary", "工资", "辞职", "resign", "interview", "面试"],
+  "社交": ["social", "friends", "relationship", "社交", "朋友", "人际", "dating", "约会", "聚会", "party", "network", "人脉", "gathering", "small talk", "greeting", "问候", "介绍", "introduction"],
+  "情绪": ["emotions", "feelings", "mood", "情绪", "心理", "emotional", "stress", "压力", "anxiety", "焦虑", "happiness", "sadness", "anger", "生气", "失望", "disappointment", "excited", "nervous"],
+  "旅行": ["travel", "traveling", "旅行", "旅游", "transport", "hotel", "commuting", "交通", "出行", "机场", "airport", "酒店", "订票", "ticket", "flight", "航班", "行李", "luggage", "passport", "visa"],
+  "学习": ["study", "academic", "IELTS", "学习", "学术", "exam", "考试", "university", "大学", "course", "课程", "research", "论文", "library", "图书馆", "TOEFL", "GRE", "campus", "校园", "professor", "教授", "作业", "assignment"],
+  "商务": ["business", "meeting", "商务", "商业", "negotiation", "presentation", "finance", "金融", "marketing", "市场", "contract", "合同", "investment", "投资", "revenue", "profit", "strategy", "client", "客户", "deal", "交易"],
+  "影视": ["movie", "film", "TV", "影视", "电影", "entertainment", "music", "音乐", "show", "drama", "剧集", "综艺", "actor", "演员", "director", "导演", "plot", "剧情", "review", "影评"],
+};
+
+function categorizeExpression(expr: {
+  topic?: string | null;
+  scene?: string | null;
+  english?: string;
+  chinese?: string;
+  type?: string;
+}): string | null {
+  const scores: Record<string, number> = {};
+
+  const sceneLower = (expr.scene || "").toLowerCase();
+  const topicLower = (expr.topic || "").toLowerCase();
+  const textLower = `${expr.english || ""} ${expr.chinese || ""}`.toLowerCase();
+
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    let score = 0;
+    const catLower = category.toLowerCase();
+    for (const kw of keywords) {
+      const kwLower = kw.toLowerCase();
+      if (sceneLower.includes(kwLower)) score += 3;
+      if (topicLower.includes(kwLower)) score += 2;
+      if (textLower.includes(kwLower)) score += 1;
+      if (catLower.includes(kwLower) || kwLower.includes(catLower)) score += 2;
+    }
+    if (score > 0) scores[category] = score;
+  }
+
+  if (Object.keys(scores).length === 0) return null;
+  return Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+async function resolveCategoryId(categoryName: string | null): Promise<string | null> {
+  if (!categoryName) return null;
+  const { data } = await supabase
+    .from("categories")
+    .select("id, name")
+    .eq("scope", "expression")
+    .eq("name", categoryName)
+    .maybeSingle();
+  return data?.id || null;
+}
+
 export function useCreateExpression() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: Record<string, unknown>) => {
       const userId = await getUserId();
-      const { data, error } = await supabase.from("expressions").insert({ ...input, user_id: userId }).select().single();
+
+      // Auto-categorize if no category_id provided
+      let categoryId = input.category_id as string | null | undefined;
+      if (!categoryId) {
+        const catName = categorizeExpression({
+          topic: input.topic as string | undefined,
+          scene: input.scene as string | undefined,
+          english: input.english as string,
+          chinese: input.chinese as string,
+          type: input.type as string,
+        });
+        categoryId = await resolveCategoryId(catName);
+      }
+
+      const { data, error } = await supabase
+        .from("expressions")
+        .insert({ ...input, category_id: categoryId || null, user_id: userId })
+        .select()
+        .single();
       if (error) throw error;
       return data;
     },
@@ -91,7 +163,10 @@ export function useUpdateExpression() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["expressions"] }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["expression", (variables as Record<string, unknown>).id] });
+    },
   });
 }
 
@@ -102,7 +177,10 @@ export function useDeleteExpression() {
       const { error } = await supabase.from("expressions").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["expressions"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["expression", id] });
+    },
   });
 }
 
@@ -433,28 +511,45 @@ export function useBatchImportExpressions() {
 
       if (batchErr) throw batchErr;
 
-      // 2. Batch insert expressions
-      const rows = input.expressions.map((expr) => ({
-        user_id: userId,
-        english: expr.english,
-        chinese: expr.chinese,
-        type: expr.type,
-        pronunciation: expr.pronunciation || null,
-        example_sentence: expr.example_sentence || null,
-        scene: expr.scene || null,
-        topic: expr.topic || null,
-        difficulty_level: expr.difficulty_level || "intermediate",
-        usefulness_level: expr.usefulness_level || null,
-        usage_note: expr.usage_note || null,
-        memory_tip: expr.memory_tip || null,
-        common_mistakes: expr.common_mistakes || null,
-        context: expr.context || null,
-        common_patterns: expr.common_patterns || null,
-        status: "new",
-        ease_factor: 2.5,
-        source: input.source_name || "import",
-        import_batch_id: batch.id,
-      }));
+      // 2. Batch insert expressions with auto-categorization
+      // Pre-fetch categories for ID lookup
+      const { data: cats } = await supabase
+        .from("categories")
+        .select("id, name")
+        .eq("scope", "expression");
+      const catMap = new Map((cats || []).map((c: { id: string; name: string }) => [c.name, c.id]));
+
+      const rows = input.expressions.map((expr) => {
+        const catName = categorizeExpression({
+          topic: expr.topic,
+          scene: expr.scene,
+          english: expr.english,
+          chinese: expr.chinese,
+          type: expr.type,
+        });
+        return {
+          user_id: userId,
+          english: expr.english,
+          chinese: expr.chinese,
+          type: expr.type,
+          pronunciation: expr.pronunciation || null,
+          example_sentence: expr.example_sentence || null,
+          scene: expr.scene || null,
+          topic: expr.topic || null,
+          difficulty_level: expr.difficulty_level || "intermediate",
+          usefulness_level: expr.usefulness_level || null,
+          usage_note: expr.usage_note || null,
+          memory_tip: expr.memory_tip || null,
+          common_mistakes: expr.common_mistakes || null,
+          context: expr.context || null,
+          common_patterns: expr.common_patterns || null,
+          category_id: catName ? (catMap.get(catName) || null) : null,
+          status: "new",
+          ease_factor: 2.5,
+          source: input.source_name || "import",
+          import_batch_id: batch.id,
+        };
+      });
 
       const { error } = await supabase.from("expressions").insert(rows);
       if (error) throw error;
@@ -486,6 +581,34 @@ export function useExpressionCategories() {
     queryKey: ["expression_categories"],
     queryFn: fetchExpressionCategories,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ── Re-categorization ──
+
+export type RecategorizeResult = {
+  total: number;
+  categorized: number;
+  errors: number;
+  per_category: Record<string, number>;
+  message?: string;
+};
+
+export function useRecategorize() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<RecategorizeResult> => {
+      const { data, error } = await supabase.functions.invoke("expression-categorizer", {
+        body: { mode: "re categorize" },
+      });
+      if (error) throw error;
+      return data as RecategorizeResult;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["expression_categories"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
   });
 }
 
