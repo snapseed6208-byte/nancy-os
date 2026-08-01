@@ -87,7 +87,7 @@ export default function VideoPlayerModal({ video, onClose }: VideoPlayerModalPro
               platform={video.platform}
               sourceUrl={video.url}
               autoPlay
-              className="h-full [&>*:last-child]:hidden"
+              className="h-full"
             />
           </div>
         </div>

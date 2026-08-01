@@ -41,6 +41,8 @@ export default function VideoPlayer({
 }: VideoPlayerProps) {
   const [state, setState] = useState<PlayerState>(autoPlay ? "loading" : "idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeReadyRef = useRef(false);
 
   // Clear timer on unmount
   useEffect(() => {
@@ -57,22 +59,26 @@ export default function VideoPlayer({
   }, []);
 
   const handlePlay = useCallback(() => {
+    iframeReadyRef.current = false;
     setState("loading");
     timerRef.current = setTimeout(() => setState("error"), LOAD_TIMEOUT);
   }, []);
 
   const handleIframeLoad = useCallback(() => {
     clearTimer();
+    iframeReadyRef.current = true;
     setState("playing");
     onReady?.();
   }, [clearTimer, onReady]);
 
   const handleIframeError = useCallback(() => {
     clearTimer();
+    iframeReadyRef.current = false;
     setState("error");
   }, [clearTimer]);
 
   const handleRetry = useCallback(() => {
+    iframeReadyRef.current = false;
     setState("idle");
   }, []);
 
@@ -116,6 +122,7 @@ export default function VideoPlayer({
         {/* Iframe — rendered during loading to start fetch, hidden until ready */}
         {(state === "loading" || state === "playing") && (
           <iframe
+            ref={iframeRef}
             src={embedUrl}
             title={title}
             allow="autoplay; fullscreen; accelerometer; gyroscope"
