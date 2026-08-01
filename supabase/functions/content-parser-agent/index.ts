@@ -9,7 +9,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { callDeepSeek, safeJsonParse } from "../_shared/ai.ts";
+import { aiRuntime } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -996,68 +996,28 @@ serve(async (req: Request) => {
       }
     }
 
-    // ── Call DeepSeek ──
-    // Dynamic maxTokens: recipe pipeline needs more tokens for structured output
-    // Also scale with user message length for long content
-    const contentLength = userMessage.length;
-    const dynamicMaxTokens = isRecipePipeline ? 4096
-      : contentLength > 3000 ? 4096
-      : 3072;
-
-    console.log(`[content-parser-agent] Calling DeepSeek content_length=${contentLength} maxTokens=${dynamicMaxTokens}`);
-    const aiResult = await callDeepSeek([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ], { temperature: isRecipePipeline ? 0.3 : 0.5, maxTokens: dynamicMaxTokens });
+    // ── AI Runtime: deepseek + JSON parse ──
+    const aiResult = await aiRuntime<Record<string, unknown>>(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      { agentName: "content-parser", maxTokens: isRecipePipeline ? 4096 : 3072, temperature: isRecipePipeline ? 0.3 : 0.5 },
+    );
 
     if (!aiResult.success) {
-      console.error(`[content-parser-agent] DeepSeek error: ${aiResult.error} detail=${aiResult.detail || "none"}`);
+      console.error(`[content-parser-agent] AI failed stage=${aiResult.stage}: ${aiResult.error}`);
       if (workoutVideoId) {
-        await supabase
-          .from("workout_videos")
-          .update({ ai_analysis_status: "failed" })
-          .eq("id", workoutVideoId);
+        await supabase.from("workout_videos").update({ ai_analysis_status: "failed" }).eq("id", workoutVideoId);
       }
       if (recipeId) {
-        await supabase
-          .from("recipes")
-          .update({ ai_analysis_status: "failed" })
-          .eq("id", recipeId);
+        await supabase.from("recipes").update({ ai_analysis_status: "failed" }).eq("id", recipeId);
       }
-      return jsonResponse({
-        stage: "deepseek",
-        error: aiResult.error,
-        detail: aiResult.detail,
-      }, req, aiResult.status || 502);
+      return jsonResponse({ stage: aiResult.stage, error: aiResult.error, detail: aiResult.detail }, req, 500);
     }
 
-    const raw = aiResult.data;
+    const parsed = aiResult.data;
     const tokensUsed: number = aiResult.usage?.totalTokens || 0;
-
-    const parseResult = safeJsonParse<Record<string, unknown>>(raw);
-    if (!parseResult.success) {
-      console.error(`[content-parser-agent] JSON parse error: ${parseResult.error}`);
-      if (workoutVideoId) {
-        await supabase
-          .from("workout_videos")
-          .update({ ai_analysis_status: "failed" })
-          .eq("id", workoutVideoId);
-      }
-      if (recipeId) {
-        await supabase
-          .from("recipes")
-          .update({ ai_analysis_status: "failed" })
-          .eq("id", recipeId);
-      }
-      return jsonResponse({
-        stage: "parse",
-        error: "parse_error",
-        raw_sample: parseResult.raw_sample,
-        message: "AI 返回格式异常，请重试",
-      }, req, 500);
-    }
-
-    const parsed = parseResult.data;
 
     // Force UPDATE mode when retrying (ID takes priority over AI classification)
     if (workoutVideoId) {

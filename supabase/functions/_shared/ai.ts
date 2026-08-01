@@ -8,9 +8,13 @@
 
 // ── Types ──
 
+export type DeepSeekContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface DeepSeekMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | DeepSeekContentPart[];
 }
 
 export interface DeepSeekOptions {
@@ -51,7 +55,149 @@ const DEFAULT_MODEL = "deepseek-chat";
 const DEFAULT_TIMEOUT = 60_000;
 const DEFAULT_MAX_TOKENS = 2048;
 
-// ── Stage type for agent error reporting ──
+// ── Unified AI Runtime ──
+
+export interface AIRuntimeOptions {
+  /** Agent name for logging (required) */
+  agentName: string;
+  /** Max chars per message content (default 8000) */
+  maxInputLength?: number;
+  /** Base maxTokens, auto-scaled if dynamicTokens enabled (default 2048) */
+  maxTokens?: number;
+  /** Auto-scale maxTokens with input length (default true) */
+  dynamicTokens?: boolean;
+  /** Parse response as JSON (default true). Set false for chat/raw text agents. */
+  parseJson?: boolean;
+  /** Model temperature (default 0.5) */
+  temperature?: number;
+  /** Timeout in ms (default inherited from callDeepSeek: 60000) */
+  timeout?: number;
+}
+
+export interface AIRuntimeSuccess<T = unknown> {
+  success: true;
+  data: T;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  raw?: string;
+}
+
+export interface AIRuntimeFailure {
+  success: false;
+  stage: AgentStage;
+  error: string;
+  detail?: string;
+  raw?: string;
+}
+
+export type AIRuntimeResult<T = unknown> = AIRuntimeSuccess<T> | AIRuntimeFailure;
+
+/**
+ * Unified AI Runtime — single entry point for all Edge Function AI calls.
+ *
+ * Layers:
+ *   1. Input validation + length guard
+ *   2. Dynamic maxTokens scaling
+ *   3. callDeepSeek (timeout + retry-aware)
+ *   4. safeJsonParse (7-strategy repair chain)
+ *   5. Unified stage-based error envelope
+ *
+ * Usage:
+ *   const result = await aiRuntime<MyType>(messages, { agentName: "my-agent" });
+ *   if (!result.success) return jsonResponse(result, req, 500);
+ *   // result.data is typed
+ */
+export async function aiRuntime<T = unknown>(
+  messages: DeepSeekMessage[],
+  options: AIRuntimeOptions,
+): Promise<AIRuntimeResult<T>> {
+  const agentName = options.agentName;
+  const tag = `[${agentName}]`;
+
+  // ── Layer 1: Input validation ──
+  const maxInput = options.maxInputLength || 8000;
+
+  // Count chars: for string content use .length, for arrays count text parts only
+  function countChars(content: DeepSeekMessage["content"]): number {
+    if (typeof content === "string") return content.length;
+    return content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : 0), 0);
+  }
+
+  const totalChars = messages.reduce((sum, m) => sum + countChars(m.content), 0);
+  const hardLimit = maxInput * 3;
+
+  if (totalChars > hardLimit) {
+    console.error(`${tag} input too long: ${totalChars} chars (limit: ${hardLimit})`);
+    return {
+      success: false,
+      stage: "payload",
+      error: `输入文本过长 (${totalChars} 字符)，上限 ${hardLimit}。请缩短后重试。`,
+    };
+  }
+
+  // Truncate oversized individual messages (skip arrays — multi-modal content)
+  const processed: DeepSeekMessage[] = messages.map((m) => {
+    if (typeof m.content !== "string") return m; // Don't truncate multi-modal arrays
+    return {
+      role: m.role,
+      content: m.content.length > maxInput ? m.content.slice(0, maxInput) : m.content,
+    };
+  });
+
+  // ── Layer 2: Dynamic maxTokens ──
+  const parseJson = options.parseJson !== false;
+  const baseTokens = options.maxTokens || 2048;
+  let finalMaxTokens = baseTokens;
+
+  if (options.dynamicTokens !== false && parseJson) {
+    // JSON output scales with input — more content → more to analyze → more output
+    if (totalChars > 8000) finalMaxTokens = Math.min(8192, baseTokens * 4);
+    else if (totalChars > 4000) finalMaxTokens = Math.min(8192, baseTokens * 2);
+    else if (totalChars > 2000) finalMaxTokens = Math.min(6144, Math.floor(baseTokens * 1.5));
+  }
+
+  // ── Layer 3: DeepSeek call ──
+  console.log(`${tag} start chars=${totalChars} maxTokens=${finalMaxTokens}`);
+  const aiResult = await callDeepSeek<string>(processed, {
+    temperature: options.temperature ?? 0.5,
+    maxTokens: finalMaxTokens,
+    timeout: options.timeout,
+  });
+
+  if (!aiResult.success) {
+    console.error(`${tag} deepseek failed: ${aiResult.error}`);
+    return {
+      success: false,
+      stage: "deepseek",
+      error: aiResult.error,
+      detail: aiResult.detail,
+    };
+  }
+
+  const raw = aiResult.data;
+  const usage = aiResult.usage;
+
+  // ── Layer 4: JSON parse (or raw passthrough) ──
+  if (parseJson) {
+    const parseResult = safeJsonParse<T>(raw);
+    if (!parseResult.success) {
+      console.error(`${tag} parse failed: ${parseResult.error}`);
+      return {
+        success: false,
+        stage: "parse",
+        error: parseResult.error,
+        detail: parseResult.raw_sample,
+        raw,
+      };
+    }
+
+    console.log(`${tag} success tokens=${usage?.totalTokens ?? "?"}`);
+    return { success: true, data: parseResult.data, usage, raw };
+  }
+
+  // Raw text passthrough (for chat agents)
+  console.log(`${tag} success (raw) tokens=${usage?.totalTokens ?? "?"}`);
+  return { success: true, data: raw as unknown as T, usage, raw };
+}
 
 export type AgentStage = "payload" | "auth" | "deepseek" | "parse" | "database" | "internal";
 

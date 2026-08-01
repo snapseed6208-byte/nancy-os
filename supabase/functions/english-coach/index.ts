@@ -7,7 +7,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { callDeepSeek } from "../_shared/ai.ts";
+import { aiRuntime } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -184,10 +184,16 @@ serve(async (req: Request) => {
       }
     }
 
-    // ── Call DeepSeek ──
-    const aiResult = await callDeepSeek(finalMessages, { model, temperature, maxTokens });
+    // ── AI Runtime: chat agent (raw text, no JSON parse) ──
+    const aiResult = await aiRuntime<string>(finalMessages as Array<{ role: "system" | "user" | "assistant"; content: string }>, {
+      agentName: "english-coach",
+      maxTokens,
+      temperature,
+      parseJson: false,
+      dynamicTokens: false,
+    });
     if (!aiResult.success) {
-      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), { status: aiResult.status || 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } });
+      return jsonResponse(req, { stage: aiResult.stage, error: aiResult.error, detail: aiResult.detail }, aiResult.stage === "deepseek" ? 502 : 500);
     }
 
     const tokensUsed: number = aiResult.usage?.totalTokens || 0;

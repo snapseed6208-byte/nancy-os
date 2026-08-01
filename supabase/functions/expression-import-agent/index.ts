@@ -7,7 +7,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { callDeepSeek, safeJsonParse } from "../_shared/ai.ts";
+import { aiRuntime } from "../_shared/ai.ts";
+import type { AIRuntimeResult } from "../_shared/ai.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -125,43 +126,22 @@ serve(async (req: Request) => {
       return errResponse({ stage: "auth", error: "认证服务异常", detail: (authCatchErr as Error).message }, req, 500);
     }
 
-    let tokensUsed = 0;
-
-    // ── Stage: deepseek ──
-    // Dynamic maxTokens: longer input → more expressions → needs more output tokens
-    // deepseek-chat supports up to 8192 output tokens
+    // ── AI Runtime: deepseek + JSON parse ──
     const truncated = text.slice(0, 8000);
-    const inputLength = truncated.length;
-    const dynamicMaxTokens = inputLength > 3000 ? 8192 : 4096;
-
-    console.log(`[expression-import-agent] Calling DeepSeek input_length=${inputLength} maxTokens=${dynamicMaxTokens}`);
-    const aiResult = await callDeepSeek([
-      { role: "system", content: EXTRACT_PROMPT },
-      { role: "user", content: `Please analyze this English text and extract useful learning expressions:\n\n${truncated}` },
-    ], { temperature: 0.5, maxTokens: dynamicMaxTokens });
+    const aiResult = await aiRuntime<{ expressions: Array<Record<string, unknown>> }>(
+      [
+        { role: "system", content: EXTRACT_PROMPT },
+        { role: "user", content: `Please analyze this English text and extract useful learning expressions:\n\n${truncated}` },
+      ],
+      { agentName: "expression-import", maxTokens: 4096, temperature: 0.5 },
+    );
 
     if (!aiResult.success) {
-      return errResponse({ stage: "deepseek", error: aiResult.error, detail: aiResult.detail }, req, aiResult.status || 502);
+      return errResponse({ stage: aiResult.stage, error: aiResult.error, detail: aiResult.detail, raw_sample: aiResult.raw?.slice(0, 500) }, req, 500);
     }
 
-    const raw = aiResult.data as string;
-    tokensUsed = aiResult.usage?.totalTokens || 0;
-    console.log(`[expression-import-agent] DeepSeek success. tokens=${tokensUsed} raw_length=${raw.length}`);
-
-    // ── Stage: parse ──
-    const parseResult = safeJsonParse<{ expressions: Array<Record<string, unknown>> }>(raw);
-    if (!parseResult.success) {
-      console.error(`[expression-import-agent] parse failed: ${parseResult.error}`);
-      return errResponse({
-        stage: "parse",
-        error: "parse_error",
-        raw_sample: parseResult.raw_sample,
-        message: "AI 返回格式异常，请重试",
-      }, req, 500);
-    }
-
-    const parsed = parseResult.data as unknown as Record<string, unknown>;
-    console.log(`[expression-import-agent] Parse success. keys=${Object.keys(parsed).join(",")}`);
+    const parsed = aiResult.data as unknown as Record<string, unknown>;
+    const tokensUsed = aiResult.usage?.totalTokens || 0;
 
     const expressions = (parsed.expressions as Array<Record<string, unknown>>) || [];
 
