@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
-import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail, getBilibiliThumbnail } from "@/lib/utils";
+import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
 
 // ── Types ──
 
@@ -290,9 +290,7 @@ export function useCreateWorkoutVideo() {
       const platform = detectUrlPlatform(normalized);
       const videoId = extractVideoId(normalized, platform);
       const embedUrl = videoId ? buildEmbedUrl(platform, videoId) : null;
-      const thumbnailUrl = platform === "youtube" && videoId ? getYouTubeThumbnail(videoId)
-        : platform === "bilibili" && videoId ? getBilibiliThumbnail(videoId)
-        : null;
+      const thumbnailUrl = platform === "youtube" && videoId ? getYouTubeThumbnail(videoId) : null;
 
       // Step 1: Insert basic record
       const { data, error } = await supabase
@@ -315,7 +313,21 @@ export function useCreateWorkoutVideo() {
       if (error) throw error;
       const record = data as WorkoutVideo;
 
-      // Step 2: Trigger AI analysis (non-blocking) for all platforms
+      // Step 2: Fetch B站 thumbnail via edge function (non-blocking)
+      if (platform === "bilibili" && videoId) {
+        supabase.functions.invoke("bilibili-thumbnail", { body: { bvid: videoId } })
+          .then(({ data: thumbData }) => {
+            const thumb = thumbData as { thumbnail_url?: string } | null;
+            if (thumb?.thumbnail_url) {
+              return supabase.from("workout_videos")
+                .update({ thumbnail_url: thumb.thumbnail_url })
+                .eq("id", record.id);
+            }
+          })
+          .catch(() => { /* non-blocking, silent fail */ });
+      }
+
+      // Step 3: Trigger AI analysis (non-blocking) for all platforms
       invokeAI("content-parser-agent", {
         url: normalized,
         content_type: "workout",
@@ -374,6 +386,46 @@ export function useDeleteWorkoutVideo() {
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("workout_videos").delete().eq("id", id);
       if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["workout_videos"] });
+    },
+  });
+}
+
+export function useRefreshBilibiliThumbnails() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      // Find B站 videos without thumbnails
+      const { data: videos, error } = await supabase
+        .from("workout_videos")
+        .select("id, video_id")
+        .eq("platform", "bilibili")
+        .is("thumbnail_url", null)
+        .not("video_id", "is", null)
+        .limit(50);
+      if (error) throw error;
+      if (!videos || videos.length === 0) return { refreshed: 0 };
+
+      let refreshed = 0;
+      for (const v of videos) {
+        try {
+          const { data: thumbData } = await supabase.functions.invoke("bilibili-thumbnail", {
+            body: { bvid: v.video_id },
+          });
+          const thumb = thumbData as { thumbnail_url?: string } | null;
+          if (thumb?.thumbnail_url) {
+            await supabase.from("workout_videos")
+              .update({ thumbnail_url: thumb.thumbnail_url })
+              .eq("id", v.id);
+            refreshed++;
+          }
+        } catch {
+          // skip individual failures
+        }
+      }
+      return { refreshed, total: videos.length };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["workout_videos"] });

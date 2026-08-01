@@ -43,44 +43,19 @@
   }
 }
 
-/* ── Video player fullscreen / landscape support ── */
+/* ── Video player fullscreen — 16:9 centered, no crop ── */
 @layer base {
-  /* Prevent scroll when modal is open */
-  .video-modal-open {
-    overflow: hidden;
-    position: fixed;
-    inset: 0;
-  }
-
-  /* Fullscreen iframe container — fill screen on mobile */
-  .video-fullscreen:fullscreen {
+  .video-container:fullscreen {
     background: #000;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  /* iOS Safari fullscreen fix */
-  .video-fullscreen:-webkit-full-screen {
+  .video-container:-webkit-full-screen {
     background: #000;
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  /* Landscape overrides for mobile fullscreen */
-  @media (orientation: landscape) and (max-height: 500px) {
-    .video-modal-landscape {
-      flex-direction: row;
-    }
-  }
-
-  /* iPhone notch safe area in fullscreen */
-  @supports (padding-top: env(safe-area-inset-top)) {
-    .safe-fullscreen {
-      padding-left: env(safe-area-inset-left, 16px);
-      padding-right: env(safe-area-inset-right, 16px);
-      padding-top: env(safe-area-inset-top, 0px);
-    }
   }
 }

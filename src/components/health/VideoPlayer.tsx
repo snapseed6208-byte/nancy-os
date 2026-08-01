@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Play, ExternalLink, AlertTriangle, Loader2 } from "lucide-react";
+import { Play, ExternalLink, AlertTriangle, Loader2, X, Maximize, Minimize } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useFullscreen } from "@/lib/hooks/useFullscreen";
 
 type PlayerState = "idle" | "loading" | "playing" | "error";
 
@@ -10,12 +11,9 @@ export type VideoPlayerProps = {
   title: string;
   platform: string;
   sourceUrl: string;
-  /** Start playing immediately (skip idle state) */
-  autoPlay?: boolean;
-  /** Extra class for the outer container */
   className?: string;
-  /** Called when iframe loads successfully */
-  onReady?: () => void;
+  /** Called when user clicks X to collapse player back to thumbnail */
+  onClose?: () => void;
 };
 
 const PLATFORM_COLORS: Record<string, { bg: string; icon: string; label: string }> = {
@@ -35,14 +33,25 @@ export default function VideoPlayer({
   title,
   platform,
   sourceUrl,
-  autoPlay = false,
   className,
-  onReady,
+  onClose,
 }: VideoPlayerProps) {
-  const [state, setState] = useState<PlayerState>(autoPlay ? "loading" : "idle");
+  const [state, setState] = useState<PlayerState>("idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iframeReadyRef = useRef(false);
+
+  const { ref: fsRef, enter: enterFs, exit: exitFs } = useFullscreen();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Listen for native fullscreen exit
+  useEffect(() => {
+    const handler = () => {
+      if (!document.fullscreenElement) setIsFullscreen(false);
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   // Clear timer on unmount
   useEffect(() => {
@@ -68,8 +77,7 @@ export default function VideoPlayer({
     clearTimer();
     iframeReadyRef.current = true;
     setState("playing");
-    onReady?.();
-  }, [clearTimer, onReady]);
+  }, [clearTimer]);
 
   const handleIframeError = useCallback(() => {
     clearTimer();
@@ -82,20 +90,39 @@ export default function VideoPlayer({
     setState("idle");
   }, []);
 
+  const toggleFullscreen = useCallback(async () => {
+    if (document.fullscreenElement) {
+      await exitFs();
+      setIsFullscreen(false);
+    } else {
+      await enterFs();
+      setIsFullscreen(true);
+    }
+  }, [enterFs, exitFs]);
+
   const meta = getPlatformMeta(platform);
   const hasThumbnail = !!thumbnailUrl;
 
   return (
     <div className={cn("space-y-2", className)}>
       {/* Player area */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-ink/5" style={{ aspectRatio: "16/9" }}>
-        {/* Idle: click-to-play */}
+      <div
+        ref={fsRef}
+        className={cn(
+          "video-container relative w-full overflow-hidden rounded-xl bg-black",
+          isFullscreen
+            ? "flex items-center justify-center rounded-none"
+            : "",
+        )}
+        style={isFullscreen ? undefined : { aspectRatio: "16/9" }}
+      >
+        {/* Idle: thumbnail + play button */}
         {state === "idle" && (
           <button
             onClick={handlePlay}
             className={cn(
               "absolute inset-0 flex flex-col items-center justify-center gap-2 transition-colors bg-cover bg-center",
-              meta.bg,
+              !hasThumbnail && meta.bg,
               "hover:opacity-80",
             )}
             style={hasThumbnail ? { backgroundImage: `url(${thumbnailUrl})` } : undefined}
@@ -119,7 +146,7 @@ export default function VideoPlayer({
           </div>
         )}
 
-        {/* Iframe — rendered during loading to start fetch, hidden until ready */}
+        {/* Iframe */}
         {(state === "loading" || state === "playing") && (
           <iframe
             ref={iframeRef}
@@ -131,7 +158,10 @@ export default function VideoPlayer({
             onLoad={handleIframeLoad}
             onError={handleIframeError}
             className={cn(
-              "absolute inset-0 w-full h-full border-0",
+              "border-0",
+              isFullscreen
+                ? "w-full h-full"
+                : "absolute inset-0 w-full h-full",
               state === "playing" ? "opacity-100" : "opacity-0 pointer-events-none",
             )}
           />
@@ -162,24 +192,39 @@ export default function VideoPlayer({
           </div>
         )}
 
-        {/* Auto-play trigger when autoPlay=true */}
-        {autoPlay && state === "idle" && (
-          <button onClick={handlePlay} className="absolute inset-0" aria-label="加载视频" />
+        {/* Control bar — visible when playing */}
+        {state === "playing" && (
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-2 py-2 z-10">
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="h-8 w-8 rounded-lg bg-black/50 flex items-center justify-center text-white/80 hover:bg-black/70 hover:text-white transition-colors"
+                aria-label="关闭播放器"
+              >
+                <X size={15} />
+              </button>
+            )}
+            <button
+              onClick={toggleFullscreen}
+              className="h-8 w-8 rounded-lg bg-black/50 flex items-center justify-center text-white/80 hover:bg-black/70 hover:text-white transition-colors ml-auto"
+              aria-label={isFullscreen ? "退出全屏" : "全屏"}
+            >
+              {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
+            </button>
+          </div>
         )}
       </div>
 
       {/* External link */}
-      {!autoPlay && (
-        <a
-          href={sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[11px] text-ink-lighter hover:text-accent-sky transition-colors"
-        >
-          <ExternalLink size={10} />
-          在{meta.label}打开
-        </a>
-      )}
+      <a
+        href={sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-[11px] text-ink-lighter hover:text-accent-sky transition-colors"
+      >
+        <ExternalLink size={10} />
+        在{meta.label}打开
+      </a>
     </div>
   );
 }
