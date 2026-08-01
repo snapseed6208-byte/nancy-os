@@ -1065,6 +1065,10 @@ serve(async (req: Request) => {
 
       if (inputIsUrl) {
         userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+        // Tell AI this is expected to be a fitness/training video so it uses workout metadata
+        if (isWorkoutPath) {
+          userMessage += `\n\n注意：这是一个训练视频链接。请使用 workout 类型的 metadata 格式，包含 difficulty（初级/中级/高级）、training_type（力量训练/塑形训练/有氧燃脂/HIIT/拉伸/瑜伽/康复）、category（臀腿/背部/肩胸/核心/全身/有氧/拉伸）、estimated_duration（预估分钟数）、target_muscles（目标肌群数组）。如果无法从页面内容确定这些信息，请根据视频标题合理推断。`;
+        }
         if (fetchedContent.title) userMessage += `\n页面标题: ${fetchedContent.title}`;
         if (fetchedContent.description) userMessage += `\n页面描述: ${fetchedContent.description}`;
         if (fetchedContent.text) userMessage += `\n页面文本片段: ${fetchedContent.text}`;
@@ -1147,10 +1151,17 @@ serve(async (req: Request) => {
     const tags = (parsed.tags as string[]) || [];
     let metadata = (parsed.metadata as Record<string, unknown>) || {};
 
-    // Fallback: RECIPE_PARSER_PROMPT may return recipe fields at top level
-    // instead of nested under metadata. Detect and use top-level fields.
-    if (Object.keys(metadata).length === 0 && (parsed.name || parsed.ingredients || parsed.steps)) {
-      metadata = parsed;
+    // Fallback: AI may return workout/recipe fields at top level instead of nested under metadata
+    if (Object.keys(metadata).length === 0) {
+      // Recipe fallback
+      if (parsed.name || parsed.ingredients || parsed.steps) {
+        metadata = parsed;
+      }
+      // Workout fallback: detect workout fields at top level
+      if (parsed.difficulty || parsed.training_type || parsed.category || parsed.target_muscles) {
+        console.log("[content-parser-agent] stage=response_parse workout fallback: using top-level fields as metadata");
+        metadata = parsed;
+      }
     }
 
     // ── Route to target table ──
@@ -1166,6 +1177,7 @@ serve(async (req: Request) => {
         console.error("[content-parser-agent] stage=response_parse validation FAILED", {
           errors: validation.errors,
           rawMetadata: JSON.stringify(metadata).slice(0, 300),
+          topLevelKeys: Object.keys(parsed).slice(0, 15),
         });
         if (workoutVideoId) {
           await supabase
@@ -1178,6 +1190,8 @@ serve(async (req: Request) => {
           message: "AI 输出不符合 schema",
           validation_errors: validation.errors,
           received_metadata: metadata,
+          ai_raw_keys: Object.keys(parsed),
+          ai_raw_sample: aiResult.raw?.slice(0, 500),
         }, req, 500);
       }
 
