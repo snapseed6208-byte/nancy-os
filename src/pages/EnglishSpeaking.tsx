@@ -326,6 +326,7 @@ export default function EnglishSpeaking() {
         recommended_expressions: suitableExpressions.length > 0 ? suitableExpressions : undefined,
       });
       setSessionId(result.id as string);
+      asr.setSessionId(result.id as string);
 
       // Await recorder so state transitions to "recording" before releasing guard
       await recorder.start();
@@ -340,11 +341,28 @@ export default function EnglishSpeaking() {
 
   const handleStopRecording = () => {
     recorder.stop();
+    // Browser ASR stops immediately (no blob needed).
+    // Cloud ASR is triggered by the useEffect below when the blob becomes available.
     asr.stop();
   };
 
+  // When MediaRecorder blob is ready (cloud ASR path), submit for transcription
+  useEffect(() => {
+    if (recorder.state === "done" && recorder.blob && !asr.transcript && asr.supported) {
+      asr.stop(recorder.blob);
+    }
+  }, [recorder.state, recorder.blob]);
+
   const handleGoToReview = async () => {
-    // Ensure ASR onend has fired before showing review
+    // Wait for cloud ASR (aliyun/whisper) to finish upload + transcription
+    if (asr.isProcessing) {
+      await new Promise<void>((r) => {
+        const check = setInterval(() => {
+          if (!asr.isProcessing) { clearInterval(check); r(); }
+        }, 150);
+      });
+    }
+    // Ensure browser ASR onend has fired before showing review
     // (onend fires ~100ms after stop(), MediaRecorder.onstop takes 200-500ms)
     if (asr.supported && asr.isListening) {
       await new Promise<void>((r) => setTimeout(r, 500));
@@ -778,6 +796,7 @@ export default function EnglishSpeaking() {
           step={step}
           recorderState={recorder.state}
           isListening={asr.isListening}
+          isProcessing={asr.isProcessing}
           transcript={asr.transcript}
           audioBlob={recorder.blob}
           audioUrl={recorder.audioUrl}
@@ -1056,6 +1075,7 @@ export default function EnglishSpeaking() {
                         recommended_expressions: suitableExpressions.length > 0 ? suitableExpressions : undefined,
                       });
                       setSessionId(result.id as string);
+                      asr.setSessionId(result.id as string);
                       setStep("review");
                     } catch (err) {
                       console.error("[EnglishSpeaking] textMode createSession failed:", err);
@@ -1695,11 +1715,12 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
 // ── Dev Debug Panel ──
 
 function DebugPanel({
-  step, recorderState, isListening, transcript, audioBlob, audioUrl, sessionId, question, feedback, canAnalyze, canSave,
+  step, recorderState, isListening, isProcessing, transcript, audioBlob, audioUrl, sessionId, question, feedback, canAnalyze, canSave,
 }: {
   step: string;
   recorderState: string;
   isListening: boolean;
+  isProcessing: boolean;
   transcript: string;
   audioBlob: Blob | null;
   audioUrl: string | null;
@@ -1717,6 +1738,7 @@ function DebugPanel({
       <p>Recording state: <span className={recorderState === "recording" ? "text-red-400" : recorderState === "done" ? "text-green-400" : "text-gray-300"}>{recorderState}</span></p>
       <p>MediaRecorder: <span className="text-gray-300">(via recorder.state)</span></p>
       <p>SpeechRecognition: <span className={isListening ? "text-green-400" : "text-gray-500"}>{isListening ? "listening" : "stopped"}</span></p>
+      <p>ASR Processing: <span className={isProcessing ? "text-yellow-400" : "text-gray-500"}>{isProcessing ? "uploading + transcribing..." : "idle"}</span></p>
       <p>AudioBlob: {boolIcon(!!audioBlob)} {audioBlob ? <span className="text-gray-500">({(audioBlob.size / 1024).toFixed(1)} KB)</span> : <span className="text-red-400">no</span>}</p>
       <p>AudioURL: {boolIcon(!!audioUrl)} {audioUrl ? "yes" : <span className="text-red-400">no</span>}</p>
       <p>Transcript: <span className={transcript.length > 0 ? "text-green-400" : "text-red-400"}>{transcript.length > 0 ? `${transcript.length} chars` : "0 chars"}</span></p>

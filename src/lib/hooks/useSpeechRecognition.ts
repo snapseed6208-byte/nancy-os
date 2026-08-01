@@ -1,123 +1,99 @@
-import { useRef, useState, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { createSpeechProvider } from "@/lib/speech/speechService";
+import type { SpeechProvider } from "@/lib/speech/types";
 
-// Web Speech API type declarations
-interface SpeechRecognition extends EventTarget {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  continuous: boolean;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionEvent {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  length: number;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean;
-  length: number;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message: string;
-}
-
+/**
+ * Unified speech recognition hook.
+ * Delegates to the configured ASR provider (browser / aliyun / openai-whisper).
+ *
+ * For cloud ASR providers (aliyun, whisper), the audio blob from MediaRecorder
+ * is needed. Call `stop(audioBlob)` — the provider that needs it will process;
+ * the browser provider ignores blob.
+ *
+ * `isProcessing` is true while a cloud provider is uploading + transcribing.
+ * Wait for it to become false before navigating away from the transcript step.
+ */
 export function useSpeechRecognition() {
   const [transcript, setTranscript] = useState("");
   const [interim, setInterim] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const providerRef = useRef<SpeechProvider | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const win = window as any;
-  const SpeechRecognitionAPI = win.SpeechRecognition || win.webkitSpeechRecognition;
-  const supported = !!SpeechRecognitionAPI;
+  // Lazy-init provider once
+  if (!providerRef.current) {
+    const p = createSpeechProvider();
+    providerRef.current = p;
 
-  const start = useCallback(() => {
-    if (!SpeechRecognitionAPI) {
-      setError("您的浏览器不支持语音识别。请使用 Chrome 或 Edge 浏览器。");
-      return;
-    }
+    p.onTranscriptUpdate = (text: string) => setTranscript(text);
+    p.onStateChange = () => {
+      setIsListening(p.isListening);
+      setTranscript(p.transcript);
+      setInterim(p.interim);
+      setError(p.error);
+    };
+  }
 
+  const provider = providerRef.current;
+
+  useEffect(() => {
+    return () => {
+      providerRef.current?.reset();
+    };
+  }, []);
+
+  const start = useCallback(async () => {
     setError(null);
     setTranscript("");
     setInterim("");
+    setIsProcessing(false);
+    await provider.start();
+    setIsListening(provider.isListening);
+    setError(provider.error);
+  }, [provider]);
 
-    const recognition: SpeechRecognition = new SpeechRecognitionAPI();
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = true;
-
-    let finalTranscript = "";
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interimText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript + " ";
-        } else {
-          interimText += result[0].transcript;
-        }
-      }
-      setTranscript(finalTranscript.trim());
-      setInterim(interimText);
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error === "no-speech") return;
-      if (event.error === "aborted") return;
-      setError(`语音识别错误: ${event.error}`);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      if (finalTranscript.trim()) {
-        setTranscript(finalTranscript.trim());
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }, [SpeechRecognitionAPI]);
-
-  const stop = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    setIsListening(false);
-  }, []);
+  const stop = useCallback(async (audioBlob?: Blob) => {
+    if (provider.name !== "browser" && audioBlob) {
+      setIsProcessing(true);
+      await provider.stop(audioBlob);
+      setIsProcessing(false);
+    } else {
+      await provider.stop(audioBlob);
+    }
+    // Sync all state back from provider
+    setIsListening(provider.isListening);
+    setTranscript(provider.transcript);
+    setInterim(provider.interim);
+    setError(provider.error);
+  }, [provider]);
 
   const reset = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
+    provider.reset();
     setTranscript("");
     setInterim("");
     setIsListening(false);
+    setIsProcessing(false);
     setError(null);
-  }, []);
+  }, [provider]);
 
-  return { start, stop, reset, transcript, setTranscript, interim, isListening, error, supported };
+  return {
+    start,
+    stop,
+    reset,
+    transcript,
+    setTranscript,
+    interim,
+    isListening,
+    isProcessing,
+    error,
+    supported: provider.supported,
+    /** Exposed for Aliyun provider: set the session ID used for Storage upload. */
+    setSessionId: (id: string) => {
+      if ("setSessionId" in provider) {
+        (provider as { setSessionId(id: string): void }).setSessionId(id);
+      }
+    },
+  };
 }
