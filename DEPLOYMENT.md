@@ -29,6 +29,7 @@ Add these in Cloudflare Pages → Settings → Environment variables:
 |----------|-------|
 | `VITE_SUPABASE_URL` | `https://raiyrrehejwxfyzsjvxj.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | (see .env.local) |
+| `VITE_SPEECH_PROVIDER` | `aliyun-realtime` |
 
 ### 3. Deploy
 
