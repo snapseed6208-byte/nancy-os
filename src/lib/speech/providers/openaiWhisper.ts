@@ -15,22 +15,19 @@ export class OpenAIWhisperProvider implements SpeechProvider {
   error: string | null = null;
 
   private _onTranscriptUpdate: ((text: string) => void) | null = null;
+  private _onInterimUpdate: ((text: string) => void) | null = null;
   private _onStateChange: (() => void) | null = null;
 
-  set onTranscriptUpdate(cb: ((text: string) => void) | null) {
-    this._onTranscriptUpdate = cb;
-  }
+  set onTranscriptUpdate(cb: ((text: string) => void) | null) { this._onTranscriptUpdate = cb; }
+  set onInterimUpdate(cb: ((text: string) => void) | null) { this._onInterimUpdate = cb; }
+  set onStateChange(cb: (() => void) | null) { this._onStateChange = cb; }
 
-  set onStateChange(cb: (() => void) | null) {
-    this._onStateChange = cb;
-  }
-
-  async start(): Promise<void> {
+  async start(_stream?: MediaStream): Promise<void> {
     this.error = null;
     this.isListening = true;
   }
 
-  async stop(_audioBlob?: Blob): Promise<void> {
+  async stop(): Promise<void> {
     this.isListening = false;
     this.error = "OpenAI Whisper provider is not yet implemented.";
   }

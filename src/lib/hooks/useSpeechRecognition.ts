@@ -4,14 +4,12 @@ import type { SpeechProvider } from "@/lib/speech/types";
 
 /**
  * Unified speech recognition hook.
- * Delegates to the configured ASR provider (browser / aliyun / openai-whisper).
  *
- * For cloud ASR providers (aliyun, whisper), the audio blob from MediaRecorder
- * is needed. Call `stop(audioBlob)` — the provider that needs it will process;
- * the browser provider ignores blob.
+ * Streaming providers (browser, aliyun-realtime):
+ *   start(stream) → transcript updates during recording → stop() finalizes.
  *
- * `isProcessing` is true while a cloud provider is uploading + transcribing.
- * Wait for it to become false before navigating away from the transcript step.
+ * Batch providers (aliyun file-based, whisper):
+ *   start() → setAudioBlob(blob) → stop() processes blob → transcript.
  */
 export function useSpeechRecognition() {
   const [transcript, setTranscript] = useState("");
@@ -28,6 +26,7 @@ export function useSpeechRecognition() {
     providerRef.current = p;
 
     p.onTranscriptUpdate = (text: string) => setTranscript(text);
+    p.onInterimUpdate = (text: string) => setInterim(text);
     p.onStateChange = () => {
       setIsListening(p.isListening);
       setTranscript(p.transcript);
@@ -44,25 +43,26 @@ export function useSpeechRecognition() {
     };
   }, []);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (stream?: MediaStream) => {
     setError(null);
     setTranscript("");
     setInterim("");
     setIsProcessing(false);
-    await provider.start();
+    await provider.start(stream);
     setIsListening(provider.isListening);
     setError(provider.error);
   }, [provider]);
 
   const stop = useCallback(async (audioBlob?: Blob) => {
-    if (provider.name !== "browser" && audioBlob) {
+    // Batch providers need the blob set before stop()
+    if (audioBlob && "setAudioBlob" in provider) {
+      (provider as SpeechProvider & { setAudioBlob(b: Blob): void }).setAudioBlob(audioBlob);
       setIsProcessing(true);
-      await provider.stop(audioBlob);
+      await provider.stop();
       setIsProcessing(false);
     } else {
-      await provider.stop(audioBlob);
+      await provider.stop();
     }
-    // Sync all state back from provider
     setIsListening(provider.isListening);
     setTranscript(provider.transcript);
     setInterim(provider.interim);
@@ -89,7 +89,7 @@ export function useSpeechRecognition() {
     isProcessing,
     error,
     supported: provider.supported,
-    /** Exposed for Aliyun provider: set the session ID used for Storage upload. */
+    /** Exposed for providers that need a session ID for Storage upload. */
     setSessionId: (id: string) => {
       if ("setSessionId" in provider) {
         (provider as { setSessionId(id: string): void }).setSessionId(id);

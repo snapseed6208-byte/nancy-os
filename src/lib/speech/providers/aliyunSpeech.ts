@@ -1,7 +1,6 @@
 // ============================================
-// Nancy OS — Aliyun ASR Provider
+// Nancy OS — Aliyun ASR Provider (batch / file-based)
 // Flow: MediaRecorder blob → WAV conversion → Edge Function → Aliyun ASR → transcript
-// No Storage upload — WAV binary sent directly to Edge Function.
 // ============================================
 
 import type { SpeechProvider } from "../types";
@@ -19,28 +18,27 @@ export class AliyunSpeechProvider implements SpeechProvider {
   isListening = false;
   error: string | null = null;
 
-  private sessionId: string | null = null;
+  private pendingBlob: Blob | null = null;
   private _onTranscriptUpdate: ((text: string) => void) | null = null;
+  private _onInterimUpdate: ((text: string) => void) | null = null;
   private _onStateChange: (() => void) | null = null;
 
-  set onTranscriptUpdate(cb: ((text: string) => void) | null) {
-    this._onTranscriptUpdate = cb;
-  }
+  set onTranscriptUpdate(cb: ((text: string) => void) | null) { this._onTranscriptUpdate = cb; }
+  set onInterimUpdate(cb: ((text: string) => void) | null) { this._onInterimUpdate = cb; }
+  set onStateChange(cb: (() => void) | null) { this._onStateChange = cb; }
 
-  set onStateChange(cb: (() => void) | null) {
-    this._onStateChange = cb;
-  }
+  /** Set the audio blob before calling stop(). Used by batch processing. */
+  setAudioBlob(blob: Blob) { this.pendingBlob = blob; }
 
-  setSessionId(id: string) {
-    this.sessionId = id;
-  }
-
-  async start(): Promise<void> {
+  async start(_stream?: MediaStream): Promise<void> {
     this.error = null;
     this.isListening = true;
   }
 
-  async stop(audioBlob?: Blob): Promise<void> {
+  async stop(): Promise<void> {
+    const audioBlob = this.pendingBlob;
+    this.pendingBlob = null;
+
     if (!audioBlob || audioBlob.size === 0) return;
 
     this.isListening = false;
@@ -49,18 +47,15 @@ export class AliyunSpeechProvider implements SpeechProvider {
     const tTotalStart = Date.now();
 
     try {
-      // 1. Convert webm/opus → WAV (16kHz mono 16-bit PCM)
       const tConvertStart = Date.now();
       const wavBlob = await webmToWav(audioBlob);
       const convertTime = Date.now() - tConvertStart;
       console.log(`[aliyunSpeech] Conversion: ${convertTime}ms (${(audioBlob.size / 1024).toFixed(1)}KB webm → ${(wavBlob.size / 1024).toFixed(1)}KB wav)`);
 
-      // 2. Get auth token
       const { data: { session } } = await supabase.auth.getSession();
       const accessToken = session?.access_token;
       if (!accessToken) throw new Error("Not authenticated");
 
-      // 3. Send WAV binary directly to Edge Function
       const tEdgeStart = Date.now();
       const resp = await fetch(FUNCTION_URL, {
         method: "POST",
@@ -73,10 +68,7 @@ export class AliyunSpeechProvider implements SpeechProvider {
       const edgeTime = Date.now() - tEdgeStart;
 
       const result = await resp.json() as {
-        transcript?: string;
-        task_id?: string;
-        duration_ms?: number;
-        error?: string;
+        transcript?: string; error?: string;
         timings?: { tokenTime: number; asrTime: number; totalTime: number };
       };
 
@@ -85,12 +77,7 @@ export class AliyunSpeechProvider implements SpeechProvider {
       }
 
       const totalTime = Date.now() - tTotalStart;
-      console.log("[aliyunSpeech] Timings:", {
-        convertTime,
-        edgeTime,
-        edgeTimings: result.timings,
-        totalTime,
-      });
+      console.log("[aliyunSpeech] Timings:", { convertTime, edgeTime, edgeTimings: result.timings, totalTime });
 
       this.transcript = result.transcript || "";
       this._onTranscriptUpdate?.(this.transcript);
@@ -105,5 +92,6 @@ export class AliyunSpeechProvider implements SpeechProvider {
     this.interim = "";
     this.isListening = false;
     this.error = null;
+    this.pendingBlob = null;
   }
 }

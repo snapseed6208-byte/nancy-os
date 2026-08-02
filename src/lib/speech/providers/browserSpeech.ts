@@ -1,11 +1,9 @@
 // ============================================
 // Nancy OS — Browser Web Speech API Provider
-// Extracted from useSpeechRecognition.ts
 // ============================================
 
 import type { SpeechProvider } from "../types";
 
-// Web Speech API type declarations (same as original hook)
 interface SpeechRecognition extends EventTarget {
   lang: string;
   interimResults: boolean;
@@ -45,10 +43,11 @@ interface SpeechRecognitionErrorEvent extends Event {
   message: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const win = window as any;
+const win = window as unknown as Record<string, unknown>;
 const SpeechRecognitionAPI: (new () => SpeechRecognition) | undefined =
-  win.SpeechRecognition || win.webkitSpeechRecognition || undefined;
+  (win.SpeechRecognition as new () => SpeechRecognition) ||
+  (win.webkitSpeechRecognition as new () => SpeechRecognition) ||
+  undefined;
 
 export class BrowserSpeechProvider implements SpeechProvider {
   readonly name = "browser";
@@ -62,17 +61,14 @@ export class BrowserSpeechProvider implements SpeechProvider {
   private recognition: SpeechRecognition | null = null;
   private finalTranscript = "";
   private _onTranscriptUpdate: ((text: string) => void) | null = null;
+  private _onInterimUpdate: ((text: string) => void) | null = null;
   private _onStateChange: (() => void) | null = null;
 
-  set onTranscriptUpdate(cb: ((text: string) => void) | null) {
-    this._onTranscriptUpdate = cb;
-  }
+  set onTranscriptUpdate(cb: ((text: string) => void) | null) { this._onTranscriptUpdate = cb; }
+  set onInterimUpdate(cb: ((text: string) => void) | null) { this._onInterimUpdate = cb; }
+  set onStateChange(cb: (() => void) | null) { this._onStateChange = cb; }
 
-  set onStateChange(cb: (() => void) | null) {
-    this._onStateChange = cb;
-  }
-
-  async start(): Promise<void> {
+  async start(_stream?: MediaStream): Promise<void> {
     const API = SpeechRecognitionAPI;
     if (!API) {
       this.error = "您的浏览器不支持语音识别。请使用 Chrome 或 Edge 浏览器。";
@@ -103,6 +99,7 @@ export class BrowserSpeechProvider implements SpeechProvider {
       this.transcript = this.finalTranscript.trim();
       this.interim = interimText;
       this._onTranscriptUpdate?.(this.transcript);
+      this._onInterimUpdate?.(this.interim);
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -127,7 +124,7 @@ export class BrowserSpeechProvider implements SpeechProvider {
     this.isListening = true;
   }
 
-  async stop(_audioBlob?: Blob): Promise<void> {
+  async stop(): Promise<void> {
     this.recognition?.stop();
     this.recognition = null;
     this.isListening = false;

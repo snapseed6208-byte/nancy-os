@@ -75,43 +75,48 @@ function useAudioRecorder() {
   const startTime = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const ownsStreamRef = useRef(true);
 
-  const start = useCallback(async () => {
+  const _setupRecorder = useCallback((stream: MediaStream) => {
+    streamRef.current = stream;
+    const mr = new MediaRecorder(stream, {
+      mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4",
+    });
+    mediaRecorder.current = mr;
+    chunks.current = [];
+    startTime.current = Date.now();
+
+    mr.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.current.push(e.data);
+    };
+
+    mr.onstop = () => {
+      const audioBlob = new Blob(chunks.current, { type: mr.mimeType });
+      const url = URL.createObjectURL(audioBlob);
+      setBlob(audioBlob);
+      setAudioUrl(url);
+      setDuration(Math.round((Date.now() - startTime.current) / 1000));
+      setState("done");
+      if (timerRef.current) clearInterval(timerRef.current);
+      wakeLockRef.current?.release().catch(() => {});
+    };
+
+    mr.start();
+    setState("recording");
+    timerRef.current = setInterval(() => {
+      setDuration(Math.round((Date.now() - startTime.current) / 1000));
+    }, 200);
+  }, []);
+
+  const start = useCallback(async (existingStream?: MediaStream) => {
     if (mediaRecorder.current && mediaRecorder.current.state === "recording") return;
     setError(null);
     setErrorType(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4",
-      });
-      mediaRecorder.current = mr;
-      chunks.current = [];
-      startTime.current = Date.now();
-
-      mr.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.current.push(e.data);
-      };
-
-      mr.onstop = () => {
-        const audioBlob = new Blob(chunks.current, { type: mr.mimeType });
-        const url = URL.createObjectURL(audioBlob);
-        setBlob(audioBlob);
-        setAudioUrl(url);
-        setDuration(Math.round((Date.now() - startTime.current) / 1000));
-        setState("done");
-        stream.getTracks().forEach((t) => t.stop());
-        if (timerRef.current) clearInterval(timerRef.current);
-        wakeLockRef.current?.release().catch(() => {});
-      };
-
-      mr.start();
-      setState("recording");
-      timerRef.current = setInterval(() => {
-        setDuration(Math.round((Date.now() - startTime.current) / 1000));
-      }, 200);
-
-      // Wake lock to prevent screen sleep during recording
+      const stream = existingStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+      ownsStreamRef.current = !existingStream;
+      _setupRecorder(stream);
       try {
         if ("wakeLock" in navigator) {
           wakeLockRef.current = await navigator.wakeLock.request("screen");
@@ -134,7 +139,11 @@ function useAudioRecorder() {
       }
       setState("idle");
     }
-  }, []);
+  }, [_setupRecorder]);
+
+  const startWithStream = useCallback((stream: MediaStream) => {
+    return start(stream);
+  }, [start]);
 
   const stop = useCallback(() => {
     mediaRecorder.current?.stop();
@@ -143,6 +152,10 @@ function useAudioRecorder() {
 
   const reset = useCallback(() => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
+    // Always stop tracks (shared or owned) — done with stream
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    ownsStreamRef.current = true;
     setAudioUrl(null);
     setBlob(null);
     setDuration(0);
@@ -151,7 +164,7 @@ function useAudioRecorder() {
     setState("idle");
   }, [audioUrl]);
 
-  return { state, audioUrl, blob, duration, error, errorType, start, stop, reset };
+  return { state, audioUrl, blob, duration, error, errorType, start, startWithStream, stop, reset, streamRef };
 }
 
 // ── Score Bar ──
@@ -328,9 +341,12 @@ export default function EnglishSpeaking() {
       setSessionId(result.id as string);
       asr.setSessionId(result.id as string);
 
-      // Await recorder so state transitions to "recording" before releasing guard
-      await recorder.start();
-      asr.start();
+      // Get stream once, share with both MediaRecorder (blob/playback) and ASR (real-time)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      await Promise.all([
+        recorder.start(stream),
+        asr.start(stream),
+      ]);
       setIsStarting(false);
     } catch (err) {
       console.error("[EnglishSpeaking] handleStartRecording failed:", err);
@@ -341,14 +357,13 @@ export default function EnglishSpeaking() {
 
   const handleStopRecording = () => {
     recorder.stop();
-    // Browser ASR stops immediately (no blob needed).
-    // Cloud ASR is triggered by the useEffect below when the blob becomes available.
     asr.stop();
   };
 
-  // When MediaRecorder blob is ready (cloud ASR path), submit for transcription
+  // Batch ASR: when MediaRecorder blob is ready, submit for transcription.
+  // Streaming providers already have transcript via real-time WebSocket.
   useEffect(() => {
-    if (recorder.state === "done" && recorder.blob && !asr.transcript && asr.supported) {
+    if (recorder.state === "done" && recorder.blob && !asr.transcript && asr.supported && asr.isProcessing === false) {
       asr.stop(recorder.blob);
     }
   }, [recorder.state, recorder.blob]);
@@ -798,6 +813,7 @@ export default function EnglishSpeaking() {
           isListening={asr.isListening}
           isProcessing={asr.isProcessing}
           transcript={asr.transcript}
+          interim={asr.interim}
           audioBlob={recorder.blob}
           audioUrl={recorder.audioUrl}
           sessionId={sessionId}
@@ -1715,13 +1731,14 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
 // ── Dev Debug Panel ──
 
 function DebugPanel({
-  step, recorderState, isListening, isProcessing, transcript, audioBlob, audioUrl, sessionId, question, feedback, canAnalyze, canSave,
+  step, recorderState, isListening, isProcessing, transcript, interim, audioBlob, audioUrl, sessionId, question, feedback, canAnalyze, canSave,
 }: {
   step: string;
   recorderState: string;
   isListening: boolean;
   isProcessing: boolean;
   transcript: string;
+  interim: string;
   audioBlob: Blob | null;
   audioUrl: string | null;
   sessionId: string | null;
@@ -1742,6 +1759,7 @@ function DebugPanel({
       <p>AudioBlob: {boolIcon(!!audioBlob)} {audioBlob ? <span className="text-gray-500">({(audioBlob.size / 1024).toFixed(1)} KB)</span> : <span className="text-red-400">no</span>}</p>
       <p>AudioURL: {boolIcon(!!audioUrl)} {audioUrl ? "yes" : <span className="text-red-400">no</span>}</p>
       <p>Transcript: <span className={transcript.length > 0 ? "text-green-400" : "text-red-400"}>{transcript.length > 0 ? `${transcript.length} chars` : "0 chars"}</span></p>
+      <p>Interim: {interim ? <span className="text-yellow-300">"{interim}"</span> : <span className="text-gray-500">none</span>}</p>
       <p>SessionId: {boolIcon(!!sessionId)} {sessionId ? "exists" : <span className="text-red-400">不存在</span>}</p>
       <p>CanAnalyze: {boolIcon(canAnalyze)} {canAnalyze ? <span className="text-green-400">true</span> : <span className="text-red-400">false</span>}</p>
       <p>CanSave: {boolIcon(canSave)} {canSave ? <span className="text-green-400">true</span> : <span className="text-red-400">false</span>}</p>
