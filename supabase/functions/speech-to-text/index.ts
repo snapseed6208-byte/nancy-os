@@ -329,6 +329,7 @@ serve(async (req: Request) => {
     return jsonResponse(req, { error: "Method not allowed" }, 405);
   }
 
+  let taskId: string | null = null;
   try {
     // ── Auth (required) ──
     const authHeader = req.headers.get("Authorization");
@@ -353,7 +354,7 @@ serve(async (req: Request) => {
 
     console.log("[speech-to-text] Starting recognition for:", audioUrl.slice(0, 80));
 
-    const taskId = await submitRecognition(audioUrl);
+    taskId = await submitRecognition(audioUrl);
     const transcript = await pollResult(taskId);
 
     console.log("[speech-to-text] Success:", transcript.slice(0, 100));
@@ -361,7 +362,13 @@ serve(async (req: Request) => {
     return jsonResponse(req, { transcript });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";
+    const stack = err instanceof Error ? err.stack : undefined;
     console.error("[speech-to-text] Error:", message);
-    return jsonResponse(req, { error: message }, 500);
+    console.error("[speech-to-text] Stack:", stack);
+    return jsonResponse(req, {
+      error: message,
+      stack: stack,
+      aliyunStage: taskId ? "pollResult" : "submitRecognition",
+    }, 500);
   }
 });
