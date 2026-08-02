@@ -1,7 +1,7 @@
 // ============================================
 // Nancy OS — Speech-to-Text Edge Function
 // Aliyun Recording File Recognition (Express / 极速版)
-// Flow: Download WAV → CreateToken → FlashRecognizer → transcript
+// Flow: Receive WAV binary → CreateToken → FlashRecognizer → transcript
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -17,7 +17,7 @@ const ALIYUN_APP_KEY = Deno.env.get("ALIYUN_ASR_APP_KEY") || "";
 const CREATE_TOKEN_ENDPOINT = "nls-meta.cn-shanghai.aliyuncs.com";
 const FLASH_RECOGNIZER_URL = "https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/FlashRecognizer";
 
-const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100 MB limit
+const MAX_AUDIO_BYTES = 100 * 1024 * 1024; // 100 MB hard limit
 
 const ALLOWED_ORIGINS = [
   "https://nancy-os.pages.dev",
@@ -78,7 +78,6 @@ interface TokenResponse {
 
 async function createToken(): Promise<string> {
   const now = new Date();
-  // toISOString already ends with Z — don't append another
   const timestamp = now.toISOString().replace(/\.\d{3}/, "");
 
   const query: Record<string, string> = {
@@ -108,7 +107,6 @@ async function createToken(): Promise<string> {
     "&Signature=" + percentEncode(signature);
 
   const url = `https://${CREATE_TOKEN_ENDPOINT}/?${urlQs}`;
-  console.log("[speech-to-text] CreateToken request");
 
   const resp = await fetch(url);
   const data: TokenResponse = await resp.json();
@@ -117,7 +115,6 @@ async function createToken(): Promise<string> {
     throw new Error(`CreateToken failed: ${JSON.stringify(data)}`);
   }
 
-  console.log("[speech-to-text] Token obtained, expires:", new Date(data.Token.ExpireTime * 1000).toISOString());
   return data.Token.Id;
 }
 
@@ -147,11 +144,10 @@ async function flashRecognize(token: string, audioData: Uint8Array): Promise<Fla
     token,
     format: "WAV",
     sample_rate: "16000",
+    enable_words: "false",
   });
 
   const url = `${FLASH_RECOGNIZER_URL}?${params.toString()}`;
-
-  console.log(`[speech-to-text] FlashRecognizer: ${audioData.length} bytes`);
 
   const resp = await fetch(url, {
     method: "POST",
@@ -163,7 +159,6 @@ async function flashRecognize(token: string, audioData: Uint8Array): Promise<Fla
   });
 
   const text = await resp.text();
-  console.log(`[speech-to-text] FlashRecognizer HTTP ${resp.status}: ${text}`);
 
   let result: FlashResult;
   try {
@@ -204,13 +199,6 @@ serve(async (req: Request) => {
     const { data: { user } } = await supabase.auth.getUser(token);
     if (!user) return jsonResponse(req, { error: "登录已过期" }, 401);
 
-    const body = await req.json();
-    const audioUrl = body.audioUrl as string;
-
-    if (!audioUrl || typeof audioUrl !== "string") {
-      return jsonResponse(req, { error: "audioUrl is required" }, 400);
-    }
-
     if (!ALIYUN_AK_ID || !ALIYUN_AK_SECRET || !ALIYUN_APP_KEY) {
       console.error("[speech-to-text] Missing Aliyun credentials");
       return jsonResponse(req, { error: "Aliyun ASR not configured" }, 500);
@@ -218,25 +206,41 @@ serve(async (req: Request) => {
 
     const tTotalStart = Date.now();
 
-    // ── Download WAV ──
-    const tDownloadStart = Date.now();
-    console.log("[speech-to-text] Downloading audio:", audioUrl.slice(0, 80));
-    const downloadResp = await fetch(audioUrl);
-    if (!downloadResp.ok) {
-      throw new Error(`Failed to download audio (HTTP ${downloadResp.status})`);
-    }
+    // ── Read audio ──
+    const contentType = req.headers.get("Content-Type") || "";
 
-    const audioBuffer = await downloadResp.arrayBuffer();
-    if (audioBuffer.byteLength === 0) {
-      throw new Error("Downloaded audio is empty");
-    }
-    if (audioBuffer.byteLength > MAX_AUDIO_BYTES) {
-      throw new Error(`Audio too large: ${audioBuffer.byteLength} bytes (max ${MAX_AUDIO_BYTES})`);
-    }
+    let audioData: Uint8Array;
 
-    const audioData = new Uint8Array(audioBuffer);
-    const downloadTime = Date.now() - tDownloadStart;
-    console.log(`[speech-to-text] Downloaded ${audioData.length} bytes in ${downloadTime}ms`);
+    if (contentType.includes("application/json")) {
+      // Backward compat: { audioUrl: "..." } — download from Storage
+      const body = await req.json();
+      const audioUrl = body.audioUrl as string;
+      if (!audioUrl || typeof audioUrl !== "string") {
+        return jsonResponse(req, { error: "audioUrl is required" }, 400);
+      }
+      const tDownloadStart = Date.now();
+      console.log("[speech-to-text] Downloading audio:", audioUrl.slice(0, 80));
+      const downloadResp = await fetch(audioUrl);
+      if (!downloadResp.ok) {
+        throw new Error(`Failed to download audio (HTTP ${downloadResp.status})`);
+      }
+      const audioBuffer = await downloadResp.arrayBuffer();
+      if (audioBuffer.byteLength === 0) throw new Error("Downloaded audio is empty");
+      if (audioBuffer.byteLength > MAX_AUDIO_BYTES) {
+        throw new Error(`Audio too large: ${audioBuffer.byteLength} bytes`);
+      }
+      audioData = new Uint8Array(audioBuffer);
+      console.log(`[speech-to-text] Downloaded ${audioData.length} bytes in ${Date.now() - tDownloadStart}ms`);
+    } else {
+      // Binary mode: WAV directly in request body
+      const audioBuffer = await req.arrayBuffer();
+      if (audioBuffer.byteLength === 0) throw new Error("Empty request body");
+      if (audioBuffer.byteLength > MAX_AUDIO_BYTES) {
+        throw new Error(`Audio too large: ${audioBuffer.byteLength} bytes`);
+      }
+      audioData = new Uint8Array(audioBuffer);
+      console.log(`[speech-to-text] Received ${audioData.length} bytes (binary mode)`);
+    }
 
     // ── CreateToken ──
     const tTokenStart = Date.now();
@@ -248,7 +252,7 @@ serve(async (req: Request) => {
     const tAsrStart = Date.now();
     const result = await flashRecognize(nlsToken, audioData);
     const asrTime = Date.now() - tAsrStart;
-    console.log(`[speech-to-text] FlashRecognizer: ${asrTime}ms`);
+    console.log(`[speech-to-text] FlashRecognizer: ${asrTime}ms (${audioData.length} bytes, status=${result.status})`);
 
     if (result.status !== 20000000) {
       throw new Error(
@@ -260,14 +264,13 @@ serve(async (req: Request) => {
     const transcript = extractTranscript(result);
     const totalTime = Date.now() - tTotalStart;
 
-    console.log(`[speech-to-text] Success: "${transcript.slice(0, 100)}" | timings: download=${downloadTime}ms token=${tokenTime}ms asr=${asrTime}ms total=${totalTime}ms`);
+    console.log(`[speech-to-text] Success: "${transcript.slice(0, 100)}" | timings: token=${tokenTime}ms asr=${asrTime}ms total=${totalTime}ms`);
 
     return jsonResponse(req, {
       transcript,
       task_id: result.task_id,
       duration_ms: result.flash_result?.duration,
       timings: {
-        downloadTime,
         tokenTime,
         asrTime,
         totalTime,
@@ -276,13 +279,11 @@ serve(async (req: Request) => {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";
-    const stack = err instanceof Error ? err.stack : undefined;
     console.error("[speech-to-text] Error:", message);
-    if (stack) console.error("[speech-to-text] Stack:", stack);
 
     return jsonResponse(req, {
       error: message,
-      stack,
+      timings: { totalTime: -1 },
     }, 500);
   }
 });
