@@ -216,7 +216,10 @@ serve(async (req: Request) => {
       return jsonResponse(req, { error: "Aliyun ASR not configured" }, 500);
     }
 
+    const tTotalStart = Date.now();
+
     // ── Download WAV ──
+    const tDownloadStart = Date.now();
     console.log("[speech-to-text] Downloading audio:", audioUrl.slice(0, 80));
     const downloadResp = await fetch(audioUrl);
     if (!downloadResp.ok) {
@@ -232,13 +235,20 @@ serve(async (req: Request) => {
     }
 
     const audioData = new Uint8Array(audioBuffer);
-    console.log(`[speech-to-text] Downloaded ${audioData.length} bytes`);
+    const downloadTime = Date.now() - tDownloadStart;
+    console.log(`[speech-to-text] Downloaded ${audioData.length} bytes in ${downloadTime}ms`);
 
     // ── CreateToken ──
+    const tTokenStart = Date.now();
     const nlsToken = await createToken();
+    const tokenTime = Date.now() - tTokenStart;
+    console.log(`[speech-to-text] CreateToken: ${tokenTime}ms`);
 
     // ── FlashRecognizer ──
+    const tAsrStart = Date.now();
     const result = await flashRecognize(nlsToken, audioData);
+    const asrTime = Date.now() - tAsrStart;
+    console.log(`[speech-to-text] FlashRecognizer: ${asrTime}ms`);
 
     if (result.status !== 20000000) {
       throw new Error(
@@ -248,13 +258,20 @@ serve(async (req: Request) => {
     }
 
     const transcript = extractTranscript(result);
+    const totalTime = Date.now() - tTotalStart;
 
-    console.log(`[speech-to-text] Success: "${transcript.slice(0, 100)}"`);
+    console.log(`[speech-to-text] Success: "${transcript.slice(0, 100)}" | timings: download=${downloadTime}ms token=${tokenTime}ms asr=${asrTime}ms total=${totalTime}ms`);
 
     return jsonResponse(req, {
       transcript,
       task_id: result.task_id,
       duration_ms: result.flash_result?.duration,
+      timings: {
+        downloadTime,
+        tokenTime,
+        asrTime,
+        totalTime,
+      },
     });
 
   } catch (err) {

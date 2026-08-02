@@ -55,11 +55,17 @@ export class AliyunSpeechProvider implements SpeechProvider {
       return;
     }
 
+    const tTotalStart = Date.now();
+
     try {
       // 1. Convert webm/opus → WAV (16kHz mono 16-bit PCM)
+      const tConvertStart = Date.now();
       const wavBlob = await webmToWav(audioBlob);
+      const convertTime = Date.now() - tConvertStart;
+      console.log(`[aliyunSpeech] Conversion: ${convertTime}ms (${(audioBlob.size / 1024).toFixed(1)}KB webm → ${(wavBlob.size / 1024).toFixed(1)}KB wav)`);
 
       // 2. Upload WAV to Supabase Storage
+      const tUploadStart = Date.now();
       const fileName = `${this.sessionId}/${Date.now()}.wav`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("speaking-audio")
@@ -73,11 +79,15 @@ export class AliyunSpeechProvider implements SpeechProvider {
       const { data: urlData } = supabase.storage
         .from("speaking-audio")
         .getPublicUrl(fileName);
+      const uploadTime = Date.now() - tUploadStart;
+      console.log(`[aliyunSpeech] Upload: ${uploadTime}ms (path: ${fileName})`);
 
       // 3. Call Edge Function for ASR transcription
+      const tEdgeStart = Date.now();
       const result = await supabase.functions.invoke("speech-to-text", {
         body: { audioUrl: urlData.publicUrl },
       });
+      const edgeTime = Date.now() - tEdgeStart;
 
       if (result.error) {
         const msg =
@@ -87,8 +97,17 @@ export class AliyunSpeechProvider implements SpeechProvider {
         throw new Error(msg);
       }
 
-      const data = result.data as { transcript?: string; error?: string } | null;
+      const data = result.data as { transcript?: string; error?: string; timings?: Record<string, number> } | null;
       if (data?.error) throw new Error(data.error);
+
+      const totalTime = Date.now() - tTotalStart;
+      console.log("[aliyunSpeech] Timings:", {
+        convertTime,
+        uploadTime,
+        edgeTime,
+        edgeTimings: data?.timings,
+        totalTime,
+      });
 
       this.transcript = data?.transcript || "";
       this._onTranscriptUpdate?.(this.transcript);
