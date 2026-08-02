@@ -8,6 +8,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const ALIYUN_AK_ID = Deno.env.get("ALIYUN_ACCESS_KEY_ID") || "";
 const ALIYUN_AK_SECRET = Deno.env.get("ALIYUN_ACCESS_KEY_SECRET") || "";
+const ALIYUN_APP_KEY = Deno.env.get("ALIYUN_ASR_APP_KEY") || "";
 
 const CREATE_TOKEN_ENDPOINT = "nls-meta.cn-shanghai.aliyuncs.com";
 
@@ -124,6 +125,7 @@ serve(async (req: Request) => {
       token,
       expireTime,
       expiresAt: new Date(expireTime * 1000).toISOString(),
+      appkey: ALIYUN_APP_KEY,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";

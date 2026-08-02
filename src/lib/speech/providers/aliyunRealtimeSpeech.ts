@@ -64,6 +64,7 @@ interface WsMessage {
     status_message?: string;
   };
   payload: Record<string, unknown>;
+  context?: Record<string, unknown>;
 }
 
 // ── Provider ──
@@ -120,11 +121,15 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
         method: "POST",
         headers: { "Authorization": `Bearer ${accessToken}` },
       });
-      const tokenData = await tokenResp.json() as { token?: string; error?: string };
+      const tokenData = await tokenResp.json() as { token?: string; error?: string; appkey?: string };
       if (!tokenResp.ok || tokenData.error || !tokenData.token) {
         throw new Error(tokenData.error || "Failed to get ASR token");
       }
       console.log(`[aliyunRealtime] Token obtained in ${(performance.now() - tTokenStart).toFixed(0)}ms`);
+      if (tokenData.appkey) {
+        this.appkey = tokenData.appkey;
+      }
+      console.log("[aliyunRealtime] AppKey:", this.appkey ? `${this.appkey.slice(0, 4)}...` : "MISSING");
 
       // 2. Set up AudioContext + AudioWorklet
       this.audioContext = new AudioContext({ sampleRate: 16000 });
@@ -142,7 +147,6 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
       const wsUrl = `${WS_URL}?token=${tokenData.token}`;
       this.ws = new WebSocket(wsUrl);
       this.taskId = generateId();
-      this.appkey = ""; // Will be set from token response or hardcoded
 
       await new Promise<void>((resolve, reject) => {
         const ws = this.ws!;
@@ -157,27 +161,32 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
               task_id: this.taskId,
               namespace: "SpeechTranscriber",
               name: "StartTranscription",
+              appkey: this.appkey,
             },
             payload: {
-              format: "PCM",
+              format: "pcm",
               sample_rate: 16000,
               enable_intermediate_result: true,
               enable_punctuation_prediction: true,
               max_sentence_silence: 800,
             },
+            context: {},
           };
+          console.log("[aliyunRealtime] StartTranscription:", JSON.stringify(startMsg, null, 2));
           ws.send(JSON.stringify(startMsg));
-          console.log("[aliyunRealtime] StartTranscription sent");
         };
 
         ws.onmessage = (event: MessageEvent) => {
           if (typeof event.data !== "string") return; // Binary (shouldn't happen)
+
+          console.log("[aliyunRealtime] Server message:", event.data.slice(0, 300));
 
           try {
             const msg: WsMessage = JSON.parse(event.data);
             const { name, status, status_message: statusMsg } = msg.header;
 
             if (status && status !== 20000000 && status !== 0) {
+              console.error("[aliyunRealtime] Server error response:", JSON.stringify(msg, null, 2));
               reject(new Error(`Aliyun error ${status}: ${statusMsg || "unknown"}`));
               return;
             }
@@ -226,7 +235,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
 
         ws.onclose = (e) => {
           if (!this.stopped) {
-            console.warn("[aliyunRealtime] WebSocket closed unexpectedly:", e.code, e.reason);
+            console.warn(`[aliyunRealtime] WebSocket closed: code=${e.code} reason=${e.reason} wasClean=${e.wasClean}`);
           }
         };
       });
