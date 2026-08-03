@@ -129,6 +129,11 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const medTasks = taskList.filter((t) => t.priority === "medium");
   const lowTasks = taskList.filter((t) => t.priority === "low");
 
+  console.log("[TodayPlan component] taskList total =", taskList.length);
+  console.log("[TodayPlan component] taskList items =", taskList.map(t => ({ id: t.id, title: t.title, status: t.status, due_date: t.due_date, is_today_focus: t.is_today_focus, task_type: t.task_type, priority: t.priority })));
+  console.log("[TodayPlan component] high/med/low =", highTasks.length, medTasks.length, lowTasks.length);
+  console.log("[TodayPlan component] unaccounted =", taskList.filter(t => !["high", "medium", "low"].includes(t.priority)).length);
+
   // Separate lightweight query for today's completed count
   const { data: doneToday } = useQuery({
     queryKey: ["tasks", "today", "doneCount"],
