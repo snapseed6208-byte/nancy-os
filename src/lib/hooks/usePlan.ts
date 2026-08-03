@@ -277,20 +277,18 @@ export function useTodayTasks() {
     queryKey: ["tasks", "today"],
     queryFn: async () => {
       console.log("[TodayPlan DEBUG] today =", today);
-      console.log("[TodayPlan DEBUG] local time =", new Date().toString());
-      console.log("[TodayPlan DEBUG] local ISO  =", new Date().toISOString());
 
-      // One-time: due_date=today OR is_today_focus=true, excluding ai_pending tasks
-      // Recurring: all non-ai_pending (completed_count resets per cycle via task_completion_records)
-      // NOTE: PostgREST only supports ONE .or() per query; use and() to combine groups
-      const orFilter = `and((due_date.eq.${today},is_today_focus.eq.true),(ai_review_status.is.null,ai_review_status.neq.pending))`;
-      console.log("[TodayPlan DEBUG] oneTime orFilter =", orFilter);
+      // One-time: due_date=today OR is_today_focus=true
+      // Recurring: all (completed_count resets per cycle via task_completion_records)
+      // ai_review_status NOT filtered at DB level — manual tasks shouldn't be affected
+      const oneTimeOr = `due_date.eq.${today},is_today_focus.eq.true`;
+      console.log("[TodayPlan DEBUG] oneTime URL or =", oneTimeOr);
 
       const [{ data: oneTimeTasks, error: err1 }, { data: recurringTasks, error: err2 }] = await Promise.all([
         supabase
           .from("tasks")
           .select("*")
-          .or(orFilter)
+          .or(oneTimeOr)
           .eq("task_type", "one_time")
           .in("status", ["pending", "in_progress"])
           .order("priority", { ascending: true })
@@ -299,22 +297,22 @@ export function useTodayTasks() {
           .from("tasks")
           .select("*")
           .eq("task_type", "recurring")
-          .or("ai_review_status.is.null,ai_review_status.neq.pending")
           .order("priority", { ascending: true })
           .limit(30),
       ]);
 
-      console.log("[TodayPlan DEBUG] oneTime error  =", err1);
+      console.log("[TodayPlan DEBUG] oneTime error  =", err1?.code, err1?.message);
       console.log("[TodayPlan DEBUG] oneTime count  =", (oneTimeTasks || []).length);
-      console.log("[TodayPlan DEBUG] oneTime tasks  =", (oneTimeTasks || []).map((t: TaskRow) => ({ id: t.id, title: t.title, status: t.status, due_date: t.due_date, is_today_focus: t.is_today_focus, task_type: t.task_type, ai_review_status: t.ai_review_status, priority: t.priority })));
-      console.log("[TodayPlan DEBUG] recurring error =", err2);
+      if ((oneTimeTasks || []).length > 0) {
+        console.log("[TodayPlan DEBUG] oneTime sample =", (oneTimeTasks || []).slice(0, 3).map((t: TaskRow) => ({ id: t.id, title: t.title, due_date: t.due_date, is_today_focus: t.is_today_focus, status: t.status })));
+      }
+      console.log("[TodayPlan DEBUG] recurring error =", err2?.code, err2?.message);
       console.log("[TodayPlan DEBUG] recurring count =", (recurringTasks || []).length);
 
       const all = [...(oneTimeTasks || []), ...(recurringTasks || [])] as TaskRow[];
-      // Deduplicate by id
       const seen = new Set<string>();
       const deduped = all.filter((t) => { const ok = !seen.has(t.id); seen.add(t.id); return ok; });
-      console.log("[TodayPlan DEBUG] merged + deduped count =", deduped.length);
+      console.log("[TodayPlan DEBUG] merged total =", deduped.length);
       return deduped;
     },
     staleTime: 30 * 1000,
