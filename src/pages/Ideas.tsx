@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import {
   Lightbulb, Plus, Loader2, Trash2, Check, X, Edit3,
-  Inbox, Archive, Search, Image, Link2, ExternalLink, AlertTriangle, Sparkles, ArrowRight,
+  Search, Image, Link2, ExternalLink, AlertTriangle, Sparkles, ArrowRight, CheckCircle2, RotateCcw,
 } from "lucide-react";
 import { useIdeas, useCreateIdea, useUpdateIdea, useDeleteIdea, useConvertIdeaToTask, useAiSuggestTask } from "@/lib/hooks/useLifeTrace";
 import { supabase } from "@/lib/supabase";
@@ -14,7 +14,6 @@ const STATUS_TABS = [
   { key: "pending", label: "待处理" },
   { key: "converted", label: "已转换" },
   { key: "processed", label: "已处理" },
-  { key: "dismissed", label: "已忽略" },
 ] as const;
 
 const CATEGORY_OPTIONS = ["创业", "学习", "工作", "生活", "创意", "技术", "其他"];
@@ -82,7 +81,7 @@ function linkDomain(url: string) {
 // ── Component ──
 
 export default function Ideas() {
-  const [statusFilter, setStatusFilter] = useState<"" | "pending" | "converted" | "processed" | "dismissed">("");
+  const [statusFilter, setStatusFilter] = useState<"" | "pending" | "converted" | "processed">("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
 
@@ -217,8 +216,8 @@ export default function Ideas() {
     }
   };
 
-  const toggleDismiss = async (idea: Record<string, unknown>) => {
-    const newStatus = idea.status === "dismissed" ? "pending" : "dismissed";
+  const toggleProcessed = async (idea: Record<string, unknown>) => {
+    const newStatus = idea.status === "processed" ? "pending" : "processed";
     updateIdea.mutateAsync({ id: idea.id, status: newStatus }).catch((err) => setError((err as Error).message));
   };
 
@@ -584,7 +583,7 @@ export default function Ideas() {
               key={idea.id as string}
               className={cn(
                 "bg-card rounded-2xl border border-border p-4 transition-colors",
-                idea.status === "dismissed" && "opacity-60",
+                idea.status === "processed" && "opacity-60",
               )}
             >
               {isEditing ? (
@@ -679,14 +678,14 @@ export default function Ideas() {
                     {idea.status === "converted" && (
                       <span className="text-[11px] bg-accent-sky/10 text-accent-sky rounded-full px-2 py-0.5">已转换</span>
                     )}
-                    {idea.status === "dismissed" && (
-                      <span className="text-[11px] bg-ink/5 text-ink-lighter rounded-full px-2 py-0.5">已忽略</span>
+                    {idea.status === "processed" && (
+                      <span className="text-[11px] bg-ink/5 text-ink-lighter rounded-full px-2 py-0.5">已处理</span>
                     )}
                     <span className="text-[11px] text-ink-lighter">
                       {new Date(idea.created_at as string).toLocaleDateString("zh-CN")}
                     </span>
                     <div className="flex-1" />
-                    {idea.status !== "converted" && idea.status !== "dismissed" && (
+                    {idea.status !== "converted" && (
                       <button
                         onClick={() => openConvert(idea)}
                         className="h-7 rounded-lg flex items-center gap-1 px-2 text-[11px] text-sage-deep bg-sage-light/30 hover:bg-sage-light/50 transition-colors"
@@ -702,11 +701,11 @@ export default function Ideas() {
                       <Edit3 size={13} />
                     </button>
                     <button
-                      onClick={() => toggleDismiss(idea)}
+                      onClick={() => toggleProcessed(idea)}
                       className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5"
-                      title={idea.status === "dismissed" ? "取消忽略" : "忽略"}
+                      title={idea.status === "processed" ? "还原为待处理" : "标记已处理"}
                     >
-                      {idea.status === "dismissed" ? <Inbox size={13} /> : <Archive size={13} />}
+                      {idea.status === "processed" ? <RotateCcw size={13} /> : <CheckCircle2 size={13} />}
                     </button>
                     <button
                       onClick={() => handleDelete(idea.id as string)}

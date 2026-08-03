@@ -36,7 +36,7 @@ function monthEnd(year: number, month: number): string {
 
 export type IdeaFilters = {
   category?: string;
-  status?: "pending" | "converted" | "processed" | "dismissed" | "";
+  status?: "pending" | "converted" | "processed" | "";
   search?: string;
 };
 
@@ -50,8 +50,6 @@ async function fetchIdeas(filters: IdeaFilters = {}) {
   if (filters.category) query = query.eq("category", filters.category);
   if (filters.status) {
     query = query.eq("status", filters.status);
-  } else {
-    query = query.neq("status", "dismissed");
   }
   if (filters.search) query = query.ilike("content", `%${filters.search}%`);
 
@@ -201,7 +199,7 @@ export function useAiSuggestTask() {
       }>("task-breakdown-agent", {
         goal_title: input.ideaContent.slice(0, 100),
         goal_description: input.ideaContent,
-        goal_level: "inbox",
+        goal_level: "idea",
       });
 
       if (!result.success) throw new Error(result.error);
@@ -616,7 +614,7 @@ async function fetchLifeTraceStats() {
       .select("amount, type")
       .gte("date", monthStart(year, month))
       .lte("date", monthEnd(year, month)),
-    supabase.from("ideas").select("id, content, category, created_at").order("created_at", { ascending: false }).limit(5),
+    supabase.from("ideas").select("id, content, category, created_at").neq("status", "processed").order("created_at", { ascending: false }).limit(5),
     supabase.from("journal_entries").select("id, title, date, created_at").order("created_at", { ascending: false }).limit(5),
     supabase.from("mood_records").select("id, mood, date, intensity, created_at").order("created_at", { ascending: false }).limit(5),
     supabase.from("money_records").select("id, amount, type, category, date, created_at").order("created_at", { ascending: false }).limit(5),

@@ -480,8 +480,9 @@ export const ideas = pgTable("ideas", {
   mediaUrls: jsonb("media_urls").default([]),
   category: text("category"),
   aiCategory: text("ai_category"),
-  status: text("status").notNull().default("inbox"),
+  status: text("status").notNull().default("pending"),
   relatedGoalId: uuid("related_goal_id").references(() => goals.id, { onDelete: "set null" }),
+  relatedTaskId: uuid("related_task_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
