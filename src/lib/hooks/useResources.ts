@@ -314,27 +314,37 @@ export function useDetachTagFromResource() {
 
 // ── Fetch Resources ──
 
-async function fetchResources(): Promise<ResourceRow[]> {
+export type ArchiveFilter = "active" | "archived" | "all";
+
+async function fetchResources(archiveFilter: ArchiveFilter = "active"): Promise<ResourceRow[]> {
   const session = await supabase.auth.getSession();
   const userId = session.data.session?.user.id || "no-session";
-  console.log("[DEBUG fetchResources] auth.uid:", userId);
+  console.log("[DEBUG fetchResources] auth.uid:", userId, "| archiveFilter:", archiveFilter);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("resources")
     .select("*")
-    .eq("is_archived", false)
     .order("created_at", { ascending: false })
     .limit(50);
 
+  if (archiveFilter === "active") {
+    query = query.eq("is_archived", false);
+  } else if (archiveFilter === "archived") {
+    query = query.eq("is_archived", true);
+  }
+  // "all": no filter — gets both archived and active
+
+  const { data, error } = await query;
+
   if (error) throw error;
-  console.log("[DEBUG fetchResources] raw data count:", (data || []).length, "| error:", error, "| sample:", (data || []).slice(0, 2).map((r: Record<string, unknown>) => ({ id: r.id, title: r.title, user_id: r.user_id, is_archived: r.is_archived, category_id: r.category_id })));
+  console.log("[DEBUG fetchResources] raw data count:", (data || []).length, "| error:", error);
   return (data || []) as ResourceRow[];
 }
 
-export function useResources() {
+export function useResources(archiveFilter: ArchiveFilter = "active") {
   const result = useQuery({
-    queryKey: ["resources"],
-    queryFn: fetchResources,
+    queryKey: ["resources", archiveFilter],
+    queryFn: () => fetchResources(archiveFilter),
     staleTime: 60 * 1000,
   });
   console.log("[DEBUG useResources] status:", result.status, "| dataLength:", (result.data || []).length, "| isError:", result.isError, "| error:", result.error, "| isLoading:", result.isLoading, "| isFetching:", result.isFetching);
@@ -440,6 +450,25 @@ export function useUpdateResource() {
       const { data, error } = await supabase
         .from("resources")
         .update({ ...fields, url: normalizedUrl ?? fields.url, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
+export function useRestoreResource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase
+        .from("resources")
+        .update({ is_archived: false, updated_at: new Date().toISOString() })
         .eq("id", id)
         .select()
         .single();

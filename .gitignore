@@ -25,5 +25,8 @@ supabase/.temp/
 # Vercel
 .vercel/
 
+# Backups (contains private data — never commit)
+backups/
+
 # Logs
 *.log

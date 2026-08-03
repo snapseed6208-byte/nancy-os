@@ -1,17 +1,18 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Link2, Plus, Tag, Trash2, ExternalLink, Archive, Star,
   Loader2, FolderOpen, Sparkles, Lightbulb, Target, Check,
   Search, ChevronDown, Quote, MapPin, GitBranch,
-  BookOpen, Edit3, X, Play, XCircle, SlidersHorizontal,
+  BookOpen, Edit3, X, Play, XCircle, SlidersHorizontal, RotateCcw, Undo2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useResources, useCreateResource, useUpdateResource, useDeleteResource,
+  useRestoreResource,
   useContentParser, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
   useAllResourceTags, useTags, useCreateTags, useUpdateTag, useDeleteTag,
   useAttachTagsToResource, useDetachTagFromResource,
-  type ResourceRow, type ParsedContent, type Category, type TagType,
+  type ResourceRow, type ParsedContent, type Category, type TagType, type ArchiveFilter,
 } from "@/lib/hooks/useResources";
 
 // ── Constants ──
@@ -38,12 +39,15 @@ const DEFAULT_CATEGORY_COLORS = [
 // ── Page ──
 
 export default function Resources() {
-  const { data: resources, isLoading } = useResources();
+  // Archive filter
+  const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>("active");
+  const { data: resources, isLoading } = useResources(archiveFilter);
   const { data: categories } = useCategories();
   const { data: allResourceTags } = useAllResourceTags();
   const createResource = useCreateResource();
   const updateResource = useUpdateResource();
   const deleteResource = useDeleteResource();
+  const restoreResource = useRestoreResource();
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
@@ -64,6 +68,28 @@ export default function Resources() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selectedResource, setSelectedResource] = useState<ResourceRow | null>(null);
+
+  // Toast for archive undo
+  const [toast, setToast] = useState<{ message: string; action?: { label: string; onClick: () => void } } | null>(null);
+
+  // Auto-dismiss toast after 5 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  // Archive handler with undo toast
+  const handleArchive = (id: string) => {
+    updateResource.mutate({ id, is_archived: true });
+    setToast({
+      message: "已归档，可在「已归档」中查看",
+      action: {
+        label: "撤销",
+        onClick: () => restoreResource.mutate(id),
+      },
+    });
+  };
 
   // New category inline form
   const [showNewCategory, setShowNewCategory] = useState(false);
@@ -325,6 +351,26 @@ export default function Resources() {
         </select>
       </div>
 
+      {/* Archive Filter Tabs */}
+      <div className="flex items-center gap-1 bg-ink/[0.03] rounded-xl p-1">
+        {([
+          { key: "active" as const, label: "使用中" },
+          { key: "archived" as const, label: "已归档" },
+          { key: "all" as const, label: "全部" },
+        ]).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setArchiveFilter(key)}
+            className={cn(
+              "text-xs font-medium px-4 py-1.5 rounded-lg transition-colors",
+              archiveFilter === key ? "bg-white text-ink shadow-sm" : "text-ink-lighter hover:text-ink",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* AI Smart Import */}
       {showImport && (
         <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
@@ -386,10 +432,20 @@ export default function Resources() {
         <div className="text-center py-14">
           <FolderOpen size={36} className="text-ink-lighter mx-auto mb-3 opacity-25" />
           <p className="text-sm text-ink-lighter">
-            {resources?.length ? "没有匹配的资源" : "还没有资源"}
+            {resources?.length
+              ? "没有匹配的资源"
+              : archiveFilter === "archived"
+                ? "没有已归档的资源"
+                : archiveFilter === "all"
+                  ? "知识库还是空的"
+                  : "还没有资源"}
           </p>
           <p className="text-xs text-ink-lighter mt-1">
-            {resources?.length ? "尝试调整搜索或筛选条件" : "使用 AI 智能导入，构建你的个人知识库"}
+            {resources?.length
+              ? "尝试调整搜索或筛选条件"
+              : archiveFilter === "archived"
+                ? "归档的资源会出现在这里"
+                : "使用 AI 智能导入，构建你的个人知识库"}
           </p>
         </div>
       ) : (
@@ -402,11 +458,30 @@ export default function Resources() {
               tags={allResourceTags?.[r.id] || []}
               onClick={() => setSelectedResource(r)}
               onToggleFavorite={(id) => updateResource.mutate({ id, is_favorite: !r.is_favorite })}
-              onArchive={(id) => updateResource.mutate({ id, is_archived: true })}
+              onArchive={(id) => handleArchive(id)}
+              onRestore={(id) => restoreResource.mutate(id)}
               onDelete={(id) => deleteResource.mutate(id)}
               onStatusCycle={(id) => handleStatusCycle(id, r.status)}
             />
           ))}
+        </div>
+      )}
+
+      {/* Toast notification for archive undo */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-ink text-white rounded-xl px-4 py-3 shadow-lg flex items-center gap-3 text-sm animate-in">
+          <span className="text-xs">{toast.message}</span>
+          {toast.action && (
+            <button
+              onClick={() => { toast.action!.onClick(); setToast(null); }}
+              className="text-amber-300 font-semibold text-xs hover:text-amber-200 transition-colors shrink-0"
+            >
+              {toast.action.label}
+            </button>
+          )}
+          <button onClick={() => setToast(null)} className="text-white/60 hover:text-white shrink-0">
+            <X size={14} />
+          </button>
         </div>
       )}
 
@@ -1007,6 +1082,7 @@ function ResourceCard({
   onClick,
   onToggleFavorite,
   onArchive,
+  onRestore,
   onDelete,
   onStatusCycle,
 }: {
@@ -1016,6 +1092,7 @@ function ResourceCard({
   onClick: () => void;
   onToggleFavorite: (id: string) => void;
   onArchive: (id: string) => void;
+  onRestore?: (id: string) => void;
   onDelete: (id: string) => void;
   onStatusCycle: (id: string) => void;
 }) {
@@ -1057,6 +1134,11 @@ function ResourceCard({
                 <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${status.color}`}>
                   {status.label}
                 </span>
+                {r.is_archived && (
+                  <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400">
+                    已归档
+                  </span>
+                )}
               </div>
               {r.source_author && (
                 <p className="text-[11px] text-ink-lighter mt-0.5">{r.source_author}</p>
@@ -1077,7 +1159,7 @@ function ResourceCard({
             </div>
 
             {/* Quick actions */}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
               <button
                 onClick={() => onToggleFavorite(r.id)}
                 className={cn("h-7 w-7 rounded-lg flex items-center justify-center transition-colors", r.is_favorite ? "text-amber-500 bg-amber-50" : "text-ink-lighter hover:bg-ink/5")}
@@ -1092,13 +1174,23 @@ function ResourceCard({
               >
                 <ChevronDown size={13} />
               </button>
-              <button
-                onClick={() => onArchive(r.id)}
-                className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5 transition-colors"
-                title="归档"
-              >
-                <Archive size={13} />
-              </button>
+              {r.is_archived ? (
+                <button
+                  onClick={() => onRestore?.(r.id)}
+                  className="h-7 w-7 rounded-lg flex items-center justify-center text-emerald-600 hover:bg-emerald-50 transition-colors"
+                  title="恢复"
+                >
+                  <RotateCcw size={13} />
+                </button>
+              ) : (
+                <button
+                  onClick={() => onArchive(r.id)}
+                  className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5 transition-colors"
+                  title="归档"
+                >
+                  <Archive size={13} />
+                </button>
+              )}
               <button
                 onClick={() => onDelete(r.id)}
                 className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-accent-rose/10 hover:text-accent-rose transition-colors"
@@ -1139,7 +1231,11 @@ function ResourceCard({
           <div className="flex items-center gap-3 mt-2">
             <span className="text-[10px] text-ink-lighter">{TYPE_LABELS[r.content_type || ""] || r.resource_type}</span>
             {r.module && <span className="text-[10px] text-ink-lighter">{r.module}</span>}
-            <span className="text-[10px] text-ink-lighter">{new Date(r.created_at).toLocaleDateString("zh-CN")}</span>
+            <span className="text-[10px] text-ink-lighter">
+              {r.is_archived
+                ? `已归档 · ${new Date(r.updated_at).toLocaleDateString("zh-CN")}`
+                : new Date(r.created_at).toLocaleDateString("zh-CN")}
+            </span>
           </div>
         </div>
       </div>
