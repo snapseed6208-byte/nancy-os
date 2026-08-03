@@ -125,3 +125,41 @@ export function useToggleImportantEvent() {
     },
   });
 }
+
+export function useUpdateImportantEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...input }: {
+      id: string;
+      title?: string;
+      event_date?: string;
+      event_time?: string | null;
+      event_type?: ImportantEventType;
+      description?: string | null;
+      priority?: "high" | "medium" | "low";
+      related_task_id?: string | null;
+    }) => {
+      const { error } = await supabase
+        .from("important_events")
+        .update({ ...input, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["important_events"] });
+    },
+  });
+}
+
+export function useDeleteImportantEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("important_events").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["important_events"] });
+    },
+  });
+}

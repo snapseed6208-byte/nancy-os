@@ -2,12 +2,14 @@ import { useState } from "react";
 import {
   Plus, ChevronLeft, ChevronRight, Apple, Trash2,
   ChefHat, Sparkles, Loader2, AlertTriangle, Image as ImageIcon,
+  Droplets,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import FoodRecordForm from "@/components/health/FoodRecordForm";
 import {
   useRecipes, useFoodRecords, useCreateFoodRecord, useDeleteFoodRecord,
   useGenerateDailyDietSummary, useDailyDietSummary,
+  useWaterToday,
   type FoodRecord,
 } from "@/lib/hooks/useHealth";
 
@@ -47,6 +49,7 @@ export default function FoodJournalTab() {
   const deleteFood = useDeleteFoodRecord();
   const generateSummary = useGenerateDailyDietSummary();
   const { data: dailySummary } = useDailyDietSummary(date);
+  const { data: waterToday } = useWaterToday(date);
 
   const isToday = date === today();
   const prevDate = shiftDate(date, -1);
@@ -117,6 +120,44 @@ export default function FoodJournalTab() {
         >
           <ChevronRight size={16} />
         </button>
+      </div>
+
+      {/* Today's health summary: water + food overview */}
+      <div className="bg-card rounded-2xl border border-border p-3.5 space-y-2">
+        <p className="text-xs font-semibold text-ink-light">今日健康摘要</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2 bg-accent-sky/5 rounded-xl px-3 py-2">
+            <Droplets size={14} className="text-accent-sky shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] text-ink-lighter">饮水</p>
+              <p className="text-xs font-semibold text-ink">
+                {waterToday?.total_ml ?? 0}<span className="text-[10px] font-normal text-ink-lighter">/{waterToday?.goal_ml ?? 2000}ml</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 bg-accent-warm/5 rounded-xl px-3 py-2">
+            <Apple size={14} className="text-accent-warm shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[10px] text-ink-lighter">饮食</p>
+              <p className="text-xs font-semibold text-ink">
+                {(foodRecords || []).length}<span className="text-[10px] font-normal text-ink-lighter"> 餐</span>
+              </p>
+            </div>
+          </div>
+        </div>
+        {/* Water records with time */}
+        {waterToday?.records && waterToday.records.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {waterToday.records.map((r) => (
+              <span key={r.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-accent-sky/10 text-[11px] text-ink">
+                <span className="font-medium">{r.amount_ml}ml</span>
+                <span className="text-[10px] text-ink-lighter">
+                  {new Date(r.recorded_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add button */}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Droplets, Utensils, Dumbbell, Moon, Plus, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import { Droplets, Utensils, Dumbbell, Moon, Plus, ChevronRight, ChevronDown, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface WaterRecord {
@@ -20,12 +20,17 @@ interface BodyStatusProps {
   isAddingWater?: boolean;
 }
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
 export function BodyStatus({
   waterTotal = 0, waterGoal = 2000, waterRecords = [],
   foodCount = 0, workoutDone = false,
   onAddWater, onDeleteWater, isAddingWater = false,
 }: BodyStatusProps) {
   const [, navigate] = useLocation();
+  const [waterExpanded, setWaterExpanded] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [customAmount, setCustomAmount] = useState("");
   const waterPct = waterGoal > 0 ? Math.round((waterTotal / waterGoal) * 100) : 0;
@@ -37,6 +42,8 @@ export function BodyStatus({
     setCustomAmount("");
     setCustomOpen(false);
   };
+
+  const hasWaterActions = !!onAddWater;
 
   return (
     <div className="bg-gradient-to-r from-white to-emerald-50/20 border border-emerald-100/50 rounded-2xl overflow-hidden">
@@ -51,8 +58,17 @@ export function BodyStatus({
 
       {/* Four indicators */}
       <div className="grid grid-cols-4 gap-3 px-4 pb-3">
-        <Indicator icon={Droplets} label="饮水" value={`${waterPct}%`} sub={`${waterTotal}ml`}
-          ok={waterPct >= 80} color="text-accent-sky" />
+        <button
+          onClick={() => hasWaterActions && setWaterExpanded(!waterExpanded)}
+          className={cn("flex flex-col items-center gap-1", hasWaterActions && "cursor-pointer")}
+        >
+          <Droplets size={16} className={cn("text-accent-sky", waterPct >= 80 ? "opacity-100" : "opacity-40")} />
+          <span className="text-[10px] text-ink-lighter">饮水</span>
+          <span className={cn("text-[11px] font-medium", waterPct >= 80 ? "text-ink" : "text-ink-lighter")}>
+            {waterPct}%
+          </span>
+          <span className="text-[9px] text-ink-lighter">{waterTotal}ml</span>
+        </button>
         <Indicator icon={Utensils} label="饮食" value={foodCount > 0 ? "已记录" : "未记录"}
           sub={foodCount > 0 ? `${foodCount} 餐` : undefined} ok={foodCount > 0} color="text-accent-warm" />
         <Indicator icon={Dumbbell} label="运动" value={workoutDone ? "已完成" : "未运动"}
@@ -60,14 +76,28 @@ export function BodyStatus({
         <Indicator icon={Moon} label="睡眠" value="手动" ok={false} color="text-purple-500" />
       </div>
 
-      {/* Water quick actions */}
-      <div className="border-t border-emerald-100/30 px-4 py-2.5 bg-emerald-50/20">
-        <div className="flex items-center gap-2">
-          <Droplets size={12} className="text-accent-sky shrink-0" />
-          <span className="text-[10px] text-ink-lighter">{waterTotal}/{waterGoal}ml</span>
-          <div className="flex items-center gap-1 ml-auto">
+      {/* Expand toggle hint */}
+      {hasWaterActions && (
+        <button
+          onClick={() => setWaterExpanded(!waterExpanded)}
+          className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-ink-lighter hover:text-ink-light transition-colors"
+        >
+          {waterExpanded
+            ? <><ChevronDown size={10} />收起饮水详情</>
+            : <><ChevronRight size={10} />展开饮水详情</>
+          }
+        </button>
+      )}
+
+      {/* Expanded water section */}
+      {waterExpanded && (
+        <div className="border-t border-emerald-100/30 px-4 py-2.5 bg-emerald-50/20 space-y-2">
+          {/* Quick actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Droplets size={12} className="text-accent-sky shrink-0" />
+            <span className="text-[10px] text-ink-lighter">{waterTotal}/{waterGoal}ml</span>
             {onAddWater && (
-              <>
+              <div className="flex items-center gap-1 ml-auto">
                 <button onClick={() => onAddWater(250)} disabled={isAddingWater}
                   className="px-2.5 py-1 rounded-lg bg-accent-sky/10 text-accent-sky text-[10px] font-medium hover:bg-accent-sky/20 transition-colors active:scale-95 disabled:opacity-50">
                   +250ml
@@ -95,30 +125,37 @@ export function BodyStatus({
                     <Plus size={10} className="inline mr-0.5" />自定义
                   </button>
                 )}
-              </>
+              </div>
             )}
             {isAddingWater && <Loader2 size={12} className="animate-spin text-ink-lighter shrink-0" />}
           </div>
+
+          {/* Water records with time */}
+          {waterRecords.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {waterRecords.slice(0, 6).map((r) => (
+                <span key={r.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/70 text-[10px] text-ink group">
+                  <span className="font-medium">{r.amount_ml}ml</span>
+                  <span className="text-[9px] text-ink-lighter">{formatTime(r.recorded_at)}</span>
+                  {onDeleteWater && (
+                    <button onClick={() => onDeleteWater(r.id)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-ink-lighter hover:text-accent-rose ml-0.5">
+                      <Trash2 size={9} />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {waterRecords.length > 6 && (
+                <span className="text-[9px] text-ink-lighter self-center">+{waterRecords.length - 6} 条</span>
+              )}
+            </div>
+          )}
+
+          {waterRecords.length === 0 && (
+            <p className="text-[10px] text-ink-lighter">暂无饮水记录</p>
+          )}
         </div>
-        {waterRecords.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {waterRecords.slice(0, 4).map((r) => (
-              <span key={r.id} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/60 text-[9px] text-ink-light group">
-                <span className="font-medium">{r.amount_ml}ml</span>
-                {onDeleteWater && (
-                  <button onClick={() => onDeleteWater(r.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-ink-lighter hover:text-accent-rose">
-                    <Trash2 size={9} />
-                  </button>
-                )}
-              </span>
-            ))}
-            {waterRecords.length > 4 && (
-              <span className="text-[9px] text-ink-lighter self-center">+{waterRecords.length - 4} 条</span>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

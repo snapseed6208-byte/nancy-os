@@ -4,7 +4,7 @@ import {
   RefreshCw, Brain,
   Sparkles, ChevronRight, ChevronLeft, Circle, CircleDot, CheckCircle2, Trash2,
   Target, Clock, Zap, Lightbulb, ArrowRight, AlertTriangle, Heart,
-  Edit3, Eye, Sun, Moon, Sunrise, CheckCheck,
+  Edit3, Eye, Sun, Moon, Sunrise, CheckCheck, Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
@@ -23,6 +23,12 @@ import {
   formatFrequency,
   type HabitWithRecord, type HabitAnalysis, type DayCell, type WeeklyStat,
 } from "@/lib/hooks/useHabit";
+import {
+  useImportantEvents, useCreateImportantEvent, useToggleImportantEvent,
+  useUpdateImportantEvent, useDeleteImportantEvent,
+  getEventTypeIcon, getEventTypeLabel,
+  type ImportantEvent, type ImportantEventType,
+} from "@/lib/hooks/useImportantEvent";
 
 // ── Constants ──
 
@@ -47,7 +53,7 @@ const GOAL_LEVEL_COLORS: Record<string, string> = {
   monthly: "bg-sage-light/50 text-sage-deep border-sage-light",
 };
 
-type Tab = "today" | "goals" | "tasks" | "habits" | "weekly";
+type Tab = "today" | "goals" | "tasks" | "habits" | "weekly" | "events";
 
 // ── Page ──
 
@@ -56,7 +62,7 @@ export default function Plan() {
     const hash = window.location.hash;
     const match = hash.match(/[?&]tab=([^&]+)/);
     const initial = match?.[1];
-    if (initial && ["today", "goals", "tasks", "habits", "weekly"].includes(initial)) {
+    if (initial && ["today", "goals", "tasks", "habits", "weekly", "events"].includes(initial)) {
       return initial as Tab;
     }
     return "today";
@@ -88,6 +94,7 @@ export default function Plan() {
           { key: "tasks" as Tab, label: "任务列表", icon: ListChecks },
           { key: "habits" as Tab, label: "习惯追踪", icon: Heart },
           { key: "weekly" as Tab, label: "周计划", icon: TrendingUp },
+          { key: "events" as Tab, label: "重要安排", icon: Star },
         ]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -108,6 +115,7 @@ export default function Plan() {
       {tab === "tasks" && <TaskList />}
       {tab === "habits" && <HabitTracker />}
       {tab === "weekly" && <WeeklyPlan />}
+      {tab === "events" && <ImportantEventsPage />}
     </div>
   );
 }
@@ -2241,6 +2249,326 @@ function WeeklyPlan() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Important Events Page ──
+
+const EVENT_TYPES: { value: ImportantEventType; label: string }[] = [
+  { value: "interview", label: "面试" },
+  { value: "exam", label: "考试" },
+  { value: "deadline", label: "截止日期" },
+  { value: "appointment", label: "预约" },
+  { value: "travel", label: "旅行" },
+  { value: "other", label: "其他" },
+];
+
+function formatEventDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  return `${m}月${day}日 ${weekdays[d.getDay()]}`;
+}
+
+function getCountdown(dateStr: string): { label: string; urgent: boolean } {
+  const now = new Date();
+  const target = new Date(dateStr + "T00:00:00");
+  const diff = Math.ceil((target.getTime() - now.getTime()) / 86400000);
+  if (diff < 0) return { label: "已过期", urgent: true };
+  if (diff === 0) return { label: "今天", urgent: true };
+  if (diff === 1) return { label: "明天", urgent: false };
+  if (diff <= 3) return { label: `${diff} 天后`, urgent: true };
+  if (diff <= 7) return { label: `${diff} 天后`, urgent: false };
+  return { label: `${Math.floor(diff / 7)} 周后`, urgent: false };
+}
+
+function ImportantEventsPage() {
+  const { data: events, isLoading } = useImportantEvents(false);
+  const createEvent = useCreateImportantEvent();
+  const toggleEvent = useToggleImportantEvent();
+  const updateEvent = useUpdateImportantEvent();
+  const deleteEvent = useDeleteImportantEvent();
+
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"upcoming" | "completed" | "all">("upcoming");
+  const [form, setForm] = useState({
+    title: "",
+    event_date: new Date().toISOString().split("T")[0],
+    event_time: "",
+    event_type: "other" as ImportantEventType,
+    priority: "medium" as "high" | "medium" | "low",
+    description: "",
+  });
+
+  const resetForm = () => {
+    setForm({
+      title: "",
+      event_date: new Date().toISOString().split("T")[0],
+      event_time: "",
+      event_type: "other",
+      priority: "medium",
+      description: "",
+    });
+    setShowForm(false);
+    setEditingId(null);
+  };
+
+  const handleSubmit = () => {
+    if (!form.title.trim()) return;
+    if (editingId) {
+      updateEvent.mutate({
+        id: editingId,
+        title: form.title.trim(),
+        event_date: form.event_date,
+        event_time: form.event_time || null,
+        event_type: form.event_type,
+        priority: form.priority,
+        description: form.description || null,
+      });
+    } else {
+      createEvent.mutate({
+        title: form.title.trim(),
+        event_date: form.event_date,
+        event_time: form.event_time || undefined,
+        event_type: form.event_type,
+        priority: form.priority,
+        description: form.description || undefined,
+      });
+    }
+    resetForm();
+  };
+
+  const startEdit = (e: ImportantEvent) => {
+    setForm({
+      title: e.title,
+      event_date: e.event_date,
+      event_time: e.event_time || "",
+      event_type: e.event_type,
+      priority: e.priority,
+      description: e.description || "",
+    });
+    setEditingId(e.id);
+    setShowForm(true);
+  };
+
+  const filtered = (events || []).filter((e) => {
+    if (filter === "completed") return e.is_completed;
+    if (filter === "upcoming") return !e.is_completed;
+    return true;
+  });
+
+  return (
+    <div className="space-y-3">
+      {/* Header + filter */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 bg-ink/5 rounded-xl p-1">
+          {([
+            { key: "upcoming" as const, label: "进行中" },
+            { key: "completed" as const, label: "已完成" },
+            { key: "all" as const, label: "全部" },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                filter === key ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => { resetForm(); setShowForm(true); }}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sage-deep text-white text-xs font-medium hover:bg-sage-deep/90 transition-colors"
+        >
+          <Plus size={13} />添加安排
+        </button>
+      </div>
+
+      {/* Create / Edit form */}
+      {showForm && (
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-ink">
+              {editingId ? "编辑安排" : "新建重要安排"}
+            </span>
+            <button onClick={resetForm} className="text-ink-lighter hover:text-ink">
+              <X size={16} />
+            </button>
+          </div>
+          <input
+            type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+            placeholder="事项名称" autoFocus
+            className="w-full px-3 py-2 rounded-xl border border-border bg-white text-sm text-ink outline-none focus:border-sage-deep/50"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date" value={form.event_date}
+              onChange={(e) => setForm({ ...form, event_date: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-border bg-white text-sm text-ink outline-none focus:border-sage-deep/50"
+            />
+            <input
+              type="time" value={form.event_time}
+              onChange={(e) => setForm({ ...form, event_time: e.target.value })}
+              className="w-full px-3 py-2 rounded-xl border border-border bg-white text-sm text-ink outline-none focus:border-sage-deep/50"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={form.event_type}
+              onChange={(e) => setForm({ ...form, event_type: e.target.value as ImportantEventType })}
+              className="w-full px-3 py-2 rounded-xl border border-border bg-white text-sm text-ink outline-none focus:border-sage-deep/50"
+            >
+              {EVENT_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <select
+              value={form.priority}
+              onChange={(e) => setForm({ ...form, priority: e.target.value as "high" | "medium" | "low" })}
+              className="w-full px-3 py-2 rounded-xl border border-border bg-white text-sm text-ink outline-none focus:border-sage-deep/50"
+            >
+              <option value="high">高优先</option>
+              <option value="medium">中优先</option>
+              <option value="low">低优先</option>
+            </select>
+          </div>
+          <textarea
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="备注（可选）" rows={2}
+            className="w-full px-3 py-2 rounded-xl border border-border bg-white text-sm text-ink outline-none focus:border-sage-deep/50 resize-none"
+          />
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleSubmit}
+              disabled={!form.title.trim() || createEvent.isPending || updateEvent.isPending}
+              className="flex-1 flex items-center justify-center gap-1 px-4 py-2 rounded-xl bg-sage-deep text-white text-sm font-medium hover:bg-sage-deep/90 transition-colors disabled:opacity-50"
+            >
+              {(createEvent.isPending || updateEvent.isPending) ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Check size={14} />
+              )}
+              {editingId ? "保存" : "添加"}
+            </button>
+            <button
+              onClick={resetForm}
+              className="px-4 py-2 rounded-xl border border-border text-ink-light text-sm hover:bg-ink/5 transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
+      {isLoading && (
+        <div className="flex justify-center py-10">
+          <Loader2 size={18} className="animate-spin text-sage-deep" />
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoading && filtered.length === 0 && !showForm && (
+        <div className="text-center py-12">
+          <Star size={28} className="text-ink-lighter mx-auto mb-2 opacity-25" />
+          <p className="text-sm text-ink-lighter">
+            {filter === "completed" ? "没有已完成事项" : "没有重要安排"}
+          </p>
+          <p className="text-xs text-ink-lighter mt-1">
+            {filter === "upcoming" && "点击「添加安排」创建重要事项"}
+          </p>
+        </div>
+      )}
+
+      {/* Event list */}
+      {!isLoading && filtered.length > 0 && (
+        <div className="space-y-1.5">
+          {filtered.map((event) => {
+            const cd = getCountdown(event.event_date);
+            return (
+              <div
+                key={event.id}
+                className={cn(
+                  "bg-card rounded-2xl border border-border p-3.5 transition-colors",
+                  event.is_completed && "opacity-60",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  {/* Toggle complete */}
+                  <button
+                    onClick={() => toggleEvent.mutate({ id: event.id, isCompleted: !event.is_completed })}
+                    className="mt-0.5 shrink-0"
+                  >
+                    {event.is_completed ? (
+                      <CheckCircle2 size={18} className="text-emerald-500" />
+                    ) : (
+                      <Circle size={18} className="text-ink-lighter hover:text-sage-deep transition-colors" />
+                    )}
+                  </button>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg">{getEventTypeIcon(event.event_type)}</span>
+                      <span className={cn(
+                        "text-sm font-medium text-ink",
+                        event.is_completed && "line-through",
+                      )}>
+                        {event.title}
+                      </span>
+                      <span className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                        event.priority === "high" ? "bg-accent-rose/10 text-accent-rose"
+                          : event.priority === "medium" ? "bg-amber-50 text-amber-600"
+                          : "bg-ink/5 text-ink-lighter",
+                      )}>
+                        {event.priority === "high" ? "高" : event.priority === "medium" ? "中" : "低"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-ink-lighter">
+                      <span>{formatEventDate(event.event_date)}</span>
+                      {event.event_time && <span>{event.event_time.slice(0, 5)}</span>}
+                      <span className={cn(
+                        "text-[10px] font-medium",
+                        cd.urgent ? "text-accent-rose" : "text-ink-lighter",
+                      )}>
+                        {cd.label}
+                      </span>
+                    </div>
+                    {event.description && (
+                      <p className="text-xs text-ink-light mt-1.5 leading-relaxed">{event.description}</p>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => startEdit(event)}
+                      className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-ink hover:bg-ink/5 transition-colors"
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                    <button
+                      onClick={() => { if (confirm("确定删除？")) deleteEvent.mutate(event.id); }}
+                      className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:text-accent-rose hover:bg-accent-rose/5 transition-colors"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
