@@ -17,10 +17,15 @@ export type TimelineItem = {
   time?: string;
   path?: string;
   // Recurring task fields
-  taskType?: string; // "one_time" | "recurring"
+  taskType?: string;
   completedCount?: number;
   targetCount?: number;
-  frequencyType?: string; // "daily" | "weekly" | "monthly"
+  frequencyType?: string;
+  // Aggregation fields
+  category?: string;
+  displayType?: "individual" | "aggregated";
+  summary?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type DashboardStats = {
@@ -63,6 +68,97 @@ export type DashboardStats = {
   };
 };
 
+// ── Aggregation helpers ──
+
+export function aggregateReviewsAndSpeaking(
+  reviewItems: TimelineItem[],
+  speakingItems: TimelineItem[],
+): TimelineItem[] {
+  const results: TimelineItem[] = [];
+  const expressionCount = reviewItems.length;
+  const speakingCount = speakingItems.length;
+
+  if (expressionCount === 0 && speakingCount === 0) return results;
+
+  const allTimes = [...reviewItems, ...speakingItems]
+    .map((i) => i.time)
+    .filter(Boolean) as string[];
+  const latestTime = allTimes.length > 0
+    ? allTimes.sort((a, b) => b.localeCompare(a))[0]
+    : undefined;
+
+  const totalMinutes = speakingItems.reduce((sum, s) => {
+    const mins = parseInt((s.subtitle || "0").replace(/\D/g, ""), 10) || 0;
+    return sum + mins;
+  }, 0);
+
+  const parts: string[] = [];
+  if (expressionCount > 0) parts.push(`表达库复习 ${expressionCount}次`);
+  if (speakingCount > 0) parts.push(`口语练习 ${speakingCount}次`);
+  if (totalMinutes > 0) parts.push(`累计${totalMinutes}分钟`);
+
+  results.push({
+    id: "aggregated-english",
+    type: "review",
+    title: "📚 英语学习",
+    summary: parts.join(" · "),
+    status: "completed",
+    time: latestTime,
+    path: "/english",
+    category: "english",
+    displayType: "aggregated",
+    metadata: {
+      expressionReviewCount: expressionCount,
+      speakingCount,
+      totalMinutes,
+      latestTime,
+    },
+  });
+
+  return results;
+}
+
+export function aggregateHabits(
+  habitItems: TimelineItem[],
+  habitNames: Map<string, { name: string; icon: string }>,
+): TimelineItem[] {
+  if (habitItems.length === 0) return [];
+
+  const completed: string[] = [];
+  const missed: string[] = [];
+
+  for (const h of habitItems) {
+    const habitId = h.metadata?.habitId as string || "";
+    const info = habitNames.get(habitId);
+    const displayName = info ? `${info.icon || "✅"} ${info.name}` : h.title;
+    if (h.status === "completed") {
+      completed.push(displayName);
+    } else {
+      missed.push(displayName);
+    }
+  }
+
+  const total = completed.length + missed.length;
+  const summary = `完成 ${completed.length}/${total} 项`;
+
+  return [{
+    id: "aggregated-habits",
+    type: "habit",
+    title: "🏆 习惯打卡",
+    summary,
+    status: completed.length >= total ? "completed" : "in_progress",
+    path: "/plan?tab=habits",
+    category: "habits",
+    displayType: "aggregated",
+    metadata: {
+      completedCount: completed.length,
+      totalCount: total,
+      completedNames: completed,
+      missedNames: missed,
+    },
+  }];
+}
+
 // ── Query ──
 
 export function useDashboardStats() {
@@ -87,6 +183,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     { data: habits, error: habitsErr },
     { data: habitRecords, error: hrErr },
     { data: habitRecordsWithNames, error: hrnErr },
+    { data: activeHabits, error: ahErr },
     { count: expressionCount, error: exprCountErr },
     { data: reviewsToday, error: reviewsErr },
     { data: reviewsDue, error: dueErr },
@@ -128,6 +225,10 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       .select("id,status,habit_id")
       .eq("date", today)
       .limit(20),
+    // Active habits with names (for timeline aggregation)
+    supabase.from("habits")
+      .select("id,name,icon")
+      .eq("is_active", true),
     // Total expressions
     supabase.from("expressions")
       .select("id", { count: "exact", head: true }),
@@ -194,6 +295,15 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
   if (tasksErr || habitsErr || hrErr || reviewsErr || moodErr) {
     console.error("Dashboard query errors:", { tasksErr, habitsErr, hrErr, reviewsErr, moodErr });
+  }
+
+  // Build habit name lookup
+  const habitNameMap = new Map<string, { name: string; icon: string }>();
+  for (const h of (activeHabits || []) as Array<Record<string, unknown>>) {
+    habitNameMap.set(h.id as string, {
+      name: (h.name as string) || "未命名习惯",
+      icon: (h.icon as string) || "✅",
+    });
   }
 
   // ── Compute derived stats ──
@@ -265,6 +375,11 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
   const timelineInProgress: TimelineItem[] = [];
   const timelinePending: TimelineItem[] = [];
 
+  // Pending review/speaking items (collect first, aggregate later)
+  const rawReviewItems: TimelineItem[] = [];
+  const rawSpeakingItems: TimelineItem[] = [];
+  const rawHabitItems: TimelineItem[] = [];
+
   // Completed tasks
   for (const t of (completedTasks || []) as Array<Record<string, unknown>>) {
     timelineCompleted.push({
@@ -274,6 +389,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       status: "completed",
       time: t.completed_at ? new Date(t.completed_at as string).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : undefined,
       path: "/plan",
+      displayType: "individual",
     });
   }
 
@@ -294,6 +410,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       completedCount: (t.completed_count as number) || 0,
       targetCount: (t.target_count as number) || 1,
       frequencyType: t.frequency_type as string,
+      displayType: "individual",
     });
   }
 
@@ -314,18 +431,23 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       completedCount: 0,
       targetCount: (t.target_count as number) || 1,
       frequencyType: t.frequency_type as string,
+      displayType: "individual",
     });
   }
 
-  // Habit records for timeline
+  // Habit records for timeline — use real habit names
   for (const r of (habitRecordsWithNames || []) as Array<Record<string, unknown>>) {
     const hStatus = r.status as string;
+    const habitId = r.habit_id as string;
+    const info = habitNameMap.get(habitId);
     const item: TimelineItem = {
       id: r.id as string,
       type: "habit",
-      title: `习惯 #${(r.habit_id as string).slice(0, 8)}`,
+      title: info ? `${info.icon || "✅"} ${info.name}` : `习惯 #${habitId.slice(0, 8)}`,
       status: hStatus === "completed" ? "completed" : hStatus === "missed" ? "pending" : "in_progress",
+      metadata: { habitId },
     };
+    rawHabitItems.push(item);
     if (hStatus === "completed") timelineCompleted.push(item);
     else if (hStatus === "missed") timelinePending.push(item);
     else timelineInProgress.push(item);
@@ -341,13 +463,14 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       status: "completed",
       time: j.created_at ? new Date(j.created_at as string).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : undefined,
       path: `/life-trace/journal/${today}`,
+      displayType: "individual",
     });
   }
 
   // Speaking sessions today
   for (const s of speakingSessions) {
     const mins = Math.round(((s.duration_seconds as number) || 0) / 60);
-    timelineCompleted.push({
+    const item: TimelineItem = {
       id: s.id as string,
       type: "speaking",
       title: (s.scenario as string) || "口语练习",
@@ -355,12 +478,14 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       status: "completed",
       time: s.created_at ? new Date(s.created_at as string).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : undefined,
       path: "/english/speaking",
-    });
+    };
+    rawSpeakingItems.push(item);
+    timelineCompleted.push(item);
   }
 
   // Reviews today
   for (const r of (reviewsToday || []) as Array<Record<string, unknown>>) {
-    timelineCompleted.push({
+    const item: TimelineItem = {
       id: r.id as string,
       type: "review",
       title: "英语复习",
@@ -368,11 +493,18 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       status: "completed",
       time: r.reviewed_at ? new Date(r.reviewed_at as string).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : undefined,
       path: "/english/review",
-    });
+    };
+    rawReviewItems.push(item);
+    timelineCompleted.push(item);
   }
 
   // Sort completed by time (most recent first)
   timelineCompleted.sort((a, b) => (b.time || "").localeCompare(a.time || ""));
+
+  // ── Store raw items for aggregation use ──
+  // Aggregation is applied at display time (in TimelineSection) or can be
+  // accessed via these exported helpers + raw data from the timeline arrays.
+  // For convenience, we also export the raw groups on the stats object.
 
   return {
     tasks: {
