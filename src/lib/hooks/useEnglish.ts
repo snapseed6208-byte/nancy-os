@@ -356,7 +356,13 @@ export function useCreateSpeakingAttempt() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["speaking_sessions"] }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["speaking_sessions"] });
+      qc.invalidateQueries({ queryKey: ["speaking_stats"] });
+      if (variables.session_id) {
+        qc.invalidateQueries({ queryKey: ["speaking_session", variables.session_id] });
+      }
+    },
   });
 }
 
@@ -1074,6 +1080,7 @@ export function useRecordSpeakingQuestionUsage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["speaking_question_history"] });
       qc.invalidateQueries({ queryKey: ["speaking_questions"] });
+      qc.invalidateQueries({ queryKey: ["speaking_stats"] });
     },
   });
 }

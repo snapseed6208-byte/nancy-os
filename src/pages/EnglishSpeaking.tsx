@@ -350,6 +350,9 @@ export default function EnglishSpeaking() {
   const [suitableExpressions, setSuitableExpressions] = useState<{ english: string; chinese: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // Guards & locks
+  const isStartingRef = useRef(false); // sync lock prevents double-session
+
   // AI analysis state
   const [isStarting, setIsStarting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -481,10 +484,19 @@ export default function EnglishSpeaking() {
   // ── Recording Handlers ──
 
   const handleStartRecording = async () => {
-    if (isStarting || recorder.state !== "idle") return;
+    // Sync guard prevents double-click creating multiple sessions
+    if (isStartingRef.current || recorder.state !== "idle") return;
+    isStartingRef.current = true;
     setIsStarting(true);
     setAiError(null);
+
+    // Persist question context in case of page refresh
+    if (currentQuestionId) {
+      try { sessionStorage.setItem("speaking_current_question_id", currentQuestionId); } catch {}
+    }
+
     try {
+      console.log("[EnglishSpeaking] Creating session", { mode, question_id: currentQuestionId, question_preview: question.substring(0, 60) });
       const result = await createSession.mutateAsync({
         prompt: question,
         context: questionContext,
@@ -495,17 +507,21 @@ export default function EnglishSpeaking() {
       });
       setSessionId(result.id as string);
       asr.setSessionId(result.id as string);
+      console.log("[EnglishSpeaking] Session created", { session_id: result.id });
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       await Promise.all([
         recorder.start(stream),
         asr.start(stream),
       ]);
+      console.log("[EnglishSpeaking] Recording started");
       setIsStarting(false);
+      isStartingRef.current = false;
     } catch (err) {
       console.error("[EnglishSpeaking] handleStartRecording failed:", err);
       setAiError("创建练习会话失败，请检查网络或重新登录。");
       setIsStarting(false);
+      isStartingRef.current = false;
     }
   };
 
@@ -520,17 +536,34 @@ export default function EnglishSpeaking() {
     }
   }, [recorder.state, recorder.blob]);
 
+  // Warn before leaving mid-practice (mobile back button / browser back)
+  useEffect(() => {
+    if (view !== "new") return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [view]);
+
   const handleGoToReview = async () => {
     if (asr.isProcessing) {
       await new Promise<void>((r) => {
+        const started = Date.now();
+        const MAX_WAIT = 30_000;
         const check = setInterval(() => {
-          if (!asr.isProcessing) { clearInterval(check); r(); }
+          if (!asr.isProcessing || Date.now() - started > MAX_WAIT) {
+            clearInterval(check);
+            r();
+          }
         }, 150);
       });
     }
     if (asr.supported && asr.isListening) {
       await new Promise<void>((r) => setTimeout(r, 500));
     }
+    console.log("[EnglishSpeaking] Entering review", { has_transcript: !!asr.transcript.trim(), duration: recorder.duration });
     setStep("review");
   };
 
@@ -546,15 +579,23 @@ export default function EnglishSpeaking() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("请先登录");
+      console.log("[EnglishSpeaking] Starting AI analysis", { transcript_len: text.length, session_id: sessionId });
       const result = await analyzeSpeaking(question, text, suitableExpressions.map(e => e.english), session.access_token);
       setFeedback(result);
+      console.log("[EnglishSpeaking] AI analysis complete", {
+        fluency: result.fluencyScore, grammar: result.grammarScore,
+        vocab: result.vocabularyScore, naturalness: result.naturalnessScore,
+        upgrades: result.expressionUpgrade?.length || 0,
+      });
       const raPromise = generateReferenceAnswer(question, session.access_token)
         .then((ra) => setReferenceAnswer(ra))
         .catch(() => {});
       referenceAnswerPromise.current = raPromise;
       setStep("results");
     } catch (err) {
-      setAiError(err instanceof Error ? err.message : "AI 分析失败，请稍后重试");
+      const msg = err instanceof Error ? err.message : "AI 分析失败，请稍后重试";
+      console.error("[EnglishSpeaking] AI analysis failed:", msg);
+      setAiError(msg);
       setStep("review");
     } finally {
       setAnalyzing(false);
@@ -623,9 +664,11 @@ export default function EnglishSpeaking() {
       return;
     }
 
-    // Record question usage if from bank
-    if (currentQuestionId) {
+    // Record question usage if from bank — only if actual practice occurred
+    const hadRecording = recorder.duration > 0 || (asr.transcript && asr.transcript.trim().length > 0);
+    if (currentQuestionId && hadRecording) {
       try {
+        console.log("[EnglishSpeaking] Recording question usage", { question_id: currentQuestionId, session_id: sessionId });
         await recordUsage.mutateAsync({
           question_id: currentQuestionId,
           session_id: sessionId,
@@ -637,6 +680,8 @@ export default function EnglishSpeaking() {
       } catch (err) {
         console.error("[EnglishSpeaking] recordUsage failed:", err);
       }
+    } else if (currentQuestionId && !hadRecording) {
+      console.log("[EnglishSpeaking] Skipping usage_count: no recording or transcript");
     }
 
     // Auto-lower SRS levels for missed expressions
@@ -657,6 +702,15 @@ export default function EnglishSpeaking() {
 
     setUploading(false);
     setStep("saved");
+    // Clean up persisted question after successful save
+    try { sessionStorage.removeItem("speaking_current_question_id"); } catch {}
+    console.log("[EnglishSpeaking] Practice saved", {
+      session_id: sessionId,
+      question_id: currentQuestionId,
+      duration: recorder.duration,
+      has_audio: !!recorder.blob,
+      has_feedback: !!feedback,
+    });
   };
 
   const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
@@ -751,6 +805,22 @@ export default function EnglishSpeaking() {
 
   const handleBack = () => {
     if (view === "new") {
+      // Save practice state to sessionStorage for mobile back-button resilience
+      try {
+        sessionStorage.setItem("speaking_practice_state", JSON.stringify({
+          currentQuestionId,
+          sessionId,
+          step,
+          mode,
+          question,
+          questionContext,
+          selectedMode,
+          selectedTopic,
+          selectedPart,
+          isAiGenerated,
+          textMode,
+        }));
+      } catch { /* sessionStorage quota exceeded - non-critical */ }
       setView("home");
       recorder.reset();
       asr.reset();
@@ -1724,9 +1794,28 @@ export default function EnglishSpeaking() {
 
           {feedback.expressionUpgrade && feedback.expressionUpgrade.length > 0 && (
             <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Sparkles size={14} className="text-violet-500" />
-                <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
+              <div className="flex items-center gap-2 justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} className="text-violet-500" />
+                  <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    for (let i = 0; i < feedback.expressionUpgrade.length; i++) {
+                      if (!addedUpgrades.has(i) && !duplicateUpgrades.has(i)) {
+                        await handleAddToBank(feedback.expressionUpgrade[i], i);
+                      }
+                    }
+                  }}
+                  disabled={
+                    feedback.expressionUpgrade.every(
+                      (_: ExpressionUpgrade, i: number) => addedUpgrades.has(i) || duplicateUpgrades.has(i)
+                    ) || createExpression.isPending
+                  }
+                  className="text-[11px] text-violet-600 font-medium hover:underline disabled:text-ink-lighter disabled:no-underline"
+                >
+                  Add All
+                </button>
               </div>
 
               {addBankError && (
@@ -1961,6 +2050,47 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
   const s = session as Record<string, unknown> | undefined;
   const attempts = (s?.attempts as Record<string, unknown>[]) || [];
 
+  // Expression Upgrade re-add state
+  const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
+  const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
+  const [addBankError, setAddBankError] = useState<string | null>(null);
+  const createExpression = useCreateExpression();
+
+  const handleAddToBankFromDetail = async (upgrade: Record<string, unknown>, index: number) => {
+    setAddBankError(null);
+    try {
+      const { data: existing } = await supabase
+        .from("expressions")
+        .select("id")
+        .ilike("english", (upgrade.english as string).trim())
+        .eq("archived", false)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        setDuplicateUpgrades((prev) => new Set(prev).add(index));
+        return;
+      }
+
+      await createExpression.mutateAsync({
+        english: upgrade.english as string,
+        chinese: upgrade.chinese as string,
+        type: upgrade.type as string,
+        scene: upgrade.scene as string,
+        example_sentence: (upgrade.exampleSentence as string) || null,
+        formality: (upgrade.formality as string) || null,
+        notes: (upgrade.usageNote as string) || null,
+        source_text: (upgrade.sourceChunk as string) || null,
+        source: "speaking-upgrade",
+        usefulness_level: 3,
+      });
+      setAddedUpgrades((prev) => new Set(prev).add(index));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error("[SessionDetail] handleAddToBank failed:", msg);
+      setAddBankError(`加入表达库失败：${msg}`);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="text-center py-12">
@@ -2124,19 +2254,63 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
       {/* Expression Upgrade */}
       {((firstAttempt?.expression_upgrade as unknown[] | undefined)?.length ?? 0) > 0 && (
         <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles size={14} className="text-violet-500" />
-            <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-violet-500" />
+              <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
+            </div>
+            <button
+              onClick={async () => {
+                const upgrades = firstAttempt?.expression_upgrade as unknown[];
+                for (let i = 0; i < upgrades.length; i++) {
+                  if (!addedUpgrades.has(i) && !duplicateUpgrades.has(i)) {
+                    await handleAddToBankFromDetail(upgrades[i] as Record<string, unknown>, i);
+                  }
+                }
+              }}
+              disabled={
+                ((firstAttempt?.expression_upgrade as unknown[]).every(
+                  (_: unknown, i: number) => addedUpgrades.has(i) || duplicateUpgrades.has(i)
+                )) ||
+                createExpression.isPending
+              }
+              className="text-[11px] text-violet-600 font-medium hover:underline disabled:text-ink-lighter disabled:no-underline"
+            >
+              {createExpression.isPending ? "Adding..." : "Add All"}
+            </button>
           </div>
+          {addBankError && (
+            <p className="text-[11px] text-red-500">{addBankError}</p>
+          )}
           <div className="space-y-2">
             {(firstAttempt?.expression_upgrade as unknown[]).map((upgrade: unknown, i: number) => {
               const u = upgrade as Record<string, unknown>;
+              const isAdded = addedUpgrades.has(i);
+              const isDuplicate = duplicateUpgrades.has(i);
               return (
-                <div key={i} className="bg-violet-50/50 rounded-xl border border-violet-100 p-3 space-y-1.5">
+                <div key={i} className={cn(
+                  "rounded-xl border p-3 space-y-1.5 transition-colors",
+                  isAdded ? "bg-emerald-50/50 border-emerald-100" : "bg-violet-50/50 border-violet-100"
+                )}>
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-bold text-ink">{u.english as string}</span>
                     <span className="text-[10px] bg-white text-ink-lighter border rounded-full px-1.5 py-px">{u.type as string}</span>
                     <span className="text-[10px] text-ink-lighter">{u.formality as string}</span>
+                    {isAdded ? (
+                      <span className="text-[10px] text-emerald-600 ml-auto flex items-center gap-0.5">
+                        <CheckCircle2 size={10} /> Added
+                      </span>
+                    ) : isDuplicate ? (
+                      <span className="text-[10px] text-amber-600 ml-auto">Already in bank</span>
+                    ) : (
+                      <button
+                        onClick={() => handleAddToBankFromDetail(u, i)}
+                        disabled={createExpression.isPending}
+                        className="text-[10px] text-violet-600 font-medium hover:underline ml-auto disabled:text-ink-lighter"
+                      >
+                        + Add to Bank
+                      </button>
+                    )}
                   </div>
                   <p className="text-[11px] text-ink-lighter">{u.chinese as string}</p>
                   <p className="text-[11px] text-ink-lighter">
