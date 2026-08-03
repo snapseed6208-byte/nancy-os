@@ -35,6 +35,7 @@ export type TaskRow = {
   user_id: string;
   goal_id?: string;
   monthly_plan_id?: string;
+  weekly_theme_id?: string;
   title: string;
   description?: string;
   category: string;
@@ -44,19 +45,28 @@ export type TaskRow = {
   energy_level: string;
   status: string;
   due_date?: string;
+  start_date?: string;
   estimated_minutes?: number;
   actual_minutes?: number;
   is_today_focus: boolean;
   recurring_rule?: string;
   source_type: string;
+  source_id?: string;
   completed_at?: string;
   created_at: string;
+  time_slot?: string;
+  scheduled_time_start?: string;
+  scheduled_time_end?: string;
   // Recurring task fields
   task_type: string; // "one_time" | "recurring"
   frequency_type?: string; // "daily" | "weekly" | "monthly"
   target_count: number; // e.g. 3 for 每周3次
   completed_count: number; // current cycle completions
   cycle_start_date?: string; // start of current cycle
+  template_id?: string;
+  instance_date?: string;
+  approved_at?: string;
+  ai_review_status?: string;
 };
 
 export type TaskBreakdownItem = {
@@ -219,6 +229,7 @@ async function fetchTasks(filters?: {
   goalId?: string;
   isTodayFocus?: boolean;
   limit?: number;
+  all?: boolean;
 }) {
   let query = supabase
     .from("tasks")
@@ -229,7 +240,7 @@ async function fetchTasks(filters?: {
 
   if (filters?.status) {
     query = query.eq("status", filters.status);
-  } else {
+  } else if (!filters?.all) {
     // Default: only active tasks (exclude done, exclude ai_pending)
     query = query.in("status", ["pending", "in_progress"])
       .or("ai_review_status.is.null,ai_review_status.neq.pending");
@@ -248,6 +259,7 @@ export function useTasks(filters?: {
   dueDate?: string;
   goalId?: string;
   isTodayFocus?: boolean;
+  all?: boolean;
 }) {
   return useQuery({
     queryKey: ["tasks", filters],
@@ -261,7 +273,8 @@ export function useTodayTasks() {
   return useQuery({
     queryKey: ["tasks", "today"],
     queryFn: async () => {
-      // Fetch one-time tasks due today or today focus, plus all active recurring tasks
+      // One-time tasks: due_date=today OR is_today_focus=true
+      // Recurring tasks: all non-ai_pending (completed_count resets per cycle via task_completion_records)
       const [{ data: oneTimeTasks }, { data: recurringTasks }] = await Promise.all([
         supabase
           .from("tasks")
@@ -276,7 +289,6 @@ export function useTodayTasks() {
           .from("tasks")
           .select("*")
           .eq("task_type", "recurring")
-          .neq("status", "done")
           .or("ai_review_status.is.null,ai_review_status.neq.pending")
           .order("priority", { ascending: true })
           .limit(30),
@@ -299,12 +311,16 @@ export function useCreateTask() {
       description?: string;
       priority?: string;
       module?: string;
+      category?: string;
       goalId?: string;
       dueDate?: string;
+      startDate?: string;
       estimatedMinutes?: number;
       isTodayFocus?: boolean;
       energyLevel?: string;
       timeSlot?: string;
+      scheduledTimeStart?: string;
+      scheduledTimeEnd?: string;
       // Recurring task fields
       taskType?: string;
       frequencyType?: string;
@@ -323,30 +339,42 @@ export function useCreateTask() {
           title: input.title,
           description: input.description,
           priority: input.priority || "medium",
-          module: input.module,
+          module: input.module || input.category || "general",
+          category: input.category || input.module || "general",
           goal_id: input.goalId || null,
           due_date: input.dueDate,
+          start_date: input.startDate,
           estimated_minutes: input.estimatedMinutes,
           is_today_focus: input.isTodayFocus || false,
           energy_level: input.energyLevel || "medium",
-          time_slot: input.timeSlot || null,
-          category: input.module || "general",
           energy_cost: "medium",
+          time_slot: input.timeSlot || null,
+          scheduled_time_start: input.scheduledTimeStart || null,
+          scheduled_time_end: input.scheduledTimeEnd || null,
           task_type: input.taskType || "one_time",
           frequency_type: input.frequencyType || null,
           target_count: input.targetCount || 1,
           completed_count: 0,
           cycle_start_date: cycleStart,
+          source_type: "manual",
         })
-        .select("id")
+        .select("*")
         .single();
 
       if (error) throw error;
-      return data;
+      return data as TaskRow;
+    },
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ["tasks"] });
+      await qc.cancelQueries({ queryKey: ["dashboard"] });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["tasks", "today"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }
@@ -357,15 +385,21 @@ export function useUpdateTask() {
     mutationFn: async ({ id, ...updates }: {
       id: string;
       title?: string;
+      description?: string;
       status?: string;
       priority?: string;
-      due_date?: string;
+      category?: string;
+      module?: string;
+      due_date?: string | null;
+      start_date?: string | null;
       is_today_focus?: boolean;
       goal_id?: string | null;
-      estimated_minutes?: number;
+      estimated_minutes?: number | null;
       time_slot?: string | null;
       energy_level?: string;
-      completed_at?: string;
+      scheduled_time_start?: string | null;
+      scheduled_time_end?: string | null;
+      completed_at?: string | null;
     }) => {
       const { error } = await supabase
         .from("tasks")
@@ -374,9 +408,30 @@ export function useUpdateTask() {
 
       if (error) throw error;
     },
+    onMutate: async ({ id, ...updates }) => {
+      await qc.cancelQueries({ queryKey: ["tasks"] });
+      // Optimistic update: patch the task in all task caches
+      const optimisticPatch = { ...updates, id, updated_at: new Date().toISOString() };
+      qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map((t: TaskRow) => t.id === id ? { ...t, ...optimisticPatch } : t);
+      });
+      return { optimisticPatch };
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["tasks", "today"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (_err, { id }, context) => {
+      // Rollback: restore previous data
+      if (context?.optimisticPatch) {
+        qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
+          if (!old || !Array.isArray(old)) return old;
+          return old.map((t: TaskRow) => t.id === id ? { ...t } : t);
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }
@@ -385,7 +440,6 @@ export function useToggleTaskComplete() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
-      // Fetch task to check type
       const { data: task } = await supabase
         .from("tasks")
         .select("task_type")
@@ -395,12 +449,9 @@ export function useToggleTaskComplete() {
       const taskType = (task as Record<string, unknown> | null)?.task_type as string || "one_time";
 
       if (taskType === "recurring") {
-        // Handle recurring task: increment completion count
-        // Uses task_completion_records as source of truth
         const today = new Date().toISOString().split("T")[0];
         const userId = (await supabase.auth.getUser()).data.user?.id;
 
-        // Fetch current state
         const { data: rt } = await supabase
           .from("tasks")
           .select("frequency_type,target_count,completed_count,cycle_start_date")
@@ -413,7 +464,6 @@ export function useToggleTaskComplete() {
         const targetCount = (rt as Record<string, unknown>).target_count as number || 1;
         const cycleStart = getCycleStart(freqType);
 
-        // Count existing completion records within current cycle as source of truth
         const { count: recordCount, error: countErr } = await supabase
           .from("task_completion_records")
           .select("id", { count: "exact", head: true })
@@ -423,18 +473,11 @@ export function useToggleTaskComplete() {
         if (countErr) throw countErr;
 
         const currentCount = (recordCount ?? 0);
+        if (currentCount >= targetCount) return;
 
-        // Guard: prevent exceeding target within current cycle
-        if (currentCount >= targetCount) {
-          // Already at target — no-op
-          return;
-        }
-
-        // Increment count (cycleStart already reflects current cycle)
         const newCount = currentCount + 1;
         const isComplete = newCount >= targetCount;
 
-        // Update task cache
         const { error: updateErr } = await supabase
           .from("tasks")
           .update({
@@ -447,18 +490,12 @@ export function useToggleTaskComplete() {
 
         if (updateErr) throw updateErr;
 
-        // Insert completion record
         const { error: insertErr } = await supabase
           .from("task_completion_records")
-          .insert({
-            task_id: id,
-            user_id: userId,
-            completion_date: today,
-          });
+          .insert({ task_id: id, user_id: userId, completion_date: today });
 
         if (insertErr) throw insertErr;
       } else {
-        // One-time task: toggle done/pending
         const isDone = currentStatus === "done";
         const { error } = await supabase
           .from("tasks")
@@ -472,11 +509,24 @@ export function useToggleTaskComplete() {
         if (error) throw error;
       }
     },
+    onMutate: async ({ id, currentStatus }) => {
+      await qc.cancelQueries({ queryKey: ["tasks"] });
+      // Optimistic toggle
+      const isDone = currentStatus === "done";
+      const patch = isDone
+        ? { id, status: "pending", completed_at: null, updated_at: new Date().toISOString() }
+        : { id, status: "done", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map((t: TaskRow) => t.id === id ? { ...t, ...patch } : t);
+      });
+      return { patch };
+    },
     onSuccess: async (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["tasks", "today"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
 
-      // Auto-calculate goal progress from child task completion rates
       try {
         const { data: task } = await supabase
           .from("tasks")
@@ -496,7 +546,6 @@ export function useToggleTaskComplete() {
         const all = (siblings || []) as { task_type: string; status: string; completed_count: number; target_count: number }[];
         if (all.length === 0) return;
 
-        // Compute progress: for recurring tasks use completed_count/target_count ratio
         let totalWeight = 0;
         let completedWeight = 0;
         for (const s of all) {
@@ -512,16 +561,22 @@ export function useToggleTaskComplete() {
 
         await supabase
           .from("goals")
-          .update({
-            progress,
-            updated_at: new Date().toISOString(),
-          })
+          .update({ progress, updated_at: new Date().toISOString() })
           .eq("id", goalId);
 
         qc.invalidateQueries({ queryKey: ["goals"] });
       } catch {
-        // Non-critical: goal progress update is best-effort
+        // Non-critical
       }
+    },
+    onError: (_err, { id }, context) => {
+      if (context?.patch) {
+        qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
+          if (!old || !Array.isArray(old)) return old;
+          return old.map((t: TaskRow) => t.id === id ? { ...t } : t);
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }
@@ -537,9 +592,28 @@ export function useDeleteTask() {
 
       if (error) throw error;
     },
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ["tasks"] });
+      // Snapshot for rollback
+      const previousData = qc.getQueriesData({ queryKey: ["tasks"] });
+      qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.filter((t: TaskRow) => t.id !== id);
+      });
+      return { previousData };
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["tasks", "today"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previousData) {
+        for (const [key, data] of context.previousData as [unknown[], unknown][]) {
+          qc.setQueryData(key, data);
+        }
+      }
+      qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }

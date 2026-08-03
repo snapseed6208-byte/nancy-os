@@ -119,9 +119,12 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
   const updateTask = useUpdateTask();
+  const { data: goalsData } = useGoalHierarchy();
   const today = new Date().toISOString().split("T")[0];
+  const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
 
   const taskList = (tasks || []) as TaskRow[];
+  const goals = (goalsData || []) as GoalRow[];
   const highTasks = taskList.filter((t) => t.priority === "high");
   const medTasks = taskList.filter((t) => t.priority === "medium");
   const lowTasks = taskList.filter((t) => t.priority === "low");
@@ -168,7 +171,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
       </div>
 
       {/* Add Task Quick */}
-      <AddTaskForm />
+      <AddTaskForm context="today" />
 
       {taskList.length === 0 ? (
         <div className="text-center py-10 bg-card rounded-2xl border border-border">
@@ -188,6 +191,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
+              onEditFull={(t) => setEditingTask(t)}
             />
           )}
 
@@ -201,6 +205,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
+              onEditFull={(t) => setEditingTask(t)}
             />
           )}
 
@@ -214,6 +219,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
+              onEditFull={(t) => setEditingTask(t)}
             />
           )}
 
@@ -231,12 +237,24 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
           )}
         </>
       )}
+      {/* Task Edit Drawer */}
+      {editingTask && (
+        <TaskEditDrawer
+          task={editingTask}
+          goals={goals}
+          onClose={() => setEditingTask(null)}
+          onSave={(id, updates) => {
+            updateTask.mutate({ id, ...updates } as { id: string; title?: string });
+            setEditingTask(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function TaskSection({
-  icon: Icon, label, color, tasks, onToggle, onDelete, onEdit, defaultCollapsed,
+  icon: Icon, label, color, tasks, onToggle, onDelete, onEdit, onEditFull, defaultCollapsed,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
@@ -245,6 +263,7 @@ function TaskSection({
   onToggle: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, updates: { title?: string; priority?: string }) => void;
+  onEditFull?: (task: TaskRow) => void;
   defaultCollapsed?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
@@ -365,6 +384,15 @@ function TaskSection({
                   周期
                 </span>
               )}
+              {onEditFull && (
+                <button
+                  onClick={() => onEditFull(t)}
+                  className="text-ink-lighter hover:text-sage-deep shrink-0"
+                  title="完整编辑"
+                >
+                  <Edit3 size={12} />
+                </button>
+              )}
               <button
                 onClick={() => onDelete(t.id)}
                 className="text-ink-lighter hover:text-accent-rose shrink-0"
@@ -381,26 +409,59 @@ function TaskSection({
 
 // ── Quick Add Task ──
 
-function AddTaskForm() {
+const CATEGORIES = [
+  { key: "general", label: "通用", icon: "📋" },
+  { key: "english", label: "英语", icon: "🇬🇧" },
+  { key: "health", label: "健康", icon: "💪" },
+  { key: "career", label: "职业", icon: "💼" },
+  { key: "life", label: "生活", icon: "🏠" },
+] as const;
+
+function AddTaskForm({ context = "today" }: { context?: "today" | "tasks" }) {
   const [show, setShow] = useState(false);
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("medium");
   const [timeSlot, setTimeSlot] = useState<string>("");
+  const [description, setDescription] = useState("");
+  const [estimatedMinutes, setEstimatedMinutes] = useState("");
+  const [dueDate, setDueDate] = useState(context === "today" ? new Date().toISOString().split("T")[0] : "");
+  const [startDate, setStartDate] = useState("");
+  const [category, setCategory] = useState("general");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequencyType, setFrequencyType] = useState("daily");
+  const [targetCount, setTargetCount] = useState(1);
+  const [goalId, setGoalId] = useState("");
   const createTask = useCreateTask();
+  const { data: goalsData } = useGoalHierarchy();
+
+  const goals = (goalsData || []) as GoalRow[];
 
   const handleSubmit = async () => {
     if (!title.trim()) return;
     try {
       await createTask.mutateAsync({
         title: title.trim(),
+        description: description || undefined,
         priority,
-        isTodayFocus: true,
-        dueDate: new Date().toISOString().split("T")[0],
+        category,
+        isTodayFocus: context === "today",
+        dueDate: dueDate || (context === "today" ? new Date().toISOString().split("T")[0] : undefined),
+        startDate: startDate || undefined,
+        estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes) : undefined,
         timeSlot: timeSlot || undefined,
+        goalId: goalId || undefined,
+        taskType: isRecurring ? "recurring" : "one_time",
+        frequencyType: isRecurring ? frequencyType : undefined,
+        targetCount: isRecurring ? targetCount : undefined,
       });
-      setTitle("");
-      setPriority("medium");
-      setTimeSlot("");
+      // Reset
+      setTitle(""); setPriority("medium"); setTimeSlot("");
+      setDescription(""); setEstimatedMinutes("");
+      setDueDate(context === "today" ? new Date().toISOString().split("T")[0] : "");
+      setStartDate(""); setCategory("general");
+      setShowAdvanced(false); setIsRecurring(false);
+      setFrequencyType("daily"); setTargetCount(1); setGoalId("");
       setShow(false);
     } catch { /* handled by mutation */ }
   };
@@ -411,13 +472,14 @@ function AddTaskForm() {
         onClick={() => setShow(true)}
         className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 border border-dashed border-sage-light/50 text-xs text-sage-deep hover:bg-sage-light/10 transition-colors"
       >
-        <Plus size={13} /> 添加任务
+        <Plus size={13} />
+        {context === "today" ? "添加今日任务" : "添加任务"}
       </button>
     );
   }
 
   return (
-    <div className="bg-card rounded-xl border border-sage-light/30 p-3 space-y-2">
+    <div className="bg-card rounded-xl border border-sage-light/30 p-3 space-y-2.5">
       <input
         type="text"
         value={title}
@@ -425,9 +487,12 @@ function AddTaskForm() {
         placeholder="任务标题..."
         className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white"
         autoFocus
-        onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !showAdvanced) handleSubmit();
+        }}
       />
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* Quick row: priority + time slot */}
+      <div className="flex items-center gap-1.5 flex-wrap">
         {(["high", "medium", "low"] as const).map((p) => (
           <button
             key={p}
@@ -440,7 +505,7 @@ function AddTaskForm() {
             {PRIORITY_LABELS[p]}
           </button>
         ))}
-        <span className="text-[10px] text-ink-lighter mx-0.5">|</span>
+        <span className="text-[10px] text-ink-lighter">·</span>
         {TIME_SLOTS.map(({ key, label, icon: Icon, color }) => (
           <button
             key={key}
@@ -453,7 +518,23 @@ function AddTaskForm() {
             <Icon size={9} /> {label}
           </button>
         ))}
+        <span className="text-[10px] text-ink-lighter">·</span>
+        <input
+          type="number"
+          value={estimatedMinutes}
+          onChange={(e) => setEstimatedMinutes(e.target.value)}
+          placeholder="分钟"
+          className="text-[10px] w-12 rounded-full px-2 py-1 bg-ink/5 text-ink-light outline-none border-0"
+          min="1"
+        />
+        <span className="text-[10px] text-ink-lighter">min</span>
         <div className="flex-1" />
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className={cn("text-[10px] px-2 py-1 rounded-full transition-colors", showAdvanced ? "bg-sage-light/30 text-sage-deep" : "bg-ink/5 text-ink-lighter")}
+        >
+          {showAdvanced ? "收起" : "更多"}
+        </button>
         <button onClick={() => setShow(false)} className="text-ink-lighter hover:text-ink p-1">
           <X size={14} />
         </button>
@@ -464,6 +545,379 @@ function AddTaskForm() {
         >
           {createTask.isPending ? "..." : "添加"}
         </button>
+      </div>
+
+      {/* Advanced fields */}
+      {showAdvanced && (
+        <div className="space-y-2 pt-1 border-t border-border/30">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="任务描述..."
+            className="w-full text-xs rounded-lg border border-border px-3 py-1.5 bg-white resize-none h-14"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">截止日期</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full text-[10px] rounded-lg border border-border px-2 py-1.5 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">开始日期</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full text-[10px] rounded-lg border border-border px-2 py-1.5 bg-white"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">分类</label>
+              <div className="flex gap-0.5 flex-wrap">
+                {CATEGORIES.map((c) => (
+                  <button
+                    key={c.key}
+                    onClick={() => setCategory(c.key)}
+                    className={cn(
+                      "text-[10px] px-1.5 py-1 rounded transition-colors",
+                      category === c.key ? "bg-sage-light text-sage-deep font-medium" : "bg-ink/5 text-ink-lighter",
+                    )}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">关联目标</label>
+              <select
+                value={goalId}
+                onChange={(e) => setGoalId(e.target.value)}
+                className="w-full text-[10px] rounded-lg border border-border px-2 py-1.5 bg-white"
+              >
+                <option value="">无</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>{g.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {/* Recurring toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsRecurring(!isRecurring)}
+              className={cn(
+                "text-[10px] px-2 py-1 rounded-full transition-colors flex items-center gap-1",
+                isRecurring ? "bg-accent-sky/10 text-accent-sky font-medium" : "bg-ink/5 text-ink-lighter",
+              )}
+            >
+              <RefreshCw size={9} /> 周期任务
+            </button>
+            {isRecurring && (
+              <>
+                {(["daily", "weekly", "monthly"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFrequencyType(f)}
+                    className={cn(
+                      "text-[10px] px-2 py-1 rounded-full transition-colors",
+                      frequencyType === f ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-lighter",
+                    )}
+                  >
+                    {f === "daily" ? "每天" : f === "weekly" ? "每周" : "每月"}
+                  </button>
+                ))}
+                <select
+                  value={targetCount}
+                  onChange={(e) => setTargetCount(Number(e.target.value))}
+                  className="text-[10px] bg-ink/5 rounded-full px-2 py-1 outline-none"
+                >
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>{n}次</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Task Edit Drawer ──
+
+function TaskEditDrawer({
+  task,
+  goals,
+  onClose,
+  onSave,
+}: {
+  task: TaskRow;
+  goals: GoalRow[];
+  onClose: () => void;
+  onSave: (id: string, updates: Record<string, unknown>) => void;
+}) {
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || "");
+  const [priority, setPriority] = useState(task.priority);
+  const [category, setCategory] = useState(task.category || "general");
+  const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimated_minutes?.toString() || "");
+  const [dueDate, setDueDate] = useState(task.due_date || "");
+  const [startDate, setStartDate] = useState(task.start_date || "");
+  const [timeSlot, setTimeSlot] = useState(task.time_slot || "");
+  const [energyLevel, setEnergyLevel] = useState(task.energy_level || "medium");
+  const [goalId, setGoalId] = useState(task.goal_id || "");
+  const [scheduledStart, setScheduledStart] = useState(task.scheduled_time_start || "");
+  const [scheduledEnd, setScheduledEnd] = useState(task.scheduled_time_end || "");
+
+  const handleSave = () => {
+    if (!title.trim()) return;
+    onSave(task.id, {
+      title: title.trim(),
+      description: description || null,
+      priority,
+      category,
+      estimated_minutes: estimatedMinutes ? parseInt(estimatedMinutes) : null,
+      due_date: dueDate || null,
+      start_date: startDate || null,
+      time_slot: timeSlot || null,
+      energy_level: energyLevel,
+      goal_id: goalId || null,
+      scheduled_time_start: scheduledStart || null,
+      scheduled_time_end: scheduledEnd || null,
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/20" onClick={onClose} />
+      <div className="relative w-80 max-w-full bg-white h-full overflow-y-auto shadow-xl border-l border-border">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-border px-4 py-3 flex items-center justify-between z-10">
+          <h3 className="text-sm font-semibold text-ink">编辑任务</h3>
+          <button onClick={onClose} className="text-ink-lighter hover:text-ink p-1">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {/* Title */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">标题</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white"
+              autoFocus
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">描述</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full text-xs rounded-lg border border-border px-3 py-2 bg-white resize-none h-20"
+            />
+          </div>
+
+          {/* Priority */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">优先级</label>
+            <div className="flex gap-1.5">
+              {(["high", "medium", "low"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPriority(p)}
+                  className={cn(
+                    "text-xs px-3 py-1.5 rounded-lg font-medium transition-colors",
+                    priority === p ? PRIORITY_COLORS[p] + " ring-1 ring-offset-1" : "bg-ink/5 text-ink-lighter",
+                  )}
+                >
+                  {PRIORITY_LABELS[p]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">分类</label>
+            <div className="flex gap-1 flex-wrap">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setCategory(c.key)}
+                  className={cn(
+                    "text-[10px] px-2 py-1 rounded transition-colors",
+                    category === c.key ? "bg-sage-light text-sage-deep font-medium" : "bg-ink/5 text-ink-lighter",
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Time slot */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">时段</label>
+            <div className="flex gap-1.5">
+              {TIME_SLOTS.map(({ key, label, icon: Icon, color }) => (
+                <button
+                  key={key}
+                  onClick={() => setTimeSlot(timeSlot === key ? "" : key)}
+                  className={cn(
+                    "text-[10px] px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1",
+                    timeSlot === key ? "bg-white border border-sage-light/50 " + color : "bg-ink/5 text-ink-lighter",
+                  )}
+                >
+                  <Icon size={10} /> {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Energy level */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">精力消耗</label>
+            <div className="flex gap-1.5">
+              {(["low", "medium", "high"] as const).map((e) => (
+                <button
+                  key={e}
+                  onClick={() => setEnergyLevel(e)}
+                  className={cn(
+                    "text-[10px] px-2 py-1.5 rounded-lg transition-colors",
+                    energyLevel === e ? "bg-sage-light text-sage-deep font-medium" : "bg-ink/5 text-ink-lighter",
+                  )}
+                >
+                  {e === "low" ? "低" : e === "medium" ? "中" : "高"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Estimated minutes */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">预估时间 (分钟)</label>
+            <input
+              type="number"
+              value={estimatedMinutes}
+              onChange={(e) => setEstimatedMinutes(e.target.value)}
+              className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white"
+              min="1"
+            />
+          </div>
+
+          {/* Dates */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">截止日期</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-full text-xs rounded-lg border border-border px-2 py-2 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">开始日期</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full text-xs rounded-lg border border-border px-2 py-2 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Scheduled times */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">计划开始时间</label>
+              <input
+                type="time"
+                value={scheduledStart}
+                onChange={(e) => setScheduledStart(e.target.value)}
+                className="w-full text-xs rounded-lg border border-border px-2 py-2 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-ink-lighter block mb-0.5">计划结束时间</label>
+              <input
+                type="time"
+                value={scheduledEnd}
+                onChange={(e) => setScheduledEnd(e.target.value)}
+                className="w-full text-xs rounded-lg border border-border px-2 py-2 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Goal */}
+          <div>
+            <label className="text-[10px] text-ink-lighter block mb-0.5">关联目标</label>
+            <select
+              value={goalId}
+              onChange={(e) => setGoalId(e.target.value)}
+              className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white"
+            >
+              <option value="">无</option>
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>{g.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Task info summary */}
+          <div className="bg-ink/5 rounded-lg p-2.5 space-y-1">
+            <div className="flex justify-between text-[10px]">
+              <span className="text-ink-lighter">状态</span>
+              <span className="text-ink">{task.status === "done" ? "已完成" : task.status === "in_progress" ? "进行中" : "待完成"}</span>
+            </div>
+            {task.task_type === "recurring" && (
+              <>
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-ink-lighter">类型</span>
+                  <span className="text-accent-sky">周期任务</span>
+                </div>
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-ink-lighter">进度</span>
+                  <span className="text-ink">{task.completed_count}/{task.target_count}</span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between text-[10px]">
+              <span className="text-ink-lighter">创建时间</span>
+              <span className="text-ink">{new Date(task.created_at).toLocaleDateString("zh-CN")}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer buttons */}
+        <div className="sticky bottom-0 bg-white border-t border-border px-4 py-3 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 text-xs text-ink-light bg-ink/5 rounded-lg hover:bg-ink/10 transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 py-2 text-xs font-medium text-white bg-sage-deep rounded-lg hover:bg-sage-deep/90 transition-colors"
+          >
+            保存
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -671,8 +1125,13 @@ function TaskList() {
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
   const updateTask = useUpdateTask();
+  const { data: goalsData } = useGoalHierarchy();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+
+  const goals = (goalsData || []) as GoalRow[];
+  const today = new Date().toISOString().split("T")[0];
 
   const taskList = (tasks || []) as TaskRow[];
 
@@ -691,7 +1150,7 @@ function TaskList() {
   return (
     <div className="space-y-4">
       {/* Add task */}
-      <AddTaskForm />
+      <AddTaskForm context="tasks" />
 
       {/* Filter chips */}
       <div className="flex gap-1.5 flex-wrap">
@@ -828,12 +1287,41 @@ function TaskList() {
                   {PRIORITY_LABELS[t.priority] || t.priority}
                 </button>
               )}
+              {!isRecurring && t.due_date !== today && (
+                <button
+                  onClick={() => updateTask.mutate({ id: t.id, due_date: today, is_today_focus: true })}
+                  className="text-ink-lighter hover:text-accent-warm shrink-0"
+                  title="加入今日计划"
+                >
+                  <Sun size={12} />
+                </button>
+              )}
+              <button
+                onClick={() => setEditingTask(t)}
+                className="text-ink-lighter hover:text-sage-deep shrink-0"
+                title="完整编辑"
+              >
+                <Edit3 size={12} />
+              </button>
               <button onClick={() => deleteTask.mutate(t.id)} className="text-ink-lighter hover:text-accent-rose shrink-0">
                 <Trash2 size={12} />
               </button>
             </div>
           )})}
         </div>
+      )}
+
+      {/* Task Edit Drawer */}
+      {editingTask && (
+        <TaskEditDrawer
+          task={editingTask}
+          goals={goals}
+          onClose={() => setEditingTask(null)}
+          onSave={(id, updates) => {
+            updateTask.mutate({ id, ...updates } as { id: string; title?: string });
+            setEditingTask(null);
+          }}
+        />
       )}
 
       {/* AI Review Section */}
