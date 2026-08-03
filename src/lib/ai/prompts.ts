@@ -77,8 +77,42 @@ Output format — return ONLY valid JSON with these fields:
   "oneBetterExample": "One Better Example:\\n[4-5 sentence answer]",
   "expressionsUsed": [],
   "expressionsMissed": [],
-  "expressionUpgrade": []
+  "expressionUpgrade": [],
+  "contentAnalysis": {
+    "relevanceScore": 7.0,
+    "coherenceScore": 6.0,
+    "developmentScore": 5.5,
+    "relevanceLevel": "基本切题",
+    "coherenceLevel": "基本清晰",
+    "developmentLevel": "略显单薄",
+    "summary": "Brief overall assessment of content quality in Chinese (2-3 sentences)",
+    "questionRequirements": ["requirement 1", "requirement 2"],
+    "answeredRequirements": ["requirement 1"],
+    "missedRequirements": ["requirement 2"],
+    "offTopicParts": ["off-topic segment description"],
+    "repetition": ["repeated idea description"],
+    "orderProblems": ["ordering issue description"],
+    "contentGaps": ["missing element description"],
+    "recommendedOrder": ["section 1 label", "section 2 label", "section 3 label"]
+  },
+  "answerStructure": [
+    {
+      "step": "direct_answer",
+      "label": "Direct answer",
+      "content": "What the student should express at this step, in English"
+    }
+  ],
+  "structuredBetterAnswer": "A complete reorganized and improved answer in natural spoken English",
+  "keyUpgrades": [
+    {
+      "english": "a key expression worth learning",
+      "chinese": "中文翻译",
+      "reason": "Why this upgrade matters for this specific answer (中文)"
+    }
+  ]
 }
+
+━━━ PART A: LANGUAGE PERFORMANCE (original fields, unchanged) ━━━
 
 ── Scoring (0-9 scale, like IELTS) ──
 - fluencyScore: Flow, pauses, hesitation, speed
@@ -90,6 +124,8 @@ Output format — return ONLY valid JSON with these fields:
 Rewrite the student's answer to sound like natural SPOKEN English (not written).
 Keep it at intermediate level — the student should be able to imitate it easily.
 Maximum 4-5 sentences. Keep the student's original meaning. Do NOT fabricate unrelated content.
+
+IMPORTANT: naturalVersion focuses ONLY on LANGUAGE quality — fix grammar, vocabulary, and naturalness issues. Do NOT reorganize the structure or change what the student wanted to say. The student's original content order and choice of topics should be preserved.
 
 ── Field 2-5: Scores ──
 Each is a float from 0.0 to 9.0. Be honest but encouraging — typical intermediate scores range from 5.0 to 7.5.
@@ -159,8 +195,171 @@ PRIORITIZE these:
 
 If you cannot find a genuinely useful upgrade beyond basic corrections, return an empty array for expressionUpgrade rather than padding with low-value entries.
 
-── Tone ──
-Encouraging and constructive. You are a friendly teacher, not a harsh critic.`;
+━━━ PART B: CONTENT & STRUCTURE DIAGNOSIS (new fields) ━━━
+
+── Field 13: contentAnalysis ──
+
+Analyze the CONTENT of the student's answer — what they said, not how they said it. This is independent from the language scores above.
+
+Scoring (0-9 scale, same as IELTS):
+- relevanceScore: Does the answer directly address the question? Are there off-topic parts? Did the student miss requirements?
+- coherenceScore: Is there a clear logical order? Are there jumps, repetition, or abrupt endings? Are transitions smooth?
+- developmentScore: Does the answer include reasons, explanations, examples, details, feelings, or reflection? Is the content too thin or well-developed?
+
+Level labels (choose ONE from each group based on the score):
+Relevance levels:
+  8.0-9.0 → "完全切题"
+  6.5-7.9 → "基本切题"
+  5.0-6.4 → "部分偏题"
+  below 5.0 → "明显偏题"
+
+Coherence levels:
+  8.0-9.0 → "结构清晰"
+  6.5-7.9 → "基本清晰"
+  5.0-6.4 → "顺序需调整"
+  below 5.0 → "较混乱"
+
+Development levels:
+  8.0-9.0 → "内容充分"
+  6.5-7.9 → "基本完整"
+  5.0-6.4 → "略显单薄"
+  below 5.0 → "过于单薄"
+
+questionRequirements: List the requirements implied by the question. What does a good answer need to cover?
+answeredRequirements: Which requirements did the student actually address?
+missedRequirements: Which requirements were not addressed?
+offTopicParts: Any parts of the answer that are not relevant to the question.
+repetition: Ideas or phrases the student repeated unnecessarily.
+orderProblems: Issues with the sequence of ideas (e.g. "conclusion comes before explanation", "sudden topic switch").
+contentGaps: Missing elements like reasons, examples, details, or reflection that would strengthen the answer.
+recommendedOrder: Brief labels showing a better sequence for the student's ideas.
+
+summary: A 2-3 sentence assessment in Chinese. Be specific about what content issues were found. If the answer is excellent, acknowledge that.
+
+IMPORTANT for contentAnalysis:
+- Analyze what the student ACTUALLY SAID, not what you wish they said.
+- If the answer is very short (1-2 sentences), relevance may be high but development MUST be low.
+- If the answer is long but repetitive, coherence MUST reflect the repetition issue.
+- The questionRequirements must be derived from the ACTUAL question given, not a generic template.
+- Do not mark a short direct answer as "off-topic" if it actually answers the question.
+
+── Field 14: answerStructure ──
+
+Create a concise answer skeleton that the student can follow to improve their answer structure.
+
+Return an array of 3-7 steps. Each step has:
+- step: a short machine-readable key (e.g. "direct_answer", "reason", "example", "reflection")
+- label: a short human-readable label in English (e.g. "Direct answer", "Reason", "Brief example")
+- content: what the student should express at this step, in English. Reference the student's OWN ideas and content from their original answer where possible. Only suggest new content when the original answer has gaps — and keep new suggestions aligned with what the student was trying to say.
+
+Choose the structure type based on the question context provided:
+
+IELTS Part 1 (3-4 steps):
+  Direct answer → Reason → Brief example
+
+IELTS Part 2 (4-6 steps):
+  Introduction → Background → Main details → Specific example → Feelings → Reflection
+
+IELTS Part 3 (5-7 steps):
+  Position → Explanation → Example → Alternative perspective → Conclusion
+
+Daily experience (4-5 steps):
+  Direct answer → Background → Details → Feeling → Reflection
+
+Opinion (4-5 steps):
+  Position → Reason → Explanation → Example → Conclusion
+
+Professional / Interview (4-6 steps):
+  Direct response → Relevant experience → Evidence → Result → Connection
+
+Personal Growth (5-6 steps):
+  Current position → Experience or challenge → Learning → Progress → Reflection
+
+ADAPT the structure to the actual question. Do not mechanically apply a template. If the question is simple, use fewer steps. If the student's answer already has a good structure, keep your structure close to their original order.
+
+── Field 15: structuredBetterAnswer ──
+
+This is DIFFERENT from naturalVersion (Field 1). Understand the distinction:
+
+naturalVersion (Field 1):
+- Fixes LANGUAGE: grammar, vocabulary, naturalness
+- Preserves the student's original content ORDER and TOPIC CHOICES
+- The student can compare "how should I have said this?" at the language level
+
+structuredBetterAnswer (Field 15):
+- Fixes CONTENT & STRUCTURE: removes off-topic parts, reorganizes order, fills content gaps
+- Builds on the student's original ideas but may reorder, trim, or expand them
+- The student can see "how should I have organized this answer?" at the structure level
+
+Requirements for structuredBetterAnswer:
+1. Use the student's original answer as the CORE material. Preserve their stance, opinions, and real experiences.
+2. Fix grammar, vocabulary, and naturalness (incorporating the best corrections from naturalVersion).
+3. REMOVE off-topic content and unnecessary repetition.
+4. REORGANIZE the order following the answerStructure above.
+5. ADD necessary transitions, reasons, explanations, examples, and reflection where the original is thin.
+6. New content MUST be consistent with what the student was trying to say. Do not fabricate specific people, schools, companies, cities, dates, grades, jobs, or major life events. Use general expressions for unconfirmed details.
+7. Language difficulty: only 0.5-1 level above the student's current level. The student MUST be able to learn and re-speak this version.
+8. For Daily Conversation: keep it conversational, not essay-like.
+9. For Professional English: match real workplace communication style.
+10. For IELTS: adjust length and formality to the Part (Part 1: 3-4 sentences, Part 2: 5-8 sentences, Part 3: 4-6 sentences).
+11. Write in natural SPOKEN English, not written English.
+12. Maximum 8 sentences. If the original answer is very short, you may expand to 4-5 sentences with reasonable content that aligns with the student's likely intent.
+13. If the student's answer is empty or unintelligible, return an empty string "" for structuredBetterAnswer.
+
+── Field 16: keyUpgrades ──
+
+Select ONLY 3-5 expressions or structural patterns from this answer that are MOST worth the student learning. These are the HIGHLIGHTS — the detailed analysis remains in expressionUpgrade, usefulCorrections, and betterChunks.
+
+Each key upgrade:
+- english: the expression or pattern (a complete phrase or sentence fragment)
+- chinese: natural Chinese translation
+- reason: Why THIS expression matters for THIS specific answer. Written in Chinese, 1 sentence. Be specific about what it improves.
+
+Selection priority:
+1. An expression that would fix the student's biggest content gap
+2. A structural phrase that improves coherence (e.g. "What I found most surprising was...", "That's when I realized...")
+3. A natural spoken chunk the student clearly needed but didn't have
+4. An idiomatic expression that fits the topic perfectly
+5. A sentence pattern that elevates the answer's structure
+
+Do NOT select basic corrections. Each keyUpgrade must be genuinely worth memorizing.
+
+If the answer is too short or empty, return an empty array [].
+
+━━━ Tone ━━━
+Encouraging and constructive. You are a friendly teacher, not a harsh critic.
+
+The Chinese explanations in contentAnalysis.summary and keyUpgrades[].reason should feel like a teacher giving personalized advice, not a machine-generated report.`;
+
+// ── Retry Feedback Prompt (extends base prompt with retry context) ──
+
+export function buildRetryFeedbackPrompt(retryContext: {
+  answerStructure?: { step: string; label: string; content: string }[];
+  structuredBetterAnswer?: string;
+  keyUpgrades?: { english: string; chinese: string; reason: string }[];
+}): string {
+  let extraContext = "";
+
+  if (retryContext.answerStructure && retryContext.answerStructure.length > 0) {
+    extraContext += `\n\n## Reference: Answer Structure from Previous Attempt\nThe student was given this structure to follow for their retry:\n${
+      retryContext.answerStructure.map((s) => `- ${s.label}: ${s.content}`).join("\n")
+    }`;
+  }
+
+  if (retryContext.structuredBetterAnswer) {
+    extraContext += `\n\n## Reference: Model Answer from Previous Attempt\nThe student was shown this model answer as a reference:\n"${retryContext.structuredBetterAnswer}"`;
+  }
+
+  if (retryContext.keyUpgrades && retryContext.keyUpgrades.length > 0) {
+    extraContext += `\n\n## Reference: Key Expressions to Learn\nThe student was asked to focus on these expressions:\n${
+      retryContext.keyUpgrades.map((k) => `- "${k.english}" (${k.chinese}): ${k.reason}`).join("\n")
+    }`;
+  }
+
+  extraContext += `\n\n## Retry Analysis Instructions\nThis is the student's SECOND attempt at the SAME question. They were given the reference materials above after their first attempt.\n\nWhen analyzing this retry:\n1. Compare against their FIRST attempt implicitly — note improvements and remaining issues.\n2. In contentAnalysis.summary, mention whether they followed the suggested structure and used the key expressions.\n3. Scores should reflect their CURRENT performance — do not artificially inflate or deflate scores based on the first attempt.\n4. If the student clearly improved their structure, acknowledge this in the summary.\n5. If the student ignored the structure or key expressions, note this constructively.\n6. Keep all output fields at the same level of detail as a first analysis — do not shorten them because this is a retry.`;
+
+  return SPEAKING_FEEDBACK_PROMPT + extraContext;
+}
 
 // ── System prompt helpers ──
 
@@ -176,11 +375,15 @@ export function buildFeedbackPrompt(
   prompt: string,
   answer: string,
   targetExpressions: string[],
+  questionContext?: { mode?: string; topic?: string; part?: string },
 ): string {
   const exprNote = targetExpressions.length > 0
     ? `\nTarget expressions the student was asked to use: ${targetExpressions.join(", ")}`
     : "";
-  return `Speaking prompt: ${prompt}${exprNote}\n\nStudent's answer: ${answer}`;
+  const contextNote = questionContext
+    ? `\nQuestion context — Mode: ${questionContext.mode || "free_speaking"}${questionContext.topic ? `, Topic: ${questionContext.topic}` : ""}${questionContext.part ? `, Part: ${questionContext.part}` : ""}`
+    : "";
+  return `Speaking prompt: ${prompt}${exprNote}${contextNote}\n\nStudent's answer: ${answer}`;
 }
 
 // ── Category-based Question Generation ──

@@ -18,6 +18,7 @@ import {
   buildFeedbackPrompt,
   buildCategoryPrompt,
   buildExpressionPracticePrompt,
+  buildRetryFeedbackPrompt,
 } from "./prompts";
 
 // ── Types ──
@@ -58,6 +59,36 @@ export interface ExpressionUpgrade {
   sourceChunk: string;
 }
 
+export interface ContentAnalysis {
+  relevanceScore: number;
+  coherenceScore: number;
+  developmentScore: number;
+  relevanceLevel: string;
+  coherenceLevel: string;
+  developmentLevel: string;
+  summary: string;
+  questionRequirements: string[];
+  answeredRequirements: string[];
+  missedRequirements: string[];
+  offTopicParts: string[];
+  repetition: string[];
+  orderProblems: string[];
+  contentGaps: string[];
+  recommendedOrder: string[];
+}
+
+export interface AnswerStructureStep {
+  step: string;
+  label: string;
+  content: string;
+}
+
+export interface KeyUpgrade {
+  english: string;
+  chinese: string;
+  reason: string;
+}
+
 export interface SpeakingFeedback {
   naturalVersion: string;
   fluencyScore: number;
@@ -71,6 +102,11 @@ export interface SpeakingFeedback {
   expressionsUsed: string[];
   expressionsMissed: string[];
   expressionUpgrade: ExpressionUpgrade[];
+  // Phase 6: Content & Structure fields (optional for backward compatibility)
+  contentAnalysis?: ContentAnalysis;
+  answerStructure?: AnswerStructureStep[];
+  structuredBetterAnswer?: string;
+  keyUpgrades?: KeyUpgrade[];
 }
 
 // ── 1. analyzeSpeaking / extractExpressions ──
@@ -129,18 +165,81 @@ export async function generateSpeakingQuestion(
 
 // ── 3. analyzeSpeaking / generateBetterVersion ──
 
+function safeContentAnalysis(raw: Record<string, unknown>): ContentAnalysis {
+  const ca = (raw.contentAnalysis as Record<string, unknown>) || {};
+  const arr = (key: string): string[] => Array.isArray(ca[key]) ? (ca[key] as string[]) : [];
+  return {
+    relevanceScore: typeof ca.relevanceScore === "number" ? ca.relevanceScore : 0,
+    coherenceScore: typeof ca.coherenceScore === "number" ? ca.coherenceScore : 0,
+    developmentScore: typeof ca.developmentScore === "number" ? ca.developmentScore : 0,
+    relevanceLevel: (ca.relevanceLevel as string) || "",
+    coherenceLevel: (ca.coherenceLevel as string) || "",
+    developmentLevel: (ca.developmentLevel as string) || "",
+    summary: (ca.summary as string) || "",
+    questionRequirements: arr("questionRequirements"),
+    answeredRequirements: arr("answeredRequirements"),
+    missedRequirements: arr("missedRequirements"),
+    offTopicParts: arr("offTopicParts"),
+    repetition: arr("repetition"),
+    orderProblems: arr("orderProblems"),
+    contentGaps: arr("contentGaps"),
+    recommendedOrder: arr("recommendedOrder"),
+  };
+}
+
+function safeAnswerStructure(raw: Record<string, unknown>): AnswerStructureStep[] {
+  const arr = raw.answerStructure;
+  if (!Array.isArray(arr)) return [];
+  return arr.map((s: unknown) => {
+    const step = s as Record<string, unknown>;
+    return {
+      step: (step.step as string) || "",
+      label: (step.label as string) || "",
+      content: (step.content as string) || "",
+    };
+  });
+}
+
+function safeKeyUpgrades(raw: Record<string, unknown>): KeyUpgrade[] {
+  const arr = raw.keyUpgrades;
+  if (!Array.isArray(arr)) return [];
+  return arr.map((k: unknown) => {
+    const ku = k as Record<string, unknown>;
+    return {
+      english: (ku.english as string) || "",
+      chinese: (ku.chinese as string) || "",
+      reason: (ku.reason as string) || "",
+    };
+  });
+}
+
+export interface AnalyzeSpeakingOptions {
+  questionContext?: { mode?: string; topic?: string; part?: string };
+  /** Previous attempt data for retry context */
+  retryContext?: {
+    answerStructure?: AnswerStructureStep[];
+    structuredBetterAnswer?: string;
+    keyUpgrades?: KeyUpgrade[];
+  };
+}
+
 export async function analyzeSpeaking(
   prompt: string,
   answer: string,
   targetExpressions: string[] = [],
   authToken: string,
+  opts?: AnalyzeSpeakingOptions,
 ): Promise<SpeakingFeedback> {
+  const systemPrompt = opts?.retryContext
+    ? buildRetryFeedbackPrompt(opts.retryContext)
+    : SPEAKING_FEEDBACK_PROMPT;
+
   const response = await callAI({
     model: "deepseek-chat",
-    maxTokens: 2048,
+    maxTokens: 4096,
     messages: [
-      { role: "system", content: SPEAKING_FEEDBACK_PROMPT },
-      { role: "user", content: buildFeedbackPrompt(prompt, answer, targetExpressions) },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: buildFeedbackPrompt(prompt, answer, targetExpressions, opts?.questionContext) },
     ],
     injectContext: true,
     authToken,
@@ -163,6 +262,10 @@ export async function analyzeSpeaking(
     expressionUpgrade: Array.isArray(raw.expressionUpgrade)
       ? (raw.expressionUpgrade as ExpressionUpgrade[])
       : [],
+    contentAnalysis: safeContentAnalysis(raw),
+    answerStructure: safeAnswerStructure(raw),
+    structuredBetterAnswer: (raw.structuredBetterAnswer as string) || "",
+    keyUpgrades: safeKeyUpgrades(raw),
   };
 }
 

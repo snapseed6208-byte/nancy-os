@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 
 // ── Types ──
 
-type Step = "generating" | "record" | "review" | "analyzing" | "results" | "saved" | "empty_expression_practice";
+type Step = "generating" | "record" | "review" | "analyzing" | "results" | "saved" | "retry_record" | "retry_review" | "retry_analyzing" | "retry_results" | "empty_expression_practice";
 type ViewState = "home" | "mode_detail" | "browse" | "new" | "detail";
 
 interface ModeDef {
@@ -263,6 +263,52 @@ function formatDuration(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+// ── Phase 6: Comparison Score Bar ──
+
+function ComparisonScoreBar({ label, before, after }: { label: string; before: number; after: number }) {
+  const delta = after - before;
+  const improved = delta > 0;
+  const barBefore = Math.min((before / 9) * 100, 100);
+  const barAfter = Math.min((after / 9) * 100, 100);
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="text-ink-light">{label}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-ink-lighter">{before.toFixed(1)}</span>
+          <span className="text-ink-lighter">→</span>
+          <span className={cn("font-medium", improved ? "text-emerald-600" : "text-accent-rose")}>
+            {after.toFixed(1)}
+          </span>
+          {delta !== 0 && (
+            <span className={cn(
+              "text-[10px] font-medium",
+              improved ? "text-emerald-500" : "text-accent-rose"
+            )}>
+              {improved ? "+" : ""}{delta.toFixed(1)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex gap-1">
+        <div className="flex-1 h-1.5 bg-ink/5 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all bg-ink/20"
+            style={{ width: `${barBefore}%` }}
+          />
+        </div>
+        <div className="flex-1 h-1.5 bg-ink/5 rounded-full overflow-hidden">
+          <div
+            className={cn("h-full rounded-full transition-all", improved ? "bg-emerald-400" : "bg-accent-rose/60")}
+            style={{ width: `${barAfter}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── SRS auto-lowering for missed expressions ──
 
 async function lowerMissedExpressions(missedExpressions: string[]) {
@@ -365,6 +411,18 @@ export default function EnglishSpeaking() {
   const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
   const [addBankError, setAddBankError] = useState<string | null>(null);
   const referenceAnswerPromise = useRef<Promise<void> | null>(null);
+
+  // Phase 6: Retry flow state
+  const [firstFeedback, setFirstFeedback] = useState<SpeakingFeedback | null>(null);
+  const [firstAttemptId, setFirstAttemptId] = useState<string | null>(null);
+  const [retryFeedback, setRetryFeedback] = useState<SpeakingFeedback | null>(null);
+  const [retryAudioBlob, setRetryAudioBlob] = useState<Blob | null>(null);
+  const [retryAudioUrl, setRetryAudioUrl] = useState<string>("");
+  const [retryTranscript, setRetryTranscript] = useState<string>("");
+  const [retryDuration, setRetryDuration] = useState<number>(0);
+
+  // Phase 6: Collapsible language analysis
+  const [showLanguageAnalysis, setShowLanguageAnalysis] = useState(true);
 
   // Browse state
   const [browseMode, setBrowseMode] = useState<string>("");
@@ -567,6 +625,187 @@ export default function EnglishSpeaking() {
     setStep("review");
   };
 
+  // ── Phase 6: Retry flow handlers ──
+
+  const [retryReferenceMode, setRetryReferenceMode] = useState<"structure" | "full" | "hidden">("structure");
+
+  const handleRetryStartRecording = async () => {
+    if (isStartingRef.current || recorder.state !== "idle") return;
+    isStartingRef.current = true;
+    setIsStarting(true);
+    setAiError(null);
+
+    try {
+      console.log("[EnglishSpeaking] Starting retry recording", { session_id: sessionId });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      await Promise.all([
+        recorder.start(stream),
+        asr.start(stream),
+      ]);
+      console.log("[EnglishSpeaking] Retry recording started");
+      setIsStarting(false);
+      isStartingRef.current = false;
+    } catch (err) {
+      console.error("[EnglishSpeaking] handleRetryStartRecording failed:", err);
+      setAiError("启动录音失败，请检查麦克风权限。");
+      setIsStarting(false);
+      isStartingRef.current = false;
+    }
+  };
+
+  const handleRetryGoToReview = async () => {
+    if (asr.isProcessing) {
+      await new Promise<void>((r) => {
+        const started = Date.now();
+        const MAX_WAIT = 30_000;
+        const check = setInterval(() => {
+          if (!asr.isProcessing || Date.now() - started > MAX_WAIT) {
+            clearInterval(check);
+            r();
+          }
+        }, 150);
+      });
+    }
+    if (asr.supported && asr.isListening) {
+      await new Promise<void>((r) => setTimeout(r, 500));
+    }
+    // Save retry transcript and audio for later comparison
+    setRetryTranscript(asr.transcript);
+    setRetryDuration(recorder.duration);
+    if (recorder.blob) {
+      setRetryAudioBlob(recorder.blob);
+      setRetryAudioUrl(recorder.audioUrl || "");
+    }
+    console.log("[EnglishSpeaking] Entering retry review", { has_transcript: !!asr.transcript.trim(), duration: recorder.duration });
+    setStep("retry_review");
+  };
+
+  const handleRetryAnalyze = async () => {
+    const text = asr.transcript.trim();
+    if (!text) {
+      setAiError("请先输入或确认你说的话，AI 无法分析空白内容。");
+      return;
+    }
+    setAnalyzing(true);
+    setAiError(null);
+    setStep("retry_analyzing");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("请先登录");
+      console.log("[EnglishSpeaking] Starting retry AI analysis", { transcript_len: text.length, session_id: sessionId });
+
+      const result = await analyzeSpeaking(
+        question,
+        text,
+        suitableExpressions.map(e => e.english),
+        session.access_token,
+        {
+          questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart },
+          retryContext: {
+            answerStructure: firstFeedback?.answerStructure,
+            structuredBetterAnswer: firstFeedback?.structuredBetterAnswer,
+            keyUpgrades: firstFeedback?.keyUpgrades,
+          },
+        },
+      );
+
+      setRetryFeedback(result);
+      console.log("[EnglishSpeaking] Retry AI analysis complete", {
+        fluency: result.fluencyScore, grammar: result.grammarScore,
+        vocab: result.vocabularyScore, naturalness: result.naturalnessScore,
+        relevance: result.contentAnalysis?.relevanceScore,
+        coherence: result.contentAnalysis?.coherenceScore,
+        development: result.contentAnalysis?.developmentScore,
+      });
+      setStep("retry_results");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "AI 分析失败，请稍后重试";
+      console.error("[EnglishSpeaking] Retry AI analysis failed:", msg);
+      setAiError(msg);
+      setStep("retry_review");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleRetrySave = async () => {
+    if (!sessionId) return;
+    setUploading(true);
+
+    // Upload retry audio
+    let retryAudioUrlUploaded = "";
+    if (retryAudioBlob) {
+      try {
+        retryAudioUrlUploaded = await uploadAudio(sessionId, retryAudioBlob);
+      } catch (err) {
+        console.error("[EnglishSpeaking] Retry audio upload failed:", err);
+      }
+    }
+
+    const combined = retryFeedback
+      ? buildCombinedFeedback(retryFeedback)
+      : "Retry practice saved.";
+
+    try {
+      const retryData: Record<string, unknown> = {
+        session_id: sessionId,
+        answer: retryTranscript || `[Voice recording on: ${question}]`,
+        transcribed_text: retryTranscript || null,
+        natural_version: retryFeedback?.naturalVersion || "",
+        combined_feedback: combined,
+        fluency_score: retryFeedback?.fluencyScore ?? null,
+        grammar_score: retryFeedback?.grammarScore ?? null,
+        vocabulary_score: retryFeedback?.vocabularyScore ?? null,
+        naturalness_score: retryFeedback?.naturalnessScore ?? null,
+        main_problems: retryFeedback?.mainProblems || null,
+        useful_corrections: retryFeedback?.usefulCorrections || null,
+        better_chunks: retryFeedback?.betterChunks || null,
+        one_better_example: retryFeedback?.oneBetterExample || null,
+        audio_url: retryAudioUrlUploaded || null,
+        audio_duration: retryDuration,
+        expressions_used: retryFeedback?.expressionsUsed || [],
+        expressions_missed: retryFeedback?.expressionsMissed || [],
+        reference_answer: null,
+        expression_upgrade: retryFeedback?.expressionUpgrade || [],
+        retry_of_attempt_id: firstAttemptId || null,
+        attempt_round: 2,
+        is_retry: true,
+      };
+
+      if (retryFeedback?.contentAnalysis) {
+        retryData.content_analysis = retryFeedback.contentAnalysis;
+      }
+      if (retryFeedback?.answerStructure && retryFeedback.answerStructure.length > 0) {
+        retryData.answer_structure = retryFeedback.answerStructure;
+      }
+      if (retryFeedback?.structuredBetterAnswer) {
+        retryData.structured_better_answer = retryFeedback.structuredBetterAnswer;
+      }
+      if (retryFeedback?.keyUpgrades && retryFeedback.keyUpgrades.length > 0) {
+        retryData.key_upgrades = retryFeedback.keyUpgrades;
+      }
+
+      await createAttempt.mutateAsync(retryData);
+      console.log("[EnglishSpeaking] Retry attempt saved", { session_id: sessionId, retry_of: firstAttemptId });
+    } catch (err) {
+      console.error("[EnglishSpeaking] Retry createAttempt failed:", err);
+      setAiError("保存重新复述记录失败，请稍后重试。");
+      setUploading(false);
+      return;
+    }
+
+    // Don't increment question usage_count for retry
+    // Don't run SRS adjustments for retry (same expressions)
+
+    setUploading(false);
+    setStep("saved");
+    console.log("[EnglishSpeaking] Retry practice saved", {
+      session_id: sessionId,
+      question_id: currentQuestionId,
+      is_retry: true,
+    });
+  };
+
   const handleAnalyze = async () => {
     const text = asr.transcript.trim();
     if (!text) {
@@ -580,12 +819,18 @@ export default function EnglishSpeaking() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("请先登录");
       console.log("[EnglishSpeaking] Starting AI analysis", { transcript_len: text.length, session_id: sessionId });
-      const result = await analyzeSpeaking(question, text, suitableExpressions.map(e => e.english), session.access_token);
+      const result = await analyzeSpeaking(
+        question, text, suitableExpressions.map(e => e.english), session.access_token,
+        { questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart } },
+      );
       setFeedback(result);
       console.log("[EnglishSpeaking] AI analysis complete", {
         fluency: result.fluencyScore, grammar: result.grammarScore,
         vocab: result.vocabularyScore, naturalness: result.naturalnessScore,
         upgrades: result.expressionUpgrade?.length || 0,
+        relevance: result.contentAnalysis?.relevanceScore,
+        coherence: result.contentAnalysis?.coherenceScore,
+        development: result.contentAnalysis?.developmentScore,
       });
       const raPromise = generateReferenceAnswer(question, session.access_token)
         .then((ra) => setReferenceAnswer(ra))
@@ -636,7 +881,7 @@ export default function EnglishSpeaking() {
     const expressionsMissed = feedback?.expressionsMissed || [];
 
     try {
-      await createAttempt.mutateAsync({
+      const attemptData: Record<string, unknown> = {
         session_id: sessionId,
         answer: asr.transcript || `[Voice recording on: ${question}]`,
         transcribed_text: asr.transcript || null,
@@ -656,7 +901,27 @@ export default function EnglishSpeaking() {
         expressions_missed: expressionsMissed,
         reference_answer: referenceAnswer || null,
         expression_upgrade: feedback?.expressionUpgrade || [],
-      });
+      };
+
+      // Phase 6: Content & Structure fields
+      if (feedback?.contentAnalysis) {
+        attemptData.content_analysis = feedback.contentAnalysis;
+      }
+      if (feedback?.answerStructure && feedback.answerStructure.length > 0) {
+        attemptData.answer_structure = feedback.answerStructure;
+      }
+      if (feedback?.structuredBetterAnswer) {
+        attemptData.structured_better_answer = feedback.structuredBetterAnswer;
+      }
+      if (feedback?.keyUpgrades && feedback.keyUpgrades.length > 0) {
+        attemptData.key_upgrades = feedback.keyUpgrades;
+      }
+
+      const savedAttempt = await createAttempt.mutateAsync(attemptData);
+      // Capture attempt ID for potential retry reference
+      if (!firstAttemptId && savedAttempt && (savedAttempt as Record<string, unknown>).id) {
+        setFirstAttemptId((savedAttempt as Record<string, unknown>).id as string);
+      }
     } catch (err) {
       console.error("[EnglishSpeaking] createAttempt failed:", err);
       setAiError("保存练习记录失败，请稍后重试。你的录音和分析结果仍然保留在当前页面。");
@@ -1765,30 +2030,47 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {feedback.mainProblems && (
-            <div className="bg-card rounded-2xl border border-border p-4">
-              <p className="text-xs font-medium text-ink-light mb-2">主要问题</p>
-              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                {feedback.mainProblems}
-              </div>
-            </div>
-          )}
-
-          {feedback.usefulCorrections && (
-            <div className="bg-card rounded-2xl border border-border p-4">
-              <p className="text-xs font-medium text-ink-light mb-2">纠错建议</p>
-              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                {feedback.usefulCorrections}
-              </div>
-            </div>
-          )}
-
-          {feedback.betterChunks && (
-            <div className="bg-card rounded-2xl border border-border p-4">
-              <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
-              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                {feedback.betterChunks}
-              </div>
+          {/* Language Analysis (collapsible) */}
+          {(feedback.mainProblems || feedback.usefulCorrections || feedback.betterChunks) && (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <button
+                onClick={() => setShowLanguageAnalysis(!showLanguageAnalysis)}
+                className="w-full p-4 flex items-center justify-between"
+              >
+                <p className="text-xs font-medium text-ink-light">语言分析 Language Analysis</p>
+                <ChevronDown
+                  size={14}
+                  className={cn("text-ink-lighter transition-transform", !showLanguageAnalysis && "-rotate-90")}
+                />
+              </button>
+              {showLanguageAnalysis && (
+                <div className="px-4 pb-4 space-y-3">
+                  {feedback.mainProblems && (
+                    <div>
+                      <p className="text-[11px] font-medium text-ink-light mb-1.5">主要问题</p>
+                      <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                        {feedback.mainProblems}
+                      </div>
+                    </div>
+                  )}
+                  {feedback.usefulCorrections && (
+                    <div>
+                      <p className="text-[11px] font-medium text-ink-light mb-1.5">纠错建议</p>
+                      <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                        {feedback.usefulCorrections}
+                      </div>
+                    </div>
+                  )}
+                  {feedback.betterChunks && (
+                    <div>
+                      <p className="text-[11px] font-medium text-ink-light mb-1.5">推荐表达</p>
+                      <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                        {feedback.betterChunks}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1867,6 +2149,156 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
+          {/* ── Phase 6: Content & Structure Diagnosis ── */}
+          {feedback.contentAnalysis && (
+            <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Target size={14} className="text-blue-500" />
+                <p className="text-xs font-semibold text-blue-700">内容与结构诊断 Content Analysis</p>
+              </div>
+
+              {/* Three-dim content scores */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-ink-lighter mb-0.5">切题度</p>
+                  <p className="text-lg font-bold text-blue-600">{feedback.contentAnalysis.relevanceScore.toFixed(1)}</p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">{feedback.contentAnalysis.relevanceLevel}</p>
+                </div>
+                <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-ink-lighter mb-0.5">连贯性</p>
+                  <p className="text-lg font-bold text-blue-600">{feedback.contentAnalysis.coherenceScore.toFixed(1)}</p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">{feedback.contentAnalysis.coherenceLevel}</p>
+                </div>
+                <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
+                  <p className="text-[10px] text-ink-lighter mb-0.5">展开度</p>
+                  <p className="text-lg font-bold text-blue-600">{feedback.contentAnalysis.developmentScore.toFixed(1)}</p>
+                  <p className="text-[10px] text-blue-500 mt-0.5">{feedback.contentAnalysis.developmentLevel}</p>
+                </div>
+              </div>
+
+              {/* Summary */}
+              {feedback.contentAnalysis.summary && (
+                <p className="text-xs text-ink leading-relaxed">{feedback.contentAnalysis.summary}</p>
+              )}
+
+              {/* Requirements analysis */}
+              {feedback.contentAnalysis.questionRequirements.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-ink-light">题目要求分析</p>
+                  <div className="flex flex-wrap gap-1">
+                    {feedback.contentAnalysis.questionRequirements.map((r, i) => {
+                      const answered = feedback.contentAnalysis!.answeredRequirements.includes(r);
+                      const missed = feedback.contentAnalysis!.missedRequirements.includes(r);
+                      return (
+                        <span key={i} className={cn(
+                          "text-[10px] rounded-full px-2 py-0.5",
+                          answered ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
+                          missed ? "bg-amber-50 text-amber-600 border border-amber-100" :
+                          "bg-ink/5 text-ink-lighter border border-ink/10"
+                        )}>
+                          {answered ? "✓ " : missed ? "✗ " : ""}{r}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Content issues summary */}
+              {(feedback.contentAnalysis.offTopicParts.length > 0 ||
+                feedback.contentAnalysis.repetition.length > 0 ||
+                feedback.contentAnalysis.orderProblems.length > 0 ||
+                feedback.contentAnalysis.contentGaps.length > 0) && (
+                <div className="space-y-1 text-[11px] text-ink-lighter">
+                  {feedback.contentAnalysis.offTopicParts.map((p, i) => (
+                    <p key={i} className="flex items-start gap-1"><span className="text-amber-500 shrink-0">⚠</span> 偏题: {p}</p>
+                  ))}
+                  {feedback.contentAnalysis.repetition.map((p, i) => (
+                    <p key={i} className="flex items-start gap-1"><span className="text-ink-lighter shrink-0">↻</span> 重复: {p}</p>
+                  ))}
+                  {feedback.contentAnalysis.orderProblems.map((p, i) => (
+                    <p key={i} className="flex items-start gap-1"><span className="text-ink-lighter shrink-0">⇄</span> 顺序: {p}</p>
+                  ))}
+                  {feedback.contentAnalysis.contentGaps.map((p, i) => (
+                    <p key={i} className="flex items-start gap-1"><span className="text-blue-500 shrink-0">+</span> 缺失: {p}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Phase 6: Answer Structure ── */}
+          {feedback.answerStructure && feedback.answerStructure.length > 0 && (
+            <div className="bg-card rounded-2xl border border-purple-100 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-purple-100 text-purple-600 rounded-full px-2 py-0.5 font-medium">答案骨架</span>
+                <p className="text-xs font-semibold text-purple-700">Answer Structure</p>
+              </div>
+              <div className="space-y-2">
+                {feedback.answerStructure.map((step, i) => (
+                  <div key={i} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="h-6 w-6 rounded-full bg-purple-100 text-purple-600 text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {i + 1}
+                      </div>
+                      {i < feedback.answerStructure!.length - 1 && (
+                        <div className="w-px flex-1 bg-purple-100 my-1" />
+                      )}
+                    </div>
+                    <div className="pb-2 flex-1 min-w-0">
+                      <p className="text-[11px] font-semibold text-ink">{step.label}</p>
+                      <p className="text-[11px] text-ink-lighter leading-relaxed mt-0.5">{step.content}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Phase 6: Structured Better Answer ── */}
+          {feedback.structuredBetterAnswer && (
+            <div className="bg-card rounded-2xl border border-emerald-100 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-emerald-500" />
+                <p className="text-xs font-semibold text-emerald-700">结构化优化版 Structured Better Answer</p>
+              </div>
+              <div className="bg-emerald-50/50 rounded-xl p-3">
+                <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
+                  {feedback.structuredBetterAnswer}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(feedback.structuredBetterAnswer || "");
+                }}
+                className="text-[10px] text-emerald-600 hover:underline self-start"
+              >
+                复制文本
+              </button>
+            </div>
+          )}
+
+          {/* ── Phase 6: Key Upgrades ── */}
+          {feedback.keyUpgrades && feedback.keyUpgrades.length > 0 && (
+            <div className="bg-card rounded-2xl border border-amber-100 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className="text-amber-500" />
+                <p className="text-xs font-semibold text-amber-700">重点学习 Key Upgrades</p>
+              </div>
+              <div className="space-y-2">
+                {feedback.keyUpgrades.map((ku, i) => (
+                  <div key={i} className="bg-amber-50/50 rounded-xl border border-amber-100 p-3 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-ink">{ku.english}</span>
+                      <span className="text-[10px] text-ink-lighter">{ku.chinese}</span>
+                    </div>
+                    <p className="text-[10px] text-ink-lighter leading-relaxed">{ku.reason}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {feedback.oneBetterExample && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
@@ -1874,6 +2306,25 @@ export default function EnglishSpeaking() {
                 {feedback.oneBetterExample}
               </div>
             </div>
+          )}
+
+          {/* ── Phase 6: Retry button ── */}
+          {feedback.contentAnalysis && (
+            <button
+              onClick={() => {
+                setFirstFeedback(feedback);
+                setFirstAttemptId(null); // Will be set after save
+                setStep("retry_record");
+                // Reset recorder and ASR for retry
+                recorder.reset();
+                asr.reset();
+                setAiError(null);
+              }}
+              className="w-full bg-purple-50 text-purple-600 border border-purple-200 rounded-xl py-2.5 text-sm font-semibold hover:bg-purple-100 transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={14} />
+              按这个结构重新复述
+            </button>
           )}
 
           <button
@@ -1955,6 +2406,255 @@ export default function EnglishSpeaking() {
               返回首页
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Phase 6: Retry Recording Step ── */}
+      {step === "retry_record" && (
+        <div className="space-y-4">
+          {/* Reference materials */}
+          <div className="bg-purple-50/50 rounded-2xl border border-purple-100 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-purple-700 flex items-center gap-1.5">
+                <RefreshCw size={12} /> 重新复述参考
+              </p>
+              <div className="flex gap-1">
+                {(["structure", "full", "hidden"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setRetryReferenceMode(mode)}
+                    className={cn(
+                      "text-[10px] rounded-full px-2 py-0.5 transition-colors",
+                      retryReferenceMode === mode
+                        ? "bg-purple-200 text-purple-700"
+                        : "bg-white text-ink-lighter"
+                    )}
+                  >
+                    {mode === "structure" ? "只看骨架" : mode === "full" ? "完整答案" : "隐藏参考"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {retryReferenceMode !== "hidden" && firstFeedback?.answerStructure && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium text-purple-600">Answer Structure</p>
+                <div className="space-y-1">
+                  {firstFeedback.answerStructure.map((s, i) => (
+                    <div key={i} className="flex gap-2 text-[11px]">
+                      <span className="text-purple-400 font-bold shrink-0">{i + 1}.</span>
+                      <span>
+                        <span className="font-medium text-ink">{s.label}</span>
+                        {retryReferenceMode === "full" && (
+                          <span className="text-ink-lighter"> — {s.content}</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {retryReferenceMode === "full" && firstFeedback?.structuredBetterAnswer && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium text-purple-600">Structured Better Answer</p>
+                <p className="text-xs text-ink leading-relaxed bg-white rounded-xl p-3">
+                  {firstFeedback.structuredBetterAnswer}
+                </p>
+              </div>
+            )}
+
+            {retryReferenceMode !== "hidden" && firstFeedback?.keyUpgrades && firstFeedback.keyUpgrades.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium text-purple-600">Key Upgrades</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {firstFeedback.keyUpgrades.map((ku, i) => (
+                    <span key={i} className="text-[10px] bg-white text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">
+                      {ku.english}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Question reminder */}
+          <div className="bg-card rounded-2xl border border-border p-4">
+            <p className="text-xs text-ink-lighter mb-1">题目</p>
+            <p className="text-sm font-medium text-ink">{question}</p>
+          </div>
+
+          {/* Recording UI */}
+          <div className="bg-card rounded-2xl border border-border p-6 flex flex-col items-center gap-4">
+            {recorder.state === "idle" && (
+              <button
+                onClick={handleRetryStartRecording}
+                disabled={isStarting}
+                className="h-20 w-20 rounded-full bg-purple-100 flex items-center justify-center disabled:opacity-50"
+              >
+                {isStarting ? (
+                  <Loader2 size={32} className="animate-spin text-purple-600" />
+                ) : (
+                  <Mic size={32} className="text-purple-600" />
+                )}
+              </button>
+            )}
+            {recorder.state === "recording" && (
+              <button
+                onClick={() => { recorder.stop(); asr.stop(); }}
+                className="h-20 w-20 rounded-full bg-accent-rose/10 flex items-center justify-center animate-pulse"
+              >
+                <Square size={28} className="text-accent-rose" />
+              </button>
+            )}
+            {recorder.state === "done" && (
+              <div className="text-center space-y-3">
+                <button
+                  onClick={() => { recorder.reset(); asr.reset(); }}
+                  className="h-14 w-14 rounded-full bg-ink/5 flex items-center justify-center"
+                >
+                  <RefreshCw size={24} className="text-ink-light" />
+                </button>
+                <p className="text-xs text-ink-lighter">点击重新录音</p>
+                <button
+                  onClick={handleRetryGoToReview}
+                  className="bg-purple-100 text-purple-700 rounded-xl px-6 py-2.5 text-sm font-semibold"
+                >
+                  查看转录 → 分析
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-ink-lighter">
+              {recorder.state === "idle" ? "点击开始重新复述" :
+               recorder.state === "recording" ? `录音中 ${recorder.duration}s — 点击停止` :
+               `录音完成 ${recorder.duration}s`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Phase 6: Retry Review Step ── */}
+      {step === "retry_review" && (
+        <div className="space-y-4">
+          <div className="bg-card rounded-2xl border border-border p-4">
+            <p className="text-xs text-ink-lighter mb-2">重新复述录音</p>
+            {recorder.audioUrl && <audio controls src={recorder.audioUrl} className="w-full h-10" />}
+            <p className="text-[10px] text-ink-lighter mt-1">时长: {formatDuration(recorder.duration)}</p>
+          </div>
+
+          <div className="bg-card rounded-2xl border border-border p-4">
+            <p className="text-xs text-ink-lighter mb-2">
+              转录文本
+              <span className="text-[10px] text-ink-lighter ml-2">转录可能有误，请检查并修改</span>
+            </p>
+            <textarea
+              value={asr.transcript}
+              onChange={(e) => asr.setTranscript(e.target.value)}
+              rows={5}
+              className="w-full text-sm text-ink bg-ink/3 rounded-xl p-3 resize-none outline-none"
+              placeholder="修改转录文本..."
+            />
+          </div>
+
+          <button
+            onClick={handleRetryAnalyze}
+            disabled={analyzing || !asr.transcript.trim()}
+            className="w-full bg-purple-100 text-purple-700 rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <Sparkles size={14} />
+            {analyzing ? "分析中..." : "AI 分析重新复述"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Phase 6: Retry Analyzing Step ── */}
+      {step === "retry_analyzing" && (
+        <div className="text-center py-12 space-y-4">
+          <Loader2 size={32} className="animate-spin text-purple-600 mx-auto" />
+          <div>
+            <p className="text-sm font-medium text-ink">正在分析重新复述...</p>
+            <p className="text-xs text-ink-lighter mt-1">AI 正在评估你的进步</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Phase 6: Retry Results Step (Comparison) ── */}
+      {step === "retry_results" && retryFeedback && firstFeedback && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <BarChart3 size={16} className="text-purple-600" />
+            <p className="text-sm font-semibold text-ink">前后对比 Before & After</p>
+          </div>
+
+          {/* Audio comparison */}
+          <div className="space-y-2">
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs text-ink-lighter mb-2">第一次回答 · 录音</p>
+              {recorder.audioUrl ? (
+                <audio controls src={recorder.audioUrl} className="w-full h-9" />
+              ) : (
+                <p className="text-xs text-ink-lighter">录音可在练习详情中播放</p>
+              )}
+            </div>
+            <div className="bg-card rounded-2xl border border-purple-100 p-4">
+              <p className="text-xs text-purple-600 mb-2">重新复述 · 录音</p>
+              {retryAudioUrl ? (
+                <audio controls src={retryAudioUrl} className="w-full h-9" />
+              ) : (
+                <p className="text-xs text-ink-lighter">录音可在练习详情中播放</p>
+              )}
+            </div>
+          </div>
+
+          {/* Transcript comparison */}
+          <div className="space-y-2">
+            <div className="bg-card rounded-2xl border border-border p-4">
+              <p className="text-xs text-ink-lighter mb-1">第一次原文</p>
+              <p className="text-xs text-ink leading-relaxed whitespace-pre-line">{asr.transcript}</p>
+            </div>
+            <div className="bg-card rounded-2xl border border-purple-100 p-4">
+              <p className="text-xs text-purple-600 mb-1">重新复述原文</p>
+              <p className="text-xs text-ink leading-relaxed whitespace-pre-line">{retryTranscript}</p>
+            </div>
+          </div>
+
+          {/* Language scores comparison */}
+          <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+            <p className="text-xs font-medium text-ink-light mb-2">语言表现对比 Language Scores</p>
+            <ComparisonScoreBar label="流利度 Fluency" before={firstFeedback.fluencyScore} after={retryFeedback.fluencyScore} />
+            <ComparisonScoreBar label="语法 Grammar" before={firstFeedback.grammarScore} after={retryFeedback.grammarScore} />
+            <ComparisonScoreBar label="词汇 Vocabulary" before={firstFeedback.vocabularyScore} after={retryFeedback.vocabularyScore} />
+            <ComparisonScoreBar label="自然度 Naturalness" before={firstFeedback.naturalnessScore} after={retryFeedback.naturalnessScore} />
+          </div>
+
+          {/* Content scores comparison */}
+          {firstFeedback.contentAnalysis && retryFeedback.contentAnalysis && (
+            <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-2">
+              <p className="text-xs font-medium text-ink-light mb-2">内容结构对比 Content Scores</p>
+              <ComparisonScoreBar label="切题度 Relevance" before={firstFeedback.contentAnalysis.relevanceScore} after={retryFeedback.contentAnalysis.relevanceScore} />
+              <ComparisonScoreBar label="连贯性 Coherence" before={firstFeedback.contentAnalysis.coherenceScore} after={retryFeedback.contentAnalysis.coherenceScore} />
+              <ComparisonScoreBar label="展开度 Development" before={firstFeedback.contentAnalysis.developmentScore} after={retryFeedback.contentAnalysis.developmentScore} />
+            </div>
+          )}
+
+          {/* AI summary */}
+          {retryFeedback.contentAnalysis?.summary && (
+            <div className="bg-card rounded-2xl border border-emerald-100 p-4">
+              <p className="text-xs font-medium text-emerald-600 mb-2 flex items-center gap-1.5">
+                <Sparkles size={12} /> AI 进步总结
+              </p>
+              <p className="text-xs text-ink leading-relaxed">{retryFeedback.contentAnalysis.summary}</p>
+            </div>
+          )}
+
+          {/* Save retry */}
+          <button
+            onClick={handleRetrySave}
+            disabled={uploading}
+            className="w-full bg-purple-100 text-purple-700 rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+          >
+            {uploading ? "保存中..." : "保存重新复述记录"}
+          </button>
         </div>
       )}
     </div>
@@ -2349,6 +3049,119 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
           <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
             {firstAttempt?.one_better_example as string}
           </div>
+        </div>
+      )}
+
+      {/* Phase 6: Content & Structure (from saved attempt) */}
+      {((firstAttempt?.content_analysis as Record<string, unknown> | undefined) ||
+        (firstAttempt?.structured_better_answer as string)) ? (
+        <>
+          {/* Content Analysis */}
+          {(firstAttempt?.content_analysis as Record<string, unknown> | undefined) && (
+            (() => {
+              const ca = firstAttempt?.content_analysis as Record<string, unknown>;
+              return (
+                <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Target size={14} className="text-blue-500" />
+                    <p className="text-xs font-semibold text-blue-700">内容与结构诊断 Content Analysis</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-ink-lighter mb-0.5">切题度</p>
+                      <p className="text-lg font-bold text-blue-600">{typeof ca.relevanceScore === "number" ? ca.relevanceScore.toFixed(1) : "-"}</p>
+                      <p className="text-[10px] text-blue-500 mt-0.5">{(ca.relevanceLevel as string) || "-"}</p>
+                    </div>
+                    <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-ink-lighter mb-0.5">连贯性</p>
+                      <p className="text-lg font-bold text-blue-600">{typeof ca.coherenceScore === "number" ? ca.coherenceScore.toFixed(1) : "-"}</p>
+                      <p className="text-[10px] text-blue-500 mt-0.5">{(ca.coherenceLevel as string) || "-"}</p>
+                    </div>
+                    <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
+                      <p className="text-[10px] text-ink-lighter mb-0.5">展开度</p>
+                      <p className="text-lg font-bold text-blue-600">{typeof ca.developmentScore === "number" ? ca.developmentScore.toFixed(1) : "-"}</p>
+                      <p className="text-[10px] text-blue-500 mt-0.5">{(ca.developmentLevel as string) || "-"}</p>
+                    </div>
+                  </div>
+                  {(ca.summary as string) && (
+                    <p className="text-xs text-ink leading-relaxed">{ca.summary as string}</p>
+                  )}
+                </div>
+              );
+            })()
+          )}
+
+          {/* Answer Structure */}
+          {(firstAttempt?.answer_structure as unknown[] | undefined)?.length ? (
+            <div className="bg-card rounded-2xl border border-purple-100 p-4 space-y-3">
+              <p className="text-xs font-semibold text-purple-700">Answer Structure</p>
+              <div className="space-y-2">
+                {(firstAttempt?.answer_structure as unknown[]).map((step: unknown, i: number) => {
+                  const s = step as Record<string, unknown>;
+                  return (
+                    <div key={i} className="flex gap-3">
+                      <div className="h-6 w-6 rounded-full bg-purple-100 text-purple-600 text-[10px] font-bold flex items-center justify-center shrink-0">
+                        {i + 1}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-ink">{s.label as string}</p>
+                        <p className="text-[11px] text-ink-lighter leading-relaxed mt-0.5">{s.content as string}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Structured Better Answer */}
+          {(firstAttempt?.structured_better_answer as string) && (
+            <div className="bg-card rounded-2xl border border-emerald-100 p-4 space-y-2">
+              <p className="text-xs font-semibold text-emerald-700">结构化优化版 Structured Better Answer</p>
+              <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
+                {firstAttempt?.structured_better_answer as string}
+              </p>
+            </div>
+          )}
+
+          {/* Key Upgrades */}
+          {(firstAttempt?.key_upgrades as unknown[] | undefined)?.length ? (
+            <div className="bg-card rounded-2xl border border-amber-100 p-4 space-y-2">
+              <p className="text-xs font-semibold text-amber-700">重点学习 Key Upgrades</p>
+              <div className="space-y-2">
+                {(firstAttempt?.key_upgrades as unknown[]).map((ku: unknown, i: number) => {
+                  const k = ku as Record<string, unknown>;
+                  return (
+                    <div key={i} className="bg-amber-50/50 rounded-xl border border-amber-100 p-3 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-ink">{k.english as string}</span>
+                        <span className="text-[10px] text-ink-lighter">{k.chinese as string}</span>
+                      </div>
+                      <p className="text-[10px] text-ink-lighter leading-relaxed">{k.reason as string}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        /* Old attempt without content analysis */
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <p className="text-xs text-ink-lighter text-center">
+            该历史记录尚未进行内容结构分析。
+          </p>
+        </div>
+      )}
+
+      {/* Retry info */}
+      {(firstAttempt?.is_retry as boolean) && (
+        <div className="bg-purple-50/50 rounded-2xl border border-purple-100 p-3 flex items-center gap-2">
+          <RefreshCw size={12} className="text-purple-500" />
+          <p className="text-[11px] text-purple-600">
+            重新复述 · Round {(firstAttempt?.attempt_round as number) || 2}
+            {(firstAttempt?.retry_of_attempt_id as string) && " · 基于第一次回答"}
+          </p>
         </div>
       )}
     </div>
