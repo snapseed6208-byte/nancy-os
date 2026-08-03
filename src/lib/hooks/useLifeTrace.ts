@@ -36,7 +36,7 @@ function monthEnd(year: number, month: number): string {
 
 export type IdeaFilters = {
   category?: string;
-  status?: string;
+  status?: "pending" | "converted" | "processed" | "dismissed" | "";
   search?: string;
 };
 
@@ -51,7 +51,7 @@ async function fetchIdeas(filters: IdeaFilters = {}) {
   if (filters.status) {
     query = query.eq("status", filters.status);
   } else {
-    query = query.neq("status", "archived");
+    query = query.neq("status", "dismissed");
   }
   if (filters.search) query = query.ilike("content", `%${filters.search}%`);
 
@@ -122,6 +122,113 @@ export function useDeleteIdea() {
   });
 }
 
+export function useConvertIdeaToTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      ideaId: string;
+      ideaContent: string;
+      title: string;
+      priority?: string;
+      estimatedMinutes?: number;
+      dueDate?: string;
+      category?: string;
+    }) => {
+      const userId = await getUserId();
+      // Create task from idea
+      const { data: task, error: taskErr } = await supabase
+        .from("tasks")
+        .insert({
+          user_id: userId,
+          title: input.title,
+          description: input.ideaContent,
+          priority: input.priority || "medium",
+          estimated_minutes: input.estimatedMinutes,
+          due_date: input.dueDate,
+          category: input.category || "general",
+          source_type: "idea",
+          source_id: input.ideaId,
+          module: "general",
+          energy_cost: "medium",
+          energy_level: "medium",
+          task_type: "one_time",
+          target_count: 1,
+          completed_count: 0,
+        })
+        .select("id")
+        .single();
+
+      if (taskErr) throw taskErr;
+
+      // Update idea status to converted
+      const { error: updateErr } = await supabase
+        .from("ideas")
+        .update({
+          status: "converted",
+          related_task_id: (task as { id: string }).id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", input.ideaId);
+
+      if (updateErr) throw updateErr;
+      return task as { id: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ideas"] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useAiSuggestTask() {
+  return useMutation({
+    mutationFn: async (input: {
+      ideaContent: string;
+    }): Promise<{
+      title: string;
+      description: string;
+      priority: string;
+      estimated_minutes: number;
+      category: string;
+    }> => {
+      const result = await invokeAI<{
+        title: string;
+        description: string;
+        priority: string;
+        estimated_minutes: number;
+        category: string;
+      }>("task-breakdown-agent", {
+        goal_title: input.ideaContent.slice(0, 100),
+        goal_description: input.ideaContent,
+        goal_level: "inbox",
+      });
+
+      if (!result.success) throw new Error(result.error);
+
+      // Map the first task from the breakdown result
+      const tasks = (result.data as unknown as { tasks?: Array<Record<string, unknown>> })?.tasks;
+      if (tasks && tasks.length > 0) {
+        const t = tasks[0];
+        return {
+          title: (t.title as string) || input.ideaContent.slice(0, 60),
+          description: (t.description as string) || "",
+          priority: (t.priority as string) || "medium",
+          estimated_minutes: (t.estimated_minutes as number) || 30,
+          category: (t.module as string) || "general",
+        };
+      }
+      return {
+        title: input.ideaContent.slice(0, 60),
+        description: "",
+        priority: "medium",
+        estimated_minutes: 30,
+        category: "general",
+      };
+    },
+  });
+}
+
 // Sync: IndexedDB → Supabase
 export function useSyncCapture() {
   const qc = useQueryClient();
@@ -173,7 +280,7 @@ export function useSyncCapture() {
       const { error } = await supabase.from("ideas").insert({
         content,
         category: capture.category || null,
-        status: "inbox",
+        status: "pending",
         user_id: userId,
       });
       if (error) throw error;

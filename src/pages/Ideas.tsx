@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
 import {
   Lightbulb, Plus, Loader2, Trash2, Check, X, Edit3,
-  Inbox, Archive, Search, Image, Link2, ExternalLink, AlertTriangle,
+  Inbox, Archive, Search, Image, Link2, ExternalLink, AlertTriangle, Sparkles, ArrowRight,
 } from "lucide-react";
-import { useIdeas, useCreateIdea, useUpdateIdea, useDeleteIdea } from "@/lib/hooks/useLifeTrace";
+import { useIdeas, useCreateIdea, useUpdateIdea, useDeleteIdea, useConvertIdeaToTask, useAiSuggestTask } from "@/lib/hooks/useLifeTrace";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import { uniqueFileName } from "@/lib/media";
@@ -11,10 +11,10 @@ import { cn } from "@/lib/utils";
 
 const STATUS_TABS = [
   { key: "", label: "全部" },
-  { key: "inbox", label: "收件箱" },
-  { key: "processed", label: "已处理" },
-  { key: "archived", label: "已归档" },
+  { key: "pending", label: "待处理" },
   { key: "converted", label: "已转换" },
+  { key: "processed", label: "已处理" },
+  { key: "dismissed", label: "已忽略" },
 ] as const;
 
 const CATEGORY_OPTIONS = ["创业", "学习", "工作", "生活", "创意", "技术", "其他"];
@@ -82,7 +82,7 @@ function linkDomain(url: string) {
 // ── Component ──
 
 export default function Ideas() {
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | "pending" | "converted" | "processed" | "dismissed">("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
 
@@ -106,6 +106,15 @@ export default function Ideas() {
   const [editShowLinkInput, setEditShowLinkInput] = useState(false);
   const [isEditUploading, setIsEditUploading] = useState(false);
 
+  // Convert to task state
+  const [convertIdea, setConvertIdea] = useState<Record<string, unknown> | null>(null);
+  const [convertTitle, setConvertTitle] = useState("");
+  const [convertPriority, setConvertPriority] = useState("medium");
+  const [convertMinutes, setConvertMinutes] = useState<number | undefined>(undefined);
+  const [convertDueDate, setConvertDueDate] = useState("");
+  const [convertCategory, setConvertCategory] = useState("");
+  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
+
   const imageInputRef = useRef<HTMLInputElement>(null);
   const editImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -114,6 +123,8 @@ export default function Ideas() {
   const createIdea = useCreateIdea();
   const updateIdea = useUpdateIdea();
   const deleteIdea = useDeleteIdea();
+  const convertIdeaToTask = useConvertIdeaToTask();
+  const aiSuggestTask = useAiSuggestTask();
 
   // ── Create ──
 
@@ -206,9 +217,60 @@ export default function Ideas() {
     }
   };
 
-  const toggleArchive = async (idea: Record<string, unknown>) => {
-    const newStatus = idea.status === "archived" ? "inbox" : "archived";
+  const toggleDismiss = async (idea: Record<string, unknown>) => {
+    const newStatus = idea.status === "dismissed" ? "pending" : "dismissed";
     updateIdea.mutateAsync({ id: idea.id, status: newStatus }).catch((err) => setError((err as Error).message));
+  };
+
+  // ── Convert to task ──
+
+  const openConvert = (idea: Record<string, unknown>) => {
+    const content = (idea.content as string) || "";
+    const cat = (idea.ai_category || idea.category || "") as string;
+    setConvertIdea(idea);
+    setConvertTitle(content.slice(0, 80));
+    setConvertPriority("medium");
+    setConvertMinutes(undefined);
+    setConvertDueDate("");
+    setConvertCategory(cat);
+    setIsAiSuggesting(false);
+  };
+
+  const handleAiSuggest = async () => {
+    if (!convertIdea) return;
+    setIsAiSuggesting(true);
+    try {
+      const suggestion = await aiSuggestTask.mutateAsync({
+        ideaContent: (convertIdea.content as string) || "",
+      });
+      setConvertTitle(suggestion.title);
+      setConvertPriority(suggestion.priority);
+      setConvertMinutes(suggestion.estimated_minutes);
+      setConvertCategory(suggestion.category);
+    } catch (err) {
+      setError((err as Error).message || "AI 建议失败");
+    } finally {
+      setIsAiSuggesting(false);
+    }
+  };
+
+  const handleConvert = async () => {
+    if (!convertIdea || !convertTitle.trim()) return;
+    setError("");
+    try {
+      await convertIdeaToTask.mutateAsync({
+        ideaId: convertIdea.id as string,
+        ideaContent: (convertIdea.content as string) || "",
+        title: convertTitle.trim(),
+        priority: convertPriority,
+        estimatedMinutes: convertMinutes,
+        dueDate: convertDueDate || undefined,
+        category: convertCategory || undefined,
+      });
+      setConvertIdea(null);
+    } catch (err) {
+      setError((err as Error).message || "转换失败");
+    }
   };
 
   // ── Link helpers ──
@@ -522,7 +584,7 @@ export default function Ideas() {
               key={idea.id as string}
               className={cn(
                 "bg-card rounded-2xl border border-border p-4 transition-colors",
-                idea.status === "archived" && "opacity-60",
+                idea.status === "dismissed" && "opacity-60",
               )}
             >
               {isEditing ? (
@@ -617,10 +679,22 @@ export default function Ideas() {
                     {idea.status === "converted" && (
                       <span className="text-[11px] bg-accent-sky/10 text-accent-sky rounded-full px-2 py-0.5">已转换</span>
                     )}
+                    {idea.status === "dismissed" && (
+                      <span className="text-[11px] bg-ink/5 text-ink-lighter rounded-full px-2 py-0.5">已忽略</span>
+                    )}
                     <span className="text-[11px] text-ink-lighter">
                       {new Date(idea.created_at as string).toLocaleDateString("zh-CN")}
                     </span>
                     <div className="flex-1" />
+                    {idea.status !== "converted" && idea.status !== "dismissed" && (
+                      <button
+                        onClick={() => openConvert(idea)}
+                        className="h-7 rounded-lg flex items-center gap-1 px-2 text-[11px] text-sage-deep bg-sage-light/30 hover:bg-sage-light/50 transition-colors"
+                        title="转换为任务"
+                      >
+                        <ArrowRight size={11} /> 转换
+                      </button>
+                    )}
                     <button
                       onClick={() => startEdit(idea)}
                       className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5"
@@ -628,11 +702,11 @@ export default function Ideas() {
                       <Edit3 size={13} />
                     </button>
                     <button
-                      onClick={() => toggleArchive(idea)}
+                      onClick={() => toggleDismiss(idea)}
                       className="h-7 w-7 rounded-lg flex items-center justify-center text-ink-lighter hover:bg-ink/5"
-                      title={idea.status === "archived" ? "取消归档" : "归档"}
+                      title={idea.status === "dismissed" ? "取消忽略" : "忽略"}
                     >
-                      {idea.status === "archived" ? <Inbox size={13} /> : <Archive size={13} />}
+                      {idea.status === "dismissed" ? <Inbox size={13} /> : <Archive size={13} />}
                     </button>
                     <button
                       onClick={() => handleDelete(idea.id as string)}
@@ -646,6 +720,120 @@ export default function Ideas() {
             </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Convert to task modal */}
+      {convertIdea && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => setConvertIdea(null)}>
+          <div className="bg-white rounded-2xl shadow-xl border border-border p-5 w-full max-w-md mx-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-ink">转换为任务</h3>
+              <button onClick={() => setConvertIdea(null)} className="text-ink-lighter hover:text-ink">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Original idea */}
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[11px] text-ink-lighter mb-0.5">原始灵感</p>
+              <p className="text-xs text-ink line-clamp-3">{convertIdea.content as string}</p>
+            </div>
+
+            {/* Task title */}
+            <div>
+              <label className="text-[10px] text-ink-lighter mb-1 block">任务标题</label>
+              <input
+                type="text"
+                value={convertTitle}
+                onChange={(e) => setConvertTitle(e.target.value)}
+                className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white outline-none focus:border-sage-light"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && handleConvert()}
+              />
+            </div>
+
+            {/* Priority + estimated minutes */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-ink-lighter mb-1 block">优先级</label>
+                <div className="flex gap-1">
+                  {(["high", "medium", "low"] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setConvertPriority(p)}
+                      className={cn(
+                        "text-[10px] px-2 py-1 rounded-full font-medium transition-colors",
+                        convertPriority === p
+                          ? p === "high" ? "bg-accent-rose/10 text-accent-rose" : p === "medium" ? "bg-amber-50 text-amber-600" : "bg-ink/5 text-ink-lighter"
+                          : "bg-ink/5 text-ink-lighter",
+                      )}
+                    >
+                      {{ high: "高", medium: "中", low: "低" }[p]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-ink-lighter mb-1 block">预估(min)</label>
+                <input
+                  type="number"
+                  value={convertMinutes ?? ""}
+                  onChange={(e) => setConvertMinutes(e.target.value ? Number(e.target.value) : undefined)}
+                  placeholder="30"
+                  className="w-16 text-sm rounded-lg border border-border px-2 py-2 bg-white outline-none focus:border-sage-light text-center"
+                />
+              </div>
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="text-[10px] text-ink-lighter mb-1 block">分类</label>
+              <div className="flex gap-1 flex-wrap">
+                {CATEGORY_OPTIONS.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setConvertCategory(convertCategory === cat ? "" : cat)}
+                    className={cn(
+                      "text-[10px] px-2 py-1 rounded-full transition-colors",
+                      convertCategory === cat
+                        ? "bg-sage-light/30 text-sage-deep font-medium"
+                        : "bg-ink/5 text-ink-lighter",
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleAiSuggest}
+                disabled={isAiSuggesting}
+                className="flex items-center gap-1.5 text-xs text-sage-deep bg-sage-light/30 rounded-xl px-3 py-2 hover:bg-sage-light/50 transition-colors disabled:opacity-50"
+              >
+                {isAiSuggesting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                AI 建议
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={() => setConvertIdea(null)}
+                className="text-xs text-ink-light bg-ink/5 rounded-xl px-3 py-2 hover:bg-ink/10 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConvert}
+                disabled={!convertTitle.trim() || convertIdeaToTask.isPending}
+                className="text-xs text-white bg-sage-deep rounded-xl px-4 py-2 font-medium disabled:opacity-50 flex items-center gap-1"
+              >
+                {convertIdeaToTask.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                转换
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

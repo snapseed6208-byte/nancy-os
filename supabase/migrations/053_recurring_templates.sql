@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS recurring_task_templates (
 );
 
 ALTER TABLE recurring_task_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own recurring_task_templates" ON recurring_task_templates;
 CREATE POLICY "Users can manage own recurring_task_templates"
   ON recurring_task_templates FOR ALL USING (auth.uid() = user_id);
 

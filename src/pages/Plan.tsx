@@ -118,6 +118,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const { data: tasks, isLoading } = useTodayTasks();
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
+  const updateTask = useUpdateTask();
   const today = new Date().toISOString().split("T")[0];
 
   const taskList = (tasks || []) as TaskRow[];
@@ -186,6 +187,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               tasks={highTasks}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
+              onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
             />
           )}
 
@@ -198,6 +200,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               tasks={medTasks}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
+              onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
             />
           )}
 
@@ -210,6 +213,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               tasks={lowTasks}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
+              onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
             />
           )}
 
@@ -232,7 +236,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
 }
 
 function TaskSection({
-  icon: Icon, label, color, tasks, onToggle, onDelete, defaultCollapsed,
+  icon: Icon, label, color, tasks, onToggle, onDelete, onEdit, defaultCollapsed,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
@@ -240,10 +244,25 @@ function TaskSection({
   tasks: TaskRow[];
   onToggle: (id: string, status: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (id: string, updates: { title?: string; priority?: string }) => void;
   defaultCollapsed?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(!!defaultCollapsed);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
   const isRecurring = (t: TaskRow) => t.task_type === "recurring";
+
+  const startEdit = (t: TaskRow) => {
+    setEditingId(t.id);
+    setEditTitle(t.title);
+  };
+
+  const saveEdit = (id: string) => {
+    if (editTitle.trim()) {
+      onEdit(id, { title: editTitle.trim() });
+    }
+    setEditingId(null);
+  };
 
   return (
     <div>
@@ -277,9 +296,29 @@ function TaskSection({
                     : <Circle size={16} className="text-ink-lighter" />}
               </button>
               <div className="flex-1 min-w-0">
-                <p className={cn("text-xs text-ink truncate", t.status === "done" && "line-through")}>
-                  {t.title}
-                </p>
+                {editingId === t.id ? (
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onBlur={() => saveEdit(t.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEdit(t.id);
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    className="text-xs rounded border border-sage-light px-2 py-0.5 w-full outline-none bg-white"
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <p
+                    className={cn("text-xs text-ink truncate cursor-pointer hover:text-sage-deep transition-colors", t.status === "done" && "line-through")}
+                    onClick={() => startEdit(t)}
+                    title="点击编辑标题"
+                  >
+                    {t.title}
+                  </p>
+                )}
                 {isRecurring(t) ? (
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[10px] text-ink-lighter">
@@ -310,9 +349,16 @@ function TaskSection({
                 <span className="text-[10px] text-ink-lighter shrink-0">{t.estimated_minutes}min</span>
               )}
               {!isRecurring(t) && (
-                <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0", PRIORITY_COLORS[t.priority] || "")}>
+                <button
+                  onClick={() => {
+                    const next = t.priority === "high" ? "medium" : t.priority === "medium" ? "low" : "high";
+                    onEdit(t.id, { priority: next });
+                  }}
+                  className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 cursor-pointer hover:opacity-80 transition-opacity", PRIORITY_COLORS[t.priority] || "")}
+                  title="点击切换优先级"
+                >
                   {PRIORITY_LABELS[t.priority] || t.priority}
-                </span>
+                </button>
               )}
               {isRecurring(t) && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 bg-accent-sky/10 text-accent-sky">
@@ -624,11 +670,29 @@ function TaskList() {
   );
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
+  const updateTask = useUpdateTask();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
 
   const taskList = (tasks || []) as TaskRow[];
 
+  const startEdit = (t: TaskRow) => {
+    setEditingId(t.id);
+    setEditTitle(t.title);
+  };
+
+  const saveEdit = (id: string) => {
+    if (editTitle.trim()) {
+      updateTask.mutate({ id, title: editTitle.trim() });
+    }
+    setEditingId(null);
+  };
+
   return (
     <div className="space-y-4">
+      {/* Add task */}
+      <AddTaskForm />
+
       {/* Filter chips */}
       <div className="flex gap-1.5 flex-wrap">
         {[
@@ -681,9 +745,29 @@ function TaskList() {
               </button>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <p className={cn("text-xs text-ink truncate", t.status === "done" && "line-through")}>
-                    {t.title}
-                  </p>
+                  {editingId === t.id ? (
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onBlur={() => saveEdit(t.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveEdit(t.id);
+                        if (e.key === "Escape") setEditingId(null);
+                      }}
+                      className="text-xs rounded border border-sage-light px-2 py-0.5 flex-1 outline-none bg-white"
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <p
+                      className={cn("text-xs text-ink truncate cursor-pointer hover:text-sage-deep transition-colors", t.status === "done" && "line-through")}
+                      onClick={() => startEdit(t)}
+                      title="点击编辑标题"
+                    >
+                      {t.title}
+                    </p>
+                  )}
                   {t.source_type === "ai_agent" && (
                     <Sparkles size={9} className="text-sage-deep shrink-0" />
                   )}
@@ -733,9 +817,16 @@ function TaskList() {
                   周期
                 </span>
               ) : (
-                <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0", PRIORITY_COLORS[t.priority] || "")}>
+                <button
+                  onClick={() => {
+                    const next = t.priority === "high" ? "medium" : t.priority === "medium" ? "low" : "high";
+                    updateTask.mutate({ id: t.id, priority: next });
+                  }}
+                  className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 cursor-pointer hover:opacity-80 transition-opacity", PRIORITY_COLORS[t.priority] || "")}
+                  title="点击切换优先级"
+                >
                   {PRIORITY_LABELS[t.priority] || t.priority}
-                </span>
+                </button>
               )}
               <button onClick={() => deleteTask.mutate(t.id)} className="text-ink-lighter hover:text-accent-rose shrink-0">
                 <Trash2 size={12} />

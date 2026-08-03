@@ -16,6 +16,7 @@ WHERE name IN ('生活', '工作', '社交', '情绪', '旅行', '学习', '商�
 --   影视娱乐, 财商投资, 思维认知, 人际关系, 旅行体验, 灵感收藏
 
 -- 4. Add check constraint
+ALTER TABLE public.categories DROP CONSTRAINT IF EXISTS categories_scope_check;
 ALTER TABLE public.categories ADD CONSTRAINT categories_scope_check
   CHECK (scope IN ('resource', 'expression'));
 
