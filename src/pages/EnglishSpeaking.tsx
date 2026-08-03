@@ -4,12 +4,15 @@ import {
   ArrowLeft, Mic, MicOff, Square, Plus, ChevronRight, Sparkles,
   Loader2, CheckCircle2, AlertTriangle, Play, Pause, RefreshCw,
   Home, MessageSquare, Coffee, Briefcase, GraduationCap, Heart,
-  Target, Clock, BarChart3, Zap, X,
+  Target, Clock, BarChart3, Zap, X, Search, Shuffle, Bot, Library,
+  Filter, ChevronDown,
 } from "lucide-react";
 import {
-  useSpeakingSessions, useSpeakingSession, useCreateSpeakingSession,
+  useSpeakingSessions, useSpeakingSession, useCreateSpeakingSessionV2,
   useCreateSpeakingAttempt, useCreateExpression, uploadAudio, useDueExpressions, useSpeakingStats,
+  useSpeakingQuestions, useSpeakingQuestionHistory, useRecordSpeakingQuestionUsage,
 } from "@/lib/hooks/useEnglish";
+import type { SpeakingQuestion, SpeakingQuestionHistoryEntry } from "@/lib/hooks/useEnglish";
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
 import {
   analyzeSpeaking, buildCombinedFeedback,
@@ -22,41 +25,111 @@ import { cn } from "@/lib/utils";
 
 // ── Types ──
 
-type Step = "category" | "generating" | "record" | "review" | "analyzing" | "results" | "saved" | "empty_expression_practice";
-type ViewState = "home" | "new" | "detail";
+type Step = "generating" | "record" | "review" | "analyzing" | "results" | "saved" | "empty_expression_practice";
+type ViewState = "home" | "mode_detail" | "browse" | "new" | "detail";
 
-interface CategoryDef {
+interface ModeDef {
   key: string;
   label: string;
+  labelEn: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  subs: string[];
+  desc: string;
 }
 
-const CATEGORIES: CategoryDef[] = [
+const MODE_DEFS: ModeDef[] = [
   {
-    key: "daily_life", label: "日常对话", icon: Coffee,
-    subs: ["Restaurant", "Shopping", "Travel", "Friends", "Hobbies", "Food"],
+    key: "ielts", label: "雅思口语", labelEn: "IELTS Speaking",
+    icon: GraduationCap,
+    desc: "Part 1, 2, 3 结构化练习，涵盖常见雅思话题",
   },
   {
-    key: "work_business", label: "工作商务", icon: Briefcase,
-    subs: ["Job Interview", "Meeting", "Presentation", "Customer Communication"],
+    key: "daily", label: "日常对话", labelEn: "Daily Conversation",
+    icon: Coffee,
+    desc: "日常场景对话，提升生活英语的自然度和流利度",
   },
   {
-    key: "ielts", label: "雅思口语", icon: GraduationCap,
-    subs: ["Part 1 Introduction", "Part 2 Long Turn", "Part 3 Discussion"],
+    key: "professional", label: "专业英语", labelEn: "Professional English",
+    icon: Briefcase,
+    desc: "职场沟通、会议、演讲等商务场景演练",
   },
   {
-    key: "personal_growth", label: "个人成长", icon: Heart,
-    subs: ["Challenges", "Goals", "Learning", "Relationships"],
+    key: "personal_growth", label: "个人成长", labelEn: "Personal Growth",
+    icon: Heart,
+    desc: "深度自我表达，探讨人生、情感与价值观话题",
   },
 ];
 
-const CATEGORY_COLORS: Record<string, string> = {
-  daily_life: "bg-amber-50 text-amber-600",
-  work_business: "bg-blue-50 text-blue-600",
+const MODE_COLORS: Record<string, string> = {
   ielts: "bg-purple-50 text-purple-600",
+  daily: "bg-amber-50 text-amber-600",
+  professional: "bg-blue-50 text-blue-600",
   personal_growth: "bg-emerald-50 text-emerald-600",
 };
+
+const TOPIC_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "全部话题" },
+  { value: "life_routine", label: "日常生活" },
+  { value: "food_health", label: "饮食健康" },
+  { value: "travel_culture", label: "旅行文化" },
+  { value: "people_relationships", label: "人际社交" },
+  { value: "study_learning", label: "学习学术" },
+  { value: "work_career", label: "工作职场" },
+  { value: "technology", label: "科技" },
+  { value: "entertainment", label: "娱乐" },
+  { value: "emotions", label: "情绪心理" },
+  { value: "goals_future", label: "目标未来" },
+  { value: "experiences", label: "经历体验" },
+  { value: "opinions", label: "观点看法" },
+];
+
+const IELTS_PARTS: { value: string; label: string }[] = [
+  { value: "", label: "全部 Part" },
+  { value: "part1", label: "Part 1" },
+  { value: "part2", label: "Part 2" },
+  { value: "part3", label: "Part 3" },
+];
+
+const TOPIC_LABEL_MAP: Record<string, string> = Object.fromEntries(
+  TOPIC_OPTIONS.filter(t => t.value).map(t => [t.value, t.label])
+);
+
+// ── Question Selection Algorithm ──
+
+function selectQuestionFromBank(
+  questions: SpeakingQuestion[],
+  history: SpeakingQuestionHistoryEntry[],
+  excludeIds: Set<string>,
+): SpeakingQuestion | null {
+  const recentlyPracticedIds = new Set(history.map(h => h.question_id));
+
+  // First pass: filter out recently practiced and excluded questions
+  const freshCandidates = questions
+    .filter(q => q.is_active && !excludeIds.has(q.id) && !recentlyPracticedIds.has(q.id))
+    .sort((a, b) => {
+      if (a.usage_count !== b.usage_count) return a.usage_count - b.usage_count;
+      if (!a.last_used_at && !b.last_used_at) return 0;
+      if (!a.last_used_at) return -1;
+      if (!b.last_used_at) return 1;
+      return new Date(a.last_used_at).getTime() - new Date(b.last_used_at).getTime();
+    });
+
+  if (freshCandidates.length > 0) {
+    const pool = freshCandidates.slice(0, 15);
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // All practiced in this round: pick LRU from all active
+  const allCandidates = questions
+    .filter(q => q.is_active && !excludeIds.has(q.id))
+    .sort((a, b) => {
+      if (!a.last_used_at && !b.last_used_at) return 0;
+      if (!a.last_used_at) return -1;
+      if (!b.last_used_at) return 1;
+      return new Date(a.last_used_at).getTime() - new Date(b.last_used_at).getTime();
+    });
+
+  return allCandidates[0] || null;
+}
 
 // ── Audio Recorder Hook ──
 
@@ -152,7 +225,6 @@ function useAudioRecorder() {
 
   const reset = useCallback(() => {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
-    // Always stop tracks (shared or owned) — done with stream
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     ownsStreamRef.current = true;
@@ -259,10 +331,19 @@ export default function EnglishSpeaking() {
   const [view, setView] = useState<ViewState>("home");
   const [viewingSessionId, setViewingSessionId] = useState<string | null>(null);
 
+  // Mode-based entry state
+  const [selectedMode, setSelectedMode] = useState<string>("");
+  const [selectedTopic, setSelectedTopic] = useState<string>("");
+  const [selectedPart, setSelectedPart] = useState<string>("");
+
+  // Question tracking
+  const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(null);
+  const [isAiGenerated, setIsAiGenerated] = useState(false);
+  // Track questions used in this session to avoid repeats
+  const [usedQuestionIds, setUsedQuestionIds] = useState<Set<string>>(new Set());
+
   // New session state
-  const [step, setStep] = useState<Step>("category");
-  const [category, setCategory] = useState("");
-  const [subCategory, setSubCategory] = useState("");
+  const [step, setStep] = useState<Step>("generating");
   const [mode, setMode] = useState<"free_speaking" | "expression_practice">("free_speaking");
   const [question, setQuestion] = useState("");
   const [questionContext, setQuestionContext] = useState("");
@@ -282,49 +363,122 @@ export default function EnglishSpeaking() {
   const [addBankError, setAddBankError] = useState<string | null>(null);
   const referenceAnswerPromise = useRef<Promise<void> | null>(null);
 
+  // Browse state
+  const [browseMode, setBrowseMode] = useState<string>("");
+  const [browseTopic, setBrowseTopic] = useState<string>("");
+  const [browsePart, setBrowsePart] = useState<string>("");
+  const [browseSearch, setBrowseSearch] = useState("");
+  const [browsePage, setBrowsePage] = useState(0);
+  const BROWSE_PAGE_SIZE = 15;
+
   // Data
   const { data: sessions, isLoading: sessionsLoading } = useSpeakingSessions();
   const { data: stats } = useSpeakingStats();
   const { data: dueExpressions } = useDueExpressions();
-  const createSession = useCreateSpeakingSession();
+  const createSession = useCreateSpeakingSessionV2();
   const createAttempt = useCreateSpeakingAttempt();
   const createExpression = useCreateExpression();
+  const recordUsage = useRecordSpeakingQuestionUsage();
+
+  // Bank queries
+  const { data: bankQuestions } = useSpeakingQuestions({
+    mode: selectedMode || undefined,
+    topic: selectedTopic || undefined,
+    part: selectedPart || undefined,
+    is_active: true,
+  });
+  const { data: questionHistory } = useSpeakingQuestionHistory(30);
+
+  // Browse query
+  const { data: browseQuestions } = useSpeakingQuestions({
+    mode: browseMode || undefined,
+    topic: browseTopic || undefined,
+    part: browsePart || undefined,
+    search: browseSearch || undefined,
+    is_active: true,
+    limit: 200,
+  });
 
   const recorder = useAudioRecorder();
   const asr = useSpeechRecognition();
 
-  // ── Handlers ──
+  // ── Mode Entry Handlers ──
 
-  const handlePickCategory = (catKey: string) => {
-    setView("new");
-    setCategory(catKey);
-    setStep("category");
-    if (catKey === "expression_practice") {
-      setMode("expression_practice");
-      setStep("generating");
-    }
+  const handlePickMode = (modeKey: string) => {
+    setSelectedMode(modeKey);
+    setSelectedTopic("");
+    setSelectedPart("");
+    setView("mode_detail");
   };
 
-  const handlePickSub = (sub: string) => {
-    setSubCategory(sub);
+  const handleRecommend = () => {
+    if (!bankQuestions || bankQuestions.length === 0) {
+      // No bank questions — AI fallback
+      handleAiGenerate();
+      return;
+    }
+
+    const selected = selectQuestionFromBank(
+      bankQuestions,
+      questionHistory || [],
+      usedQuestionIds,
+    );
+
+    if (!selected) {
+      handleAiGenerate();
+      return;
+    }
+
+    setCurrentQuestionId(selected.id);
+    setIsAiGenerated(false);
+    setUsedQuestionIds(prev => new Set(prev).add(selected.id));
+    setQuestion(selected.question);
+    setQuestionContext(selected.context || "");
+    setSuitableExpressions([]);
+    setMode("free_speaking");
+    setView("new");
+    setStep("record");
+  };
+
+  const handleAiGenerate = () => {
+    setCurrentQuestionId(null);
+    setIsAiGenerated(true);
+    setMode("free_speaking");
+    setView("new");
     setStep("generating");
+  };
+
+  const handleBrowsePickQuestion = (q: SpeakingQuestion) => {
+    setCurrentQuestionId(q.id);
+    setIsAiGenerated(false);
+    setUsedQuestionIds(prev => new Set(prev).add(q.id));
+    setQuestion(q.question);
+    setQuestionContext(q.context || "");
+    setSuitableExpressions([]);
+    setMode("free_speaking");
+    setView("new");
+    setStep("record");
   };
 
   const handleStartExpressionPractice = () => {
     if (!dueExpressions || dueExpressions.length === 0) {
       setView("new");
       setMode("expression_practice");
-      setCategory("expression_practice");
-      setSubCategory("");
+      setSelectedMode("");
+      setCurrentQuestionId(null);
+      setIsAiGenerated(false);
       setStep("empty_expression_practice");
       return;
     }
     setView("new");
     setMode("expression_practice");
-    setCategory("expression_practice");
-    setSubCategory("");
+    setSelectedMode("");
+    setCurrentQuestionId(null);
+    setIsAiGenerated(false);
     setStep("generating");
   };
+
+  // ── Recording Handlers ──
 
   const handleStartRecording = async () => {
     if (isStarting || recorder.state !== "idle") return;
@@ -334,14 +488,14 @@ export default function EnglishSpeaking() {
       const result = await createSession.mutateAsync({
         prompt: question,
         context: questionContext,
-        category: category || undefined,
+        category: selectedMode || undefined,
         mode,
         recommended_expressions: suitableExpressions.length > 0 ? suitableExpressions : undefined,
+        question_id: currentQuestionId || undefined,
       });
       setSessionId(result.id as string);
       asr.setSessionId(result.id as string);
 
-      // Get stream once, share with both MediaRecorder (blob/playback) and ASR (real-time)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       await Promise.all([
         recorder.start(stream),
@@ -360,8 +514,6 @@ export default function EnglishSpeaking() {
     asr.stop();
   };
 
-  // Batch ASR: when MediaRecorder blob is ready, submit for transcription.
-  // Streaming providers already have transcript via real-time WebSocket.
   useEffect(() => {
     if (recorder.state === "done" && recorder.blob && !asr.transcript && asr.supported && asr.isProcessing === false) {
       asr.stop(recorder.blob);
@@ -369,7 +521,6 @@ export default function EnglishSpeaking() {
   }, [recorder.state, recorder.blob]);
 
   const handleGoToReview = async () => {
-    // Wait for cloud ASR (aliyun/whisper) to finish upload + transcription
     if (asr.isProcessing) {
       await new Promise<void>((r) => {
         const check = setInterval(() => {
@@ -377,8 +528,6 @@ export default function EnglishSpeaking() {
         }, 150);
       });
     }
-    // Ensure browser ASR onend has fired before showing review
-    // (onend fires ~100ms after stop(), MediaRecorder.onstop takes 200-500ms)
     if (asr.supported && asr.isListening) {
       await new Promise<void>((r) => setTimeout(r, 500));
     }
@@ -399,7 +548,6 @@ export default function EnglishSpeaking() {
       if (!session?.access_token) throw new Error("请先登录");
       const result = await analyzeSpeaking(question, text, suitableExpressions.map(e => e.english), session.access_token);
       setFeedback(result);
-      // Generate reference answer in parallel, store promise for save to await
       const raPromise = generateReferenceAnswer(question, session.access_token)
         .then((ra) => setReferenceAnswer(ra))
         .catch(() => {});
@@ -420,7 +568,6 @@ export default function EnglishSpeaking() {
     }
     setUploading(true);
 
-    // Await pending reference answer with a 3s timeout so it's not lost on save
     if (referenceAnswerPromise.current) {
       try {
         await Promise.race([
@@ -432,20 +579,12 @@ export default function EnglishSpeaking() {
 
     let audioUrl = "";
     if (recorder.blob) {
-      console.log("[EnglishSpeaking] handleSave blob:", {
-        size: recorder.blob.size,
-        type: recorder.blob.type,
-        duration: recorder.duration,
-      });
       try {
         audioUrl = await uploadAudio(sessionId, recorder.blob);
-        console.log("[EnglishSpeaking] Audio upload OK:", audioUrl);
       } catch (err) {
         console.error("[EnglishSpeaking] Audio upload failed:", err);
         setAiError("录音上传失败，但练习记录已保存。Storage bucket 可能未配置正确。");
       }
-    } else {
-      console.warn("[EnglishSpeaking] handleSave: recorder.blob is null — audio not saved");
     }
 
     const combined = feedback
@@ -484,6 +623,22 @@ export default function EnglishSpeaking() {
       return;
     }
 
+    // Record question usage if from bank
+    if (currentQuestionId) {
+      try {
+        await recordUsage.mutateAsync({
+          question_id: currentQuestionId,
+          session_id: sessionId,
+          fluency_score: feedback?.fluencyScore ?? undefined,
+          grammar_score: feedback?.grammarScore ?? undefined,
+          vocabulary_score: feedback?.vocabularyScore ?? undefined,
+          naturalness_score: feedback?.naturalnessScore ?? undefined,
+        });
+      } catch (err) {
+        console.error("[EnglishSpeaking] recordUsage failed:", err);
+      }
+    }
+
     // Auto-lower SRS levels for missed expressions
     if (expressionsMissed.length > 0) {
       try {
@@ -492,7 +647,6 @@ export default function EnglishSpeaking() {
         console.error("[EnglishSpeaking] lowerMissedExpressions failed:", err);
       }
     }
-    // Boost SRS levels for successfully used expressions
     if (expressionsUsed.length > 0) {
       try {
         await boostUsedExpressions(expressionsUsed);
@@ -508,7 +662,6 @@ export default function EnglishSpeaking() {
   const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
     setAddBankError(null);
     try {
-      // Dedup: check if expression already exists (case-insensitive)
       const { data: existing } = await supabase
         .from("expressions")
         .select("id")
@@ -543,9 +696,12 @@ export default function EnglishSpeaking() {
 
   const handleNew = () => {
     setView("new");
-    setStep("category");
-    setCategory("");
-    setSubCategory("");
+    setStep("generating");
+    setSelectedMode("");
+    setSelectedTopic("");
+    setSelectedPart("");
+    setCurrentQuestionId(null);
+    setIsAiGenerated(false);
     setMode("free_speaking");
     setQuestion("");
     setQuestionContext("");
@@ -563,6 +719,31 @@ export default function EnglishSpeaking() {
     asr.reset();
   };
 
+  const handleContinueFromSaved = () => {
+    // Start another round with same mode settings
+    setStep("generating");
+    setQuestion("");
+    setQuestionContext("");
+    setSuitableExpressions([]);
+    setSessionId(null);
+    setFeedback(null);
+    setReferenceAnswer("");
+    setAiError(null);
+    setAddedUpgrades(new Set());
+    setDuplicateUpgrades(new Set());
+    setAddBankError(null);
+    setTextMode(false);
+    referenceAnswerPromise.current = null;
+    recorder.reset();
+    asr.reset();
+    // If bank mode, recommend another question
+    if (selectedMode && !isAiGenerated) {
+      handleRecommend();
+    } else if (selectedMode && isAiGenerated) {
+      handleAiGenerate();
+    }
+  };
+
   const handleViewSession = (id: string) => {
     setViewingSessionId(id);
     setView("detail");
@@ -575,9 +756,17 @@ export default function EnglishSpeaking() {
       asr.reset();
       setFeedback(null);
       setAiError(null);
+      setSelectedMode("");
     } else if (view === "detail") {
       setView("home");
       setViewingSessionId(null);
+    } else if (view === "mode_detail") {
+      setView("home");
+      setSelectedMode("");
+      setSelectedTopic("");
+      setSelectedPart("");
+    } else if (view === "browse") {
+      setView("home");
     } else {
       navigate("/english");
     }
@@ -621,47 +810,63 @@ export default function EnglishSpeaking() {
           </div>
         )}
 
-        {/* Category cards */}
+        {/* Mode cards */}
         <div className="space-y-2">
-          <p className="text-xs font-medium text-ink-light">选择口语类别</p>
+          <p className="text-xs font-medium text-ink-light">选择练习模式</p>
           <div className="grid grid-cols-2 gap-2">
-            {CATEGORIES.map((cat) => {
-              const Icon = cat.icon;
+            {MODE_DEFS.map((m) => {
+              const Icon = m.icon;
               return (
                 <button
-                  key={cat.key}
-                  onClick={() => { handlePickCategory(cat.key); }}
+                  key={m.key}
+                  onClick={() => handlePickMode(m.key)}
                   className="bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
                 >
-                  <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center mb-2", CATEGORY_COLORS[cat.key] || "bg-ink/5 text-ink-light")}>
+                  <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center mb-2", MODE_COLORS[m.key] || "bg-ink/5 text-ink-light")}>
                     <Icon size={18} />
                   </div>
-                  <p className="text-sm font-semibold text-ink">{cat.label}</p>
-                  <p className="text-[10px] text-ink-lighter mt-0.5">{cat.subs.slice(0, 2).join(" · ")}...</p>
+                  <p className="text-sm font-semibold text-ink">{m.label}</p>
+                  <p className="text-[10px] text-ink-lighter mt-0.5">{m.labelEn}</p>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Expression Practice */}
-        <button
-          onClick={handleStartExpressionPractice}
-          className="w-full bg-card rounded-2xl border-2 border-dashed border-sage-light/50 p-4 text-left hover:border-sage-light transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center shrink-0">
-              <Target size={20} className="text-sage-deep" />
+        {/* Quick actions */}
+        <div className="space-y-2">
+          <button
+            onClick={() => { setBrowseMode(""); setBrowseTopic(""); setBrowsePart(""); setBrowseSearch(""); setBrowsePage(0); setView("browse"); }}
+            className="w-full bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors flex items-center gap-3"
+          >
+            <div className="h-10 w-10 rounded-xl bg-ink/5 flex items-center justify-center shrink-0">
+              <Library size={20} className="text-ink-light" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-ink">表达练习 Expression Practice</p>
-              <p className="text-xs text-ink-lighter mt-0.5">
-                练习使用你最近学的表达 · {dueExpressions?.length || 0} 条待复习表达
-              </p>
+              <p className="text-sm font-semibold text-ink">浏览题库</p>
+              <p className="text-xs text-ink-lighter mt-0.5">按模式/话题筛选，选择题目开始练习</p>
             </div>
             <ChevronRight size={16} className="text-ink-lighter shrink-0" />
-          </div>
-        </button>
+          </button>
+
+          <button
+            onClick={handleStartExpressionPractice}
+            className="w-full bg-card rounded-2xl border-2 border-dashed border-sage-light/50 p-4 text-left hover:border-sage-light transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center shrink-0">
+                <Target size={20} className="text-sage-deep" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-ink">表达练习 Expression Practice</p>
+                <p className="text-xs text-ink-lighter mt-0.5">
+                  练习使用你最近学的表达 · {dueExpressions?.length || 0} 条待复习表达
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-ink-lighter shrink-0" />
+            </div>
+          </button>
+        </div>
 
         {/* Recent sessions */}
         <div className="space-y-2">
@@ -675,7 +880,7 @@ export default function EnglishSpeaking() {
             <div className="text-center py-8">
               <Mic size={32} className="text-ink-lighter mx-auto mb-2" />
               <p className="text-sm text-ink-light">还没有口语练习记录</p>
-              <p className="text-xs text-ink-lighter mt-1">选择一个类别开始你的第一次口语训练</p>
+              <p className="text-xs text-ink-lighter mt-1">选择一个模式开始你的第一次口语训练</p>
             </div>
           )}
 
@@ -746,6 +951,281 @@ export default function EnglishSpeaking() {
     );
   }
 
+  // ── MODE DETAIL VIEW ──
+
+  if (view === "mode_detail") {
+    const modeDef = MODE_DEFS.find(m => m.key === selectedMode);
+    if (!modeDef) return null;
+    const Icon = modeDef.icon;
+    const bankCount = bankQuestions?.length || 0;
+
+    return (
+      <div className="space-y-4">
+        <header className="flex items-center gap-3">
+          <button onClick={handleBack} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
+            <ArrowLeft size={16} className="text-ink-light" />
+          </button>
+          <div>
+            <p className="text-sm text-ink-lighter">English OS</p>
+            <h1 className="text-xl font-semibold tracking-tight mt-0.5">{modeDef.label}</h1>
+          </div>
+        </header>
+
+        {/* Mode intro */}
+        <div className={cn("rounded-2xl p-4", MODE_COLORS[selectedMode] || "bg-ink/5")}>
+          <div className="flex items-center gap-2 mb-2">
+            <Icon size={18} />
+            <span className="text-sm font-semibold">{modeDef.labelEn}</span>
+          </div>
+          <p className="text-xs opacity-70">{modeDef.desc}</p>
+          <p className="text-xs mt-2 opacity-60">题库中 {bankCount} 道可用题目</p>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+          <p className="text-xs font-medium text-ink-light">筛选条件（可选）</p>
+
+          {/* Topic filter */}
+          <div>
+            <label className="text-[10px] text-ink-lighter mb-1 block">话题 Topic</label>
+            <div className="flex flex-wrap gap-1.5">
+              {TOPIC_OPTIONS.map(t => (
+                <button
+                  key={t.value}
+                  onClick={() => setSelectedTopic(t.value)}
+                  className={cn(
+                    "text-[11px] rounded-full px-3 py-1.5 transition-colors",
+                    selectedTopic === t.value
+                      ? "bg-sage-light text-sage-deep font-medium"
+                      : "bg-ink/5 text-ink-lighter hover:bg-ink/10",
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Part filter (IELTS only) */}
+          {selectedMode === "ielts" && (
+            <div>
+              <label className="text-[10px] text-ink-lighter mb-1 block">Part</label>
+              <div className="flex gap-1.5">
+                {IELTS_PARTS.map(p => (
+                  <button
+                    key={p.value}
+                    onClick={() => setSelectedPart(p.value)}
+                    className={cn(
+                      "text-[11px] rounded-full px-3 py-1.5 transition-colors",
+                      selectedPart === p.value
+                        ? "bg-purple-100 text-purple-600 font-medium"
+                        : "bg-ink/5 text-ink-lighter hover:bg-ink/10",
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="space-y-2">
+          <button
+            onClick={handleRecommend}
+            className="w-full bg-sage-light text-sage-deep rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2"
+          >
+            <Shuffle size={16} />
+            {bankCount > 0 ? "推荐一题" : "AI 生成题目"}
+          </button>
+
+          <button
+            onClick={() => {
+              setBrowseMode(selectedMode);
+              setBrowseTopic(selectedTopic);
+              setBrowsePart(selectedPart);
+              setBrowseSearch("");
+              setBrowsePage(0);
+              setView("browse");
+            }}
+            className="w-full bg-card border border-border rounded-xl py-3 text-sm font-medium text-ink flex items-center justify-center gap-2"
+          >
+            <Library size={16} />
+            浏览题库{bankCount > 0 ? ` (${bankCount} 题)` : ""}
+          </button>
+
+          <button
+            onClick={handleAiGenerate}
+            className="w-full bg-card border border-border rounded-xl py-3 text-sm font-medium text-ink-light flex items-center justify-center gap-2"
+          >
+            <Bot size={16} />
+            AI 临时生成
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── BROWSE VIEW ──
+
+  if (view === "browse") {
+    const browseList = browseQuestions || [];
+    const totalPages = Math.ceil(browseList.length / BROWSE_PAGE_SIZE);
+    const pagedQuestions = browseList.slice(
+      browsePage * BROWSE_PAGE_SIZE,
+      (browsePage + 1) * BROWSE_PAGE_SIZE,
+    );
+
+    return (
+      <div className="space-y-4">
+        <header className="flex items-center gap-3">
+          <button onClick={handleBack} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
+            <ArrowLeft size={16} className="text-ink-light" />
+          </button>
+          <div>
+            <p className="text-sm text-ink-lighter">English OS</p>
+            <h1 className="text-xl font-semibold tracking-tight mt-0.5">浏览题库</h1>
+          </div>
+        </header>
+
+        {/* Filters */}
+        <div className="bg-card rounded-2xl border border-border p-3 space-y-3">
+          {/* Search */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-lighter" />
+            <input
+              type="text"
+              placeholder="搜索题目..."
+              value={browseSearch}
+              onChange={(e) => { setBrowseSearch(e.target.value); setBrowsePage(0); }}
+              className="w-full bg-ink/5 rounded-lg pl-9 pr-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none"
+            />
+          </div>
+
+          {/* Mode filter */}
+          <div className="flex gap-1.5 flex-wrap">
+            {[{ value: "", label: "全部模式" }, ...MODE_DEFS.map(m => ({ value: m.key, label: m.label }))].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => { setBrowseMode(opt.value); setBrowsePage(0); }}
+                className={cn(
+                  "text-[11px] rounded-full px-3 py-1 transition-colors",
+                  browseMode === opt.value
+                    ? "bg-sage-light text-sage-deep font-medium"
+                    : "bg-ink/5 text-ink-lighter hover:bg-ink/10",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Topic + Part row */}
+          <div className="flex gap-2">
+            <select
+              value={browseTopic}
+              onChange={(e) => { setBrowseTopic(e.target.value); setBrowsePage(0); }}
+              className="flex-1 bg-ink/5 rounded-lg px-2 py-1.5 text-xs text-ink outline-none"
+            >
+              {TOPIC_OPTIONS.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+
+            {(browseMode === "ielts" || !browseMode) && (
+              <select
+                value={browsePart}
+                onChange={(e) => { setBrowsePart(e.target.value); setBrowsePage(0); }}
+                className="w-28 bg-ink/5 rounded-lg px-2 py-1.5 text-xs text-ink outline-none"
+              >
+                {IELTS_PARTS.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+
+        {/* Results */}
+        {browseList.length === 0 ? (
+          <div className="text-center py-12">
+            <Library size={32} className="text-ink-lighter mx-auto mb-2" />
+            <p className="text-sm text-ink-light">题库中暂无匹配题目</p>
+            <p className="text-xs text-ink-lighter mt-1">尝试调整筛选条件，或通过导入功能添加题目</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-ink-lighter">
+              共 {browseList.length} 题 · 第 {browsePage + 1}/{Math.max(totalPages, 1)} 页
+            </p>
+            <div className="space-y-2">
+              {pagedQuestions.map((q) => (
+                <button
+                  key={q.id}
+                  onClick={() => handleBrowsePickQuestion(q)}
+                  className="w-full bg-card rounded-xl border border-border p-3 text-left hover:border-sage-light/50 transition-colors"
+                >
+                  <p className="text-sm font-medium text-ink leading-relaxed">{q.question}</p>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <span className={cn("text-[10px] rounded-full px-2 py-0.5", MODE_COLORS[q.mode] || "bg-ink/5 text-ink-lighter")}>
+                      {MODE_DEFS.find(m => m.key === q.mode)?.label || q.mode}
+                    </span>
+                    {q.topic && (
+                      <span className="text-[10px] bg-ink/5 rounded-full px-2 py-0.5 text-ink-lighter">
+                        {TOPIC_LABEL_MAP[q.topic] || q.topic}
+                      </span>
+                    )}
+                    {q.part && (
+                      <span className="text-[10px] bg-purple-50 text-purple-600 rounded-full px-2 py-0.5">
+                        {q.part}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-ink-lighter ml-auto">
+                      已练 {q.usage_count} 次
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setBrowsePage(p => Math.max(0, p - 1))}
+                  disabled={browsePage === 0}
+                  className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center disabled:opacity-30"
+                >
+                  <ChevronRight size={14} className="text-ink-light rotate-180" />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setBrowsePage(i)}
+                    className={cn(
+                      "h-8 w-8 rounded-lg text-xs font-medium",
+                      i === browsePage ? "bg-sage-light text-sage-deep" : "bg-ink/5 text-ink-lighter",
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setBrowsePage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={browsePage === totalPages - 1}
+                  className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center disabled:opacity-30"
+                >
+                  <ChevronRight size={14} className="text-ink-light" />
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   // ── DETAIL VIEW ──
 
   if (view === "detail" && viewingSessionId) {
@@ -754,38 +1234,6 @@ export default function EnglishSpeaking() {
         sessionId={viewingSessionId}
         onBack={handleBack}
       />
-    );
-  }
-
-  // ── SUBCATEGORY PICKER ──
-
-  if (step === "category" && category && category !== "expression_practice") {
-    const cat = CATEGORIES.find((c) => c.key === category);
-    return (
-      <div className="space-y-4">
-        <header className="flex items-center gap-3">
-          <button onClick={() => { setView("home"); setCategory(""); setStep("category"); }} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
-            <ArrowLeft size={16} className="text-ink-light" />
-          </button>
-          <div>
-            <p className="text-sm text-ink-lighter">English OS</p>
-            <h1 className="text-xl font-semibold tracking-tight mt-0.5">{cat?.label} — 选择话题</h1>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 gap-2">
-          {cat?.subs.map((sub) => (
-            <button
-              key={sub}
-              onClick={() => handlePickSub(sub)}
-              className="bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors flex items-center justify-between"
-            >
-              <span className="text-sm font-medium text-ink">{sub}</span>
-              <ChevronRight size={14} className="text-ink-lighter shrink-0" />
-            </button>
-          ))}
-        </div>
-      </div>
     );
   }
 
@@ -854,13 +1302,13 @@ export default function EnglishSpeaking() {
             </div>
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => { setView("home"); setStep("category"); }}
+                onClick={() => { setView("home"); }}
                 className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold"
               >
                 先去自由口语练习
               </button>
               <button
-                onClick={() => { setView("home"); setStep("category"); setMode("free_speaking"); }}
+                onClick={() => { setView("home"); }}
                 className="flex-1 bg-ink/5 text-ink-light rounded-xl py-2.5 text-sm font-medium"
               >
                 返回首页
@@ -877,15 +1325,21 @@ export default function EnglishSpeaking() {
             <Loader2 size={28} className="animate-spin text-sage-deep mx-auto mb-3" />
             <p className="text-sm font-medium text-ink">AI 正在生成题目...</p>
             <p className="text-xs text-ink-lighter mt-1">
-              {mode === "expression_practice" ? "基于你的表达库生成练习题目" : `类别: ${CATEGORIES.find((c) => c.key === category)?.label} — ${subCategory}`}
+              {mode === "expression_practice"
+                ? "基于你的表达库生成练习题目"
+                : isAiGenerated
+                  ? `模式: ${MODE_DEFS.find(m => m.key === selectedMode)?.label || selectedMode} — AI 临时生成`
+                  : `模式: ${MODE_DEFS.find(m => m.key === selectedMode)?.label || selectedMode}`}
             </p>
           </div>
 
-          {/* Auto-trigger question generation */}
           <GenerateQuestion
             mode={mode}
-            category={category}
-            subCategory={subCategory}
+            selectedMode={selectedMode}
+            selectedTopic={selectedTopic}
+            selectedPart={selectedPart}
+            isAiGenerated={isAiGenerated}
+            currentQuestionId={currentQuestionId}
             dueExpressions={dueExpressions as Record<string, unknown>[] | undefined}
             onGenerated={(q, ctx, exprs) => {
               setQuestion(q);
@@ -941,6 +1395,9 @@ export default function EnglishSpeaking() {
             <div className="flex items-center gap-2 mb-2">
               <MessageSquare size={14} className="text-sage-deep" />
               <span className="text-[10px] font-medium text-sage-deep bg-sage-light px-2 py-0.5 rounded-full">Question</span>
+              {isAiGenerated && (
+                <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">AI 临时生成</span>
+              )}
             </div>
             <p className="text-sm font-semibold text-ink leading-relaxed">{question}</p>
             {questionContext && (
@@ -1086,9 +1543,10 @@ export default function EnglishSpeaking() {
                       const result = await createSession.mutateAsync({
                         prompt: question,
                         context: questionContext,
-                        category: category || undefined,
+                        category: selectedMode || undefined,
                         mode,
                         recommended_expressions: suitableExpressions.length > 0 ? suitableExpressions : undefined,
+                        question_id: currentQuestionId || undefined,
                       });
                       setSessionId(result.id as string);
                       asr.setSessionId(result.id as string);
@@ -1115,7 +1573,6 @@ export default function EnglishSpeaking() {
       {/* Step: Review transcript */}
       {step === "review" && (
         <div className="space-y-4">
-          {/* Audio playback */}
           {recorder.audioUrl && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs text-ink-lighter mb-2">你的录音 ({formatDuration(recorder.duration)})</p>
@@ -1123,7 +1580,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* ASR transcript */}
           {asr.supported && (
             <div className="bg-card rounded-2xl border border-sage-light/30 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -1139,7 +1595,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* Editable transcript */}
           <div>
             <label className="text-xs font-medium text-ink-light mb-1 block">
               {asr.supported ? "修改转录内容" : "输入你说的话（AI 将据此给出反馈）"}
@@ -1193,7 +1648,6 @@ export default function EnglishSpeaking() {
       {/* Step: Results */}
       {step === "results" && feedback && (
         <div className="space-y-3">
-          {/* Scores */}
           <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
             <p className="text-xs font-medium text-ink-light mb-1">四维评分</p>
             <ScoreBar label="流利度 Fluency" score={feedback.fluencyScore} />
@@ -1202,13 +1656,11 @@ export default function EnglishSpeaking() {
             <ScoreBar label="自然度 Naturalness" score={feedback.naturalnessScore} />
           </div>
 
-          {/* Natural version */}
           <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
             <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
             <p className="text-sm text-ink leading-relaxed">{feedback.naturalVersion}</p>
           </div>
 
-          {/* Expression Usage */}
           {(feedback.expressionsUsed.length > 0 || feedback.expressionsMissed.length > 0) && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs font-medium text-ink-light mb-3">表达使用 Expression Usage</p>
@@ -1243,7 +1695,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* Main problems */}
           {feedback.mainProblems && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs font-medium text-ink-light mb-2">主要问题</p>
@@ -1253,7 +1704,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* Useful corrections */}
           {feedback.usefulCorrections && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs font-medium text-ink-light mb-2">纠错建议</p>
@@ -1263,7 +1713,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* Better chunks */}
           {feedback.betterChunks && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
@@ -1273,7 +1722,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* Expression Upgrade */}
           {feedback.expressionUpgrade && feedback.expressionUpgrade.length > 0 && (
             <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -1281,7 +1729,6 @@ export default function EnglishSpeaking() {
                 <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
               </div>
 
-              {/* Add-to-bank error */}
               {addBankError && (
                 <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2.5 flex items-start gap-2">
                   <AlertTriangle size={13} className="text-accent-rose shrink-0 mt-0.5" />
@@ -1331,7 +1778,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* One better example */}
           {feedback.oneBetterExample && (
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
@@ -1341,7 +1787,6 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* Re-analyze */}
           <button
             onClick={handleAnalyze}
             disabled={analyzing}
@@ -1355,7 +1800,6 @@ export default function EnglishSpeaking() {
             {analyzing ? "分析中..." : "重新分析"}
           </button>
 
-          {/* Save */}
           <button
             onClick={handleSave}
             disabled={uploading}
@@ -1410,7 +1854,7 @@ export default function EnglishSpeaking() {
           )}
           <div className="flex gap-3">
             <button
-              onClick={handleNew}
+              onClick={handleContinueFromSaved}
               className="flex-1 bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold"
             >
               再练一次
@@ -1428,14 +1872,18 @@ export default function EnglishSpeaking() {
   );
 }
 
-// ── Auto-generate question component ──
+// ── Generate Question Component (Bank-first + AI fallback) ──
 
 function GenerateQuestion({
-  mode, category, subCategory, dueExpressions, onGenerated, onReady,
+  mode, selectedMode, selectedTopic, selectedPart, isAiGenerated, currentQuestionId,
+  dueExpressions, onGenerated, onReady,
 }: {
   mode: string;
-  category: string;
-  subCategory: string;
+  selectedMode: string;
+  selectedTopic: string;
+  selectedPart: string;
+  isAiGenerated: boolean;
+  currentQuestionId: string | null;
   dueExpressions?: Record<string, unknown>[];
   onGenerated: (q: string, ctx: string, exprs: { english: string; chinese: string }[]) => void;
   onReady: () => void;
@@ -1443,7 +1891,7 @@ function GenerateQuestion({
   const generatedKey = useRef("");
 
   useEffect(() => {
-    const key = `${mode}|${category}|${subCategory}`;
+    const key = `${mode}|${selectedMode}|${selectedTopic}|${selectedPart}|${isAiGenerated}|${currentQuestionId}`;
     if (generatedKey.current === key) return;
     generatedKey.current = key;
 
@@ -1453,13 +1901,11 @@ function GenerateQuestion({
         if (!session?.access_token) throw new Error("No session");
 
         if (mode === "expression_practice") {
-          // Only Expression Practice reads from the Expression Bank
           const exprList = (dueExpressions || []).slice(0, 10).map((e) => ({
             english: (e.english as string) || "",
             chinese: (e.chinese as string) || "",
           }));
 
-          // Safety net: if no due expressions, go back to empty state
           if (exprList.length === 0) {
             onGenerated("", "", []);
             onReady();
@@ -1468,14 +1914,21 @@ function GenerateQuestion({
 
           const result = await generateExpressionPracticeQuestion(exprList, session.access_token);
           onGenerated(result.question, result.context, exprList);
-        } else {
-          // Other modes: pure category-based questions, no expression bank
-          const cat = CATEGORIES.find((c) => c.key === category);
+        } else if (isAiGenerated) {
+          // AI fallback: generate question via DeepSeek
+          const modeDef = MODE_DEFS.find(m => m.key === selectedMode);
           const result = await generateCategoryQuestion(
-            cat?.label || category, subCategory, [], session.access_token,
+            modeDef?.label || selectedMode,
+            selectedTopic || selectedMode,
+            [],
+            session.access_token,
           );
           const exprs = (result.suitableExpressions || []).map((e: string) => ({ english: e, chinese: "" }));
           onGenerated(result.question, result.context, exprs);
+        } else {
+          // Question from bank — already set, just pass through
+          onReady();
+          return;
         }
       } catch {
         if (mode === "expression_practice") {
@@ -1486,8 +1939,8 @@ function GenerateQuestion({
           );
         } else {
           onGenerated(
-            `Talk about ${subCategory} in English.`,
-            `Share your experience and opinions about ${subCategory}.`,
+            `Talk about ${selectedTopic || selectedMode} in English.`,
+            `Share your experience and opinions about ${selectedTopic || selectedMode}.`,
             [],
           );
         }
@@ -1496,7 +1949,7 @@ function GenerateQuestion({
     }
 
     generate();
-  }, [mode, category, subCategory]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, selectedMode, selectedTopic, selectedPart, isAiGenerated, currentQuestionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }
