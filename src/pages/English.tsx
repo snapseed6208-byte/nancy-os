@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import {
   BookOpen, Mic, Library, Brain, Eye, Edit3,
-  ChevronRight, Zap, Upload, TrendingUp,
+  ChevronRight, Zap, Upload, TrendingUp, FileUp,
 } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -89,6 +89,12 @@ export default function English() {
           label="导入表达"
           desc="从文件或文本批量导入英语表达"
           onClick={() => navigate("/english/import")}
+        />
+        <ActionCard
+          icon={FileUp}
+          label="导入口语题库"
+          desc="上传文件 AI 提取 · 自动分类去重 · 批量导入"
+          onClick={() => navigate("/english/speaking/import")}
         />
       </div>
 
