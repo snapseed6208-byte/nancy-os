@@ -9,9 +9,9 @@ import { useTodayBrief, useGenerateDailyBrief, useBriefFeedback } from "@/lib/ho
 import { useDashboardStats } from "@/lib/hooks/useDashboard";
 import { useTodayTasks, useToggleTaskComplete } from "@/lib/hooks/usePlan";
 import { useHabitsWithToday, useToggleHabitCompletion, useHabitWeeklyStats, useHabitAnalysis, formatFrequency, type HabitWithRecord } from "@/lib/hooks/useHabit";
-import { useImportantEvents } from "@/lib/hooks/useImportantEvent";
+import { useImportantEvents, useCreateImportantEvent, useToggleImportantEvent } from "@/lib/hooks/useImportantEvent";
 import {
-  useWaterToday,
+  useWaterToday, useAddWater, useDeleteWater,
   useDailyChecklist, useInitChecklist,
   useGenerateChecklistTips, useInsertChecklistAiItems,
   useFoodRecords, useWorkoutRecords,
@@ -45,7 +45,11 @@ export default function Home() {
   const { data: habitWeeklyStats } = useHabitWeeklyStats(2);
   const { data: habitAnalysis } = useHabitAnalysis();
   const { data: importantEvents } = useImportantEvents();
+  const createImportantEvent = useCreateImportantEvent();
+  const toggleImportantEvent = useToggleImportantEvent();
   const { data: waterToday } = useWaterToday(dateStr);
+  const addWater = useAddWater();
+  const deleteWater = useDeleteWater();
   const initChecklist = useInitChecklist();
   const generateTips = useGenerateChecklistTips();
   const insertAiItems = useInsertChecklistAiItems();
@@ -155,7 +159,12 @@ export default function Home() {
       </section>
 
       {/* ── Important Events ── */}
-      <ImportantEvents events={importantEvents} />
+      <ImportantEvents
+        events={importantEvents}
+        onToggle={(id, isCompleted) => toggleImportantEvent.mutate({ id, isCompleted })}
+        onCreate={(input) => createImportantEvent.mutate(input)}
+        isCreating={createImportantEvent.isPending}
+      />
 
       {/* ── Quick Record (3 buttons, only entry point) ── */}
       <section>
@@ -202,8 +211,12 @@ export default function Home() {
       <BodyStatus
         waterTotal={waterToday?.total_ml}
         waterGoal={waterToday?.goal_ml}
+        waterRecords={waterToday?.records}
         foodCount={(foodToday as unknown[])?.length ?? 0}
         workoutDone={(workoutToday as unknown[])?.length > 0}
+        onAddWater={(amount) => addWater.mutate({ date: dateStr, amount_ml: amount })}
+        onDeleteWater={(id) => deleteWater.mutate({ id, date: dateStr })}
+        isAddingWater={addWater.isPending}
       />
 
       {/* ── AI Daily Brief (at bottom, handles all three states) ── */}
