@@ -1,30 +1,20 @@
 import { useLocation } from "wouter";
 import { Clock, Circle, CircleDot, CheckCircle2, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { DashboardStats } from "@/lib/hooks/useDashboard";
+import type { TaskRow } from "@/lib/hooks/usePlan";
 
 interface TodayScheduleProps {
-  stats: NonNullable<DashboardStats>;
+  tasks?: TaskRow[] | null;
   onToggleTask: (taskId: string, taskStatus: string) => void;
   isToggling: boolean;
 }
 
-export function TodaySchedule({ stats, onToggleTask, isToggling }: TodayScheduleProps) {
+export function TodaySchedule({ tasks, onToggleTask, isToggling }: TodayScheduleProps) {
   const [, navigate] = useLocation();
-  const allTasks = [...stats.timeline.inProgress, ...stats.timeline.pending]
-    .filter((item) => item.type === "task");
 
-  if (allTasks.length === 0) return null;
+  if (!tasks || tasks.length === 0) return null;
 
-  const sorted = [...allTasks].sort((a, b) => {
-    if (a.taskType === "recurring" && b.taskType !== "recurring") return -1;
-    if (a.taskType !== "recurring" && b.taskType === "recurring") return 1;
-    const priorityOrder = { high: 0, medium: 1, low: 2 };
-    const aPriority = (a.subtitle === "高优先" ? "high" : a.subtitle === "中优先" ? "medium" : "low");
-    const bPriority = (b.subtitle === "高优先" ? "high" : b.subtitle === "中优先" ? "medium" : "low");
-    return (priorityOrder[aPriority as keyof typeof priorityOrder] ?? 1) -
-           (priorityOrder[bPriority as keyof typeof priorityOrder] ?? 1);
-  });
+  const visible = tasks.slice(0, 5);
 
   return (
     <section className="bg-gradient-to-br from-sage-light/5 to-white border border-sage-light/20 rounded-2xl p-4">
@@ -32,16 +22,18 @@ export function TodaySchedule({ stats, onToggleTask, isToggling }: TodaySchedule
         <Clock size={13} className="text-sage-deep" />
         <h2 className="text-xs font-semibold text-ink">今日重点任务</h2>
         <span className="text-[10px] text-ink-lighter ml-auto">
-          {sorted.some((t) => t.taskType === "recurring") ? "点击累计完成" : "点击完成任务"}
+          {tasks.some((t) => t.task_type === "recurring") ? "点击累计完成" : "点击完成任务"}
         </span>
       </div>
       <div className="space-y-1">
-        {sorted.slice(0, 5).map((task) => {
-          const isRecurring = task.taskType === "recurring";
+        {visible.map((task) => {
+          const isRecurring = task.task_type === "recurring";
           const taskStatus = task.status === "in_progress" ? "in_progress" : "pending";
-          const compCount = task.completedCount || 0;
-          const tgtCount = task.targetCount || 1;
+          const compCount = isRecurring ? (task.completed_count || 0) : 0;
+          const tgtCount = isRecurring ? (task.target_count || 1) : 1;
           const pct = Math.round((compCount / tgtCount) * 100);
+          const priorityLabel =
+            task.priority === "high" ? "高优先" : task.priority === "medium" ? "中优先" : "低优先";
 
           return (
             <div key={task.id}
@@ -68,14 +60,14 @@ export function TodaySchedule({ stats, onToggleTask, isToggling }: TodaySchedule
                   </div>
                 )}
               </div>
-              {!isRecurring && task.subtitle && (
+              {!isRecurring && (
                 <span className={cn(
                   "text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0",
-                  task.subtitle === "高优先" ? "bg-accent-rose/10 text-accent-rose"
-                    : task.subtitle === "中优先" ? "bg-amber-50 text-amber-600"
+                  task.priority === "high" ? "bg-accent-rose/10 text-accent-rose"
+                    : task.priority === "medium" ? "bg-amber-50 text-amber-600"
                     : "bg-ink/5 text-ink-lighter",
                 )}>
-                  {task.subtitle}
+                  {priorityLabel}
                 </span>
               )}
               <button onClick={() => navigate("/plan")}

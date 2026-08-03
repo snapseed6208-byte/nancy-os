@@ -6,3 +6,5 @@ export { TodayHabits } from "./TodayHabits";
 export { TodaySchedule } from "./TodaySchedule";
 export { DailyBriefCard } from "./DailyBriefCard";
 export { TimelineSection } from "./TimelineSection";
+export { ImportantEvents } from "./ImportantEvents";
+export { BodyStatus } from "./BodyStatus";

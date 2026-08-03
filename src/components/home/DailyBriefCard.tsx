@@ -1,4 +1,4 @@
-import { Loader2, Brain, Target, ThumbsUp, ThumbsDown, RefreshCw, ChevronRight, ChevronDown } from "lucide-react";
+import { Loader2, Brain, Target, ThumbsUp, ThumbsDown, RefreshCw, ChevronRight, ChevronDown, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIPreference } from "@/lib/hooks/useUIPreference";
 import type { DailyBrief, DailyBriefSuggestion, DailyBriefWarning } from "@/lib/types";
@@ -8,9 +8,10 @@ const WARNING_ICONS: Record<string, string> = {
 };
 
 interface DailyBriefCardProps {
-  brief: DailyBrief;
+  brief?: DailyBrief | null;
+  onGenerate: () => void;
   onRegenerate: () => void;
-  isRegenerating: boolean;
+  isGenerating: boolean;
   onFeedback: (rating: "helpful" | "not_helpful") => void;
   feedbackSent: boolean;
   feedbackPending: boolean;
@@ -18,19 +19,50 @@ interface DailyBriefCardProps {
 
 export function DailyBriefCard({
   brief,
+  onGenerate,
   onRegenerate,
-  isRegenerating,
+  isGenerating,
   onFeedback,
   feedbackSent,
   feedbackPending,
 }: DailyBriefCardProps) {
   const [expanded, setExpanded] = useUIPreference("brief_expanded", false);
+
+  // State 1: Generating
+  if (isGenerating) {
+    return (
+      <div className="bg-gradient-to-br from-sage-light/10 to-white border border-sage-light/30 rounded-2xl p-6 flex items-center justify-center gap-3">
+        <Loader2 size={18} className="animate-spin text-sage-deep" />
+        <span className="text-sm text-ink-light">正在生成今日简报...</span>
+      </div>
+    );
+  }
+
+  // State 2: No brief — show generate button
+  if (!brief) {
+    return (
+      <div className="bg-gradient-to-br from-sage-light/10 to-white border border-sage-light/30 rounded-2xl p-5 text-center">
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <Brain size={16} className="text-sage-deep" />
+          <h2 className="text-sm font-semibold text-ink">今日 AI 简报</h2>
+        </div>
+        <p className="text-xs text-ink-lighter mb-3">AI 根据你的今日数据生成个性化洞察</p>
+        <button
+          onClick={onGenerate}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sage-deep text-white text-xs font-medium hover:bg-sage-deep/90 transition-colors active:scale-95"
+        >
+          <Sparkles size={12} />立即生成
+        </button>
+      </div>
+    );
+  }
+
+  // State 3: Brief exists
   const suggestions = (brief.suggestions || []) as DailyBriefSuggestion[];
   const warnings = (brief.warnings || []) as DailyBriefWarning[];
 
   return (
     <div className="bg-gradient-to-br from-sage-light/10 to-white border border-sage-light/30 rounded-2xl overflow-hidden">
-      {/* Header — always visible */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between p-4 pb-2 text-left"
@@ -42,10 +74,10 @@ export function DailyBriefCard({
         <div className="flex items-center gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); onRegenerate(); }}
-            disabled={isRegenerating}
+            disabled={isGenerating}
             className="flex items-center gap-1 text-[10px] text-ink-lighter hover:text-ink-light transition-colors disabled:opacity-50"
           >
-            {isRegenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+            {isGenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
             重新生成
           </button>
           {expanded
@@ -55,7 +87,6 @@ export function DailyBriefCard({
         </div>
       </button>
 
-      {/* Summary — always visible, truncated when collapsed */}
       <div className="px-4 pb-3">
         {brief.summary && (
           <div className="mb-2">
@@ -86,7 +117,6 @@ export function DailyBriefCard({
         )}
       </div>
 
-      {/* Expanded content */}
       {expanded && (
         <>
           {brief.motivation && (
