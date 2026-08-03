@@ -273,16 +273,18 @@ export function useTodayTasks() {
   return useQuery({
     queryKey: ["tasks", "today"],
     queryFn: async () => {
-      // One-time tasks: due_date=today OR is_today_focus=true
-      // Recurring tasks: all non-ai_pending (completed_count resets per cycle via task_completion_records)
+      // One-time: due_date=today OR is_today_focus=true, excluding ai_pending tasks
+      // Recurring: all non-ai_pending (completed_count resets per cycle via task_completion_records)
+      // NOTE: PostgREST only supports ONE .or() per query; use and() to combine groups
       const [{ data: oneTimeTasks }, { data: recurringTasks }] = await Promise.all([
         supabase
           .from("tasks")
           .select("*")
-          .or(`due_date.eq.${today},is_today_focus.eq.true`)
+          .or(
+            `and((due_date.eq.${today},is_today_focus.eq.true),(ai_review_status.is.null,ai_review_status.neq.pending))`,
+          )
           .eq("task_type", "one_time")
           .in("status", ["pending", "in_progress"])
-          .or("ai_review_status.is.null,ai_review_status.neq.pending")
           .order("priority", { ascending: true })
           .limit(30),
         supabase

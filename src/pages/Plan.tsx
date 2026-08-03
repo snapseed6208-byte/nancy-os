@@ -1120,7 +1120,7 @@ function GoalCard({
 function TaskList() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const { data: tasks, isLoading } = useTasks(
-    statusFilter ? { status: statusFilter } : undefined,
+    statusFilter ? { status: statusFilter } : { all: true },
   );
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
