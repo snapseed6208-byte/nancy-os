@@ -815,3 +815,291 @@ export function useCommonProblems(days: number = 30) {
     queryFn: () => fetchCommonProblems(days),
   });
 }
+
+// ── Speaking Question Bank V2 ──
+
+export type SpeakingQuestion = {
+  id: string;
+  user_id: string;
+  question: string;
+  normalized_question: string;
+  content_hash: string;
+  mode: "ielts" | "daily" | "professional" | "personal_growth";
+  topic: string;
+  part: "part1" | "part2" | "part3" | null;
+  context: string | null;
+  cue_points: Record<string, unknown> | null;
+  tags: string[];
+  difficulty: string;
+  source_type: string;
+  source_ref: string | null;
+  import_batch_id: string | null;
+  usage_count: number;
+  last_used_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SpeakingQuestionFilters = {
+  mode?: string;
+  topic?: string;
+  part?: string;
+  difficulty?: string;
+  is_active?: boolean;
+  search?: string;
+  limit?: number;
+};
+
+async function fetchSpeakingQuestions(filters: SpeakingQuestionFilters = {}): Promise<SpeakingQuestion[]> {
+  let query = supabase
+    .from("speaking_questions")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (filters.mode) query = query.eq("mode", filters.mode);
+  if (filters.topic) query = query.eq("topic", filters.topic);
+  if (filters.part) query = query.eq("part", filters.part);
+  if (filters.difficulty) query = query.eq("difficulty", filters.difficulty);
+  if (filters.is_active !== undefined) query = query.eq("is_active", filters.is_active);
+  if (filters.search) query = query.ilike("question", `%${filters.search}%`);
+  if (filters.limit) query = query.limit(filters.limit);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as SpeakingQuestion[];
+}
+
+export function useSpeakingQuestions(filters: SpeakingQuestionFilters = {}) {
+  return useQuery({
+    queryKey: ["speaking_questions", filters],
+    queryFn: () => fetchSpeakingQuestions(filters),
+  });
+}
+
+async function fetchSpeakingQuestion(id: string): Promise<SpeakingQuestion> {
+  const { data, error } = await supabase
+    .from("speaking_questions")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return data as SpeakingQuestion;
+}
+
+export function useSpeakingQuestion(id: string | undefined) {
+  return useQuery({
+    queryKey: ["speaking_question", id],
+    queryFn: () => fetchSpeakingQuestion(id!),
+    enabled: !!id,
+  });
+}
+
+export function useCreateSpeakingQuestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      question: string;
+      mode: SpeakingQuestion["mode"];
+      topic: string;
+      part?: SpeakingQuestion["part"];
+      context?: string;
+      cue_points?: Record<string, unknown>;
+      tags?: string[];
+      difficulty?: string;
+      source_type?: string;
+      source_ref?: string;
+      import_batch_id?: string;
+    }) => {
+      const userId = await getUserId();
+      const normalized = input.question.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+      const contentHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized))
+        .then((buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join(""));
+
+      const { data, error } = await supabase
+        .from("speaking_questions")
+        .insert({
+          ...input,
+          user_id: userId,
+          normalized_question: normalized,
+          content_hash: contentHash,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as SpeakingQuestion;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["speaking_questions"] });
+    },
+  });
+}
+
+export function useBulkCreateSpeakingQuestions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      questions: Array<{
+        question: string;
+        mode: SpeakingQuestion["mode"];
+        topic: string;
+        part?: SpeakingQuestion["part"];
+        context?: string;
+        cue_points?: Record<string, unknown>;
+        tags?: string[];
+        difficulty?: string;
+        source_type?: string;
+        source_ref?: string;
+      }>;
+      import_batch_id?: string;
+    }) => {
+      const userId = await getUserId();
+
+      // Create import batch if not provided
+      let batchId = input.import_batch_id;
+      if (!batchId) {
+        const { data: batch, error: batchErr } = await supabase
+          .from("speaking_import_batches")
+          .insert({
+            user_id: userId,
+            source: "manual",
+            total_count: input.questions.length,
+            status: "in_progress",
+          })
+          .select("id")
+          .single();
+        if (batchErr) throw batchErr;
+        batchId = batch.id;
+      }
+
+      // Build rows with content hashes
+      const rows = await Promise.all(input.questions.map(async (q) => {
+        const normalized = q.question.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+        const contentHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized))
+          .then((buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join(""));
+        return {
+          ...q,
+          user_id: userId,
+          normalized_question: normalized,
+          content_hash: contentHash,
+          import_batch_id: batchId,
+        };
+      }));
+
+      const { error } = await supabase.from("speaking_questions").insert(rows);
+      if (error) throw error;
+
+      // Update batch status
+      await supabase
+        .from("speaking_import_batches")
+        .update({ imported_count: rows.length, status: "completed" })
+        .eq("id", batchId);
+
+      return { batch_id: batchId, count: rows.length };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["speaking_questions"] });
+      qc.invalidateQueries({ queryKey: ["speaking_import_batches"] });
+    },
+  });
+}
+
+export type SpeakingQuestionHistoryEntry = {
+  id: string;
+  user_id: string;
+  question_id: string;
+  session_id: string | null;
+  practiced_at: string;
+  fluency_score: number | null;
+  grammar_score: number | null;
+  vocabulary_score: number | null;
+  naturalness_score: number | null;
+  created_at: string;
+};
+
+async function fetchSpeakingQuestionHistory(days: number): Promise<SpeakingQuestionHistoryEntry[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const { data, error } = await supabase
+    .from("speaking_question_history")
+    .select("*")
+    .gte("practiced_at", since.toISOString())
+    .order("practiced_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as SpeakingQuestionHistoryEntry[];
+}
+
+export function useSpeakingQuestionHistory(days: number = 30) {
+  return useQuery({
+    queryKey: ["speaking_question_history", days],
+    queryFn: () => fetchSpeakingQuestionHistory(days),
+  });
+}
+
+export function useRecordSpeakingQuestionUsage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      question_id: string;
+      session_id?: string;
+      fluency_score?: number;
+      grammar_score?: number;
+      vocabulary_score?: number;
+      naturalness_score?: number;
+    }) => {
+      const userId = await getUserId();
+
+      // Insert history record
+      const { error: histErr } = await supabase
+        .from("speaking_question_history")
+        .insert({
+          user_id: userId,
+          question_id: input.question_id,
+          session_id: input.session_id || null,
+          fluency_score: input.fluency_score ?? null,
+          grammar_score: input.grammar_score ?? null,
+          vocabulary_score: input.vocabulary_score ?? null,
+          naturalness_score: input.naturalness_score ?? null,
+        });
+      if (histErr) throw histErr;
+
+      // Increment usage_count on the question via RPC
+      const { error: updErr } = await supabase.rpc("increment_question_usage", {
+        q_id: input.question_id,
+      });
+      if (updErr) throw updErr;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["speaking_question_history"] });
+      qc.invalidateQueries({ queryKey: ["speaking_questions"] });
+    },
+  });
+}
+
+// Add question_id support to create speaking session (preserves backward compat)
+export function useCreateSpeakingSessionV2() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      prompt: string;
+      context?: string;
+      expression_ids?: string;
+      category?: string;
+      mode?: string;
+      recommended_expressions?: Record<string, unknown>[];
+      question_id?: string;
+    }) => {
+      const userId = await getUserId();
+      const { data, error } = await supabase
+        .from("speaking_sessions")
+        .insert({ ...input, user_id: userId })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["speaking_sessions"] }),
+  });
+}
