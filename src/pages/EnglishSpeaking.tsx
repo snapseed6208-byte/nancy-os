@@ -583,9 +583,9 @@ export default function EnglishSpeaking() {
     }
   };
 
-  const handleStopRecording = () => {
+  const handleStopRecording = async () => {
     recorder.stop();
-    asr.stop();
+    await asr.stop();
   };
 
   // Batch fallback — only for non-realtime providers.
@@ -2583,7 +2583,7 @@ export default function EnglishSpeaking() {
             )}
             {recorder.state === "recording" && (
               <button
-                onClick={() => { recorder.stop(); asr.stop(); }}
+                onClick={async () => { recorder.stop(); await asr.stop(); }}
                 className="h-20 w-20 rounded-full bg-accent-rose/10 flex items-center justify-center animate-pulse"
               >
                 <Square size={28} className="text-accent-rose" />

@@ -168,7 +168,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
               sample_rate: 16000,
               enable_intermediate_result: true,
               enable_punctuation_prediction: true,
-              max_sentence_silence: 800,
+              max_sentence_silence: 1800,
             },
             context: {},
           };
@@ -234,9 +234,10 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
         };
 
         ws.onclose = (e) => {
-          if (!this.stopped) {
-            console.warn(`[aliyunRealtime] WebSocket closed: code=${e.code} reason=${e.reason} wasClean=${e.wasClean}`);
-          }
+          console.log(
+            "[aliyunRealtime] WebSocket closed: code=%d reason=%s wasClean=%s stopped=%s",
+            e.code, e.reason || "(none)", e.wasClean, this.stopped,
+          );
         };
       });
 
@@ -258,14 +259,21 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
   }
 
   async stop(): Promise<void> {
+    const transcriptBeforeStop = this.transcript;
+    let sentencesReceivedDuringStop = 0;
+    let completedReceived = false;
+    let closeReason = "";
+    const tStopStart = performance.now();
+
     this.stopped = true;
 
-    // Stop audio capture
+    // Stop audio capture — no more PCM frames sent to WebSocket
     if (this.workletNode) {
       this.workletNode.port.onmessage = null;
     }
+    console.log("[aliyunRealtime] Audio capture stopped — no more frames will be sent");
 
-    // Send StopTranscription
+    // Send StopTranscription and wait for final results
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         const stopMsg: WsMessage = {
@@ -278,24 +286,41 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
           payload: {},
         };
         this.ws.send(JSON.stringify(stopMsg));
-        console.log("[aliyunRealtime] StopTranscription sent");
+        console.log("[aliyunRealtime] StopTranscription sent — waiting for final flush");
 
-        // Wait briefly for final events then close
+        // Wait for TranscriptionCompleted with 5s timeout
         await new Promise<void>((resolve) => {
+          const FINAL_FLUSH_TIMEOUT = 5000;
           const timeout = setTimeout(() => {
-            console.log("[aliyunRealtime] Stop timeout — closing");
+            closeReason = "timeout";
+            console.warn(
+              "[aliyunRealtime] Final flush timeout (%dms) — closing without TranscriptionCompleted. " +
+              "Sentences received during stop: %d",
+              FINAL_FLUSH_TIMEOUT, sentencesReceivedDuringStop,
+            );
             resolve();
-          }, 3000);
+          }, FINAL_FLUSH_TIMEOUT);
 
           const ws = this.ws!;
           const origHandler = ws.onmessage;
           ws.onmessage = (event: MessageEvent) => {
+            // Forward to original handler first — this processes SentenceEnd
             origHandler?.call(ws, event);
 
             if (typeof event.data === "string") {
               try {
                 const msg: WsMessage = JSON.parse(event.data);
+                if (msg.header.name === "SentenceEnd") {
+                  sentencesReceivedDuringStop++;
+                  console.log(
+                    "[aliyunRealtime] SentenceEnd during stop flush #%d: %s",
+                    sentencesReceivedDuringStop,
+                    (msg.payload.result as string)?.slice(0, 80),
+                  );
+                }
                 if (msg.header.name === "TranscriptionCompleted") {
+                  completedReceived = true;
+                  closeReason = "completed";
                   clearTimeout(timeout);
                   resolve();
                 }
@@ -304,7 +329,29 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
           };
         });
       } catch { /* ignore */ }
+    } else {
+      closeReason = "ws_unavailable";
     }
+
+    // Read final transcript BEFORE cleanup (cleanup resets ws)
+    const transcriptAfterStop = this.transcript;
+    const flushDuration = (performance.now() - tStopStart).toFixed(0);
+
+    console.log(
+      "[aliyunRealtime] Stop lifecycle complete:" +
+      "\n  transcriptBeforeStop: %s" +
+      "\n  transcriptAfterStop:  %s" +
+      "\n  sentencesDuringStop:  %d" +
+      "\n  completedReceived:    %s" +
+      "\n  closeReason:          %s" +
+      "\n  flushDuration:        %sms",
+      transcriptBeforeStop.slice(0, 100),
+      transcriptAfterStop.slice(0, 100),
+      sentencesReceivedDuringStop,
+      completedReceived ? "YES" : "NO",
+      closeReason,
+      flushDuration,
+    );
 
     this.cleanup();
     this.isListening = false;
