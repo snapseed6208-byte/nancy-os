@@ -818,6 +818,9 @@ export default function EnglishSpeaking() {
         retry_of_attempt_id: firstAttemptId || null,
         attempt_round: 2,
         is_retry: true,
+        stt_provider: asr.providerName,
+        stt_mode: asr.recognitionMode,
+        fallback_used: asr.fallbackTriggered,
       };
 
       if (retryFeedback?.contentAnalysis) {
@@ -963,6 +966,9 @@ export default function EnglishSpeaking() {
         expressions_missed: expressionsMissed,
         reference_answer: referenceAnswer || null,
         expression_upgrade: feedback?.expressionUpgrade || [],
+        stt_provider: asr.providerName,
+        stt_mode: asr.recognitionMode,
+        fallback_used: asr.fallbackTriggered,
       };
 
       // Phase 6: Content & Structure fields
