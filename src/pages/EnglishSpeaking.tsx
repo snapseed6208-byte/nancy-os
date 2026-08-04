@@ -588,11 +588,34 @@ export default function EnglishSpeaking() {
     asr.stop();
   };
 
+  // Batch fallback — only for non-realtime providers.
+  // Realtime providers (aliyun-realtime) stream via WebSocket; they never
+  // need a batch fallback. Only trigger when the active provider is a
+  // batch provider AND no transcript was produced.
   useEffect(() => {
-    if (recorder.state === "done" && recorder.blob && !asr.transcript && asr.supported && asr.isProcessing === false) {
+    if (
+      recorder.state === "done" &&
+      recorder.blob &&
+      !asr.transcript &&
+      asr.supported &&
+      !asr.isProcessing
+    ) {
+      if (asr.isRealtimeProvider) {
+        console.warn(
+          "[EnglishSpeaking] Realtime provider active but no transcript — " +
+          "WebSocket may have failed silently. Skipping batch fallback. provider=%s",
+          asr.providerName,
+        );
+        return;
+      }
+      console.log(
+        "[EnglishSpeaking] Batch provider fallback triggered — provider=%s mode=%s",
+        asr.providerName, asr.recognitionMode,
+      );
+      asr.markFallback();
       asr.stop(recorder.blob);
     }
-  }, [recorder.state, recorder.blob]);
+  }, [recorder.state, recorder.blob, asr.transcript, asr.supported, asr.isProcessing, asr.isRealtimeProvider, asr.providerName, asr.recognitionMode, asr.stop, asr.markFallback]);
 
   // Warn before leaving mid-practice (mobile back button / browser back)
   useEffect(() => {
@@ -730,6 +753,14 @@ export default function EnglishSpeaking() {
 
   const handleRetrySave = async () => {
     if (!sessionId) return;
+    console.log(
+      "[EnglishSpeaking] RETRY attempt save — STT Provider: %s | STT Mode: %s | Fallback: %s | Transcript Length: %d | Audio Duration: %ds",
+      asr.providerName,
+      asr.recognitionMode,
+      asr.fallbackTriggered ? "YES" : "NO",
+      (asr.transcript || "").length,
+      recorder.duration,
+    );
     setUploading(true);
 
     // Upload retry audio
@@ -858,6 +889,14 @@ export default function EnglishSpeaking() {
       console.error("[EnglishSpeaking] handleSave: sessionId is null — was handleStartRecording called?");
       return;
     }
+    console.log(
+      "[EnglishSpeaking] FIRST attempt save — STT Provider: %s | STT Mode: %s | Fallback: %s | Transcript Length: %d | Audio Duration: %ds",
+      asr.providerName,
+      asr.recognitionMode,
+      asr.fallbackTriggered ? "YES" : "NO",
+      (asr.transcript || "").length,
+      recorder.duration,
+    );
     setUploading(true);
 
     if (referenceAnswerPromise.current) {

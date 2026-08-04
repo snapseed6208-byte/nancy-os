@@ -18,6 +18,10 @@ export function useSpeechRecognition() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // STT debug metadata
+  const [fallbackTriggered, setFallbackTriggered] = useState(false);
+  const transcriptGeneratedAt = useRef<number | null>(null);
+
   const providerRef = useRef<SpeechProvider | null>(null);
 
   // Lazy-init provider once
@@ -25,7 +29,12 @@ export function useSpeechRecognition() {
     const p = createSpeechProvider();
     providerRef.current = p;
 
-    p.onTranscriptUpdate = (text: string) => setTranscript(text);
+    p.onTranscriptUpdate = (text: string) => {
+      setTranscript(text);
+      if (text && !transcriptGeneratedAt.current) {
+        transcriptGeneratedAt.current = Date.now();
+      }
+    };
     p.onInterimUpdate = (text: string) => setInterim(text);
     p.onStateChange = () => {
       setIsListening(p.isListening);
@@ -36,6 +45,15 @@ export function useSpeechRecognition() {
   }
 
   const provider = providerRef.current;
+
+  // Derive recognition mode from provider name
+  const recognitionMode: "realtime_websocket" | "batch_upload" | "browser_builtin" =
+    provider.name === "aliyun-realtime" ? "realtime_websocket" :
+    provider.name === "aliyun" ? "batch_upload" :
+    "browser_builtin";
+
+  // Realtime providers (aliyun-realtime) stream via WebSocket — no setAudioBlob
+  const isRealtimeProvider = provider.name === "aliyun-realtime";
 
   useEffect(() => {
     return () => {
@@ -76,7 +94,14 @@ export function useSpeechRecognition() {
     setIsListening(false);
     setIsProcessing(false);
     setError(null);
+    setFallbackTriggered(false);
+    transcriptGeneratedAt.current = null;
   }, [provider]);
+
+  /** Called when batch fallback is triggered — marks the attempt as fallback */
+  const markFallback = useCallback(() => {
+    setFallbackTriggered(true);
+  }, []);
 
   return {
     start,
@@ -89,6 +114,13 @@ export function useSpeechRecognition() {
     isProcessing,
     error,
     supported: provider.supported,
+    // STT debug metadata
+    providerName: provider.name,
+    recognitionMode,
+    isRealtimeProvider,
+    fallbackTriggered,
+    transcriptGeneratedAt: transcriptGeneratedAt.current,
+    markFallback,
     /** Exposed for providers that need a session ID for Storage upload. */
     setSessionId: (id: string) => {
       if ("setSessionId" in provider) {
