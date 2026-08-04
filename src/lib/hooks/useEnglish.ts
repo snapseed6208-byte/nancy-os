@@ -277,6 +277,7 @@ async function fetchSpeakingSessions() {
   const { data, error } = await supabase
     .from("speaking_sessions")
     .select("*, speaking_attempts(fluency_score, grammar_score, vocabulary_score, naturalness_score, audio_duration, expressions_used, expressions_missed, reference_answer, audio_url)")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -304,6 +305,7 @@ async function fetchSpeakingSession(id: string) {
     .from("speaking_attempts")
     .select("*")
     .eq("session_id", id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: true });
 
   if (attError) throw attError;
@@ -362,6 +364,70 @@ export function useCreateSpeakingAttempt() {
       if (variables.session_id) {
         qc.invalidateQueries({ queryKey: ["speaking_session", variables.session_id] });
       }
+    },
+  });
+}
+
+export function useUpdateSpeakingSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      sessionId: string;
+      title?: string;
+      learningNotes?: string;
+      isTest?: boolean;
+    }) => {
+      const updates: Record<string, unknown> = {
+        updated_at: nowISO(),
+      };
+      if (input.title !== undefined) updates.title = input.title;
+      if (input.learningNotes !== undefined) updates.learning_notes = input.learningNotes;
+      if (input.isTest !== undefined) updates.is_test = input.isTest;
+
+      const { data, error } = await supabase
+        .from("speaking_sessions")
+        .update(updates)
+        .eq("id", input.sessionId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["speaking_sessions"] });
+      qc.invalidateQueries({ queryKey: ["speaking_stats"] });
+      qc.invalidateQueries({ queryKey: ["speaking_session", variables.sessionId] });
+    },
+  });
+}
+
+export function useSoftDeleteSpeakingSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const ts = nowISO();
+
+      // Soft-delete child attempts first
+      const { error: attError } = await supabase
+        .from("speaking_attempts")
+        .update({ deleted_at: ts })
+        .eq("session_id", sessionId);
+
+      if (attError) throw attError;
+
+      // Soft-delete the session
+      const { data, error } = await supabase
+        .from("speaking_sessions")
+        .update({ deleted_at: ts, updated_at: ts })
+        .eq("id", sessionId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["speaking_sessions"] });
+      qc.invalidateQueries({ queryKey: ["speaking_stats"] });
     },
   });
 }
@@ -627,15 +693,18 @@ async function fetchSpeakingStats() {
     supabase
       .from("speaking_sessions")
       .select("id, created_at")
-      .eq("user_id", userId),
+      .eq("user_id", userId)
+      .is("deleted_at", null),
     supabase
       .from("speaking_attempts")
       .select("fluency_score, grammar_score, vocabulary_score, naturalness_score, created_at")
-      .eq("user_id", userId),
+      .eq("user_id", userId)
+      .is("deleted_at", null),
     supabase
       .from("speaking_sessions")
       .select("id, created_at")
       .eq("user_id", userId)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(1),
   ]);
@@ -708,6 +777,7 @@ async function fetchProgressData(days: number): Promise<ProgressDataPoint[]> {
       speaking_sessions!inner(prompt, category, mode)
     `)
     .eq("user_id", userId)
+    .is("deleted_at", null)
     .gte("created_at", since.toISOString())
     .order("created_at", { ascending: true });
 
@@ -752,6 +822,7 @@ async function fetchFrequentErrors(days: number): Promise<FrequentError[]> {
     .from("speaking_attempts")
     .select("useful_corrections")
     .eq("user_id", userId)
+    .is("deleted_at", null)
     .gte("created_at", since.toISOString())
     .not("useful_corrections", "is", null);
 
@@ -805,6 +876,7 @@ async function fetchCommonProblems(days: number): Promise<string[]> {
     .from("speaking_attempts")
     .select("main_problems, created_at")
     .eq("user_id", userId)
+    .is("deleted_at", null)
     .gte("created_at", since.toISOString())
     .not("main_problems", "is", null)
     .order("created_at", { ascending: false })

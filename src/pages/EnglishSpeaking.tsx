@@ -5,12 +5,13 @@ import {
   Loader2, CheckCircle2, AlertTriangle, Play, Pause, RefreshCw,
   Home, MessageSquare, Coffee, Briefcase, GraduationCap, Heart,
   Target, Clock, BarChart3, Zap, X, Search, Shuffle, Bot, Library,
-  Filter, ChevronDown,
+  Filter, ChevronDown, MoreHorizontal, Edit3, Trash2, Flag,
 } from "lucide-react";
 import {
   useSpeakingSessions, useSpeakingSession, useCreateSpeakingSessionV2,
   useCreateSpeakingAttempt, useCreateExpression, uploadAudio, useDueExpressions, useSpeakingStats,
   useSpeakingQuestions, useSpeakingQuestionHistory, useRecordSpeakingQuestionUsage,
+  useUpdateSpeakingSession, useSoftDeleteSpeakingSession,
 } from "@/lib/hooks/useEnglish";
 import type { SpeakingQuestion, SpeakingQuestionHistoryEntry } from "@/lib/hooks/useEnglish";
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
@@ -421,6 +422,11 @@ export default function EnglishSpeaking() {
   const [retryTranscript, setRetryTranscript] = useState<string>("");
   const [retryDuration, setRetryDuration] = useState<number>(0);
 
+  // History management state
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState<{ id: string; title: string; notes: string; prompt: string } | null>(null);
+  const [deletingSession, setDeletingSession] = useState<{ id: string; prompt: string } | null>(null);
+
   // Phase 6: Collapsible language analysis
   const [showLanguageAnalysis, setShowLanguageAnalysis] = useState(true);
 
@@ -438,6 +444,8 @@ export default function EnglishSpeaking() {
   const { data: dueExpressions } = useDueExpressions();
   const createSession = useCreateSpeakingSessionV2();
   const createAttempt = useCreateSpeakingAttempt();
+  const updateSession = useUpdateSpeakingSession();
+  const deleteSession = useSoftDeleteSpeakingSession();
   const createExpression = useCreateExpression();
   const recordUsage = useRecordSpeakingQuestionUsage();
 
@@ -1283,56 +1291,219 @@ export default function EnglishSpeaking() {
                 : null;
               const duration = (first?.audio_duration as number) || 0;
               const usedCount = ((first?.expressions_used as unknown[]) || []).length;
+              const sid = s.id as string;
+              const isTest = (s.is_test as boolean) || false;
+              const displayTitle = ((s.title as string) || (s.prompt as string)).slice(0, 60);
               return (
-                <button
-                  key={s.id as string}
-                  onClick={() => handleViewSession(s.id as string)}
-                  className="w-full bg-card rounded-2xl border border-border p-4 text-left hover:border-sage-light/50 transition-colors"
+                <div
+                  key={sid}
+                  className="w-full bg-card rounded-2xl border border-border p-4 hover:border-sage-light/50 transition-colors relative"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-ink truncate">{(s.prompt as string).slice(0, 60)}</p>
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <p className="text-[10px] text-ink-lighter">
-                          {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
-                        </p>
-                        {(s.mode as string) && (
+                  <button
+                    onClick={() => handleViewSession(sid)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center justify-between gap-2 pr-8">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium text-ink truncate">{displayTitle}</p>
+                          {isTest && (
+                            <span className="text-[9px] bg-amber-50 text-amber-500 rounded-full px-1.5 py-px shrink-0">测试</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <p className="text-[10px] text-ink-lighter">
+                            {new Date(s.created_at as string).toLocaleDateString("zh-CN")}
+                          </p>
+                          {(s.mode as string) && (
+                            <span className={cn(
+                              "text-[10px] rounded-full px-2 py-0.5",
+                              (s.mode as string) === "expression_practice"
+                                ? "bg-amber-50 text-amber-600"
+                                : "bg-ink/5 text-ink-lighter",
+                            )}>
+                              {(s.mode as string) === "expression_practice" ? "表达练习" : "自由口语"}
+                            </span>
+                          )}
+                          {duration > 0 && (
+                            <span className="text-[10px] text-ink-lighter">{formatDuration(duration)}</span>
+                          )}
+                          {usedCount > 0 && (
+                            <span className="text-[10px] text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5">
+                              +{usedCount} 表达
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {scoreVal && (
                           <span className={cn(
-                            "text-[10px] rounded-full px-2 py-0.5",
-                            (s.mode as string) === "expression_practice"
-                              ? "bg-amber-50 text-amber-600"
-                              : "bg-ink/5 text-ink-lighter",
+                            "text-xs font-bold font-mono rounded-full px-2 py-1",
+                            parseFloat(scoreVal) >= 6.5 ? "bg-sage-light text-sage-deep" : "bg-amber-50 text-amber-600",
                           )}>
-                            {(s.mode as string) === "expression_practice" ? "表达练习" : "自由口语"}
+                            {scoreVal}
                           </span>
                         )}
-                        {duration > 0 && (
-                          <span className="text-[10px] text-ink-lighter">{formatDuration(duration)}</span>
-                        )}
-                        {usedCount > 0 && (
-                          <span className="text-[10px] text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5">
-                            +{usedCount} 表达
-                          </span>
-                        )}
+                        <ChevronRight size={14} className="text-ink-lighter shrink-0" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {scoreVal && (
-                        <span className={cn(
-                          "text-xs font-bold font-mono rounded-full px-2 py-1",
-                          parseFloat(scoreVal) >= 6.5 ? "bg-sage-light text-sage-deep" : "bg-amber-50 text-amber-600",
-                        )}>
-                          {scoreVal}
-                        </span>
-                      )}
-                      <ChevronRight size={14} className="text-ink-lighter shrink-0" />
-                    </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {/* More menu button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === sid ? null : sid); }}
+                    className="absolute top-3 right-3 h-7 w-7 rounded-lg flex items-center justify-center hover:bg-ink/5 transition-colors"
+                  >
+                    <MoreHorizontal size={14} className="text-ink-lighter" />
+                  </button>
+
+                  {/* Dropdown menu */}
+                  {openMenuId === sid && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                      <div className="absolute right-3 top-10 z-20 bg-card rounded-xl border border-border shadow-lg py-1 min-w-[140px]">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); handleViewSession(sid); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink hover:bg-ink/5 transition-colors"
+                        >
+                          <ChevronRight size={12} className="text-ink-lighter" />
+                          查看详情
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); setOpenMenuId(null);
+                            setEditingSession({ id: sid, title: (s.title as string) || "", notes: (s.learning_notes as string) || "", prompt: (s.prompt as string) || "" });
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink hover:bg-ink/5 transition-colors"
+                        >
+                          <Edit3 size={12} className="text-ink-lighter" />
+                          编辑
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); setOpenMenuId(null);
+                            updateSession.mutate({ sessionId: sid, isTest: !isTest });
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink hover:bg-ink/5 transition-colors"
+                        >
+                          <Flag size={12} className={isTest ? "text-amber-500" : "text-ink-lighter"} />
+                          {isTest ? "取消测试标记" : "标记为测试"}
+                        </button>
+                        <div className="border-t border-border my-1" />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation(); setOpenMenuId(null);
+                            setDeletingSession({ id: sid, prompt: (s.prompt as string) || "" });
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 transition-colors"
+                        >
+                          <Trash2 size={12} />
+                          删除
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               );
             })}
           </div>
         </div>
+
+        {/* ── Edit Session Dialog ── */}
+        {editingSession && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+            <div className="fixed inset-0 bg-black/40" onClick={() => setEditingSession(null)} />
+            <div className="relative bg-card rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-6 z-10 max-h-[90vh] overflow-y-auto">
+              <h2 className="text-lg font-semibold text-ink mb-4">编辑练习记录</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-ink-light mb-1.5 block">练习标题</label>
+                  <input
+                    type="text"
+                    value={editingSession.title}
+                    onChange={(e) => setEditingSession({ ...editingSession, title: e.target.value })}
+                    placeholder={editingSession.prompt.slice(0, 60)}
+                    className="w-full text-sm border border-border rounded-xl px-3 py-2 bg-background text-ink focus:outline-none focus:border-sage-light"
+                  />
+                  <p className="text-[10px] text-ink-lighter mt-1">留空则使用题目原文作为标题</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-ink-light mb-1.5 block">学习笔记</label>
+                  <textarea
+                    value={editingSession.notes}
+                    onChange={(e) => setEditingSession({ ...editingSession, notes: e.target.value })}
+                    placeholder="记录学习心得、遇到的困难、改进方向..."
+                    rows={4}
+                    className="w-full text-sm border border-border rounded-xl px-3 py-2 bg-background text-ink focus:outline-none focus:border-sage-light resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 mt-6">
+                <button
+                  onClick={() => setEditingSession(null)}
+                  className="flex-1 h-10 rounded-xl border border-border text-sm text-ink-light hover:bg-ink/5 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await updateSession.mutateAsync({
+                        sessionId: editingSession.id,
+                        title: editingSession.title || undefined,
+                        learningNotes: editingSession.notes || undefined,
+                      });
+                    } catch { /* ignore */ }
+                    setEditingSession(null);
+                  }}
+                  disabled={updateSession.isPending}
+                  className="flex-1 h-10 rounded-xl bg-sage-light text-sage-deep text-sm font-semibold hover:bg-sage-light/80 transition-colors disabled:opacity-50"
+                >
+                  {updateSession.isPending ? "保存中..." : "保存"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Delete Confirmation Dialog ── */}
+        {deletingSession && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+            <div className="fixed inset-0 bg-black/40" onClick={() => setDeletingSession(null)} />
+            <div className="relative bg-card rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-6 z-10">
+              <div className="h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center mx-auto mb-3">
+                <Trash2 size={18} className="text-rose-600" />
+              </div>
+              <h2 className="text-base font-semibold text-ink text-center mb-1">确定删除？</h2>
+              <p className="text-xs text-ink-lighter text-center mb-1">
+                "{deletingSession.prompt.slice(0, 50)}"
+              </p>
+              <p className="text-[11px] text-ink-lighter text-center mb-5">
+                删除后数据保留，不会丢失音频和AI分析结果。
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setDeletingSession(null)}
+                  className="flex-1 h-10 rounded-xl border border-border text-sm text-ink-light hover:bg-ink/5 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      await deleteSession.mutateAsync(deletingSession.id);
+                    } catch { /* ignore */ }
+                    setDeletingSession(null);
+                  }}
+                  disabled={deleteSession.isPending}
+                  className="flex-1 h-10 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50"
+                >
+                  {deleteSession.isPending ? "删除中..." : "删除"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2832,6 +3003,12 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
   const s = session as Record<string, unknown> | undefined;
   const attempts = (s?.attempts as Record<string, unknown>[]) || [];
 
+  // Edit state
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const updateSession = useUpdateSpeakingSession();
+
   // Expression Upgrade re-add state
   const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
   const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
@@ -2898,18 +3075,39 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
         <button onClick={onBack} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
           <ArrowLeft size={16} className="text-ink-light" />
         </button>
-        <div>
+        <div className="flex-1">
           <p className="text-sm text-ink-lighter">English OS</p>
           <h1 className="text-xl font-semibold tracking-tight mt-0.5">练习详情</h1>
         </div>
+        <button
+          onClick={() => {
+            setEditTitle((s.title as string) || "");
+            setEditNotes((s.learning_notes as string) || "");
+            setShowEditDialog(true);
+          }}
+          className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0 hover:bg-ink/10 transition-colors"
+        >
+          <Edit3 size={14} className="text-ink-light" />
+        </button>
       </header>
 
       {/* Question */}
       <div className="bg-card rounded-2xl border border-border p-4">
         <p className="text-xs text-ink-lighter mb-1">题目</p>
-        <p className="text-sm font-medium text-ink">{(s.prompt as string) || "N/A"}</p>
+        {(s.title as string) && (
+          <p className="text-sm font-semibold text-ink mb-0.5">{s.title as string}</p>
+        )}
+        <p className={cn("text-sm text-ink", (s.title as string) ? "text-ink-lighter font-normal" : "font-medium")}>
+          {(s.prompt as string) || "N/A"}
+        </p>
         {(s.context as string) && (
           <p className="text-xs text-ink-lighter mt-1">{s.context as string}</p>
+        )}
+        {(s.learning_notes as string) && (
+          <div className="mt-3 pt-3 border-t border-border">
+            <p className="text-xs text-ink-lighter mb-1">学习笔记</p>
+            <p className="text-xs text-ink-light leading-relaxed whitespace-pre-line">{s.learning_notes as string}</p>
+          </div>
         )}
         <div className="flex items-center gap-2 mt-2">
           {(s.category as string) && (
@@ -3279,6 +3477,63 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
             重新复述 · Round {(firstAttempt?.attempt_round as number) || 2}
             {(firstAttempt?.retry_of_attempt_id as string) && " · 基于第一次回答"}
           </p>
+        </div>
+      )}
+
+      {/* ── Edit Dialog ── */}
+      {showEditDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setShowEditDialog(false)} />
+          <div className="relative bg-card rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-6 z-10 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold text-ink mb-4">编辑练习记录</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-ink-light mb-1.5 block">练习标题</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder={(s.prompt as string)?.slice(0, 60) || ""}
+                  className="w-full text-sm border border-border rounded-xl px-3 py-2 bg-background text-ink focus:outline-none focus:border-sage-light"
+                />
+                <p className="text-[10px] text-ink-lighter mt-1">留空则使用题目原文作为标题</p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-ink-light mb-1.5 block">学习笔记</label>
+                <textarea
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="记录学习心得、遇到的困难、改进方向..."
+                  rows={4}
+                  className="w-full text-sm border border-border rounded-xl px-3 py-2 bg-background text-ink focus:outline-none focus:border-sage-light resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-6">
+              <button
+                onClick={() => setShowEditDialog(false)}
+                className="flex-1 h-10 rounded-xl border border-border text-sm text-ink-light hover:bg-ink/5 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await updateSession.mutateAsync({
+                      sessionId,
+                      title: editTitle || undefined,
+                      learningNotes: editNotes || undefined,
+                    });
+                  } catch { /* ignore */ }
+                  setShowEditDialog(false);
+                }}
+                disabled={updateSession.isPending}
+                className="flex-1 h-10 rounded-xl bg-sage-light text-sage-deep text-sm font-semibold hover:bg-sage-light/80 transition-colors disabled:opacity-50"
+              >
+                {updateSession.isPending ? "保存中..." : "保存"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
