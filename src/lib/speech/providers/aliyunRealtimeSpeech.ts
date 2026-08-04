@@ -282,6 +282,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
             task_id: this.taskId,
             namespace: "SpeechTranscriber",
             name: "StopTranscription",
+            appkey: this.appkey,
           },
           payload: {},
         };
@@ -339,12 +340,16 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
 
     console.log(
       "[aliyunRealtime] Stop lifecycle complete:" +
+      "\n  provider:             %s" +
+      "\n  appKey present:       %s" +
       "\n  transcriptBeforeStop: %s" +
       "\n  transcriptAfterStop:  %s" +
       "\n  sentencesDuringStop:  %d" +
       "\n  completedReceived:    %s" +
       "\n  closeReason:          %s" +
       "\n  flushDuration:        %sms",
+      this.name,
+      this.appkey ? "YES" : "NO",
       transcriptBeforeStop.slice(0, 100),
       transcriptAfterStop.slice(0, 100),
       sentencesReceivedDuringStop,

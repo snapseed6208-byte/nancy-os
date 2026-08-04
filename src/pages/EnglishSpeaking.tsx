@@ -608,13 +608,22 @@ export default function EnglishSpeaking() {
       asr.supported &&
       !asr.isProcessing
     ) {
-      if (asr.isRealtimeProvider) {
-        console.warn(
-          "[EnglishSpeaking] Realtime provider active but no transcript — " +
-          "WebSocket may have failed silently. Skipping batch fallback. provider=%s",
-          asr.providerName,
+      // Only skip batch fallback if realtime provider produced a transcript.
+      // If transcript is empty, the realtime WebSocket may have failed silently
+      // (e.g. missing appkey in StopTranscription), so allow batch fallback.
+      if (asr.isRealtimeProvider && asr.transcript) {
+        console.log(
+          "[EnglishSpeaking] Realtime provider has transcript — skipping batch fallback. provider=%s len=%d",
+          asr.providerName, asr.transcript.length,
         );
         return;
+      }
+      if (asr.isRealtimeProvider && !asr.transcript) {
+        console.warn(
+          "[EnglishSpeaking] Realtime provider active but no transcript — " +
+          "WebSocket may have failed silently. Allowing batch fallback. provider=%s",
+          asr.providerName,
+        );
       }
       console.log(
         "[EnglishSpeaking] Batch provider fallback triggered — provider=%s mode=%s",
