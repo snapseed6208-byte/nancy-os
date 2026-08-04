@@ -75,6 +75,9 @@ export interface ContentAnalysis {
   orderProblems: string[];
   contentGaps: string[];
   recommendedOrder: string[];
+  // Phase 6: Final High-score Answer fields
+  diagnosis?: string;
+  keyImprovements?: string[];
 }
 
 export interface AnswerStructureStep {
@@ -105,7 +108,9 @@ export interface SpeakingFeedback {
   // Phase 6: Content & Structure fields (optional for backward compatibility)
   contentAnalysis?: ContentAnalysis;
   answerStructure?: AnswerStructureStep[];
-  structuredBetterAnswer?: string;
+  finalHighScoreAnswer?: string;
+  diagnosis?: string;
+  keyImprovements?: string[];
   keyUpgrades?: KeyUpgrade[];
 }
 
@@ -184,6 +189,8 @@ function safeContentAnalysis(raw: Record<string, unknown>): ContentAnalysis {
     orderProblems: arr("orderProblems"),
     contentGaps: arr("contentGaps"),
     recommendedOrder: arr("recommendedOrder"),
+    diagnosis: typeof ca.diagnosis === "string" ? ca.diagnosis : "",
+    keyImprovements: arr("keyImprovements"),
   };
 }
 
@@ -218,7 +225,7 @@ export interface AnalyzeSpeakingOptions {
   /** Previous attempt data for retry context */
   retryContext?: {
     answerStructure?: AnswerStructureStep[];
-    structuredBetterAnswer?: string;
+    finalHighScoreAnswer?: string;
     keyUpgrades?: KeyUpgrade[];
   };
 }
@@ -264,7 +271,9 @@ export async function analyzeSpeaking(
       : [],
     contentAnalysis: safeContentAnalysis(raw),
     answerStructure: safeAnswerStructure(raw),
-    structuredBetterAnswer: (raw.structuredBetterAnswer as string) || "",
+    finalHighScoreAnswer: (raw.finalHighScoreAnswer as string) || (raw.structuredBetterAnswer as string) || "",
+    diagnosis: (raw.diagnosis as string) || "",
+    keyImprovements: Array.isArray(raw.keyImprovements) ? (raw.keyImprovements as string[]) : [],
     keyUpgrades: safeKeyUpgrades(raw),
   };
 }

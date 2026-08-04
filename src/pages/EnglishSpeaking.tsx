@@ -703,7 +703,7 @@ export default function EnglishSpeaking() {
           questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart },
           retryContext: {
             answerStructure: firstFeedback?.answerStructure,
-            structuredBetterAnswer: firstFeedback?.structuredBetterAnswer,
+            finalHighScoreAnswer: firstFeedback?.finalHighScoreAnswer,
             keyUpgrades: firstFeedback?.keyUpgrades,
           },
         },
@@ -778,8 +778,14 @@ export default function EnglishSpeaking() {
       if (retryFeedback?.answerStructure && retryFeedback.answerStructure.length > 0) {
         retryData.answer_structure = retryFeedback.answerStructure;
       }
-      if (retryFeedback?.structuredBetterAnswer) {
-        retryData.structured_better_answer = retryFeedback.structuredBetterAnswer;
+      if (retryFeedback?.finalHighScoreAnswer) {
+        retryData.structured_better_answer = retryFeedback.finalHighScoreAnswer;
+      }
+      if (retryFeedback?.diagnosis) {
+        retryData.diagnosis = retryFeedback.diagnosis;
+      }
+      if (retryFeedback?.keyImprovements && retryFeedback.keyImprovements.length > 0) {
+        retryData.key_improvements = JSON.stringify(retryFeedback.keyImprovements);
       }
       if (retryFeedback?.keyUpgrades && retryFeedback.keyUpgrades.length > 0) {
         retryData.key_upgrades = retryFeedback.keyUpgrades;
@@ -910,8 +916,14 @@ export default function EnglishSpeaking() {
       if (feedback?.answerStructure && feedback.answerStructure.length > 0) {
         attemptData.answer_structure = feedback.answerStructure;
       }
-      if (feedback?.structuredBetterAnswer) {
-        attemptData.structured_better_answer = feedback.structuredBetterAnswer;
+      if (feedback?.finalHighScoreAnswer) {
+        attemptData.structured_better_answer = feedback.finalHighScoreAnswer;
+      }
+      if (feedback?.diagnosis) {
+        attemptData.diagnosis = feedback.diagnosis;
+      }
+      if (feedback?.keyImprovements && feedback.keyImprovements.length > 0) {
+        attemptData.key_improvements = JSON.stringify(feedback.keyImprovements);
       }
       if (feedback?.keyUpgrades && feedback.keyUpgrades.length > 0) {
         attemptData.key_upgrades = feedback.keyUpgrades;
@@ -2255,26 +2267,57 @@ export default function EnglishSpeaking() {
             </div>
           )}
 
-          {/* ── Phase 6: Structured Better Answer ── */}
-          {feedback.structuredBetterAnswer && (
-            <div className="bg-card rounded-2xl border border-emerald-100 p-4 space-y-3">
+          {/* ── Phase 6: Diagnosis ── */}
+          {feedback.diagnosis && (
+            <div className="bg-card rounded-2xl border border-rose-100 p-4 space-y-2">
               <div className="flex items-center gap-2">
-                <Sparkles size={14} className="text-emerald-500" />
-                <p className="text-xs font-semibold text-emerald-700">结构化优化版 Structured Better Answer</p>
+                <span className="text-[10px] bg-rose-100 text-rose-600 rounded-full px-2 py-0.5 font-medium">问题诊断</span>
+                <p className="text-xs font-semibold text-rose-700">Diagnosis</p>
+              </div>
+              <p className="text-xs text-ink-light leading-relaxed">
+                {feedback.diagnosis}
+              </p>
+            </div>
+          )}
+
+          {/* ── Phase 6: Final High-score Answer ── */}
+          {feedback.finalHighScoreAnswer && (
+            <div className="bg-card rounded-2xl border border-emerald-200 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-emerald-100 text-emerald-600 rounded-full px-2 py-0.5 font-medium">最终高分答案</span>
+                <p className="text-xs font-semibold text-emerald-700">Final High-score Answer ⭐</p>
               </div>
               <div className="bg-emerald-50/50 rounded-xl p-3">
                 <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
-                  {feedback.structuredBetterAnswer}
+                  {feedback.finalHighScoreAnswer}
                 </p>
               </div>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(feedback.structuredBetterAnswer || "");
+                  navigator.clipboard.writeText(feedback.finalHighScoreAnswer || "");
                 }}
                 className="text-[10px] text-emerald-600 hover:underline self-start"
               >
                 复制文本
               </button>
+            </div>
+          )}
+
+          {/* ── Phase 6: Key Improvements ── */}
+          {feedback.keyImprovements && feedback.keyImprovements.length > 0 && (
+            <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-2 py-0.5 font-medium">改进要点</span>
+                <p className="text-xs font-semibold text-blue-700">Key Improvements</p>
+              </div>
+              <div className="space-y-1.5">
+                {feedback.keyImprovements.map((imp, i) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-ink-light">
+                    <span className="text-blue-400 mt-0.5 shrink-0">+</span>
+                    <span>{imp}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -2455,11 +2498,11 @@ export default function EnglishSpeaking() {
               </div>
             )}
 
-            {retryReferenceMode === "full" && firstFeedback?.structuredBetterAnswer && (
+            {retryReferenceMode === "full" && firstFeedback?.finalHighScoreAnswer && (
               <div className="space-y-1.5">
-                <p className="text-[10px] font-medium text-purple-600">Structured Better Answer</p>
+                <p className="text-[10px] font-medium text-purple-600">Final High-score Answer</p>
                 <p className="text-xs text-ink leading-relaxed bg-white rounded-xl p-3">
-                  {firstFeedback.structuredBetterAnswer}
+                  {firstFeedback.finalHighScoreAnswer}
                 </p>
               </div>
             )}
@@ -3054,7 +3097,9 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
 
       {/* Phase 6: Content & Structure (from saved attempt) */}
       {((firstAttempt?.content_analysis as Record<string, unknown> | undefined) ||
-        (firstAttempt?.structured_better_answer as string)) ? (
+        (firstAttempt?.structured_better_answer as string) ||
+        (firstAttempt?.diagnosis as string) ||
+        (firstAttempt?.key_improvements as string)) ? (
         <>
           {/* Content Analysis */}
           {(firstAttempt?.content_analysis as Record<string, unknown> | undefined) && (
@@ -3114,14 +3159,47 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
             </div>
           ) : null}
 
-          {/* Structured Better Answer */}
+          {/* Diagnosis (saved replay) */}
+          {(firstAttempt?.diagnosis as string) && (
+            <div className="bg-card rounded-2xl border border-rose-100 p-4 space-y-2">
+              <p className="text-xs font-semibold text-rose-700">问题诊断 Diagnosis</p>
+              <p className="text-xs text-ink-light leading-relaxed">
+                {firstAttempt?.diagnosis as string}
+              </p>
+            </div>
+          )}
+
+          {/* Final High-score Answer (saved replay) */}
           {(firstAttempt?.structured_better_answer as string) && (
-            <div className="bg-card rounded-2xl border border-emerald-100 p-4 space-y-2">
-              <p className="text-xs font-semibold text-emerald-700">结构化优化版 Structured Better Answer</p>
+            <div className="bg-card rounded-2xl border border-emerald-200 p-4 space-y-2">
+              <p className="text-xs font-semibold text-emerald-700">最终高分答案 Final High-score Answer ⭐</p>
               <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
                 {firstAttempt?.structured_better_answer as string}
               </p>
             </div>
+          )}
+
+          {/* Key Improvements (saved replay) */}
+          {(firstAttempt?.key_improvements as string) && (
+            (() => {
+              try {
+                const improvements = JSON.parse(firstAttempt?.key_improvements as string) as string[];
+                if (!Array.isArray(improvements) || improvements.length === 0) return null;
+                return (
+                  <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-2">
+                    <p className="text-xs font-semibold text-blue-700">改进要点 Key Improvements</p>
+                    <div className="space-y-1.5">
+                      {improvements.map((imp, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs text-ink-light">
+                          <span className="text-blue-400 mt-0.5 shrink-0">+</span>
+                          <span>{imp}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              } catch { return null; }
+            })()
           )}
 
           {/* Key Upgrades */}

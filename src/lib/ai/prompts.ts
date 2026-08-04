@@ -102,7 +102,9 @@ Output format — return ONLY valid JSON with these fields:
       "content": "What the student should express at this step, in English"
     }
   ],
-  "structuredBetterAnswer": "A complete reorganized and improved answer in natural spoken English",
+  "diagnosis": "Chinese diagnosis of what content depth is missing",
+  "finalHighScoreAnswer": "The ultimate high-scoring answer with content depth — ONE complete answer",
+  "keyImprovements": ["Chinese description of key improvement 1", "Chinese description of key improvement 2"],
   "keyUpgrades": [
     {
       "english": "a key expression worth learning",
@@ -277,36 +279,87 @@ Personal Growth (5-6 steps):
 
 ADAPT the structure to the actual question. Do not mechanically apply a template. If the question is simple, use fewer steps. If the student's answer already has a good structure, keep your structure close to their original order.
 
-── Field 15: structuredBetterAnswer ──
+── Field 15: diagnosis ──
+A Chinese-language diagnosis explaining what the student's answer LACKS in content depth. Focus on what's MISSING — not grammar or vocabulary (those are covered elsewhere), but:
 
-This is DIFFERENT from naturalVersion (Field 1). Understand the distinction:
+- Missing personal experience or concrete examples that would ground the answer
+- Missing emotions, feelings, or personal reactions
+- Missing consequences or impact ("what happened as a result?")
+- Missing personal reflection, lessons learned, or "why this matters"
+- Logic gaps or structural issues that weaken the argument
 
-naturalVersion (Field 1):
-- Fixes LANGUAGE: grammar, vocabulary, naturalness
-- Preserves the student's original content ORDER and TOPIC CHOICES
-- The student can compare "how should I have said this?" at the language level
+Write 3-5 sentences in Chinese. Be SPECIFIC to THIS answer — not generic advice.
 
-structuredBetterAnswer (Field 15):
-- Fixes CONTENT & STRUCTURE: removes off-topic parts, reorganizes order, fills content gaps
-- Builds on the student's original ideas but may reorder, trim, or expand them
-- The student can see "how should I have organized this answer?" at the structure level
+Bad: "缺少例子和细节"
+Good: "你没有解释为什么选择这个方向，缺少具体的触发事件或个人经历来支撑。如果补充一个让你做出决定的关键时刻，答案会更有说服力。"
 
-Requirements for structuredBetterAnswer:
-1. Use the student's original answer as the CORE material. Preserve their stance, opinions, and real experiences.
-2. Fix grammar, vocabulary, and naturalness (incorporating the best corrections from naturalVersion).
-3. REMOVE off-topic content and unnecessary repetition.
-4. REORGANIZE the order following the answerStructure above.
-5. ADD necessary transitions, reasons, explanations, examples, and reflection where the original is thin.
-6. New content MUST be consistent with what the student was trying to say. Do not fabricate specific people, schools, companies, cities, dates, grades, jobs, or major life events. Use general expressions for unconfirmed details.
-7. Language difficulty: only 0.5-1 level above the student's current level. The student MUST be able to learn and re-speak this version.
-8. For Daily Conversation: keep it conversational, not essay-like.
-9. For Professional English: match real workplace communication style.
-10. For IELTS: adjust length and formality to the Part (Part 1: 3-4 sentences, Part 2: 5-8 sentences, Part 3: 4-6 sentences).
-11. Write in natural SPOKEN English, not written English.
-12. Maximum 8 sentences. If the original answer is very short, you may expand to 4-5 sentences with reasonable content that aligns with the student's likely intent.
-13. If the student's answer is empty or unintelligible, return an empty string "" for structuredBetterAnswer.
+If the answer is already well-developed, acknowledge strengths and point out minor gaps. If the answer is empty or unintelligible, return "无法分析：答案为空或无法理解。"
 
-── Field 16: keyUpgrades ──
+── Field 16: finalHighScoreAnswer ──
+The ULTIMATE high-scoring answer — ONE complete, polished answer that the student can study, learn from, and practice re-speaking.
+
+This is DIFFERENT from naturalVersion (Field 1):
+- naturalVersion: LANGUAGE-only rewrite (grammar, vocabulary, naturalness). Preserves original content and structure. Student asks "how should I have said this?"
+- finalHighScoreAnswer: CONTENT + STRUCTURE + DEPTH upgrade. Reorganizes, adds depth, but preserves the student's voice. Student asks "what makes a truly excellent answer?"
+
+REQUIREMENTS:
+
+1. PRESERVE THE STUDENT'S VOICE:
+   - Keep their original viewpoint, stance, opinions, and personality
+   - Maintain their speaking style (casual/formal, humorous/serious, direct/thoughtful)
+   - Don't turn their answer into a generic textbook response
+   - The student should recognize this as a better version of THEIR answer, not someone else's
+
+2. FIX LOGIC & STRUCTURE:
+   - Follow the answerStructure blueprint (Field 14) as the logical scaffold
+   - Remove off-topic or repetitive content
+   - Fix logical gaps (e.g. conclusion without reasoning, claim without evidence or example)
+   - Add smooth, natural transitions between ideas
+
+3. SUPPLEMENT CONTENT DEPTH — add at least 3 of these 5 dimensions:
+   a. Personal experience — add relatable, generalized experiences that fit the student's context
+   b. Specific examples — add concrete, vivid examples that illustrate the student's point
+   c. Emotions — add emotional reactions, feelings, and personal responses where natural
+   d. Consequences — explain the result, impact, outcome, or "so what" of the experience
+   e. Personal reflection — add what the student learned, realized, or how they grew/changed
+
+4. NO FABRICATION — CRITICAL:
+   - Do NOT invent: specific people's names, school/company names, exact dates, specific cities, job titles, or major life events the student didn't mention
+   - When a personal detail is needed for depth but unknown, use the EXACT placeholder format:
+     "[需要用户替换为自己的真实经历：brief suggestion in English of what kind of experience to insert]"
+   - Example: "[需要用户替换为自己的真实经历：describe a specific project or task you handled that shows your problem-solving skills]"
+   - Use this placeholder SPARINGLY — at most 1-2 per answer. Prefer general expressions over placeholders.
+   - For experiences the student DID mention, you can elaborate with reasonable, non-specific details
+
+5. LANGUAGE & LENGTH:
+   - Natural SPOKEN English, not written/essay English — read it aloud, it should flow naturally
+   - Vocabulary level: student's current level + 0.5-1 (slightly challenging but learnable)
+   - IELTS Part 1: 3-5 sentences | Part 2: 6-10 sentences | Part 3: 5-7 sentences
+   - Daily Conversation: 4-6 sentences | Professional: 5-8 sentences
+   - Maximum 10 sentences total
+
+6. SINGLE COMPLETE ANSWER:
+   - Output ONE cohesive answer, not multiple versions or options
+   - If the student's original content is very thin (1-2 sentences), you may expand significantly — but stay true to their intent and voice
+   - The answer should feel COMPLETE — a reader should not think "this needs more detail"
+
+7. If the student's transcript is empty or unintelligible, return "".
+
+── Field 17: keyImprovements ──
+An array of 3-5 strings (in Chinese) listing the KEY content improvements made to transform the original into the final answer. Each string describes ONE specific improvement.
+
+Focus on CONTENT depth improvements, not language fixes. The student should understand WHAT made this answer better.
+
+Format examples:
+- "补充了具体例子：用[xx场景/经历]来说明你的观点，让抽象的观点变得具体可感"
+- "增加了情感层次：描述了这件事带给你的[兴奋/紧张/感动/反思]，让答案更有人情味"
+- "修复了逻辑跳跃：原答案直接从观点跳到结论，现在补充了中间的解释和推理过程"
+- "添加了个人反思：说明了这次经历如何改变了你的看法或行为，体现了思考深度"
+- "补充了事件后果：解释了这件事最终带来了什么结果或影响，让叙述更完整"
+
+If the answer is empty or unintelligible, return [].
+
+── Field 18: keyUpgrades ──
 
 Select ONLY 3-5 expressions or structural patterns from this answer that are MOST worth the student learning. These are the HIGHLIGHTS — the detailed analysis remains in expressionUpgrade, usefulCorrections, and betterChunks.
 
@@ -335,7 +388,7 @@ The Chinese explanations in contentAnalysis.summary and keyUpgrades[].reason sho
 
 export function buildRetryFeedbackPrompt(retryContext: {
   answerStructure?: { step: string; label: string; content: string }[];
-  structuredBetterAnswer?: string;
+  finalHighScoreAnswer?: string;
   keyUpgrades?: { english: string; chinese: string; reason: string }[];
 }): string {
   let extraContext = "";
@@ -346,8 +399,8 @@ export function buildRetryFeedbackPrompt(retryContext: {
     }`;
   }
 
-  if (retryContext.structuredBetterAnswer) {
-    extraContext += `\n\n## Reference: Model Answer from Previous Attempt\nThe student was shown this model answer as a reference:\n"${retryContext.structuredBetterAnswer}"`;
+  if (retryContext.finalHighScoreAnswer) {
+    extraContext += `\n\n## Reference: Model Answer from Previous Attempt\nThe student was shown this model answer as a reference:\n"${retryContext.finalHighScoreAnswer}"`;
   }
 
   if (retryContext.keyUpgrades && retryContext.keyUpgrades.length > 0) {
