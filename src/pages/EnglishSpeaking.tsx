@@ -416,6 +416,9 @@ export default function EnglishSpeaking() {
   // Phase 6: Retry flow state
   const [firstFeedback, setFirstFeedback] = useState<SpeakingFeedback | null>(null);
   const [firstAttemptId, setFirstAttemptId] = useState<string | null>(null);
+  const [firstTranscript, setFirstTranscript] = useState<string>("");
+  const [firstAudioUrl, setFirstAudioUrl] = useState<string>("");
+  const [firstDuration, setFirstDuration] = useState<number>(0);
   const [retryFeedback, setRetryFeedback] = useState<SpeakingFeedback | null>(null);
   const [retryAudioBlob, setRetryAudioBlob] = useState<Blob | null>(null);
   const [retryAudioUrl, setRetryAudioUrl] = useState<string>("");
@@ -770,6 +773,11 @@ export default function EnglishSpeaking() {
 
   const handleRetrySave = async () => {
     if (!sessionId) return;
+    if (!firstAttemptId) {
+      console.error("[EnglishSpeaking] handleRetrySave: firstAttemptId is null — cannot link retry");
+      setAiError("无法关联第一次练习记录，请返回重新开始。");
+      return;
+    }
     console.log(
       "[EnglishSpeaking] RETRY attempt save — STT Provider: %s | STT Mode: %s | Fallback: %s | Transcript Length: %d | Audio Duration: %ds",
       asr.providerName,
@@ -815,7 +823,7 @@ export default function EnglishSpeaking() {
         expressions_missed: retryFeedback?.expressionsMissed || [],
         reference_answer: null,
         expression_upgrade: retryFeedback?.expressionUpgrade || [],
-        retry_of_attempt_id: firstAttemptId || null,
+        retry_of_attempt_id: firstAttemptId,
         attempt_round: 2,
         is_retry: true,
         stt_provider: asr.providerName,
@@ -904,10 +912,12 @@ export default function EnglishSpeaking() {
     }
   };
 
-  const handleSave = async () => {
+  // Saves the first attempt to DB. Returns the saved attempt ID, or null on failure.
+  // Does NOT change step — callers decide what to do next.
+  const saveFirstAttempt = async (): Promise<string | null> => {
     if (!sessionId) {
-      console.error("[EnglishSpeaking] handleSave: sessionId is null — was handleStartRecording called?");
-      return;
+      console.error("[EnglishSpeaking] saveFirstAttempt: sessionId is null");
+      return null;
     }
     console.log(
       "[EnglishSpeaking] FIRST attempt save — STT Provider: %s | STT Mode: %s | Fallback: %s | Transcript Length: %d | Audio Duration: %ds",
@@ -917,8 +927,8 @@ export default function EnglishSpeaking() {
       (asr.transcript || "").length,
       recorder.duration,
     );
-    setUploading(true);
 
+    // Wait for reference answer if still generating (race with 3s timeout)
     if (referenceAnswerPromise.current) {
       try {
         await Promise.race([
@@ -945,6 +955,7 @@ export default function EnglishSpeaking() {
     const expressionsUsed = feedback?.expressionsUsed || [];
     const expressionsMissed = feedback?.expressionsMissed || [];
 
+    let savedId: string | null = null;
     try {
       const attemptData: Record<string, unknown> = {
         session_id: sessionId,
@@ -969,9 +980,10 @@ export default function EnglishSpeaking() {
         stt_provider: asr.providerName,
         stt_mode: asr.recognitionMode,
         fallback_used: asr.fallbackTriggered,
+        attempt_round: 1,
+        is_retry: false,
       };
 
-      // Phase 6: Content & Structure fields
       if (feedback?.contentAnalysis) {
         attemptData.content_analysis = feedback.contentAnalysis;
       }
@@ -992,22 +1004,20 @@ export default function EnglishSpeaking() {
       }
 
       const savedAttempt = await createAttempt.mutateAsync(attemptData);
-      // Capture attempt ID for potential retry reference
-      if (!firstAttemptId && savedAttempt && (savedAttempt as Record<string, unknown>).id) {
-        setFirstAttemptId((savedAttempt as Record<string, unknown>).id as string);
+      savedId = (savedAttempt as Record<string, unknown>).id as string;
+      if (!firstAttemptId && savedId) {
+        setFirstAttemptId(savedId);
       }
     } catch (err) {
       console.error("[EnglishSpeaking] createAttempt failed:", err);
       setAiError("保存练习记录失败，请稍后重试。你的录音和分析结果仍然保留在当前页面。");
-      setUploading(false);
-      return;
+      return null;
     }
 
-    // Record question usage if from bank — only if actual practice occurred
+    // Record question usage (fire-and-forget — non-blocking)
     const hadRecording = recorder.duration > 0 || (asr.transcript && asr.transcript.trim().length > 0);
     if (currentQuestionId && hadRecording) {
       try {
-        console.log("[EnglishSpeaking] Recording question usage", { question_id: currentQuestionId, session_id: sessionId });
         await recordUsage.mutateAsync({
           question_id: currentQuestionId,
           session_id: sessionId,
@@ -1019,37 +1029,34 @@ export default function EnglishSpeaking() {
       } catch (err) {
         console.error("[EnglishSpeaking] recordUsage failed:", err);
       }
-    } else if (currentQuestionId && !hadRecording) {
-      console.log("[EnglishSpeaking] Skipping usage_count: no recording or transcript");
     }
 
-    // Auto-lower SRS levels for missed expressions
+    // SRS adjustments (fire-and-forget)
     if (expressionsMissed.length > 0) {
-      try {
-        await lowerMissedExpressions(expressionsMissed);
-      } catch (err) {
-        console.error("[EnglishSpeaking] lowerMissedExpressions failed:", err);
-      }
+      try { await lowerMissedExpressions(expressionsMissed); } catch { /* ignore */ }
     }
     if (expressionsUsed.length > 0) {
-      try {
-        await boostUsedExpressions(expressionsUsed);
-      } catch (err) {
-        console.error("[EnglishSpeaking] boostUsedExpressions failed:", err);
-      }
+      try { await boostUsedExpressions(expressionsUsed); } catch { /* ignore */ }
     }
 
+    return savedId;
+  };
+
+  const handleSave = async () => {
+    setUploading(true);
+    const savedId = await saveFirstAttempt();
     setUploading(false);
-    setStep("saved");
-    // Clean up persisted question after successful save
-    try { sessionStorage.removeItem("speaking_current_question_id"); } catch {}
-    console.log("[EnglishSpeaking] Practice saved", {
-      session_id: sessionId,
-      question_id: currentQuestionId,
-      duration: recorder.duration,
-      has_audio: !!recorder.blob,
-      has_feedback: !!feedback,
-    });
+    if (savedId) {
+      setStep("saved");
+      try { sessionStorage.removeItem("speaking_current_question_id"); } catch {}
+      console.log("[EnglishSpeaking] Practice saved", {
+        session_id: sessionId,
+        question_id: currentQuestionId,
+        duration: recorder.duration,
+        has_audio: !!recorder.blob,
+        has_feedback: !!feedback,
+      });
+    }
   };
 
   const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
@@ -1296,7 +1303,14 @@ export default function EnglishSpeaking() {
           <div className="space-y-2">
             {sessions?.map((s) => {
               const attempts = (s.speaking_attempts as Record<string, unknown>[]) || [];
-              const first = attempts[0] as Record<string, unknown> | undefined;
+              // Prefer the first-round (non-retry) attempt for card preview.
+              // Sorted by created_at ASC so the earliest is always the first attempt.
+              const sorted = [...attempts].sort((a, b) => {
+                const aTime = new Date((a.created_at as string) || 0).getTime();
+                const bTime = new Date((b.created_at as string) || 0).getTime();
+                return aTime - bTime;
+              });
+              const first = sorted.find((a) => !(a.is_retry as boolean)) || sorted[0] as Record<string, unknown> | undefined;
               const avgScore = first
                 ? [first.fluency_score, first.grammar_score, first.vocabulary_score, first.naturalness_score]
                     .filter((v): v is number => typeof v === "number" && v > 0)
@@ -2579,19 +2593,41 @@ export default function EnglishSpeaking() {
           {/* ── Phase 6: Retry button ── */}
           {feedback.contentAnalysis && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 setFirstFeedback(feedback);
-                setFirstAttemptId(null); // Will be set after save
+                setAiError(null);
+
+                // Save first attempt if not yet saved
+                if (!firstAttemptId) {
+                  setUploading(true);
+                  const savedId = await saveFirstAttempt();
+                  setUploading(false);
+                  if (!savedId) {
+                    // saveFirstAttempt already sets aiError on failure
+                    return;
+                  }
+                  // firstAttemptId is now set by saveFirstAttempt → setFirstAttemptId
+                }
+
+                // Snapshot first-attempt data BEFORE resetting shared state
+                setFirstTranscript(asr.transcript);
+                setFirstAudioUrl(recorder.audioUrl || "");
+                setFirstDuration(recorder.duration);
+
                 setStep("retry_record");
-                // Reset recorder and ASR for retry
                 recorder.reset();
                 asr.reset();
                 setAiError(null);
               }}
-              className="w-full bg-purple-50 text-purple-600 border border-purple-200 rounded-xl py-2.5 text-sm font-semibold hover:bg-purple-100 transition-colors flex items-center justify-center gap-2"
+              disabled={uploading}
+              className="w-full bg-purple-50 text-purple-600 border border-purple-200 rounded-xl py-2.5 text-sm font-semibold hover:bg-purple-100 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <RefreshCw size={14} />
-              按这个结构重新复述
+              {uploading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+              {uploading ? "保存中..." : "按这个结构重新复述"}
             </button>
           )}
 
@@ -2858,8 +2894,8 @@ export default function EnglishSpeaking() {
           <div className="space-y-2">
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs text-ink-lighter mb-2">第一次回答 · 录音</p>
-              {recorder.audioUrl ? (
-                <audio controls src={recorder.audioUrl} className="w-full h-9" />
+              {firstAudioUrl ? (
+                <audio controls src={firstAudioUrl} className="w-full h-9" />
               ) : (
                 <p className="text-xs text-ink-lighter">录音可在练习详情中播放</p>
               )}
@@ -2878,7 +2914,7 @@ export default function EnglishSpeaking() {
           <div className="space-y-2">
             <div className="bg-card rounded-2xl border border-border p-4">
               <p className="text-xs text-ink-lighter mb-1">第一次原文</p>
-              <p className="text-xs text-ink leading-relaxed whitespace-pre-line">{asr.transcript}</p>
+              <p className="text-xs text-ink leading-relaxed whitespace-pre-line">{firstTranscript}</p>
             </div>
             <div className="bg-card rounded-2xl border border-purple-100 p-4">
               <p className="text-xs text-purple-600 mb-1">重新复述原文</p>
@@ -3484,16 +3520,109 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
         </div>
       )}
 
-      {/* Retry info */}
-      {(firstAttempt?.is_retry as boolean) && (
-        <div className="bg-purple-50/50 rounded-2xl border border-purple-100 p-3 flex items-center gap-2">
-          <RefreshCw size={12} className="text-purple-500" />
-          <p className="text-[11px] text-purple-600">
-            重新复述 · Round {(firstAttempt?.attempt_round as number) || 2}
-            {(firstAttempt?.retry_of_attempt_id as string) && " · 基于第一次回答"}
-          </p>
-        </div>
-      )}
+      {/* Retry attempt comparison — shown when a retry (Round 2+) exists */}
+      {(() => {
+        const retryAttempt = attempts.find(
+          (a) => (a as Record<string, unknown>).is_retry === true || ((a as Record<string, unknown>).attempt_round as number) > 1,
+        ) as Record<string, unknown> | undefined;
+
+        if (!retryAttempt || retryAttempt === firstAttempt) return null;
+
+        return (
+          <div className="space-y-4 mt-6 border-t border-border pt-4">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={14} className="text-purple-600" />
+              <p className="text-sm font-semibold text-ink">重新复述对比 (Round {(retryAttempt.attempt_round as number) || 2})</p>
+            </div>
+
+            {/* Retry audio */}
+            {(retryAttempt.audio_url as string) && (
+              <div className="bg-purple-50/50 rounded-2xl border border-purple-100 p-4">
+                <p className="text-xs text-purple-600 mb-2">重新复述录音</p>
+                <audio controls src={retryAttempt.audio_url as string} className="w-full h-10" />
+                {(retryAttempt.audio_duration as number) ? (
+                  <p className="text-[10px] text-ink-lighter mt-1">
+                    时长: {formatDuration(retryAttempt.audio_duration as number)}
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+            {/* Retry transcript */}
+            {(retryAttempt.transcribed_text as string) && (
+              <div className="bg-card rounded-2xl border border-purple-100 p-4">
+                <p className="text-xs text-purple-600 mb-1">重新复述文本</p>
+                <p className="text-sm text-ink leading-relaxed">{retryAttempt.transcribed_text as string}</p>
+              </div>
+            )}
+
+            {/* Score comparison */}
+            {((retryAttempt.fluency_score as number) || (firstAttempt?.fluency_score as number)) ? (
+              <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+                <p className="text-xs font-medium text-ink-light mb-1">语言表现对比</p>
+                <ComparisonScoreBar
+                  label="流利度 Fluency"
+                  before={(firstAttempt?.fluency_score as number) || 0}
+                  after={(retryAttempt.fluency_score as number) || 0}
+                />
+                <ComparisonScoreBar
+                  label="语法 Grammar"
+                  before={(firstAttempt?.grammar_score as number) || 0}
+                  after={(retryAttempt.grammar_score as number) || 0}
+                />
+                <ComparisonScoreBar
+                  label="词汇 Vocabulary"
+                  before={(firstAttempt?.vocabulary_score as number) || 0}
+                  after={(retryAttempt.vocabulary_score as number) || 0}
+                />
+                <ComparisonScoreBar
+                  label="自然度 Naturalness"
+                  before={(firstAttempt?.naturalness_score as number) || 0}
+                  after={(retryAttempt.naturalness_score as number) || 0}
+                />
+              </div>
+            ) : null}
+
+            {/* Retry natural version */}
+            {(retryAttempt.natural_version as string) && (
+              <div className="bg-card rounded-2xl border border-purple-100 p-4">
+                <p className="text-xs font-medium text-purple-600 mb-1">重新复述 · 更自然的表达</p>
+                <p className="text-sm text-ink leading-relaxed">{retryAttempt.natural_version as string}</p>
+              </div>
+            )}
+
+            {/* Retry main problems */}
+            {(retryAttempt.main_problems as string) && (
+              <div className="bg-card rounded-2xl border border-purple-100 p-4">
+                <p className="text-xs font-medium text-purple-600 mb-2">重新复述 · 存在的问题</p>
+                <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
+                  {retryAttempt.main_problems as string}
+                </div>
+              </div>
+            )}
+
+            {/* Retry diagnosis */}
+            {(retryAttempt.diagnosis as string) && (
+              <div className="bg-card rounded-2xl border border-rose-100 p-4 space-y-2">
+                <p className="text-xs font-semibold text-rose-700">重新复述诊断 Diagnosis</p>
+                <p className="text-xs text-ink-light leading-relaxed">
+                  {retryAttempt.diagnosis as string}
+                </p>
+              </div>
+            )}
+
+            {/* Retry structured better answer */}
+            {(retryAttempt.structured_better_answer as string) && (
+              <div className="bg-card rounded-2xl border border-emerald-200 p-4 space-y-2">
+                <p className="text-xs font-semibold text-emerald-700">重新复述高分答案</p>
+                <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
+                  {retryAttempt.structured_better_answer as string}
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Edit Dialog ── */}
       {showEditDialog && (
