@@ -9,6 +9,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const ALIYUN_AK_ID = Deno.env.get("ALIYUN_ACCESS_KEY_ID") || "";
 const ALIYUN_AK_SECRET = Deno.env.get("ALIYUN_ACCESS_KEY_SECRET") || "";
 const ALIYUN_APP_KEY = Deno.env.get("ALIYUN_ASR_APP_KEY") || "";
+const ALIYUN_CHINESE_APP_KEY = Deno.env.get("ALIYUN_ASR_CHINESE_APP_KEY") || "";
 
 const CREATE_TOKEN_ENDPOINT = "nls-meta.cn-shanghai.aliyuncs.com";
 
@@ -119,13 +120,26 @@ serve(async (req: Request) => {
       return jsonResponse(req, { error: "Aliyun credentials not configured" }, 500);
     }
 
+    // Parse language preference from body for Chinese STT support
+    let language = "english";
+    try {
+      const body = await req.json();
+      language = (body.language as string) || "english";
+    } catch {
+      // Body might be empty — use default English
+    }
+
+    const appKey = language === "chinese" && ALIYUN_CHINESE_APP_KEY
+      ? ALIYUN_CHINESE_APP_KEY
+      : ALIYUN_APP_KEY;
+
     const { token, expireTime } = await createToken();
 
     return jsonResponse(req, {
       token,
       expireTime,
       expiresAt: new Date(expireTime * 1000).toISOString(),
-      appkey: ALIYUN_APP_KEY,
+      appkey: appKey,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";

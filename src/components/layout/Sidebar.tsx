@@ -19,6 +19,7 @@ import {
   X,
   Sparkles,
   FolderOpen,
+  Mic,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,6 +37,7 @@ const iconMap: Record<string, LucideIcon> = {
   Database,
   FolderOpen,
   Settings,
+  Mic,
 };
 
 export default function Sidebar() {

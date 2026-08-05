@@ -31,6 +31,10 @@ import MemoryCenter from "@/pages/MemoryCenter";
 import Settings from "@/pages/Settings";
 import AIHealth from "@/pages/AIHealth";
 import Resources from "@/pages/Resources";
+import ChineseSpeaking from "@/pages/ChineseSpeaking";
+import ChineseSpeakingSession from "@/pages/ChineseSpeakingSession";
+import ChineseSpeakingHistory from "@/pages/ChineseSpeakingHistory";
+import ChineseSpeakingDetail from "@/pages/ChineseSpeakingDetail";
 import { Loader2 } from "lucide-react";
 
 function AppRoutes() {
@@ -78,6 +82,10 @@ function AppRoutes() {
         <Route path="/reflection" component={Reflection} />
         <Route path="/memory-center" component={MemoryCenter} />
         <Route path="/resources" component={Resources} />
+        <Route path="/chinese" component={ChineseSpeaking} />
+        <Route path="/chinese/session/:id" component={ChineseSpeakingSession} />
+        <Route path="/chinese/history" component={ChineseSpeakingHistory} />
+        <Route path="/chinese/detail/:id" component={ChineseSpeakingDetail} />
         <Route path="/settings" component={Settings} />
         <Route path="/settings/ai-health" component={AIHealth} />
       </Switch>

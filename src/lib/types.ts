@@ -260,6 +260,13 @@ export const NAV_ITEMS = [
     description: "深度反思与成长洞察",
   },
   {
+    key: "chinese",
+    label: "中文表达",
+    icon: "Mic" as const,
+    path: "/chinese",
+    description: "中文表达训练",
+  },
+  {
     key: "memory-center",
     label: "记忆中心",
     icon: "Database" as const,

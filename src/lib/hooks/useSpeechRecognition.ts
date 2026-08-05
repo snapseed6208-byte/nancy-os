@@ -10,8 +10,11 @@ import type { SpeechProvider } from "@/lib/speech/types";
  *
  * Batch providers (aliyun file-based, whisper):
  *   start() → setAudioBlob(blob) → stop() processes blob → transcript.
+ *
+ * @param providerFactory — Optional custom provider factory (e.g. for Chinese STT).
+ *   When omitted, defaults to the English provider chain.
  */
-export function useSpeechRecognition() {
+export function useSpeechRecognition(providerFactory?: () => SpeechProvider) {
   const [transcript, setTranscript] = useState("");
   const [interim, setInterim] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -26,7 +29,7 @@ export function useSpeechRecognition() {
 
   // Lazy-init provider once
   if (!providerRef.current) {
-    const p = createSpeechProvider();
+    const p = providerFactory ? providerFactory() : createSpeechProvider();
     providerRef.current = p;
 
     p.onTranscriptUpdate = (text: string) => {

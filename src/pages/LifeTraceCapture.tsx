@@ -1,73 +1,14 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Mic, Square, Image, X, CheckCircle2, Loader2, AlertTriangle, Camera,
 } from "lucide-react";
 import { saveCapture, getPendingSyncs, markSynced, type PendingCapture } from "@/lib/db/indexedDb";
 import { useSyncCapture } from "@/lib/hooks/useLifeTrace";
+import { useAudioRecorder } from "@/lib/hooks/useAudioRecorder";
 import { cn } from "@/lib/utils";
 
 const ENTRY_TYPES = ["心情", "想法", "备忘", "灵感", "待办", "复盘", "照片记录", "语音记录"];
-
-// ── Audio Recorder Hook ──
-
-function useAudioRecorder() {
-  const [state, setState] = useState<"idle" | "recording" | "done">("idle");
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [blob, setBlob] = useState<Blob | null>(null);
-  const [duration, setDuration] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
-  const chunks = useRef<Blob[]>([]);
-  const startTime = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-
-  const start = useCallback(async () => {
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4",
-      });
-      mediaRecorder.current = mr;
-      chunks.current = [];
-      startTime.current = Date.now();
-      mr.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
-      mr.onstop = () => {
-        const audioBlob = new Blob(chunks.current, { type: mr.mimeType });
-        const url = URL.createObjectURL(audioBlob);
-        setBlob(audioBlob);
-        setAudioUrl(url);
-        setDuration(Math.round((Date.now() - startTime.current) / 1000));
-        setState("done");
-        stream.getTracks().forEach((t) => t.stop());
-        if (timerRef.current) clearInterval(timerRef.current);
-      };
-      mr.start();
-      setState("recording");
-      timerRef.current = setInterval(() => {
-        setDuration(Math.round((Date.now() - startTime.current) / 1000));
-      }, 200);
-    } catch {
-      setError("无法访问麦克风。请在浏览器设置中允许麦克风访问权限。");
-    }
-  }, []);
-
-  const stop = useCallback(() => {
-    mediaRecorder.current?.stop();
-    if (timerRef.current) clearInterval(timerRef.current);
-  }, []);
-
-  const reset = useCallback(() => {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioUrl(null);
-    setBlob(null);
-    setDuration(0);
-    setState("idle");
-  }, [audioUrl]);
-
-  return { state, audioUrl, blob, duration, error, start, stop, reset };
-}
 
 // ── Page ──
 
@@ -243,7 +184,7 @@ export default function LifeTraceCapture() {
         )}
         <div className="flex items-center gap-3">
           {recorder.state === "idle" && (
-            <button onClick={recorder.start} className="bg-accent-rose/10 text-accent-rose rounded-full h-10 w-10 flex items-center justify-center">
+            <button onClick={() => recorder.start()} className="bg-accent-rose/10 text-accent-rose rounded-full h-10 w-10 flex items-center justify-center">
               <Mic size={18} />
             </button>
           )}
