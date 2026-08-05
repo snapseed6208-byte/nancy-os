@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import { dataUrlToBlob, uniqueFileName } from "@/lib/media";
-import { getBeijingDateString, getBeijingISOString } from "@/lib/date";
+import { getBeijingDateString, getBeijingISOString, dateToBeijingString } from "@/lib/date";
 import type { PendingCapture } from "@/lib/db/indexedDb";
 import type { LifeAnalysisResult, LifeAnalysisInsight, LifeAnalysisSuggestion } from "@/lib/types";
 
@@ -393,7 +393,7 @@ async function fetchRecentAIInsights() {
   const todayBeijing = new Date(getBeijingDateString() + "T00:00:00+08:00");
   const sevenDaysAgo = new Date(todayBeijing);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  const sinceDate = sevenDaysAgo.toISOString().split("T")[0];
+  const sinceDate = dateToBeijingString(sevenDaysAgo);
 
   const { data, error } = await supabase
     .from("journal_entries")

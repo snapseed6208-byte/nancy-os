@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
-import { getBeijingDateString, getBeijingMonthRange } from "@/lib/date";
+import { getBeijingDateString, getBeijingMonthRange, dateToBeijingString } from "@/lib/date";
 
 // ── Types ──
 
@@ -83,8 +83,8 @@ async function fetchRecentDailyReviews(days = 7) {
   const todayBeijing = new Date(getBeijingDateString() + "T00:00:00+08:00");
   const startDate = new Date(todayBeijing);
   startDate.setDate(startDate.getDate() - days);
-  const startStr = startDate.toISOString().split("T")[0];
-  const todayStr = todayBeijing.toISOString().split("T")[0];
+  const startStr = dateToBeijingString(startDate);
+  const todayStr = getBeijingDateString();
 
   const { data, error } = await supabase
     .from("daily_reviews")
@@ -196,8 +196,8 @@ async function fetchCurrentWeekSummary() {
   monday.setDate(todayBeijing.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  const weekStart = monday.toISOString().split("T")[0];
-  const weekEnd = sunday.toISOString().split("T")[0];
+  const weekStart = dateToBeijingString(monday);
+  const weekEnd = dateToBeijingString(sunday);
 
   const { data, error } = await supabase
     .from("weekly_summaries")

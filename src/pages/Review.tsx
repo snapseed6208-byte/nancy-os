@@ -12,7 +12,7 @@ import {
   type DailyReview, type WeeklySummary,
 } from "@/lib/hooks/useReview";
 import { useReflections, useGenerateReflection } from "@/lib/hooks/useReflection";
-import { getBeijingDateString } from "@/lib/date";
+import { getBeijingDateString, dateToBeijingString } from "@/lib/date";
 
 // ── Helpers ──
 
@@ -26,8 +26,8 @@ function getWeekRange() {
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
   return {
-    start: mon.toISOString().split("T")[0],
-    end: sun.toISOString().split("T")[0],
+    start: dateToBeijingString(mon),
+    end: dateToBeijingString(sun),
   };
 }
 
