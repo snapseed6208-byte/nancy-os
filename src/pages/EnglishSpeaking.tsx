@@ -853,8 +853,14 @@ export default function EnglishSpeaking() {
       await createAttempt.mutateAsync(retryData);
       console.log("[EnglishSpeaking] Retry attempt saved", { session_id: sessionId, retry_of: firstAttemptId });
     } catch (err) {
-      console.error("[EnglishSpeaking] Retry createAttempt failed:", err);
-      setAiError("保存重新复述记录失败，请稍后重试。");
+      const pgCode = (err as Record<string, unknown>)?.code as string | undefined;
+      if (pgCode === "23505") {
+        console.warn("[EnglishSpeaking] Duplicate retry detected — attempt already saved");
+        setAiError("该轮次练习记录已保存，无需重复提交。");
+      } else {
+        console.error("[EnglishSpeaking] Retry createAttempt failed:", err);
+        setAiError("保存重新复述记录失败，请稍后重试。");
+      }
       setUploading(false);
       return;
     }
@@ -1009,6 +1015,13 @@ export default function EnglishSpeaking() {
         setFirstAttemptId(savedId);
       }
     } catch (err) {
+      const pgCode = (err as Record<string, unknown>)?.code as string | undefined;
+      if (pgCode === "23505") {
+        console.warn("[EnglishSpeaking] Duplicate first attempt detected — already saved");
+        setAiError("练习记录已保存，无需重复提交。");
+        // Return the existing firstAttemptId if available, so callers can continue
+        return firstAttemptId;
+      }
       console.error("[EnglishSpeaking] createAttempt failed:", err);
       setAiError("保存练习记录失败，请稍后重试。你的录音和分析结果仍然保留在当前页面。");
       return null;

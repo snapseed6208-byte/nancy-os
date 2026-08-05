@@ -4,7 +4,7 @@
 -- ============================================
 
 -- Deduplicate any existing violations before adding the constraint.
--- Keeps the FIRST (oldest created_at) row for each (session_id, attempt_round).
+-- Keeps the NEWEST (last created_at) row for each (session_id, attempt_round).
 DO $$
 DECLARE
   duplicate_count INTEGER;
