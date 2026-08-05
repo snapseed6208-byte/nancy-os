@@ -88,6 +88,9 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
   private finalTranscript = "";
   private wsReady = false;
   private stopped = false;
+  private latestRecognizedText = "";
+  private sentenceCount = 0;
+  private finalTranscriptSource: "sentence_end" | "interim_cache" | "batch_fallback" | "none" = "none";
 
   private _onTranscriptUpdate: ((text: string) => void) | null = null;
   private _onInterimUpdate: ((text: string) => void) | null = null;
@@ -109,6 +112,9 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
     this.finalTranscript = "";
     this.stopped = false;
     this.wsReady = false;
+    this.latestRecognizedText = "";
+    this.sentenceCount = 0;
+    this.finalTranscriptSource = "none";
 
     try {
       // 1. Fetch NLS token
@@ -202,7 +208,8 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
 
               case "TranscriptionResultChanged":
                 if (msg.payload.result) {
-                  this.interim = msg.payload.result as string;
+                  this.latestRecognizedText = msg.payload.result as string;
+                  this.interim = this.latestRecognizedText;
                   this._onInterimUpdate?.(this.interim);
                 }
                 break;
@@ -211,10 +218,12 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
                 if (msg.payload.result) {
                   this.finalTranscript += (msg.payload.result as string) + " ";
                   this.transcript = this.finalTranscript.trim();
+                  this.latestRecognizedText = this.transcript;
                   this.interim = "";
+                  this.sentenceCount++;
                   this._onTranscriptUpdate?.(this.transcript);
                   this._onInterimUpdate?.("");
-                  console.log("[aliyunRealtime] SentenceEnd:", msg.payload.result);
+                  console.log("[aliyunRealtime] SentenceEnd #%d:", this.sentenceCount, msg.payload.result);
                 }
                 break;
 
@@ -334,28 +343,50 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
       closeReason = "ws_unavailable";
     }
 
+    // ── Fallback: use latestRecognizedText if no SentenceEnd fired ──
+    if (!this.transcript && this.latestRecognizedText) {
+      this.finalTranscript = this.latestRecognizedText;
+      this.transcript = this.finalTranscript.trim();
+      this._onTranscriptUpdate?.(this.transcript);
+      this.finalTranscriptSource = "interim_cache";
+      console.log(
+        "[aliyunRealtime] No SentenceEnd received — falling back to latestRecognizedText: %s",
+        this.transcript.slice(0, 100),
+      );
+    } else if (this.transcript) {
+      this.finalTranscriptSource = "sentence_end";
+    } else {
+      this.finalTranscriptSource = "none";
+    }
+
     // Read final transcript BEFORE cleanup (cleanup resets ws)
     const transcriptAfterStop = this.transcript;
     const flushDuration = (performance.now() - tStopStart).toFixed(0);
 
     console.log(
       "[aliyunRealtime] Stop lifecycle complete:" +
-      "\n  provider:             %s" +
-      "\n  appKey present:       %s" +
-      "\n  transcriptBeforeStop: %s" +
-      "\n  transcriptAfterStop:  %s" +
-      "\n  sentencesDuringStop:  %d" +
-      "\n  completedReceived:    %s" +
-      "\n  closeReason:          %s" +
-      "\n  flushDuration:        %sms",
+      "\n  provider:               %s" +
+      "\n  appKey present:         %s" +
+      "\n  transcriptBeforeStop:   %s" +
+      "\n  transcriptAfterStop:    %s" +
+      "\n  latestRecognizedText:   %s" +
+      "\n  sentenceCount:          %d" +
+      "\n  sentencesDuringStop:    %d" +
+      "\n  completedReceived:      %s" +
+      "\n  closeReason:            %s" +
+      "\n  flushDuration:          %sms" +
+      "\n  finalTranscriptSource:  %s",
       this.name,
       this.appkey ? "YES" : "NO",
       transcriptBeforeStop.slice(0, 100),
       transcriptAfterStop.slice(0, 100),
+      this.latestRecognizedText.slice(0, 100),
+      this.sentenceCount,
       sentencesReceivedDuringStop,
       completedReceived ? "YES" : "NO",
       closeReason,
       flushDuration,
+      this.finalTranscriptSource,
     );
 
     this.cleanup();
@@ -372,6 +403,9 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
     this.finalTranscript = "";
     this.stopped = false;
     this.wsReady = false;
+    this.latestRecognizedText = "";
+    this.sentenceCount = 0;
+    this.finalTranscriptSource = "none";
   }
 
   private cleanup(): void {
