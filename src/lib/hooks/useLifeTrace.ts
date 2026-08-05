@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import { dataUrlToBlob, uniqueFileName } from "@/lib/media";
-import { getBeijingDateString, getBeijingISOString, dateToBeijingString } from "@/lib/date";
+import { getBeijingDateString, dateToBeijingString } from "@/lib/date";
 import type { PendingCapture } from "@/lib/db/indexedDb";
 import type { LifeAnalysisResult, LifeAnalysisInsight, LifeAnalysisSuggestion } from "@/lib/types";
 
@@ -95,7 +95,7 @@ export function useUpdateIdea() {
     mutationFn: async ({ id, ...input }: Record<string, unknown>) => {
       const { data, error } = await supabase
         .from("ideas")
-        .update({ ...input, updated_at: getBeijingISOString() })
+        .update({ ...input, updated_at: new Date().toISOString() })
         .eq("id", id)
         .select()
         .single();

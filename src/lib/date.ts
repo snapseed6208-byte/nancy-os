@@ -33,23 +33,6 @@ export function getBeijingYearMonth(): { year: number; month: number } {
 }
 
 /**
- * Returns ISO timestamp string in Beijing time.
- */
-export function getBeijingISOString(): string {
-  const now = new Date();
-  const dateStr = getBeijingDateString();
-  const timeFormatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TIMEZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const timeStr = timeFormatter.format(now);
-  return `${dateStr}T${timeStr}+08:00`;
-}
-
-/**
  * Returns the first and last day of a month as YYYY-MM-DD strings.
  */
 export function getBeijingMonthRange(year: number, month: number): { start: string; end: string } {
