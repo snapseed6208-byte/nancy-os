@@ -24,6 +24,8 @@ import LifeTraceMood from "@/pages/LifeTraceMood";
 import LifeTraceMoney from "@/pages/LifeTraceMoney";
 import Ideas from "@/pages/Ideas";
 import Review from "@/pages/Review";
+import ReviewHistory from "@/pages/ReviewHistory";
+import ReviewDetail from "@/pages/ReviewDetail";
 import Reflection from "@/pages/Reflection";
 import MemoryCenter from "@/pages/MemoryCenter";
 import Settings from "@/pages/Settings";
@@ -71,6 +73,8 @@ function AppRoutes() {
         <Route path="/life-trace/money" component={LifeTraceMoney} />
         <Route path="/ideas" component={Ideas} />
         <Route path="/review" component={Review} />
+        <Route path="/review/history" component={ReviewHistory} />
+        <Route path="/review/date/:date" component={ReviewDetail} />
         <Route path="/reflection" component={Reflection} />
         <Route path="/memory-center" component={MemoryCenter} />
         <Route path="/resources" component={Resources} />

@@ -6,6 +6,7 @@ import {
   useUpsertJournalEntry,
   useTriggerLifeAnalysis,
 } from "@/lib/hooks/useLifeTrace";
+import { getBeijingDateString } from "@/lib/date";
 import type { LifeAnalysisAction, LifeAnalysisThought, LifeAnalysisPattern, LifeAnalysisInsight, LifeAnalysisSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ const SUGGESTION_CATEGORY_LABELS: Record<string, string> = {
 };
 
 function today(): string {
-  return new Date().toISOString().split("T")[0];
+  return getBeijingDateString();
 }
 
 // ── Sub-components ──
@@ -295,15 +296,35 @@ export default function LifeTraceDailyRecord() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center gap-3">
-        <button onClick={() => navigate("/life-trace")} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
-          <ArrowLeft size={16} className="text-ink-light" />
-        </button>
-        <div>
-          <p className="text-sm text-ink-lighter">Life Trace</p>
-          <h1 className="text-2xl font-semibold tracking-tight mt-0.5">今日生活记录</h1>
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate("/life-trace")} className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0">
+            <ArrowLeft size={16} className="text-ink-light" />
+          </button>
+          <div>
+            <p className="text-sm text-ink-lighter">Life Trace</p>
+            <h1 className="text-2xl font-semibold tracking-tight mt-0.5">日记</h1>
+          </div>
         </div>
       </header>
+
+      <div className="flex bg-ink/5 rounded-xl p-1">
+        {([
+          { key: "today" as const, label: "今日记录" },
+          { key: "history" as const, label: "历史记录" },
+        ]).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => key === "history" ? navigate("/life-trace/journal") : null}
+            className={cn(
+              "flex-1 py-2 rounded-lg text-xs font-semibold transition-all",
+              key === "today" ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <p className="text-sm font-medium text-ink">
         {dateObj.getMonth() + 1}月{dateObj.getDate()}日 {weekdays[dateObj.getDay()]}

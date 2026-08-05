@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
+import { getBeijingDateString, getBeijingMonthRange } from "@/lib/date";
 
 // ── Types ──
 
@@ -79,16 +80,17 @@ export function useDailyReview(date: string) {
 }
 
 async function fetchRecentDailyReviews(days = 7) {
-  const startDate = new Date();
+  const todayBeijing = new Date(getBeijingDateString() + "T00:00:00+08:00");
+  const startDate = new Date(todayBeijing);
   startDate.setDate(startDate.getDate() - days);
   const startStr = startDate.toISOString().split("T")[0];
-  const today = new Date().toISOString().split("T")[0];
+  const todayStr = todayBeijing.toISOString().split("T")[0];
 
   const { data, error } = await supabase
     .from("daily_reviews")
     .select("*")
     .gte("date", startStr)
-    .lte("date", today)
+    .lte("date", todayStr)
     .order("date", { ascending: false })
     .limit(days);
 
@@ -100,6 +102,38 @@ export function useRecentDailyReviews(days?: number) {
   return useQuery({
     queryKey: ["daily_reviews", "recent", days],
     queryFn: () => fetchRecentDailyReviews(days),
+    staleTime: 60 * 1000,
+  });
+}
+
+// ── Daily Review History ──
+
+export type DailyReviewHistoryFilters = {
+  year?: number;
+  month?: number;
+};
+
+async function fetchDailyReviewHistory(filters: DailyReviewHistoryFilters = {}) {
+  const now = new Date(getBeijingDateString() + "T00:00:00+08:00");
+  const year = filters.year ?? now.getFullYear();
+  const month = filters.month ?? now.getMonth() + 1;
+  const { start, end } = getBeijingMonthRange(year, month);
+
+  const { data, error } = await supabase
+    .from("daily_reviews")
+    .select("*")
+    .gte("date", start)
+    .lte("date", end)
+    .order("date", { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as DailyReview[];
+}
+
+export function useDailyReviewHistory(filters: DailyReviewHistoryFilters = {}) {
+  return useQuery({
+    queryKey: ["daily_reviews", "history", filters],
+    queryFn: () => fetchDailyReviewHistory(filters),
     staleTime: 60 * 1000,
   });
 }
@@ -156,10 +190,10 @@ export function useWeeklySummaries() {
 }
 
 async function fetchCurrentWeekSummary() {
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  const todayBeijing = new Date(getBeijingDateString() + "T00:00:00+08:00");
+  const dayOfWeek = todayBeijing.getDay();
+  const monday = new Date(todayBeijing);
+  monday.setDate(todayBeijing.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
   const weekStart = monday.toISOString().split("T")[0];

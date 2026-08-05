@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import {
   PencilLine, Calendar, Loader2, CheckCircle2, Send, Star,
   TrendingUp, Target, Sparkles, ArrowRight, Clock, Lightbulb, Heart,
@@ -11,13 +12,14 @@ import {
   type DailyReview, type WeeklySummary,
 } from "@/lib/hooks/useReview";
 import { useReflections, useGenerateReflection } from "@/lib/hooks/useReflection";
+import { getBeijingDateString } from "@/lib/date";
 
 // ── Helpers ──
 
-function today() { return new Date().toISOString().split("T")[0]; }
+function today() { return getBeijingDateString(); }
 
 function getWeekRange() {
-  const t = new Date();
+  const t = new Date(getBeijingDateString() + "T00:00:00+08:00");
   const dow = t.getDay();
   const mon = new Date(t);
   mon.setDate(t.getDate() - (dow === 0 ? 6 : dow - 1));
@@ -29,11 +31,12 @@ function getWeekRange() {
   };
 }
 
-type Tab = "daily" | "weekly";
+type Tab = "daily" | "weekly" | "history";
 
 // ── Page ──
 
 export default function Review() {
+  const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("daily");
   const date = today();
   const { data: dailyReview, isLoading: loadingDaily } = useDailyReview(date);
@@ -57,15 +60,18 @@ export default function Review() {
         <StatCard icon={Calendar} label="本周复盘" value={`${weekCount} 篇`} sub="每日 + AI 反思" color="text-accent-sky" bg="bg-accent-sky/5" />
       </div>
 
-      {/* Tab bar */}
+      {/* Tab bar: 今日复盘 / 历史记录 */}
       <div className="flex bg-ink/5 rounded-xl p-1">
         {([
-          { key: "daily" as Tab, label: "每日复盘", icon: PencilLine },
-          { key: "weekly" as Tab, label: "每周复盘", icon: Calendar },
+          { key: "daily" as Tab, label: "今日复盘", icon: PencilLine },
+          { key: "history" as Tab, label: "历史记录", icon: Calendar },
         ]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => {
+              if (key === "history") { navigate("/review/history"); return; }
+              setTab(key);
+            }}
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-semibold transition-all",
               tab === key ? "bg-white text-ink shadow-sm" : "text-ink-light hover:text-ink",
