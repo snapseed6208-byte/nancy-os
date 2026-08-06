@@ -22,6 +22,17 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
 ];
 
+// ── Observability ──
+
+function generateRequestId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "";
+  for (let i = 0; i < 12; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `ce-${id}`;
+}
+
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") || "";
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -32,8 +43,8 @@ function corsHeaders(req: Request): Record<string, string> {
   };
 }
 
-function jsonResponse(req: Request, data: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(data), {
+function jsonResponse(req: Request, body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
@@ -220,15 +231,21 @@ serve(async (req: Request) => {
   }
 
   if (req.method !== "POST") {
-    return jsonResponse(req, { error: "Method not allowed" }, 405);
+    return jsonResponse(req, { error: "Method not allowed", requestId: generateRequestId() }, 405);
   }
+
+  const requestId = generateRequestId();
+  const t0 = Date.now();
+  let action = "";
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
     const body = await req.json();
-    const action = (body.action as string) || "";
+    action = (body.action as string) || "";
     const authHeader = req.headers.get("Authorization") || "";
+
+    console.log(`[chinese-expression-agent] ${requestId} start action=${action || "(empty)"}`);
 
     // ── Authenticate user ──
     let userId = "";
@@ -247,7 +264,12 @@ serve(async (req: Request) => {
         const attemptRound = (body.attempt_round as number) || 1;
 
         if (!topic || !transcript) {
-          return jsonResponse(req, { stage: "payload", error: "缺少话题或转录文本" }, 400);
+          return jsonResponse(req, {
+            success: false,
+            stage: "payload",
+            error: "缺少话题或转录文本",
+            requestId,
+          }, 400);
         }
 
         const userMessage = [
@@ -265,6 +287,7 @@ serve(async (req: Request) => {
           { role: "user", content: userMessage },
         ];
 
+        console.log(`[chinese-expression-agent] ${requestId} calling deepseek for analyze_expression`);
         const result = await aiRuntime<Record<string, unknown>>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 4096,
@@ -273,12 +296,15 @@ serve(async (req: Request) => {
         });
 
         if (!result.success) {
+          const httpStatus = result.stage === "deepseek" ? 502 : 500;
+          console.error(`[chinese-expression-agent] ${requestId} aiRuntime failed stage=${result.stage} error=${result.error}`);
           return jsonResponse(req, {
             success: false,
             stage: result.stage,
             error: result.error,
             detail: result.detail,
-          }, result.stage === "deepseek" ? 502 : 500);
+            requestId,
+          }, httpStatus);
         }
 
         // Log
@@ -295,7 +321,9 @@ serve(async (req: Request) => {
           }).catch(() => {});
         }
 
-        return jsonResponse(req, { success: true, data: result.data });
+        const elapsedMs = Date.now() - t0;
+        console.log(`[chinese-expression-agent] ${requestId} done action=analyze_expression elapsedMs=${elapsedMs}`);
+        return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
       }
 
       // ── Generate Topics ──
@@ -313,6 +341,7 @@ serve(async (req: Request) => {
           { role: "user", content: userMessage },
         ];
 
+        console.log(`[chinese-expression-agent] ${requestId} calling deepseek for generate_topics`);
         const result = await aiRuntime<{ topics: Array<{ topic: string; topic_type: string; description: string }> }>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,
@@ -321,12 +350,15 @@ serve(async (req: Request) => {
         });
 
         if (!result.success) {
+          const httpStatus = result.stage === "deepseek" ? 502 : 500;
+          console.error(`[chinese-expression-agent] ${requestId} aiRuntime failed stage=${result.stage} error=${result.error}`);
           return jsonResponse(req, {
             success: false,
             stage: result.stage,
             error: result.error,
             detail: result.detail,
-          }, result.stage === "deepseek" ? 502 : 500);
+            requestId,
+          }, httpStatus);
         }
 
         if (userId) {
@@ -338,7 +370,9 @@ serve(async (req: Request) => {
           }).catch(() => {});
         }
 
-        return jsonResponse(req, { success: true, data: result.data });
+        const elapsedMs = Date.now() - t0;
+        console.log(`[chinese-expression-agent] ${requestId} done action=generate_topics elapsedMs=${elapsedMs}`);
+        return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
       }
 
       // ── Extract Material (Phase 2) ──
@@ -346,7 +380,12 @@ serve(async (req: Request) => {
         const sourceText = (body.source_text as string) || "";
 
         if (!sourceText) {
-          return jsonResponse(req, { stage: "payload", error: "缺少材料文本" }, 400);
+          return jsonResponse(req, {
+            success: false,
+            stage: "payload",
+            error: "缺少材料文本",
+            requestId,
+          }, 400);
         }
 
         const truncatedText = sourceText.length > 6000 ? sourceText.slice(0, 6000) + "\n\n[文本已截断...]" : sourceText;
@@ -367,6 +406,7 @@ serve(async (req: Request) => {
           { role: "user", content: truncatedText },
         ];
 
+        console.log(`[chinese-expression-agent] ${requestId} calling deepseek for extract_material`);
         const result = await aiRuntime<Record<string, unknown>>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,
@@ -375,23 +415,54 @@ serve(async (req: Request) => {
         });
 
         if (!result.success) {
+          const httpStatus = result.stage === "deepseek" ? 502 : 500;
+          console.error(`[chinese-expression-agent] ${requestId} aiRuntime failed stage=${result.stage} error=${result.error}`);
           return jsonResponse(req, {
             success: false,
             stage: result.stage,
             error: result.error,
             detail: result.detail,
-          }, result.stage === "deepseek" ? 502 : 500);
+            requestId,
+          }, httpStatus);
         }
 
-        return jsonResponse(req, { success: true, data: result.data });
+        const elapsedMs = Date.now() - t0;
+        console.log(`[chinese-expression-agent] ${requestId} done action=extract_material elapsedMs=${elapsedMs}`);
+        return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
       }
 
-      default:
-        return jsonResponse(req, { error: `Unknown action: ${action}` }, 400);
+      default: {
+        console.warn(`[chinese-expression-agent] ${requestId} unknown action="${action}"`);
+        return jsonResponse(req, {
+          success: false,
+          stage: "payload",
+          error: `Unknown action: ${action}`,
+          requestId,
+        }, 400);
+      }
     }
   } catch (err) {
+    const elapsedMs = Date.now() - t0;
     const message = err instanceof Error ? err.message : "Internal error";
-    console.error("[chinese-expression-agent]", message);
-    return jsonResponse(req, { success: false, error: message, stage: "internal" }, 500);
+
+    // Classify: timeout vs internal
+    if (err instanceof DOMException && err.name === "AbortError") {
+      console.error(`[chinese-expression-agent] ${requestId} timeout action=${action} elapsedMs=${elapsedMs}`);
+      return jsonResponse(req, {
+        success: false,
+        stage: "internal",
+        error: "请求处理超时",
+        detail: String(message),
+        requestId,
+      }, 504);
+    }
+
+    console.error(`[chinese-expression-agent] ${requestId} unhandled error action=${action} elapsedMs=${elapsedMs}`, message);
+    return jsonResponse(req, {
+      success: false,
+      stage: "internal",
+      error: message,
+      requestId,
+    }, 500);
   }
 });

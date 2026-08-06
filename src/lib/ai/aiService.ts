@@ -41,7 +41,7 @@ interface SupabaseFunctionError {
  * When an Edge Function returns non-2xx, supabase-js wraps the response
  * body in `error.context`. This unwraps it.
  */
-function extractErrorMessage(err: unknown): { message: string; status?: number; stage?: string } {
+function extractErrorMessage(err: unknown): { message: string; status?: number; stage?: string; requestId?: string } {
   const e = err as SupabaseFunctionError;
 
   // Try to parse the response body from FunctionsHttpError.context
@@ -49,7 +49,8 @@ function extractErrorMessage(err: unknown): { message: string; status?: number; 
     try {
       const body = JSON.parse(e.context) as Record<string, unknown>;
 
-      // Build prefix from stage if present
+      const requestId = typeof body?.requestId === "string" ? body.requestId : undefined;
+      const code = typeof body?.code === "string" ? body.code : undefined;
       const stage = typeof body?.stage === "string" ? body.stage : undefined;
       const stageLabels: Record<string, string> = {
         payload: "请求参数",
@@ -61,16 +62,23 @@ function extractErrorMessage(err: unknown): { message: string; status?: number; 
       };
       const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
 
-      // Prefer body.error (string or object with .message)
+      // New unified error format: { ok: false, code, message, requestId, stage }
+      if (body?.ok === false && typeof body?.message === "string" && body.message) {
+        const ridSuffix = requestId ? ` (rid: ${requestId})` : "";
+        const codeLabel = code ? `[${code}] ` : "";
+        return { message: `${codeLabel}${stagePrefix}${body.message}${ridSuffix}`, stage, requestId };
+      }
+
+      // Legacy: body.error (string or object with .message)
       const inner = body?.error;
-      if (typeof inner === "string" && inner) return { message: `${stagePrefix}${inner}`, stage };
+      if (typeof inner === "string" && inner) return { message: `${stagePrefix}${inner}`, stage, requestId };
       if (inner && typeof inner === "object") {
         const msg = (inner as Record<string, string>).message || (inner as Record<string, string>).error;
-        if (msg) return { message: `${stagePrefix}${msg}`, stage };
+        if (msg) return { message: `${stagePrefix}${msg}`, stage, requestId };
       }
       // Fallback: body.message or body.detail
-      if (typeof body?.message === "string" && body.message) return { message: `${stagePrefix}${body.message}`, stage };
-      if (typeof body?.detail === "string" && body.detail) return { message: `${stagePrefix}${body.detail}`, stage };
+      if (typeof body?.message === "string" && body.message) return { message: `${stagePrefix}${body.message}`, stage, requestId };
+      if (typeof body?.detail === "string" && body.detail) return { message: `${stagePrefix}${body.detail}`, stage, requestId };
     } catch {
       // context is not JSON — use raw text if short enough
       if (e.context.length < 200) return { message: e.context };
@@ -190,15 +198,29 @@ export async function invokeAI<T = unknown>(
 
       // ── Case 3: HTTP 200 but body has success:false envelope
       if (data && typeof data === "object" && data.success === false) {
+        const stage = typeof data.stage === "string" ? data.stage : undefined;
+        const stageLabels: Record<string, string> = {
+          payload: "请求参数", auth: "认证", deepseek: "DeepSeek调用",
+          parse: "AI结果解析", database: "数据库", internal: "内部错误",
+        };
+        const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
+        const rid = typeof data.requestId === "string" ? data.requestId : undefined;
+        const ridSuffix = rid ? ` (rid: ${rid})` : "";
         const msg = (data.error as string) || (data.message as string) || "未知错误";
-        console.error(`[aiService] ${callId} envelope error`, { message: msg });
-        finalResult = { success: false, error: String(msg) };
+        console.error(`[aiService] ${callId} envelope error`, { message: msg, stage, requestId: rid });
+        finalResult = { success: false, error: `${stagePrefix}${String(msg)}${ridSuffix}` };
         break;
       }
 
       // ── Success ──
-      console.log(`[aiService] ${callId} success`);
-      finalResult = { success: true, data: data as T };
+      // Unwrap inner data if response uses { success: true, data: ... } envelope
+      if (data && typeof data === "object" && data.success === true && "data" in data) {
+        console.log(`[aiService] ${callId} success (unwrapped envelope)`);
+        finalResult = { success: true, data: (data as Record<string, unknown>).data as T };
+      } else {
+        console.log(`[aiService] ${callId} success`);
+        finalResult = { success: true, data: data as T };
+      }
       break;
 
     } catch (err: unknown) {
