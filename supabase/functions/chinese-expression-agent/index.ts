@@ -238,22 +238,47 @@ serve(async (req: Request) => {
   const t0 = Date.now();
   let action = "";
 
+  // ── Parse body ──
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json() as Record<string, unknown>;
+  } catch {
+    console.error(`[chinese-expression-agent] ${requestId} failed to parse request body`);
+    return jsonResponse(req, {
+      success: false,
+      stage: "payload",
+      error: "请求体格式错误，需要有效的 JSON",
+      requestId,
+    }, 400);
+  }
+
+  action = (body.action as string) || "";
+
+  console.log(`[chinese-expression-agent] ${requestId} start action=${action || "(empty)"}`);
+
+  // ── Auth (non-fatal: continues with empty userId on failure) ──
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  let userId = "";
 
   try {
-    const body = await req.json();
-    action = (body.action as string) || "";
     const authHeader = req.headers.get("Authorization") || "";
-
-    console.log(`[chinese-expression-agent] ${requestId} start action=${action || "(empty)"}`);
-
-    // ── Authenticate user ──
-    let userId = "";
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
       const { data } = await supabase.auth.getUser(token);
       userId = data.user?.id || "";
+      if (!userId) {
+        console.log(`[chinese-expression-agent] ${requestId} auth: no user found for token`);
+      }
+    } else {
+      console.log(`[chinese-expression-agent] ${requestId} auth: no Bearer token in Authorization header`);
     }
+  } catch (authErr) {
+    // Auth failure is non-fatal — continue without userId
+    console.error(`[chinese-expression-agent] ${requestId} auth error (non-fatal):`,
+      (authErr as Error).message);
+  }
+
+  try {
 
     switch (action) {
       // ── Analyze Expression ──

@@ -38,54 +38,113 @@ interface SupabaseFunctionError {
 
 /**
  * Extract the real error message from a supabase-js FunctionsHttpError.
- * When an Edge Function returns non-2xx, supabase-js wraps the response
- * body in `error.context`. This unwraps it.
+ *
+ * In supabase-js v2, FunctionsHttpError.context is the raw fetch Response
+ * object (not a string). We must read the body to get the server error.
  */
-function extractErrorMessage(err: unknown): { message: string; status?: number; stage?: string; requestId?: string } {
+async function extractErrorMessage(err: unknown): Promise<{
+  message: string;
+  status?: number;
+  stage?: string;
+  requestId?: string;
+}> {
   const e = err as SupabaseFunctionError;
 
-  // Try to parse the response body from FunctionsHttpError.context
+  // ── FunctionsHttpError from supabase-js v2: context is a Response object ──
+  if (e.context && typeof e.context === "object" && "status" in e.context && "json" in e.context) {
+    const resp = e.context as Response;
+    const status = resp.status;
+
+    try {
+      const cloned = resp.clone();
+      const text = await cloned.text();
+
+      if (!text) {
+        return { message: `Edge Function 返回空响应 (HTTP ${status})`, status };
+      }
+
+      // Try JSON parse
+      try {
+        const body = JSON.parse(text) as Record<string, unknown>;
+        const stage = typeof body.stage === "string" ? body.stage : undefined;
+        const requestId = typeof body.requestId === "string" ? body.requestId : undefined;
+        const code = typeof body.code === "string" ? body.code : undefined;
+
+        const stageLabels: Record<string, string> = {
+          payload: "请求参数",
+          auth: "认证",
+          deepseek: "DeepSeek调用",
+          parse: "AI结果解析",
+          database: "数据库",
+          internal: "内部错误",
+        };
+        const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
+        const ridSuffix = requestId ? ` (rid: ${requestId})` : "";
+        const codeLabel = code ? `[${code}] ` : "";
+
+        // Format: body.error (string), body.message, or body.detail
+        if (typeof body.error === "string" && body.error) {
+          return { message: `${codeLabel}${stagePrefix}${body.error}${ridSuffix}`, status, stage, requestId };
+        }
+        if (typeof body.message === "string" && body.message) {
+          return { message: `${codeLabel}${stagePrefix}${body.message}${ridSuffix}`, status, stage, requestId };
+        }
+        if (typeof body.detail === "string" && body.detail) {
+          return { message: `${codeLabel}${stagePrefix}${body.detail}${ridSuffix}`, status, stage, requestId };
+        }
+
+        // Fallback: stringify the body (shortened)
+        const bodyStr = JSON.stringify(body);
+        return {
+          message: `HTTP ${status}: ${bodyStr.length > 300 ? bodyStr.slice(0, 300) + "..." : bodyStr}`,
+          status,
+          stage,
+          requestId,
+        };
+      } catch {
+        // Not JSON — use raw text (shortened)
+        const preview = text.length > 500 ? text.slice(0, 500) + "..." : text;
+        return { message: `HTTP ${status}: ${preview}`, status };
+      }
+    } catch {
+      // Failed to read body
+      return { message: `HTTP ${status}: 无法读取响应内容`, status };
+    }
+  }
+
+  // ── Legacy: context is a JSON string (older supabase-js or serialized) ──
   if (typeof e.context === "string") {
     try {
       const body = JSON.parse(e.context) as Record<string, unknown>;
-
       const requestId = typeof body?.requestId === "string" ? body.requestId : undefined;
       const code = typeof body?.code === "string" ? body.code : undefined;
       const stage = typeof body?.stage === "string" ? body.stage : undefined;
       const stageLabels: Record<string, string> = {
-        payload: "请求参数",
-        auth: "认证",
-        deepseek: "DeepSeek调用",
-        parse: "AI结果解析",
-        database: "数据库",
-        internal: "内部错误",
+        payload: "请求参数", auth: "认证", deepseek: "DeepSeek调用",
+        parse: "AI结果解析", database: "数据库", internal: "内部错误",
       };
       const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
 
-      // New unified error format: { ok: false, code, message, requestId, stage }
       if (body?.ok === false && typeof body?.message === "string" && body.message) {
         const ridSuffix = requestId ? ` (rid: ${requestId})` : "";
         const codeLabel = code ? `[${code}] ` : "";
         return { message: `${codeLabel}${stagePrefix}${body.message}${ridSuffix}`, stage, requestId };
       }
 
-      // Legacy: body.error (string or object with .message)
       const inner = body?.error;
       if (typeof inner === "string" && inner) return { message: `${stagePrefix}${inner}`, stage, requestId };
       if (inner && typeof inner === "object") {
         const msg = (inner as Record<string, string>).message || (inner as Record<string, string>).error;
         if (msg) return { message: `${stagePrefix}${msg}`, stage, requestId };
       }
-      // Fallback: body.message or body.detail
       if (typeof body?.message === "string" && body.message) return { message: `${stagePrefix}${body.message}`, stage, requestId };
       if (typeof body?.detail === "string" && body.detail) return { message: `${stagePrefix}${body.detail}`, stage, requestId };
     } catch {
-      // context is not JSON — use raw text if short enough
       if (e.context.length < 200) return { message: e.context };
     }
   }
 
-  // Fallback to error.message or generic
+  // ── Fallback to error.message or generic ──
   return {
     message: e.message || "AI 服务调用失败",
     status: e.status,
@@ -162,10 +221,15 @@ export async function invokeAI<T = unknown>(
 
       // ── Case 1: Transport-level error (non-2xx from Edge Function) ──
       if (result.error) {
-        const extracted = extractErrorMessage(result.error);
+        const extracted = await extractErrorMessage(result.error);
         lastError = extracted.message;
         lastStatus = extracted.status;
-        console.error(`[aiService] ${callId} transport error`, { status: lastStatus, message: lastError });
+        console.error(`[aiService] ${callId} transport error`, {
+          status: lastStatus,
+          message: lastError,
+          stage: extracted.stage,
+          requestId: extracted.requestId,
+        });
 
         if (attempt < retries && shouldRetry(lastStatus, retryOn)) {
           const delay = Math.pow(2, attempt) * 1000;
