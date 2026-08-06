@@ -83,20 +83,25 @@ async function resolveB23(url: string): Promise<string | null> {
   }
 }
 
-// Fetch video metadata from B站 API
-async function fetchBilibiliVideoInfo(bvid: string): Promise<{
+// Fetch video metadata from B站 API (by bvid or aid)
+async function fetchBilibiliVideoInfo(bvid: string | null, aid: number | null): Promise<{
   title: string | null;
   cover_url: string | null;
   duration_seconds: number | null;
   owner_name: string | null;
   aid: number | null;
   cid: number | null;
+  bvid: string | null;
 }> {
+  const empty = { title: null, cover_url: null, duration_seconds: null, owner_name: null, aid: aid, cid: null, bvid: bvid };
+  if (!bvid && !aid) return empty;
+
+  const param = bvid ? `bvid=${encodeURIComponent(bvid)}` : `aid=${aid}`;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     const resp = await fetch(
-      `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+      `https://api.bilibili.com/x/web-interface/view?${param}`,
       {
         signal: controller.signal,
         headers: { "User-Agent": UA, "Referer": "https://www.bilibili.com/" },
@@ -104,12 +109,10 @@ async function fetchBilibiliVideoInfo(bvid: string): Promise<{
     );
     clearTimeout(timeout);
 
-    if (!resp.ok) return { title: null, cover_url: null, duration_seconds: null, owner_name: null, aid: null, cid: null };
+    if (!resp.ok) return empty;
 
     const json = await resp.json();
-    if (json.code !== 0 || !json.data) {
-      return { title: null, cover_url: null, duration_seconds: null, owner_name: null, aid: null, cid: null };
-    }
+    if (json.code !== 0 || !json.data) return empty;
 
     const d = json.data;
     return {
@@ -117,11 +120,12 @@ async function fetchBilibiliVideoInfo(bvid: string): Promise<{
       cover_url: d.pic || null,
       duration_seconds: d.duration || null,
       owner_name: d.owner?.name || null,
-      aid: d.aid || null,
+      aid: d.aid || aid,
       cid: d.cid || null,
+      bvid: d.bvid || bvid,
     };
   } catch {
-    return { title: null, cover_url: null, duration_seconds: null, owner_name: null, aid: null, cid: null };
+    return empty;
   }
 }
 
@@ -176,14 +180,19 @@ serve(async (req: Request) => {
     let apiAid: number | null = aid;
     let apiCid: number | null = null;
 
-    if (bvid) {
-      const info = await fetchBilibiliVideoInfo(bvid);
+    if (bvid || aid) {
+      const info = await fetchBilibiliVideoInfo(bvid, aid);
       title = info.title;
       coverUrl = info.cover_url;
       durationSec = info.duration_seconds;
       ownerName = info.owner_name;
       apiAid = info.aid || aid;
       apiCid = info.cid;
+      // Update bvid if API returned one (e.g. av号 → BV号 conversion)
+      if (!bvid && info.bvid) {
+        bvid = info.bvid;
+        canonical = `https://www.bilibili.com/video/${info.bvid}`;
+      }
     }
 
     const result: ResolveResult = {
