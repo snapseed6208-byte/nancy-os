@@ -33,13 +33,122 @@ function DimensionBar({ name, score, maxScore, comment }: {
   );
 }
 
+function ScoresV2({ scores }: { scores: Record<string, unknown> }) {
+  const dimLabels: Record<string, string> = {
+    relevance: "主旨与切题度", structure_logic: "结构与逻辑",
+    depth_critical_thinking: "内容深度与思辨", evidence_support: "细节与支撑",
+    clarity: "表达清晰度", delivery: "口语呈现",
+  };
+  return (
+    <div className="space-y-2 pt-2 border-t border-border/50">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-ink">得分</span>
+        <span className="text-lg font-bold text-sage-deep">{String(scores.overall_score ?? "")} 分</span>
+      </div>
+      <p className="text-xs text-ink-lighter">{String(scores.overall_judgment ?? "")}</p>
+      {Object.entries(dimLabels).map(([key, label]) => {
+        const dim = (scores as Record<string, Record<string, unknown>>)[key];
+        if (!dim) return null;
+        return (
+          <DimensionBar
+            key={key}
+            name={label}
+            score={dim.score as number}
+            maxScore={dim.max as number}
+            comment={(dim.diagnosis as string) || ""}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoresV1({ scores }: { scores: Record<string, unknown> }) {
+  return (
+    <div className="space-y-2 pt-2 border-t border-border/50">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-ink">得分</span>
+        <span className="text-lg font-bold text-sage-deep">{String(scores.total ?? "")} 分</span>
+      </div>
+      <p className="text-xs text-ink-lighter">{String(scores.verdict ?? "")}</p>
+      {((scores as Record<string, unknown>).dimensions as Array<Record<string, unknown>>).map((d: Record<string, unknown>) => (
+        <DimensionBar
+          key={d.name as string}
+          name={d.name as string}
+          score={d.score as number}
+          maxScore={d.max_score as number}
+          comment={d.comment as string}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DiagnosisV2({ diagnosis }: { diagnosis: Record<string, unknown> }) {
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Target size={14} className="text-accent-rose" />
+        <p className="text-xs font-medium text-ink">关键问题</p>
+      </div>
+      {((diagnosis as Record<string, unknown>).three_key_issues as Array<Record<string, unknown>>).map((p: Record<string, unknown>, i: number) => (
+        <div key={i} className="text-xs space-y-0.5">
+          <span className="font-medium text-ink">{p.title as string}</span>
+          {p.evidence_quote ? <p className="text-ink-lighter italic">&ldquo;{String(p.evidence_quote)}&rdquo;</p> : null}
+          {p.how_to_fix ? <p className="text-sage-deep">{String(p.how_to_fix)}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DiagnosisV1({ diagnosis }: { diagnosis: Record<string, unknown> }) {
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Target size={14} className="text-accent-rose" />
+        <p className="text-xs font-medium text-ink">关键问题</p>
+      </div>
+      {((diagnosis as Record<string, unknown>).top_3_problems as Array<Record<string, unknown>>).map((p: Record<string, unknown>, i: number) => (
+        <div key={i} className="text-xs space-y-0.5">
+          <span className="font-medium text-ink">{String(p.problem ?? "")}</span>
+          {p.suggestion ? <p className="text-sage-deep">{String(p.suggestion)}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OutlineSection({ outline }: { outline: Record<string, unknown>[] }) {
+  return (
+    <div className="pt-2 border-t border-border/50">
+      <div className="flex items-center gap-2 mb-2">
+        <Lightbulb size={14} className="text-purple-600" />
+        <p className="text-xs font-medium text-ink">答案骨架</p>
+      </div>
+      <div className="space-y-1">
+        {outline.map((s: Record<string, unknown>, i: number) => (
+          <div key={i} className="flex gap-2 text-xs">
+            <span className="text-purple-600 font-medium">{s.step as number}. {s.label as string}</span>
+            <span className="text-ink-lighter">{(s.content || s.guidance) as string}</span>
+            {s.seconds != null && (
+              <span className="text-ink-lighter/50">~{s.seconds as number}s</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; label: string }) {
-  const scores = attempt.scores;
-  const diagnosis = attempt.diagnosis;
-  const outline = attempt.answer_outline;
+  const scores = attempt.scores as Record<string, unknown> | null;
+  const diagnosis = attempt.diagnosis as Record<string, unknown> | null;
+  const outline = attempt.answer_outline as Record<string, unknown>[] | null;
   const speech = attempt.final_improved_speech;
-  const improvements = attempt.key_improvements;
   const metrics = attempt.delivery_metrics;
+
+  const isV2 = scores && typeof scores.overall_score === "number";
 
   return (
     <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
@@ -48,12 +157,10 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
         <p className="text-sm font-semibold text-ink">{label}</p>
       </div>
 
-      {/* Audio */}
       {attempt.audio_url && (
         <audio controls src={attempt.audio_url} className="h-9 w-full max-w-[280px]" />
       )}
 
-      {/* Transcript */}
       {attempt.edited_transcript && (
         <div>
           <p className="text-xs font-medium text-ink-lighter mb-1">转录</p>
@@ -61,42 +168,17 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
         </div>
       )}
 
-      {/* Scores */}
-      {scores && (
-        <div className="space-y-2 pt-2 border-t border-border/50">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-ink">得分</span>
-            <span className="text-lg font-bold text-sage-deep">{scores.total} 分</span>
-          </div>
-          <p className="text-xs text-ink-lighter">{scores.verdict}</p>
-          {scores.dimensions.map((d) => (
-            <DimensionBar key={d.name} name={d.name} score={d.score} maxScore={d.max_score} comment={d.comment} />
-          ))}
-        </div>
-      )}
+      {isV2 && scores && <ScoresV2 scores={scores} />}
+      {!isV2 && scores && (scores as Record<string, unknown>).dimensions ? <ScoresV1 scores={scores} /> : null}
 
-      {/* Diagnosis */}
-      {diagnosis && diagnosis.top_3_problems?.length > 0 && (
-        <div className="pt-2 border-t border-border/50 space-y-2">
-          <div className="flex items-center gap-2">
-            <Target size={14} className="text-accent-rose" />
-            <p className="text-xs font-medium text-ink">关键问题</p>
-          </div>
-          {diagnosis.top_3_problems.map((p, i) => (
-            <div key={i} className="text-xs space-y-0.5">
-              <span className="font-medium text-ink">{p.problem}</span>
-              {p.suggestion && <p className="text-sage-deep">{p.suggestion}</p>}
-            </div>
-          ))}
-        </div>
-      )}
+      {diagnosis && (diagnosis as Record<string, unknown>).three_key_issues ? <DiagnosisV2 diagnosis={diagnosis} /> : null}
+      {diagnosis && !(diagnosis as Record<string, unknown>).three_key_issues && (diagnosis as Record<string, unknown>).top_3_problems ? <DiagnosisV1 diagnosis={diagnosis} /> : null}
 
-      {/* Improved Speech */}
       {speech && (
         <div className="pt-2 border-t border-border/50">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles size={14} className="text-sage-deep" />
-            <p className="text-xs font-medium text-ink">优化表达</p>
+            <p className="text-xs font-medium text-ink">AI 优化参考</p>
           </div>
           <p className="text-sm text-ink leading-relaxed bg-sage-light/10 border border-sage-light/30 rounded-xl p-3">
             {speech}
@@ -104,25 +186,8 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
         </div>
       )}
 
-      {/* Outline */}
-      {outline && outline.length > 0 && (
-        <div className="pt-2 border-t border-border/50">
-          <div className="flex items-center gap-2 mb-2">
-            <Lightbulb size={14} className="text-purple-600" />
-            <p className="text-xs font-medium text-ink">答案骨架</p>
-          </div>
-          <div className="space-y-1">
-            {outline.map((s) => (
-              <div key={s.step} className="flex gap-2 text-xs">
-                <span className="text-purple-600 font-medium">{s.step}. {s.label}</span>
-                <span className="text-ink-lighter">{s.guidance}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {outline && outline.length > 0 && <OutlineSection outline={outline} />}
 
-      {/* Delivery metrics */}
       {metrics && (
         <div className="pt-2 border-t border-border/50">
           <p className="text-xs font-medium text-ink-lighter mb-1">口语数据</p>
@@ -200,35 +265,71 @@ export default function ChineseSpeakingDetail() {
       {round2 && <AttemptSection attempt={round2} label="第二次表达（重新表达）" />}
 
       {/* Comparison if both exist */}
-      {round1 && round2 && round1.scores && round2.scores && (
-        <div className="bg-gradient-to-r from-sage-light/5 to-purple-50/50 border border-sage-light/30 rounded-2xl p-4">
-          <p className="text-sm font-medium text-ink mb-3">前后对比</p>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-white/60 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-ink-lighter mb-0.5">第一次</p>
-              <p className="text-xl font-bold text-ink">{round1.scores.total}</p>
-            </div>
-            <div className="bg-white/60 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-ink-lighter mb-0.5">第二次</p>
-              <p className="text-xl font-bold text-sage-deep">{round2.scores.total}</p>
-            </div>
-          </div>
-          {round1.scores.dimensions.map((d1, i) => {
-            const d2 = round2.scores!.dimensions[i];
-            const delta = d2 ? d2.score - d1.score : 0;
-            return (
-              <div key={d1.name} className="flex items-center gap-2 text-[10px] mb-0.5">
-                <span className="text-ink-lighter w-16 shrink-0">{d1.name}</span>
-                <span className="font-mono w-5">{d1.score}</span>
-                <span className="font-mono font-medium text-sage-deep w-5">{d2?.score ?? "-"}</span>
-                <span className={delta > 0 ? "text-emerald-600" : delta < 0 ? "text-accent-rose" : "text-ink-lighter"}>
-                  {delta > 0 ? `+${delta}` : delta}
-                </span>
+      {round1 && round2 && round1.scores && round2.scores && (() => {
+        const r1s = round1.scores as Record<string, unknown>;
+        const r2s = round2.scores as Record<string, unknown>;
+        const isV2 = typeof r1s.overall_score === "number";
+        const r1Total = (isV2 ? r1s.overall_score : r1s.total) as number;
+        const r2Total = (isV2 ? r2s.overall_score : r2s.total) as number;
+        const dimLabels: Record<string, string> = {
+          relevance: "主旨与切题度", structure_logic: "结构与逻辑",
+          depth_critical_thinking: "内容深度与思辨", evidence_support: "细节与支撑",
+          clarity: "表达清晰度", delivery: "口语呈现",
+        };
+
+        return (
+          <div className="bg-gradient-to-r from-sage-light/5 to-purple-50/50 border border-sage-light/30 rounded-2xl p-4">
+            <p className="text-sm font-medium text-ink mb-3">前后对比</p>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div className="bg-white/60 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-ink-lighter mb-0.5">你的第一次表达</p>
+                <p className="text-xl font-bold text-ink">{r1Total}</p>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div className="bg-white/60 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-ink-lighter mb-0.5">你的第二次表达</p>
+                <p className="text-xl font-bold text-sage-deep">{r2Total}</p>
+              </div>
+            </div>
+            {isV2
+              ? Object.entries(dimLabels).map(([key, label]) => {
+                  const d1 = (r1s as Record<string, Record<string, unknown>>)[key];
+                  const d2 = (r2s as Record<string, Record<string, unknown>>)[key];
+                  if (!d1) return null;
+                  const s1 = d1.score as number;
+                  const s2 = d2?.score as number | undefined;
+                  const delta = s2 != null ? s2 - s1 : 0;
+                  return (
+                    <div key={key} className="flex items-center gap-2 text-[10px] mb-0.5">
+                      <span className="text-ink-lighter w-20 shrink-0">{label}</span>
+                      <span className="font-mono w-5">{s1}</span>
+                      <span className="font-mono font-medium text-sage-deep w-5">{s2 ?? "-"}</span>
+                      <span className={delta > 0 ? "text-emerald-600" : delta < 0 ? "text-accent-rose" : "text-ink-lighter"}>
+                        {delta > 0 ? `+${delta}` : delta}
+                      </span>
+                    </div>
+                  );
+                })
+              : ((r1s as Record<string, unknown>).dimensions as Array<Record<string, unknown>>)?.map((d1: Record<string, unknown>, i: number) => {
+                  const dims = (r2s as Record<string, unknown>).dimensions as Array<Record<string, unknown>>;
+                  const d2 = dims?.[i];
+                  const s1 = d1.score as number;
+                  const s2 = d2?.score as number | undefined;
+                  const delta = s2 != null ? s2 - s1 : 0;
+                  return (
+                    <div key={d1.name as string} className="flex items-center gap-2 text-[10px] mb-0.5">
+                      <span className="text-ink-lighter w-20 shrink-0">{d1.name as string}</span>
+                      <span className="font-mono w-5">{s1}</span>
+                      <span className="font-mono font-medium text-sage-deep w-5">{s2 ?? "-"}</span>
+                      <span className={delta > 0 ? "text-emerald-600" : delta < 0 ? "text-accent-rose" : "text-ink-lighter"}>
+                        {delta > 0 ? `+${delta}` : delta}
+                      </span>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        );
+      })()}
 
       {/* Re-practice CTA */}
       <button

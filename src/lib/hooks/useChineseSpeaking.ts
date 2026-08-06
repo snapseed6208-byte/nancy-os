@@ -1,6 +1,6 @@
 // ============================================
-// Nancy OS — Chinese Expression Training Hooks
-// 中文表达训练: types, queries, mutations, AI
+// Nancy OS — Chinese Expression Training Hooks V2
+// Types, queries, mutations, AI — updated for V2 two-stage analysis
 // ============================================
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 
-// ── Types ──
+// ── Topic & framework enums ──
 
 export type ChineseTopicType = "opinion" | "experience" | "concept" | "reflection" | "interview" | "story";
 export type ChineseTrainingMode = "one_minute_topic" | "material_retelling";
@@ -40,46 +40,140 @@ export const FRAMEWORK_LABELS: Record<ChineseFramework, string> = {
   story: "故事表达",
 };
 
-// ── Attempt scoring types ──
+// ── V2 Scoring types ──
 
-export interface DimensionScore {
-  name: string;
+export interface V2DimensionScore {
   score: number;
-  max_score: number;
-  comment: string;
-  quotes: string[];
+  max: number;
+  evidence_quotes: string[];
+  diagnosis: string;
+  improvement: string;
 }
 
-export interface AttemptScores {
-  total: number;
-  verdict: string;
-  dimensions: DimensionScore[];
+export interface V2Scores {
+  relevance: V2DimensionScore;
+  structure_logic: V2DimensionScore;
+  depth_critical_thinking: V2DimensionScore;
+  evidence_support: V2DimensionScore;
+  clarity: V2DimensionScore;
+  delivery: V2DimensionScore;
 }
 
-export interface TopProblem {
-  problem: string;
+export const V2_DIMENSION_LABELS: Record<string, string> = {
+  relevance: "主旨与切题度",
+  structure_logic: "结构与逻辑",
+  depth_critical_thinking: "内容深度与思辨",
+  evidence_support: "细节与支撑",
+  clarity: "表达清晰度",
+  delivery: "口语呈现",
+};
+
+// ── V2 Diagnosis types ──
+
+export interface V2Stance {
+  summary: string;
+  clarity: "clear" | "partial" | "unclear";
+  preserved: boolean;
+}
+
+export interface V2Framework {
+  name: string;
+  reason: string;
+  depth_lenses: string[];
+}
+
+export interface V2KeyIssue {
   severity: "high" | "medium" | "low";
-  example: string;
-  suggestion: string;
+  title: string;
+  evidence_quote: string;
+  why_it_matters: string;
+  how_to_fix: string;
 }
 
-export interface AttemptDiagnosis {
-  top_3_problems: TopProblem[];
-  framework_reason: string;
-  recommended_framework: ChineseFramework;
+export interface V2ThinkingUpgrade {
+  core_tension: string;
+  definition: string;
+  conditions: string;
+  tradeoff: string;
+  counterpoint: string;
+  boundary: string;
+  real_detail_slots: string[];
 }
 
-export interface OutlineStep {
+export interface V2OutlineStep {
   step: number;
   label: string;
-  guidance: string;
-  time_hint_seconds: number;
+  content: string;
+  seconds: number;
 }
 
-export interface KeyImprovement {
-  title: string;
-  description: string;
+export interface V2RewriteBrief {
+  target_tone: string;
+  target_length_chinese_chars: string;
+  must_preserve: string[];
+  must_add: string[];
+  must_avoid: string[];
 }
+
+export interface V2Round2Guidance {
+  default_view: string;
+  self_questions: string[];
+  show_full_reference_by_default: boolean;
+}
+
+export interface V2IntegrityCheck {
+  fabricated_person_or_event: boolean;
+  unsupported_specific_details: string[];
+  stance_was_replaced: boolean;
+}
+
+export interface V2Diagnosis {
+  version: string;
+  question_type: string;
+  stance: V2Stance;
+  overall_score: number;
+  overall_judgment: string;
+  primary_framework: V2Framework;
+  scores: V2Scores;
+  three_key_issues: V2KeyIssue[];
+  thinking_upgrade: V2ThinkingUpgrade;
+  answer_outline: V2OutlineStep[];
+  rewrite_brief: V2RewriteBrief;
+  round2_guidance: V2Round2Guidance;
+  integrity_check: V2IntegrityCheck;
+  delivery_metrics?: DeliveryMetrics;
+}
+
+// ── V2 Rewrite types ──
+
+export interface V2ThoughtFeature {
+  type: string;
+  used_in_sentence: string;
+  purpose: string;
+}
+
+export interface V2KeyUpgrade {
+  title: string;
+  before: string;
+  after: string;
+  reason: string;
+}
+
+export interface V2Authenticity {
+  fabricated_details: boolean;
+  general_hypothetical_used: boolean;
+  missing_real_detail_slots: string[];
+}
+
+export interface V2Rewrite {
+  improved_speech: string;
+  thought_features: V2ThoughtFeature[];
+  key_upgrades: V2KeyUpgrade[];
+  authenticity: V2Authenticity;
+  integrity_failed?: boolean;
+}
+
+// ── Delivery metrics (unchanged) ──
 
 export interface DeliveryMetrics {
   pace_wpm: number;
@@ -89,6 +183,49 @@ export interface DeliveryMetrics {
   filler_words: string[];
   duration_seconds: number;
   word_count: number;
+}
+
+// ── V2 Comparison types ──
+
+export interface DimensionChange {
+  dimension: string;
+  round1_score: number;
+  round2_score: number;
+  delta: number;
+  round1_evidence: string;
+  round2_evidence: string;
+  explanation: string;
+}
+
+export interface ProgressPoint {
+  area: string;
+  detail: string;
+}
+
+export interface RemainingIssue {
+  area: string;
+  detail: string;
+  suggestion: string;
+}
+
+export interface ReferenceDependency {
+  full_reference_viewed: boolean;
+  interpretation: string;
+}
+
+export interface V2Comparison {
+  dimension_changes: DimensionChange[];
+  progress_points: ProgressPoint[];
+  remaining_issues: RemainingIssue[];
+  reference_dependency: ReferenceDependency;
+}
+
+// ── Combined AI result ──
+
+export interface ChineseAnalysisResultV2 {
+  diagnosis: V2Diagnosis;
+  rewrite: V2Rewrite;
+  delivery_metrics: DeliveryMetrics;
 }
 
 // ── Database row types ──
@@ -121,11 +258,11 @@ export interface ChineseSpeakingAttempt {
   audio_duration: number | null;
   transcript: string | null;
   edited_transcript: string | null;
-  scores: AttemptScores | null;
-  diagnosis: AttemptDiagnosis | null;
-  answer_outline: OutlineStep[] | null;
+  scores: Record<string, unknown> | null;
+  diagnosis: Record<string, unknown> | null;
+  answer_outline: Record<string, unknown>[] | null;
   final_improved_speech: string | null;
-  key_improvements: KeyImprovement[] | null;
+  key_improvements: Record<string, unknown>[] | null;
   delivery_metrics: DeliveryMetrics | null;
   stt_provider: string | null;
   stt_mode: string | null;
@@ -143,16 +280,7 @@ export interface ChineseSpeakingSessionWithAttempts extends ChineseSpeakingSessi
   attempts: ChineseSpeakingAttempt[];
 }
 
-// ── AI result types ──
-
-export interface ChineseAnalysisResult {
-  scores: AttemptScores;
-  diagnosis: AttemptDiagnosis;
-  answer_outline: OutlineStep[];
-  final_improved_speech: string;
-  key_improvements: KeyImprovement[];
-  delivery_metrics: DeliveryMetrics;
-}
+// ── Generated topic type ──
 
 export type GeneratedTopic = {
   topic: string;
@@ -217,7 +345,11 @@ async function fetchChineseSpeakingStats() {
 
   if (attemptsError) throw attemptsError;
 
-  const completedAttempts = attempts?.filter((a) => a.scores?.total != null) || [];
+  const completedAttempts = attempts?.filter((a) => {
+    const s = a.scores as Record<string, unknown> | null;
+    // Support both V1 (total) and V2 (overall_score stored in diagnosis)
+    return s?.total != null;
+  }) || [];
   const retries = attempts?.filter((a) => a.is_retry === true) || [];
 
   return {
@@ -227,8 +359,10 @@ async function fetchChineseSpeakingStats() {
     avg_score:
       completedAttempts.length > 0
         ? Math.round(
-            completedAttempts.reduce((sum, a) => sum + (a.scores as AttemptScores).total, 0) /
-              completedAttempts.length
+            completedAttempts.reduce((sum, a) => {
+              const s = a.scores as Record<string, unknown>;
+              return sum + (typeof s?.total === "number" ? s.total : 0);
+            }, 0) / completedAttempts.length
           )
         : null,
   };
@@ -285,11 +419,11 @@ export function useCreateChineseSpeakingAttempt() {
       audio_duration?: number;
       transcript?: string;
       edited_transcript?: string;
-      scores?: AttemptScores;
-      diagnosis?: AttemptDiagnosis;
-      answer_outline?: OutlineStep[];
+      scores?: Record<string, unknown>;
+      diagnosis?: Record<string, unknown>;
+      answer_outline?: Record<string, unknown>[];
       final_improved_speech?: string;
-      key_improvements?: KeyImprovement[];
+      key_improvements?: Record<string, unknown>[];
       delivery_metrics?: DeliveryMetrics;
       stt_provider?: string;
       stt_mode?: string;
@@ -304,7 +438,6 @@ export function useCreateChineseSpeakingAttempt() {
         .select()
         .single();
       if (error) {
-        // If duplicate session+round, return existing
         if (error.code === "23505") {
           const { data: existing } = await supabase
             .from("chinese_speaking_attempts")
@@ -332,23 +465,7 @@ export function useUpdateChineseSpeakingAttempt() {
     mutationFn: async (input: {
       id: string;
       session_id: string;
-      updates: Partial<{
-        transcript: string;
-        edited_transcript: string;
-        scores: AttemptScores;
-        diagnosis: AttemptDiagnosis;
-        answer_outline: OutlineStep[];
-        final_improved_speech: string;
-        key_improvements: KeyImprovement[];
-        delivery_metrics: DeliveryMetrics;
-        audio_url: string;
-        audio_duration: number;
-        stt_provider: string;
-        stt_mode: string;
-        transcript_source: string;
-        stt_success: boolean;
-        fallback_used: boolean;
-      }>;
+      updates: Record<string, unknown>;
     }) => {
       const { data, error } = await supabase
         .from("chinese_speaking_attempts")
@@ -396,7 +513,7 @@ export function useSoftDeleteChineseSpeakingSession() {
   });
 }
 
-// ── Audio upload (reused from English module) ──
+// ── Audio upload ──
 
 export async function uploadChineseAudio(sessionId: string, blob: Blob): Promise<string> {
   const fileName = `${sessionId}/${Date.now()}.webm`;
@@ -413,22 +530,46 @@ export async function uploadChineseAudio(sessionId: string, blob: Blob): Promise
   return urlData.publicUrl;
 }
 
-// ── AI Analysis ──
+// ── AI Analysis (V2 — two-stage) ──
 
 export async function analyzeChineseExpression(
   topic: string,
   topicType: ChineseTopicType | null,
   transcript: string,
   attemptRound: number,
-): Promise<{ success: true; data: ChineseAnalysisResult } | { success: false; error: string }> {
-  return invokeAI<ChineseAnalysisResult>("chinese-expression-agent", {
+  durationSeconds = 60,
+): Promise<{ success: true; data: ChineseAnalysisResultV2 } | { success: false; error: string }> {
+  return invokeAI<ChineseAnalysisResultV2>("chinese-expression-agent", {
     action: "analyze_expression",
     topic,
     topic_type: topicType,
     transcript,
     attempt_round: attemptRound,
+    duration_seconds: durationSeconds,
   }, {
-    timeout: 120_000,
+    timeout: 180_000,
+    retries: 1,
+  });
+}
+
+export async function compareChineseRounds(
+  topic: string,
+  round1Transcript: string,
+  round2Transcript: string,
+  round1Scores: Record<string, unknown> | null,
+  round2Scores: Record<string, unknown> | null,
+  fullReferenceViewed: boolean,
+): Promise<{ success: true; data: V2Comparison } | { success: false; error: string }> {
+  return invokeAI<V2Comparison>("chinese-expression-agent", {
+    action: "compare_rounds",
+    topic,
+    round1_transcript: round1Transcript,
+    round2_transcript: round2Transcript,
+    round1_scores: round1Scores,
+    round2_scores: round2Scores,
+    full_reference_viewed: fullReferenceViewed,
+  }, {
+    timeout: 90_000,
     retries: 1,
   });
 }

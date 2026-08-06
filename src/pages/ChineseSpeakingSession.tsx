@@ -3,7 +3,7 @@ import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, Mic, Square, Play, Pause, Loader2, CheckCircle2,
   AlertTriangle, Sparkles, Lightbulb, ChevronRight, RotateCcw,
-  Eye, EyeOff, Target, BarChart3, Volume2,
+  Eye, EyeOff, Target, BarChart3, Volume2, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAudioRecorder } from "@/lib/hooks/useAudioRecorder";
@@ -15,19 +15,29 @@ import {
   useUpdateChineseSpeakingAttempt,
   uploadChineseAudio,
   analyzeChineseExpression,
+  compareChineseRounds,
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
+  V2_DIMENSION_LABELS,
   type ChineseTopicType,
   type ChineseFramework,
-  type AttemptScores,
-  type AttemptDiagnosis,
-  type OutlineStep,
-  type KeyImprovement,
+  type V2Diagnosis,
+  type V2Scores,
+  type V2DimensionScore,
+  type V2KeyIssue,
+  type V2OutlineStep,
+  type V2KeyUpgrade,
+  type V2Rewrite,
+  type V2ThinkingUpgrade,
+  type V2Round2Guidance,
+  type V2IntegrityCheck,
+  type V2Comparison,
   type DeliveryMetrics,
+  type ChineseAnalysisResultV2,
 } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Constants ──
-const MIN_TRANSCRIPT_LENGTH = 5; // minimum chars for a valid Chinese transcript
+const MIN_TRANSCRIPT_LENGTH = 5;
 
 // ── Step type ──
 
@@ -43,6 +53,7 @@ type Step =
   | "retry_recording"
   | "retry_stopping"
   | "retry_review"
+  | "retry_analyzing"
   | "comparing"
   | "save_error";
 
@@ -122,28 +133,26 @@ function RecordingTimer({ elapsed, limit, onStop }: { elapsed: number; limit: nu
   );
 }
 
-// ── Score bar for results ──
+// ── V2 Dimension bar ──
 
-function DimensionBar({ name, score, maxScore, comment, quotes }: {
-  name: string; score: number; maxScore: number; comment: string; quotes?: string[];
-}) {
-  const pct = (score / maxScore) * 100;
+function V2DimensionBar({ label, data }: { label: string; data: V2DimensionScore }) {
+  const pct = (data.score / data.max) * 100;
   const color =
     pct >= 80 ? "bg-emerald-400" : pct >= 60 ? "bg-sage-deep/60" : pct >= 40 ? "bg-amber-400" : "bg-accent-rose/60";
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-ink">{name}</span>
-        <span className="text-xs font-mono text-ink-light">{score}/{maxScore}</span>
+        <span className="text-xs font-medium text-ink">{label}</span>
+        <span className="text-xs font-mono text-ink-light">{data.score}/{data.max}</span>
       </div>
       <div className="h-1.5 bg-ink/8 rounded-full overflow-hidden">
         <div className={cn("h-full rounded-full transition-all duration-500", color)} style={{ width: `${pct}%` }} />
       </div>
-      <p className="text-[11px] text-ink-lighter leading-relaxed">{comment}</p>
-      {quotes && quotes.length > 0 && (
+      <p className="text-[11px] text-ink-lighter leading-relaxed">{data.diagnosis}</p>
+      {data.evidence_quotes.length > 0 && (
         <p className="text-[10px] text-ink-lighter/70 italic">
-          &ldquo;{quotes[0]}&rdquo;
+          &ldquo;{data.evidence_quotes[0]}&rdquo;
         </p>
       )}
     </div>
@@ -155,7 +164,6 @@ function DimensionBar({ name, score, maxScore, comment, quotes }: {
 function isValidTranscript(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length < MIN_TRANSCRIPT_LENGTH) return false;
-  // Block known placeholder patterns
   if (trimmed.includes("转录功能将在")) return false;
   if (trimmed.includes("Stage 3")) return false;
   if (trimmed.startsWith("（") && trimmed.endsWith("）")) return false;
@@ -189,15 +197,13 @@ export default function ChineseSpeakingSession() {
   const [r1TranscriptSource, setR1TranscriptSource] = useState<string | undefined>(undefined);
   const [r1SttSuccess, setR1SttSuccess] = useState(false);
 
-  // Round 1 AI results
-  const [round1Scores, setRound1Scores] = useState<AttemptScores | null>(null);
-  const [round1Diagnosis, setRound1Diagnosis] = useState<AttemptDiagnosis | null>(null);
-  const [round1Outline, setRound1Outline] = useState<OutlineStep[] | null>(null);
-  const [round1ImprovedSpeech, setRound1ImprovedSpeech] = useState<string | null>(null);
-  const [round1KeyImprovements, setRound1KeyImprovements] = useState<KeyImprovement[] | null>(null);
+  // Round 1 V2 AI results
+  const [round1Diagnosis, setRound1Diagnosis] = useState<V2Diagnosis | null>(null);
+  const [round1Rewrite, setRound1Rewrite] = useState<V2Rewrite | null>(null);
   const [round1DeliveryMetrics, setRound1DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round1AttemptId, setRound1AttemptId] = useState<string | null>(null);
   const [round1AudioUrl, setRound1AudioUrl] = useState<string | null>(null);
+  const [round1FullReferenceViewed, setRound1FullReferenceViewed] = useState(false);
 
   // Round 2 state
   const [retryRefMode, setRetryRefMode] = useState<"structure" | "full" | "hidden">("structure");
@@ -207,18 +213,20 @@ export default function ChineseSpeakingSession() {
   const [r2SttMode, setR2SttMode] = useState("");
   const [r2TranscriptSource, setR2TranscriptSource] = useState<string | undefined>(undefined);
   const [r2SttSuccess, setR2SttSuccess] = useState(false);
-  const [round2Scores, setRound2Scores] = useState<AttemptScores | null>(null);
-  const [round2Diagnosis, setRound2Diagnosis] = useState<AttemptDiagnosis | null>(null);
-  const [round2ImprovedSpeech, setRound2ImprovedSpeech] = useState<string | null>(null);
+  const [round2Diagnosis, setRound2Diagnosis] = useState<V2Diagnosis | null>(null);
+  const [round2Rewrite, setRound2Rewrite] = useState<V2Rewrite | null>(null);
   const [round2DeliveryMetrics, setRound2DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round2AudioUrl, setRound2AudioUrl] = useState<string | null>(null);
+  const [round2FullReferenceViewed, setRound2FullReferenceViewed] = useState(false);
+
+  // Comparison
+  const [comparison, setComparison] = useState<V2Comparison | null>(null);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // ASR provider ref — created fresh each round
+  // ASR provider ref
   const asrRef = useRef<SpeechProvider | null>(null);
-  // Guard against double-stop
   const stoppingRef = useRef(false);
 
   // Timer ref for recording
@@ -232,7 +240,6 @@ export default function ChineseSpeakingSession() {
     };
   }, []);
 
-  // ── Creates a fresh ASR provider for each round ──
   function createAsr(): SpeechProvider {
     asrRef.current?.reset();
     const p = createChineseSpeechProvider();
@@ -254,7 +261,6 @@ export default function ChineseSpeakingSession() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const asr = createAsr();
 
-      // Start both recorder and ASR with shared stream
       await Promise.all([
         recorder.start(stream),
         asr.start(stream),
@@ -265,12 +271,9 @@ export default function ChineseSpeakingSession() {
       setRecordElapsed(0);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "启动失败";
-      // Check for CHINESE_APP_KEY_NOT_CONFIGURED
       if (msg.includes("CHINESE_APP_KEY_NOT_CONFIGURED")) {
         setAiError("中文语音识别尚未配置。请在阿里云控制台创建普通话实时识别项目，并将 AppKey 添加到 Supabase Edge Function Secrets (ALIYUN_ASR_CHINESE_APP_KEY)。");
-      } else if (recorder.error) {
-        // Mic error — already handled by recorder
-      } else {
+      } else if (!recorder.error) {
         setAiError(msg);
       }
       setStep("idle");
@@ -294,7 +297,6 @@ export default function ChineseSpeakingSession() {
     setStep("stopping");
 
     try {
-      // Stop both in parallel — get final blob and transcript
       const asr = asrRef.current;
       const [audioBlob, finalTranscript] = await Promise.all([
         recorder.stop(),
@@ -310,7 +312,7 @@ export default function ChineseSpeakingSession() {
       setEditedTranscript(finalTranscript);
 
       if (!isValidTranscript(finalTranscript)) {
-        setStep("transcribing"); // show "no transcript" state
+        setStep("transcribing");
       } else {
         setStep("review");
       }
@@ -322,7 +324,7 @@ export default function ChineseSpeakingSession() {
     }
   }, [recorder]);
 
-  // ── Review → Analyzing ──
+  // ── Review → Analyzing (V2 two-stage) ──
 
   const handleAnalyze = useCallback(async () => {
     if (!session) return;
@@ -349,7 +351,7 @@ export default function ChineseSpeakingSession() {
       }
     }
 
-    // Save Round 1 attempt
+    // Save Round 1 attempt (before AI to get the ID)
     try {
       const attempt = await createAttempt.mutateAsync({
         session_id: sessionId,
@@ -372,12 +374,13 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // AI Analysis — uses user-edited transcript
+    // V2 AI Analysis (two-stage)
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
       editedTranscript,
       1,
+      recorder.duration || 60,
     );
 
     if (!result.success) {
@@ -388,25 +391,36 @@ export default function ChineseSpeakingSession() {
     }
 
     const d = result.data;
-    setRound1Scores(d.scores);
     setRound1Diagnosis(d.diagnosis);
-    setRound1Outline(d.answer_outline);
-    setRound1ImprovedSpeech(d.final_improved_speech);
-    setRound1KeyImprovements(d.key_improvements);
+    setRound1Rewrite(d.rewrite);
     setRound1DeliveryMetrics(d.delivery_metrics);
 
-    // Update attempt with AI results
+    // Update attempt with V2 AI results
     if (round1AttemptId) {
       await updateAttempt.mutateAsync({
         id: round1AttemptId,
         session_id: sessionId,
         updates: {
-          scores: d.scores,
-          diagnosis: d.diagnosis,
-          answer_outline: d.answer_outline,
-          final_improved_speech: d.final_improved_speech,
-          key_improvements: d.key_improvements,
+          scores: {
+            overall_score: d.diagnosis.overall_score,
+            overall_judgment: d.diagnosis.overall_judgment,
+            ...d.diagnosis.scores,
+          },
+          diagnosis: {
+            version: d.diagnosis.version,
+            stance: d.diagnosis.stance,
+            primary_framework: d.diagnosis.primary_framework,
+            three_key_issues: d.diagnosis.three_key_issues,
+            thinking_upgrade: d.diagnosis.thinking_upgrade,
+            rewrite_brief: d.diagnosis.rewrite_brief,
+            round2_guidance: d.diagnosis.round2_guidance,
+            integrity_check: d.diagnosis.integrity_check,
+          },
+          answer_outline: d.diagnosis.answer_outline,
+          final_improved_speech: d.rewrite.improved_speech,
+          key_improvements: d.rewrite.key_upgrades,
           delivery_metrics: d.delivery_metrics,
+          ai_prompt_version: "2.0",
         },
       });
     }
@@ -421,10 +435,9 @@ export default function ChineseSpeakingSession() {
     if (!round1AttemptId) return;
     setAiError(null);
     stoppingRef.current = false;
+    setRound2FullReferenceViewed(false);
 
-    // Reset recorder state (preserves microphone access)
     recorder.reset();
-    // Clean up Round 1 ASR
     asrRef.current?.reset();
 
     setStep("retry_recording");
@@ -433,7 +446,7 @@ export default function ChineseSpeakingSession() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const asr = createAsr(); // NEW provider for Round 2
+      const asr = createAsr();
 
       await Promise.all([
         recorder.start(stream),
@@ -482,7 +495,7 @@ export default function ChineseSpeakingSession() {
     }
   }, [recorder]);
 
-  // ── Retry Review → Retry Analyzing ──
+  // ── Retry Review → Retry Analyzing + Comparison ──
 
   const handleRetryAnalyze = useCallback(async () => {
     if (!session || !round1AttemptId) return;
@@ -493,6 +506,7 @@ export default function ChineseSpeakingSession() {
 
     setAnalyzing(true);
     setAiError(null);
+    setStep("retry_analyzing");
 
     let audioUrl = "";
     if (recorder.blob) {
@@ -532,12 +546,13 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // AI Analysis Round 2
+    // V2 AI Analysis Round 2
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
       round2EditedTranscript,
       2,
+      recorder.duration || 60,
     );
 
     if (!result.success) {
@@ -548,9 +563,8 @@ export default function ChineseSpeakingSession() {
     }
 
     const d = result.data;
-    setRound2Scores(d.scores);
     setRound2Diagnosis(d.diagnosis);
-    setRound2ImprovedSpeech(d.final_improved_speech);
+    setRound2Rewrite(d.rewrite);
     setRound2DeliveryMetrics(d.delivery_metrics);
 
     if (attempt2Id) {
@@ -558,19 +572,56 @@ export default function ChineseSpeakingSession() {
         id: attempt2Id,
         session_id: sessionId,
         updates: {
-          scores: d.scores,
-          diagnosis: d.diagnosis,
-          answer_outline: d.answer_outline,
-          final_improved_speech: d.final_improved_speech,
-          key_improvements: d.key_improvements,
+          scores: {
+            overall_score: d.diagnosis.overall_score,
+            overall_judgment: d.diagnosis.overall_judgment,
+            ...d.diagnosis.scores,
+          },
+          diagnosis: {
+            version: d.diagnosis.version,
+            stance: d.diagnosis.stance,
+            primary_framework: d.diagnosis.primary_framework,
+            three_key_issues: d.diagnosis.three_key_issues,
+            thinking_upgrade: d.diagnosis.thinking_upgrade,
+            rewrite_brief: d.diagnosis.rewrite_brief,
+            round2_guidance: d.diagnosis.round2_guidance,
+            integrity_check: d.diagnosis.integrity_check,
+          },
+          answer_outline: d.diagnosis.answer_outline,
+          final_improved_speech: d.rewrite.improved_speech,
+          key_improvements: d.rewrite.key_upgrades,
           delivery_metrics: d.delivery_metrics,
+          ai_prompt_version: "2.0",
         },
       });
     }
 
+    // V2 AI Comparison
+    const r1Scores = round1Diagnosis ? {
+      overall_score: round1Diagnosis.overall_score,
+      ...round1Diagnosis.scores,
+    } : null;
+    const r2Scores = d.diagnosis ? {
+      overall_score: d.diagnosis.overall_score,
+      ...d.diagnosis.scores,
+    } : null;
+
+    const compResult = await compareChineseRounds(
+      session.topic,
+      editedTranscript,
+      round2EditedTranscript,
+      r1Scores as Record<string, unknown> | null,
+      r2Scores as Record<string, unknown> | null,
+      round2FullReferenceViewed,
+    );
+
+    if (compResult.success) {
+      setComparison(compResult.data);
+    }
+
     setAnalyzing(false);
     setStep("comparing");
-  }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, r2SttProvider, r2SttMode, r2TranscriptSource, r2SttSuccess, createAttempt, updateAttempt, round1AttemptId]);
+  }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, editedTranscript, r2SttProvider, r2SttMode, r2TranscriptSource, r2SttSuccess, createAttempt, updateAttempt, round1AttemptId, round1Diagnosis, round2FullReferenceViewed]);
 
   // ── Helpers ──
 
@@ -578,8 +629,8 @@ export default function ChineseSpeakingSession() {
     ? TOPIC_TYPE_LABELS[session.topic_type as ChineseTopicType]
     : null;
 
-  const frameworkLabel = round1Diagnosis?.recommended_framework
-    ? FRAMEWORK_LABELS[round1Diagnosis.recommended_framework as ChineseFramework]
+  const frameworkLabel = round1Diagnosis?.primary_framework?.name
+    ? FRAMEWORK_LABELS[round1Diagnosis.primary_framework.name as ChineseFramework] || round1Diagnosis.primary_framework.name
     : null;
 
   // ── Loading state ──
@@ -663,41 +714,98 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* Reference display for retry */}
-          {(step === "retry_recording") && retryRefMode !== "hidden" && (
-            <div className="bg-purple-50/50 border border-purple-100 rounded-xl p-3 space-y-2">
+          {/* V2 Reference display for retry — skeleton default, full answer collapsed */}
+          {(step === "retry_recording") && retryRefMode !== "hidden" && round1Diagnosis && (
+            <div className="bg-purple-50/50 border border-purple-100 rounded-xl p-3 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-purple-700">参考内容</span>
+                <span className="text-xs font-medium text-purple-700">AI 优化参考</span>
                 <div className="flex gap-1">
                   {(["structure", "full", "hidden"] as const).map((mode) => (
                     <button
                       key={mode}
-                      onClick={() => setRetryRefMode(mode)}
+                      onClick={() => {
+                        setRetryRefMode(mode);
+                        if (mode === "full") setRound2FullReferenceViewed(true);
+                      }}
                       className={cn(
                         "text-[10px] px-2 py-0.5 rounded-full transition-colors",
                         retryRefMode === mode ? "bg-purple-200 text-purple-800" : "text-purple-500",
                       )}
                     >
-                      {mode === "structure" ? "框架" : mode === "full" ? "完整" : "隐藏"}
+                      {mode === "structure" ? "只看框架" : mode === "full" ? "完整参考" : "隐藏"}
                     </button>
                   ))}
                 </div>
               </div>
-              {round1Outline && (
-                <div className="space-y-1">
-                  <p className="text-[10px] text-purple-500 font-medium">推荐框架：{frameworkLabel}</p>
-                  {round1Outline.map((s) => (
-                    <div key={s.step} className="flex gap-2 text-[11px]">
-                      <span className="text-purple-600 font-medium shrink-0">{s.step}. {s.label}</span>
-                      <span className="text-purple-500/80">{s.guidance}</span>
+
+              {/* Always show framework + skeleton in structure mode */}
+              <div className="space-y-2">
+                {frameworkLabel && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-purple-500 font-medium">推荐框架：</span>
+                    <span className="text-[11px] text-purple-700 font-medium">{frameworkLabel}</span>
+                    {round1Diagnosis.primary_framework.depth_lenses.length > 0 && (
+                      <span className="text-[10px] text-purple-400">
+                        （思辨镜头：{round1Diagnosis.primary_framework.depth_lenses.join("、")}）
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Answer outline skeleton */}
+                {round1Diagnosis.answer_outline && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] text-purple-500 font-medium">答案骨架</p>
+                    {round1Diagnosis.answer_outline.map((s) => (
+                      <div key={s.step} className="flex gap-2 text-[11px]">
+                        <span className="text-purple-600 font-medium shrink-0">{s.step}. {s.label}</span>
+                        <span className="text-purple-500/80">{s.content}</span>
+                        <span className="text-purple-400 text-[10px]">~{s.seconds}s</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Self-questions from round2_guidance */}
+                {round1Diagnosis.round2_guidance?.self_questions && (
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-purple-500 font-medium">自我提问</p>
+                    {round1Diagnosis.round2_guidance.self_questions.map((q, i) => (
+                      <p key={i} className="text-[10px] text-purple-600/70 italic">&ldquo;{q}&rdquo;</p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Key upgrades summary */}
+                {round1Rewrite?.key_upgrades && round1Rewrite.key_upgrades.length > 0 && (
+                  <div className="space-y-0.5">
+                    <p className="text-[10px] text-purple-500 font-medium">关键升级点</p>
+                    {round1Rewrite.key_upgrades.slice(0, 3).map((ku, i) => (
+                      <p key={i} className="text-[10px] text-purple-600/80">{ku.title}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Full answer — collapsed by default */}
+              {round1Rewrite?.improved_speech && (
+                <div className="pt-2 border-t border-purple-100">
+                  {retryRefMode === "full" ? (
+                    <div>
+                      <p className="text-[11px] text-purple-800 leading-relaxed">{round1Rewrite.improved_speech}</p>
+                      <p className="text-[9px] text-purple-400 mt-1">AI 优化参考，仅用于学习结构与思路，不代表唯一正确答案。</p>
                     </div>
-                  ))}
-                </div>
-              )}
-              {retryRefMode === "full" && round1ImprovedSpeech && (
-                <div className="mt-2 pt-2 border-t border-purple-100">
-                  <p className="text-[10px] text-purple-500 font-medium mb-1">参考表达</p>
-                  <p className="text-[11px] text-purple-800 leading-relaxed">{round1ImprovedSpeech}</p>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setRetryRefMode("full");
+                        setRound2FullReferenceViewed(true);
+                      }}
+                      className="text-[10px] text-purple-500 underline hover:text-purple-700"
+                    >
+                      查看完整参考答案
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -713,7 +821,6 @@ export default function ChineseSpeakingSession() {
             else if (step === "recording") handleStopRecording();
           }} />
 
-          {/* Live interim transcript */}
           {asrInterim && (
             <div className="bg-ink/[0.02] rounded-xl p-3 max-h-24 overflow-y-auto">
               <p className="text-xs text-ink-lighter/70">{asrInterim}</p>
@@ -756,7 +863,7 @@ export default function ChineseSpeakingSession() {
         </div>
       )}
 
-      {/* ── TRANSCRIBING (no valid transcript) ── */}
+      {/* ── TRANSCRIBING ── */}
       {step === "transcribing" && (
         <div className="bg-card rounded-2xl border border-border p-6 space-y-4">
           <div className="text-center py-6 space-y-3">
@@ -774,7 +881,6 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* Audio playback of current recording */}
           {recorder.audioUrl && (
             <div className="flex items-center gap-2 justify-center">
               <audio controls src={recorder.audioUrl} className="h-8 max-w-[220px]" />
@@ -796,7 +902,6 @@ export default function ChineseSpeakingSession() {
             </button>
             <button
               onClick={() => {
-                // Manual text input fallback
                 setStep("review");
                 setTranscript("");
                 setEditedTranscript("");
@@ -815,14 +920,13 @@ export default function ChineseSpeakingSession() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-medium text-ink">
-                {step === "retry_review" ? "第二次表达 · 转录" : "录音转录"}
+                {step === "retry_review" ? "你的第二次表达 · 转录" : "你的第一次表达 · 转录"}
               </p>
               {recorder.audioUrl && (
                 <audio controls src={recorder.audioUrl} className="h-8 max-w-[180px]" />
               )}
             </div>
 
-            {/* STT metadata */}
             {(step === "review" ? r1SttProvider : r2SttProvider) && (
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] text-ink-lighter/70">
@@ -884,14 +988,13 @@ export default function ChineseSpeakingSession() {
       )}
 
       {/* ── ANALYZING ── */}
-      {step === "analyzing" && (
+      {(step === "analyzing" || step === "retry_analyzing") && (
         <div className="bg-card rounded-2xl border border-border p-8 flex flex-col items-center justify-center space-y-4">
           <Loader2 size={36} className="animate-spin text-sage-deep" />
           <p className="text-sm font-medium text-ink">AI 正在分析你的表达...</p>
           <div className="flex gap-3 text-[11px] text-ink-lighter">
-            <span className="flex items-center gap-1"><CheckCircle2 size={10} className="text-emerald-500" /> 转录分析</span>
-            <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> 结构评估</span>
-            <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> 生成建议</span>
+            <span className="flex items-center gap-1"><CheckCircle2 size={10} className="text-emerald-500" /> 思辨诊断</span>
+            <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> 优化表达</span>
           </div>
           {aiError && (
             <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3 text-xs text-accent-rose">
@@ -901,59 +1004,134 @@ export default function ChineseSpeakingSession() {
         </div>
       )}
 
-      {/* ── RESULT ── */}
-      {step === "result" && (
+      {/* ── V2 RESULT ── */}
+      {step === "result" && round1Diagnosis && (
         <div className="space-y-4">
           {/* Score card */}
-          {round1Scores && (
-            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-ink">总分</p>
-                  <p className="text-[11px] text-ink-lighter">{round1Scores.verdict}</p>
-                </div>
-                <div className="h-14 w-14 rounded-full bg-sage-light flex items-center justify-center">
-                  <span className="text-xl font-bold text-sage-deep">{round1Scores.total}</span>
-                </div>
+          <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-ink">你的第一次表达</p>
+                <p className="text-[11px] text-ink-lighter">{round1Diagnosis.overall_judgment}</p>
               </div>
+              <div className="h-14 w-14 rounded-full bg-sage-light flex items-center justify-center">
+                <span className="text-xl font-bold text-sage-deep">{round1Diagnosis.overall_score}</span>
+              </div>
+            </div>
 
-              <div className="space-y-3 pt-2 border-t border-border/50">
-                {round1Scores.dimensions.map((dim) => (
-                  <DimensionBar key={dim.name} {...dim} maxScore={dim.max_score} />
-                ))}
-              </div>
+            <div className="space-y-3 pt-2 border-t border-border/50">
+              {Object.entries(round1Diagnosis.scores).map(([key, dim]) => (
+                <V2DimensionBar
+                  key={key}
+                  label={V2_DIMENSION_LABELS[key] || key}
+                  data={dim as V2DimensionScore}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Stance */}
+          {round1Diagnosis.stance && (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-1">
+              <p className="text-sm font-medium text-ink">立场分析</p>
+              <p className="text-xs text-ink-light">{round1Diagnosis.stance.summary}</p>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.5 rounded-full inline-block",
+                round1Diagnosis.stance.clarity === "clear" ? "bg-emerald-100 text-emerald-700"
+                  : round1Diagnosis.stance.clarity === "partial" ? "bg-amber-100 text-amber-700"
+                  : "bg-accent-rose/10 text-accent-rose",
+              )}>
+                {round1Diagnosis.stance.clarity === "clear" ? "立场明确" : round1Diagnosis.stance.clarity === "partial" ? "立场部分明确" : "立场尚不明确"}
+              </span>
             </div>
           )}
 
-          {/* Diagnosis */}
-          {round1Diagnosis && (
+          {/* Three key issues */}
+          {round1Diagnosis.three_key_issues && round1Diagnosis.three_key_issues.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Target size={16} className="text-accent-rose" />
                 <p className="text-sm font-medium text-ink">三个关键问题</p>
               </div>
-              {round1Diagnosis.top_3_problems.map((p, i) => (
-                <div key={i} className="bg-accent-rose/[0.03] border border-accent-rose/10 rounded-xl p-3 space-y-1">
+              {round1Diagnosis.three_key_issues.map((issue, i) => (
+                <div key={i} className="bg-accent-rose/[0.03] border border-accent-rose/10 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <span className={cn(
                       "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
-                      p.severity === "high" ? "bg-accent-rose/10 text-accent-rose"
-                        : p.severity === "medium" ? "bg-amber-100 text-amber-700"
+                      issue.severity === "high" ? "bg-accent-rose/10 text-accent-rose"
+                        : issue.severity === "medium" ? "bg-amber-100 text-amber-700"
                         : "bg-ink/5 text-ink-light",
                     )}>
-                      {p.severity === "high" ? "严重" : p.severity === "medium" ? "中等" : "轻微"}
+                      {issue.severity === "high" ? "严重" : issue.severity === "medium" ? "中等" : "轻微"}
                     </span>
-                    <span className="text-sm font-medium text-ink">{p.problem}</span>
+                    <span className="text-sm font-medium text-ink">{issue.title}</span>
                   </div>
-                  {p.example && <p className="text-[11px] text-ink-lighter italic">&ldquo;{p.example}&rdquo;</p>}
-                  <p className="text-[11px] text-sage-deep">{p.suggestion}</p>
+                  {issue.evidence_quote && (
+                    <p className="text-[11px] text-ink-lighter italic">&ldquo;{issue.evidence_quote}&rdquo;</p>
+                  )}
+                  <p className="text-[11px] text-ink-lighter">{issue.why_it_matters}</p>
+                  <p className="text-[11px] text-sage-deep">{issue.how_to_fix}</p>
                 </div>
               ))}
             </div>
           )}
 
+          {/* Thinking upgrade */}
+          {round1Diagnosis.thinking_upgrade && (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <Lightbulb size={16} className="text-purple-600" />
+                <p className="text-sm font-medium text-ink">思辨升级</p>
+              </div>
+              {round1Diagnosis.thinking_upgrade.core_tension && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">核心矛盾：</span>
+                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.core_tension}</span>
+                </div>
+              )}
+              {round1Diagnosis.thinking_upgrade.definition && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">概念澄清：</span>
+                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.definition}</span>
+                </div>
+              )}
+              {round1Diagnosis.thinking_upgrade.conditions && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">条件：</span>
+                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.conditions}</span>
+                </div>
+              )}
+              {round1Diagnosis.thinking_upgrade.tradeoff && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">权衡：</span>
+                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.tradeoff}</span>
+                </div>
+              )}
+              {round1Diagnosis.thinking_upgrade.counterpoint && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">反面情况：</span>
+                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.counterpoint}</span>
+                </div>
+              )}
+              {round1Diagnosis.thinking_upgrade.boundary && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">边界：</span>
+                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.boundary}</span>
+                </div>
+              )}
+              {round1Diagnosis.thinking_upgrade.real_detail_slots && round1Diagnosis.thinking_upgrade.real_detail_slots.length > 0 && (
+                <div>
+                  <span className="text-[10px] text-ink-lighter">可补充的真实细节：</span>
+                  {round1Diagnosis.thinking_upgrade.real_detail_slots.map((slot, i) => (
+                    <span key={i} className="text-[10px] text-ink-light block ml-2">• {slot}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Framework */}
-          {round1Diagnosis && (
+          {round1Diagnosis.primary_framework && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Lightbulb size={16} className="text-purple-600" />
@@ -962,24 +1140,31 @@ export default function ChineseSpeakingSession() {
               <div className="inline-flex px-2.5 py-1 bg-purple-100 rounded-full">
                 <span className="text-xs font-medium text-purple-700">{frameworkLabel}</span>
               </div>
-              <p className="text-xs text-ink-lighter">{round1Diagnosis.framework_reason}</p>
+              <p className="text-xs text-ink-lighter">{round1Diagnosis.primary_framework.reason}</p>
+              {round1Diagnosis.primary_framework.depth_lenses.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {round1Diagnosis.primary_framework.depth_lenses.map((lens) => (
+                    <span key={lens} className="text-[10px] bg-purple-50 text-purple-600 rounded-full px-2 py-0.5">{lens}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Answer outline */}
-          {round1Outline && (
+          {/* Answer outline — V2 format (content + seconds) */}
+          {round1Diagnosis.answer_outline && round1Diagnosis.answer_outline.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
               <p className="text-sm font-medium text-ink">答案骨架</p>
               <div className="space-y-2">
-                {round1Outline.map((s) => (
+                {round1Diagnosis.answer_outline.map((s) => (
                   <div key={s.step} className="flex gap-3">
                     <div className="h-6 w-6 rounded-full bg-sage-light flex items-center justify-center shrink-0">
                       <span className="text-xs font-bold text-sage-deep">{s.step}</span>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-ink">{s.label}</p>
-                      <p className="text-[11px] text-ink-lighter">{s.guidance}</p>
-                      <p className="text-[10px] text-ink-lighter/70">约 {s.time_hint_seconds} 秒</p>
+                      <p className="text-[11px] text-ink-lighter">{s.content}</p>
+                      <p className="text-[10px] text-ink-lighter/70">约 {s.seconds} 秒</p>
                     </div>
                   </div>
                 ))}
@@ -987,27 +1172,73 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* Final Improved Speech */}
-          {round1ImprovedSpeech && (
-            <div className="bg-gradient-to-br from-sage-light/10 to-white border border-sage-light/30 rounded-2xl p-4 space-y-2">
+          {/* AI优化参考 — V2 rewrite */}
+          {round1Rewrite && (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-sage-deep" />
-                <p className="text-sm font-medium text-ink">优化表达（仅供参考）</p>
+                <p className="text-sm font-medium text-ink">AI 优化参考</p>
               </div>
-              <p className="text-sm text-ink leading-relaxed">{round1ImprovedSpeech}</p>
+              <p className="text-[10px] text-ink-lighter/70 -mt-1">
+                仅用于学习结构与思路，不代表唯一正确答案。
+              </p>
+
+              {round1Rewrite.integrity_failed ? (
+                <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3">
+                  <p className="text-xs text-accent-rose flex items-center gap-1.5">
+                    <AlertTriangle size={12} />
+                    本次优化检测到虚构内容，已自动跳过。请查看答案骨架和关键升级点。
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Default collapsed: show first 100 chars preview + expand button */}
+                  <details className="group">
+                    <summary className="text-sm text-ink leading-relaxed cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                      <span className="line-clamp-2">{round1Rewrite.improved_speech}</span>
+                      <span className="text-[11px] text-sage-deep font-medium mt-1 inline-block">
+                        <ChevronDown size={14} className="inline mr-1 group-open:hidden" />
+                        <ChevronUp size={14} className="hidden mr-1 group-open:inline" />
+                        展开完整参考
+                      </span>
+                    </summary>
+                    <p className="text-sm text-ink leading-relaxed mt-2 pt-2 border-t border-border/50">
+                      {round1Rewrite.improved_speech}
+                    </p>
+                  </details>
+                </>
+              )}
+
+              {/* Thought features */}
+              {round1Rewrite.thought_features && round1Rewrite.thought_features.length > 0 && (
+                <div className="space-y-1 pt-2 border-t border-border/50">
+                  <p className="text-xs font-medium text-ink">思辨特征</p>
+                  {round1Rewrite.thought_features.map((tf, i) => (
+                    <div key={i} className="text-[11px]">
+                      <span className="text-purple-600 font-medium">{tf.type}</span>
+                      <span className="text-ink-lighter"> — {tf.purpose}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Key Improvements */}
-          {round1KeyImprovements && round1KeyImprovements.length > 0 && (
+          {/* Key upgrades — V2 format (before/after/reason) */}
+          {round1Rewrite?.key_upgrades && round1Rewrite.key_upgrades.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <p className="text-sm font-medium text-ink">关键提升点</p>
-              {round1KeyImprovements.map((ki, i) => (
+              {round1Rewrite.key_upgrades.map((ku, i) => (
                 <div key={i} className="flex gap-2">
                   <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
-                  <div>
-                    <p className="text-xs font-medium text-ink">{ki.title}</p>
-                    <p className="text-[11px] text-ink-lighter">{ki.description}</p>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-ink">{ku.title}</p>
+                    <p className="text-[10px] text-ink-lighter">
+                      <span className="text-accent-rose/70">原：「{ku.before}」</span>
+                      {" → "}
+                      <span className="text-emerald-600/70">改：「{ku.after}」</span>
+                    </p>
+                    <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
                   </div>
                 </div>
               ))}
@@ -1034,7 +1265,22 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* Re-express button — only enabled after Round 1 saved */}
+          {/* Integrity check result */}
+          {round1Diagnosis.integrity_check && (
+            <div className={cn(
+              "rounded-xl p-3 text-xs",
+              round1Diagnosis.integrity_check.fabricated_person_or_event
+                ? "bg-accent-rose/5 border border-accent-rose/10 text-accent-rose"
+                : "bg-emerald-50/50 border border-emerald-100 text-emerald-700",
+            )}>
+              {round1Diagnosis.integrity_check.fabricated_person_or_event
+                ? <span className="flex items-center gap-1.5"><AlertTriangle size={12} /> 检测到可能虚构的内容</span>
+                : <span className="flex items-center gap-1.5"><CheckCircle2 size={12} /> 真实性检查通过 — 未编造经历</span>
+              }
+            </div>
+          )}
+
+          {/* Re-express button */}
           <button
             onClick={handleStartRetry}
             disabled={!round1AttemptId}
@@ -1046,46 +1292,128 @@ export default function ChineseSpeakingSession() {
         </div>
       )}
 
-      {/* ── COMPARING (Round 2 results) ── */}
+      {/* ── V2 COMPARING (Round 2 results) ── */}
       {step === "comparing" && (
         <div className="space-y-4">
           {/* Comparison header */}
-          <div className="bg-gradient-to-r from-sage-light/5 to-purple-50/50 border border-sage-light/30 rounded-2xl p-4">
-            <p className="text-sm font-medium text-ink mb-3">前后对比</p>
+          <div className="bg-gradient-to-r from-sage-light/5 to-purple-50/50 border border-sage-light/30 rounded-2xl p-4 space-y-3">
+            <p className="text-sm font-medium text-ink">前后对比</p>
 
             {/* Score comparison */}
-            {round1Scores && round2Scores && (
-              <div className="grid grid-cols-2 gap-2 mb-3">
+            {round1Diagnosis && round2Diagnosis && (
+              <div className="grid grid-cols-2 gap-2">
                 <div className="bg-white/60 rounded-xl p-3 text-center">
-                  <p className="text-[10px] text-ink-lighter mb-1">第一次</p>
-                  <p className="text-xl font-bold text-ink">{round1Scores.total}</p>
+                  <p className="text-[10px] text-ink-lighter mb-1">你的第一次表达</p>
+                  <p className="text-xl font-bold text-ink">{round1Diagnosis.overall_score}</p>
                 </div>
                 <div className="bg-white/60 rounded-xl p-3 text-center">
-                  <p className="text-[10px] text-ink-lighter mb-1">第二次</p>
-                  <p className="text-xl font-bold text-sage-deep">{round2Scores.total}</p>
+                  <p className="text-[10px] text-ink-lighter mb-1">你的第二次表达</p>
+                  <p className={cn(
+                    "text-xl font-bold",
+                    round2Diagnosis.overall_score > round1Diagnosis.overall_score ? "text-emerald-600"
+                      : round2Diagnosis.overall_score < round1Diagnosis.overall_score ? "text-accent-rose"
+                      : "text-sage-deep",
+                  )}>
+                    {round2Diagnosis.overall_score}
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* Dimension comparison */}
-            {round1Scores && round2Scores && (
+            {/* AI comparison with evidence — V2 */}
+            {comparison && (
+              <div className="space-y-3">
+                {/* Dimension changes with explanations */}
+                {comparison.dimension_changes.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-ink">各维度变化</p>
+                    {comparison.dimension_changes.map((dc, i) => (
+                      <div key={i} className="bg-white/50 rounded-lg p-2 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-ink">{dc.dimension}</span>
+                          <span className="text-[11px] text-ink-light">
+                            {dc.round1_score} → {dc.round2_score}
+                            <span className={cn(
+                              "ml-1 font-medium",
+                              dc.delta > 0 ? "text-emerald-600" : dc.delta < 0 ? "text-accent-rose" : "text-ink-lighter",
+                            )}>
+                              {dc.delta > 0 ? `+${dc.delta}` : dc.delta}
+                            </span>
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-ink-lighter">{dc.explanation}</p>
+                        {dc.round1_evidence && (
+                          <p className="text-[9px] text-ink-lighter/60 italic">第一次：「{dc.round1_evidence}」</p>
+                        )}
+                        {dc.round2_evidence && (
+                          <p className="text-[9px] text-ink-lighter/60 italic">第二次：「{dc.round2_evidence}」</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Progress points */}
+                {comparison.progress_points.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-emerald-700">进步点</p>
+                    {comparison.progress_points.map((pp, i) => (
+                      <div key={i} className="flex gap-1.5 text-[11px]">
+                        <CheckCircle2 size={12} className="text-emerald-500 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-medium text-ink">{pp.area}</span>
+                          <span className="text-ink-lighter"> — {pp.detail}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Remaining issues */}
+                {comparison.remaining_issues.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-amber-700">待改进</p>
+                    {comparison.remaining_issues.map((ri, i) => (
+                      <div key={i} className="flex gap-1.5 text-[11px]">
+                        <AlertTriangle size={12} className="text-amber-500 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-medium text-ink">{ri.area}</span>
+                          <span className="text-ink-lighter"> — {ri.detail}</span>
+                          {ri.suggestion && (
+                            <p className="text-[10px] text-sage-deep mt-0.5">{ri.suggestion}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Reference dependency */}
+                {comparison.reference_dependency && (
+                  <div className="bg-purple-50/50 rounded-lg p-2 text-[10px] text-purple-700">
+                    {comparison.reference_dependency.interpretation}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Fallback: simple dimension comparison if AI comparison failed */}
+            {!comparison && round1Diagnosis && round2Diagnosis && (
               <div className="space-y-1.5">
-                {round1Scores.dimensions.map((d1, i) => {
-                  const d2 = round2Scores?.dimensions[i];
+                {Object.entries(round1Diagnosis.scores).map(([key, d1Data]) => {
+                  const d1 = d1Data as V2DimensionScore;
+                  const d2 = (round2Diagnosis.scores as unknown as Record<string, V2DimensionScore>)[key];
                   const delta = d2 ? d2.score - d1.score : 0;
                   return (
-                    <div key={d1.name} className="flex items-center gap-2">
-                      <span className="text-[10px] text-ink-lighter w-16 shrink-0">{d1.name}</span>
-                      <span className="text-[10px] font-mono w-6 text-right">{d1.score}</span>
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-ink-lighter w-20 shrink-0">{V2_DIMENSION_LABELS[key] || key}</span>
+                      <span className="text-[10px] font-mono w-5 text-right">{d1.score}</span>
                       <div className="flex-1 h-1 bg-ink/8 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-sage-deep/40 rounded-full"
-                          style={{ width: `${(d1.score / d1.max_score) * 100}%` }}
-                        />
+                        <div className="h-full bg-sage-deep/40 rounded-full" style={{ width: `${(d1.score / d1.max) * 100}%` }} />
                       </div>
                       {d2 && (
                         <>
-                          <span className="text-[10px] font-mono w-6 text-right font-medium text-sage-deep">{d2.score}</span>
+                          <span className="text-[10px] font-mono w-5 text-right font-medium text-sage-deep">{d2.score}</span>
                           <span className={cn(
                             "text-[10px] w-6 text-right font-medium",
                             delta > 0 ? "text-emerald-600" : delta < 0 ? "text-accent-rose" : "text-ink-lighter",
@@ -1102,13 +1430,23 @@ export default function ChineseSpeakingSession() {
           </div>
 
           {/* Round 2 improved speech */}
-          {round2ImprovedSpeech && (
+          {round2Rewrite?.improved_speech && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-sage-deep" />
-                <p className="text-sm font-medium text-ink">第二次优化表达</p>
+                <p className="text-sm font-medium text-ink">你的第二次表达 · AI 参考</p>
               </div>
-              <p className="text-sm text-ink leading-relaxed">{round2ImprovedSpeech}</p>
+              <p className="text-sm text-ink leading-relaxed">{round2Rewrite.improved_speech}</p>
+              {round2Rewrite.thought_features && round2Rewrite.thought_features.length > 0 && (
+                <div className="pt-2 border-t border-border/50 space-y-1">
+                  {round2Rewrite.thought_features.map((tf, i) => (
+                    <div key={i} className="text-[11px]">
+                      <span className="text-purple-600 font-medium">{tf.type}</span>
+                      <span className="text-ink-lighter"> — {tf.purpose}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

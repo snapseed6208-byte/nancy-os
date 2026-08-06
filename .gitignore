@@ -30,3 +30,6 @@ backups/
 
 # Logs
 *.log
+
+# TypeScript
+tsconfig.tsbuildinfo

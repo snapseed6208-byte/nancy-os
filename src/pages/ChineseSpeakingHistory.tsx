@@ -107,7 +107,10 @@ export default function ChineseSpeakingHistory() {
             const round1 = s.attempts?.find((a) => a.attempt_round === 1 && !a.is_retry);
             const round2 = s.attempts?.find((a) => a.attempt_round === 2);
             const hasRetry = !!round2;
-            const score = round1?.scores?.total;
+            const r1Scores = round1?.scores as Record<string, unknown> | null;
+            const score = typeof r1Scores?.overall_score === "number"
+              ? r1Scores.overall_score as number
+              : r1Scores?.total as number | undefined;
 
             return (
               <button
