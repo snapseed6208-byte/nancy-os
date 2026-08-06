@@ -2,6 +2,9 @@
 // Nancy OS — Aliyun Real-time ASR Provider
 // Flow: AudioContext+AudioWorklet → PCM → WebSocket → Aliyun NLS
 // Browser connects directly to Aliyun WebSocket; Edge Function only for token.
+//
+// Shared PCM pipeline for English and Chinese — language is determined
+// by the Aliyun project/appkey, not by this provider.
 // ============================================
 
 import type { SpeechProvider } from "../types";
@@ -9,6 +12,18 @@ import { supabase } from "@/lib/supabase";
 
 const WS_URL = "wss://nls-gateway-cn-shanghai.aliyuncs.com/ws/v1";
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/aliyun-token`;
+
+// ── Config ──
+
+interface AliyunRealtimeConfig {
+  tokenLanguage: "english" | "chinese";
+  providerId: string;
+}
+
+const DEFAULT_CONFIG: AliyunRealtimeConfig = {
+  tokenLanguage: "english",
+  providerId: "aliyun-realtime",
+};
 
 // ── AudioWorklet processor (inline, loaded via Blob URL) ──
 
@@ -67,10 +82,16 @@ interface WsMessage {
   context?: Record<string, unknown>;
 }
 
+interface TokenResponse {
+  token?: string;
+  error?: string;
+  appkey?: string;
+  appKeySource?: string;
+}
+
 // ── Provider ──
 
 export class AliyunRealtimeSpeechProvider implements SpeechProvider {
-  readonly name = "aliyun-realtime";
   readonly supported = typeof AudioContext !== "undefined" && typeof WebSocket !== "undefined";
 
   transcript = "";
@@ -78,6 +99,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
   isListening = false;
   error: string | null = null;
 
+  private config: AliyunRealtimeConfig;
   private audioContext: AudioContext | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -85,6 +107,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
   private stream: MediaStream | null = null;
   private taskId = "";
   private appkey = "";
+  private appKeySource = "unknown";
   private finalTranscript = "";
   private wsReady = false;
   private stopped = false;
@@ -95,6 +118,12 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
   private _onTranscriptUpdate: ((text: string) => void) | null = null;
   private _onInterimUpdate: ((text: string) => void) | null = null;
   private _onStateChange: (() => void) | null = null;
+
+  constructor(config?: Partial<AliyunRealtimeConfig>) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  get name(): string { return this.config.providerId; }
 
   set onTranscriptUpdate(cb: ((text: string) => void) | null) { this._onTranscriptUpdate = cb; }
   set onInterimUpdate(cb: ((text: string) => void) | null) { this._onInterimUpdate = cb; }
@@ -115,6 +144,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
     this.latestRecognizedText = "";
     this.sentenceCount = 0;
     this.finalTranscriptSource = "none";
+    this.appKeySource = "unknown";
 
     try {
       // 1. Fetch NLS token
@@ -126,25 +156,35 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
       const tokenResp = await fetch(FUNCTION_URL, {
         method: "POST",
         headers: { "Authorization": `Bearer ${accessToken}` },
+        body: JSON.stringify({ language: this.config.tokenLanguage }),
       });
-      const tokenData = await tokenResp.json() as { token?: string; error?: string; appkey?: string };
-      if (!tokenResp.ok || tokenData.error || !tokenData.token) {
+      const tokenData: TokenResponse = await tokenResp.json();
+
+      // Handle Chinese appkey not configured
+      if (!tokenResp.ok || tokenData.error) {
         throw new Error(tokenData.error || "Failed to get ASR token");
       }
-      console.log(`[aliyunRealtime] Token obtained in ${(performance.now() - tTokenStart).toFixed(0)}ms`);
+      if (!tokenData.token) {
+        throw new Error("No token in response");
+      }
+
       if (tokenData.appkey) {
         this.appkey = tokenData.appkey;
       }
-      console.log("[aliyunRealtime] AppKey:", this.appkey ? `${this.appkey.slice(0, 4)}...` : "MISSING");
+      this.appKeySource = tokenData.appKeySource || "unknown";
+
+      console.log(
+        `[${this.config.providerId}] Token obtained in ${(performance.now() - tTokenStart).toFixed(0)}ms | ` +
+        `requestedLanguage=${this.config.tokenLanguage} appKeySource=${this.appKeySource} ` +
+        `appKey=${this.appkey ? this.appkey.slice(0, 4) + "..." : "MISSING"}`,
+      );
 
       // 2. Set up AudioContext + AudioWorklet
       this.audioContext = new AudioContext({ sampleRate: 16000 });
       this.stream = stream;
 
-      // Load worklet
       await this.audioContext.audioWorklet.addModule(getWorkletUrl());
 
-      // Connect: stream → source → worklet → (no output, just postMessage)
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
       this.workletNode = new AudioWorkletNode(this.audioContext, "pcm-processor");
       this.sourceNode.connect(this.workletNode);
@@ -160,7 +200,6 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
 
         ws.onopen = () => {
           clearTimeout(timeout);
-          // Send StartTranscription
           const startMsg: WsMessage = {
             header: {
               message_id: generateId(),
@@ -178,21 +217,17 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
             },
             context: {},
           };
-          console.log("[aliyunRealtime] StartTranscription:", JSON.stringify(startMsg, null, 2));
           ws.send(JSON.stringify(startMsg));
         };
 
         ws.onmessage = (event: MessageEvent) => {
-          if (typeof event.data !== "string") return; // Binary (shouldn't happen)
-
-          console.log("[aliyunRealtime] Server message:", event.data.slice(0, 300));
+          if (typeof event.data !== "string") return;
 
           try {
             const msg: WsMessage = JSON.parse(event.data);
             const { name, status, status_message: statusMsg } = msg.header;
 
             if (status && status !== 20000000 && status !== 0) {
-              console.error("[aliyunRealtime] Server error response:", JSON.stringify(msg, null, 2));
               reject(new Error(`Aliyun error ${status}: ${statusMsg || "unknown"}`));
               return;
             }
@@ -202,7 +237,6 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
                 this.wsReady = true;
                 this.isListening = true;
                 this._onStateChange?.();
-                console.log("[aliyunRealtime] TranscriptionStarted, ready for audio");
                 resolve();
                 break;
 
@@ -223,17 +257,14 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
                   this.sentenceCount++;
                   this._onTranscriptUpdate?.(this.transcript);
                   this._onInterimUpdate?.("");
-                  console.log("[aliyunRealtime] SentenceEnd #%d:", this.sentenceCount, msg.payload.result);
                 }
                 break;
 
               case "TranscriptionCompleted":
-                console.log("[aliyunRealtime] TranscriptionCompleted");
                 break;
             }
-          } catch (err) {
-            // JSON parse errors on control messages are non-fatal
-            console.warn("[aliyunRealtime] Failed to parse message:", event.data.slice(0, 100));
+          } catch {
+            // Non-fatal JSON parse errors on control messages
           }
         };
 
@@ -243,10 +274,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
         };
 
         ws.onclose = (e) => {
-          console.log(
-            "[aliyunRealtime] WebSocket closed: code=%d reason=%s wasClean=%s stopped=%s",
-            e.code, e.reason || "(none)", e.wasClean, this.stopped,
-          );
+          // Handled in stop() lifecycle
         };
       });
 
@@ -257,17 +285,15 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
         const pcmInt16 = float32ToInt16(pcmFloat);
         this.ws.send(pcmInt16.buffer);
       };
-
-      console.log("[aliyunRealtime] Audio streaming started");
     } catch (err) {
       this.cleanup();
       this.error = err instanceof Error ? err.message : "实时语音识别启动失败";
-      console.error("[aliyunRealtime] Start failed:", this.error);
+      console.error(`[${this.config.providerId}] Start failed:`, this.error);
       throw err;
     }
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<string> {
     const transcriptBeforeStop = this.transcript;
     let sentencesReceivedDuringStop = 0;
     let completedReceived = false;
@@ -276,11 +302,10 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
 
     this.stopped = true;
 
-    // Stop audio capture — no more PCM frames sent to WebSocket
+    // Stop audio capture — no more PCM frames
     if (this.workletNode) {
       this.workletNode.port.onmessage = null;
     }
-    console.log("[aliyunRealtime] Audio capture stopped — no more frames will be sent");
 
     // Send StopTranscription and wait for final results
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -296,25 +321,17 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
           payload: {},
         };
         this.ws.send(JSON.stringify(stopMsg));
-        console.log("[aliyunRealtime] StopTranscription sent — waiting for final flush");
 
-        // Wait for TranscriptionCompleted with 5s timeout
         await new Promise<void>((resolve) => {
           const FINAL_FLUSH_TIMEOUT = 5000;
           const timeout = setTimeout(() => {
             closeReason = "timeout";
-            console.warn(
-              "[aliyunRealtime] Final flush timeout (%dms) — closing without TranscriptionCompleted. " +
-              "Sentences received during stop: %d",
-              FINAL_FLUSH_TIMEOUT, sentencesReceivedDuringStop,
-            );
             resolve();
           }, FINAL_FLUSH_TIMEOUT);
 
           const ws = this.ws!;
           const origHandler = ws.onmessage;
           ws.onmessage = (event: MessageEvent) => {
-            // Forward to original handler first — this processes SentenceEnd
             origHandler?.call(ws, event);
 
             if (typeof event.data === "string") {
@@ -322,11 +339,6 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
                 const msg: WsMessage = JSON.parse(event.data);
                 if (msg.header.name === "SentenceEnd") {
                   sentencesReceivedDuringStop++;
-                  console.log(
-                    "[aliyunRealtime] SentenceEnd during stop flush #%d: %s",
-                    sentencesReceivedDuringStop,
-                    (msg.payload.result as string)?.slice(0, 80),
-                  );
                 }
                 if (msg.header.name === "TranscriptionCompleted") {
                   completedReceived = true;
@@ -343,55 +355,43 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
       closeReason = "ws_unavailable";
     }
 
-    // ── Fallback: use latestRecognizedText if no SentenceEnd fired ──
+    // ── Fallback: use latestRecognizedText if no SentenceEnd ──
     if (!this.transcript && this.latestRecognizedText) {
       this.finalTranscript = this.latestRecognizedText;
       this.transcript = this.finalTranscript.trim();
       this._onTranscriptUpdate?.(this.transcript);
       this.finalTranscriptSource = "interim_cache";
-      console.log(
-        "[aliyunRealtime] No SentenceEnd received — falling back to latestRecognizedText: %s",
-        this.transcript.slice(0, 100),
-      );
     } else if (this.transcript) {
       this.finalTranscriptSource = "sentence_end";
     } else {
       this.finalTranscriptSource = "none";
     }
 
-    // Read final transcript BEFORE cleanup (cleanup resets ws)
-    const transcriptAfterStop = this.transcript;
+    const finalTranscript = this.transcript;
     const flushDuration = (performance.now() - tStopStart).toFixed(0);
 
     console.log(
-      "[aliyunRealtime] Stop lifecycle complete:" +
-      "\n  provider:               %s" +
-      "\n  appKey present:         %s" +
-      "\n  transcriptBeforeStop:   %s" +
-      "\n  transcriptAfterStop:    %s" +
-      "\n  latestRecognizedText:   %s" +
-      "\n  sentenceCount:          %d" +
-      "\n  sentencesDuringStop:    %d" +
-      "\n  completedReceived:      %s" +
-      "\n  closeReason:            %s" +
-      "\n  flushDuration:          %sms" +
-      "\n  finalTranscriptSource:  %s",
-      this.name,
-      this.appkey ? "YES" : "NO",
-      transcriptBeforeStop.slice(0, 100),
-      transcriptAfterStop.slice(0, 100),
-      this.latestRecognizedText.slice(0, 100),
-      this.sentenceCount,
-      sentencesReceivedDuringStop,
-      completedReceived ? "YES" : "NO",
-      closeReason,
-      flushDuration,
-      this.finalTranscriptSource,
+      `[${this.config.providerId}] Stop lifecycle complete:` +
+      `\n  providerId:              ${this.config.providerId}` +
+      `\n  requestedLanguage:       ${this.config.tokenLanguage}` +
+      `\n  appKeySource:            ${this.appKeySource}` +
+      `\n  taskId:                  ${this.taskId}` +
+      `\n  sentenceCount:           ${this.sentenceCount}` +
+      `\n  sentencesDuringStop:     ${sentencesReceivedDuringStop}` +
+      `\n  interimLength:           ${this.latestRecognizedText.length}` +
+      `\n  completedReceived:       ${completedReceived ? "YES" : "NO"}` +
+      `\n  closeReason:             ${closeReason}` +
+      `\n  flushDuration:           ${flushDuration}ms` +
+      `\n  finalTranscriptSource:   ${this.finalTranscriptSource}` +
+      `\n  finalTranscriptLength:   ${finalTranscript.length}` +
+      `\n  errorCode:               ${this.error || "none"}`,
     );
 
     this.cleanup();
     this.isListening = false;
     this._onStateChange?.();
+
+    return finalTranscript;
   }
 
   reset(): void {
@@ -406,6 +406,7 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
     this.latestRecognizedText = "";
     this.sentenceCount = 0;
     this.finalTranscriptSource = "none";
+    this.appKeySource = "unknown";
   }
 
   private cleanup(): void {
@@ -427,8 +428,6 @@ export class AliyunRealtimeSpeechProvider implements SpeechProvider {
       try { this.ws.close(); } catch { /* ignore */ }
       this.ws = null;
     }
-    // Stream tracks are NOT stopped here — shared with MediaRecorder.
-    // The component manages track lifecycle after both recorder and ASR finish.
     this.stream = null;
   }
 }

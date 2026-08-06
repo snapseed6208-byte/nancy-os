@@ -129,6 +129,8 @@ export interface ChineseSpeakingAttempt {
   delivery_metrics: DeliveryMetrics | null;
   stt_provider: string | null;
   stt_mode: string | null;
+  transcript_source: string | null;
+  stt_success: boolean | null;
   fallback_used: boolean;
   ai_model: string | null;
   ai_prompt_version: string | null;
@@ -291,6 +293,8 @@ export function useCreateChineseSpeakingAttempt() {
       delivery_metrics?: DeliveryMetrics;
       stt_provider?: string;
       stt_mode?: string;
+      transcript_source?: string;
+      stt_success?: boolean;
       fallback_used?: boolean;
     }) => {
       const userId = await getUserId();
@@ -341,6 +345,8 @@ export function useUpdateChineseSpeakingAttempt() {
         audio_duration: number;
         stt_provider: string;
         stt_mode: string;
+        transcript_source: string;
+        stt_success: boolean;
         fallback_used: boolean;
       }>;
     }) => {

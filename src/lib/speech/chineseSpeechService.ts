@@ -1,25 +1,27 @@
 // ============================================
 // Nancy OS — Chinese Speech Service Factory
-// Provider fallback: aliyun-realtime-zh → browser-zh → aliyun-zh
+// Provider fallback: aliyun-chinese-realtime → browser-zh
 // ============================================
 
 import type { SpeechProvider } from "./types";
+import { AliyunRealtimeSpeechProvider } from "./providers/aliyunRealtimeSpeech";
 import { BrowserChineseSpeechProvider } from "./providers/browserChineseSpeech";
 
 export function createChineseSpeechProvider(): SpeechProvider {
-  // Priority:
-  // 1. Aliyun realtime (requires Chinese appkey env var) — try aliyun-realtime
-  // 2. Browser Web Speech API with zh-CN
-  // 3. For now, aliyun-realtime is the default provider imported from speechService
-  //    but tokenized with Chinese appkey via aliyun-token?language=chinese
-
-  // Dynamic import of Aliyun providers to avoid bundling issues
-  // For now: prefer browser-zh (always available in Chrome/Edge for Chinese)
-  const provider = new BrowserChineseSpeechProvider();
-  if (provider.supported) {
-    return provider;
+  // Priority 1: Aliyun Chinese realtime (WebSocket)
+  const aliyunProvider = new AliyunRealtimeSpeechProvider({
+    tokenLanguage: "chinese",
+    providerId: "aliyun-chinese-realtime",
+  });
+  if (aliyunProvider.supported) {
+    return aliyunProvider;
   }
 
-  // Fallback: return browser-zh anyway (unsupported browsers will show error)
-  return provider;
+  // Priority 2: Browser Web Speech API with zh-CN
+  const browserProvider = new BrowserChineseSpeechProvider();
+  if (browserProvider.supported) {
+    return browserProvider;
+  }
+
+  return browserProvider;
 }

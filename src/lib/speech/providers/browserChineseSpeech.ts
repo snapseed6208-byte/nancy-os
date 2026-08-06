@@ -124,10 +124,11 @@ export class BrowserChineseSpeechProvider implements SpeechProvider {
     this.isListening = true;
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<string> {
     this.recognition?.stop();
     this.recognition = null;
     this.isListening = false;
+    return this.transcript;
   }
 
   reset(): void {

@@ -6,10 +6,10 @@ import type { SpeechProvider } from "@/lib/speech/types";
  * Unified speech recognition hook.
  *
  * Streaming providers (browser, aliyun-realtime):
- *   start(stream) → transcript updates during recording → stop() finalizes.
+ *   start(stream) → transcript updates during recording → stop() returns final transcript.
  *
  * Batch providers (aliyun file-based, whisper):
- *   start() → setAudioBlob(blob) → stop() processes blob → transcript.
+ *   start() → setAudioBlob(blob) → stop() processes blob → returns transcript.
  *
  * @param providerFactory — Optional custom provider factory (e.g. for Chinese STT).
  *   When omitted, defaults to the English provider chain.
@@ -51,12 +51,13 @@ export function useSpeechRecognition(providerFactory?: () => SpeechProvider) {
 
   // Derive recognition mode from provider name
   const recognitionMode: "realtime_websocket" | "batch_upload" | "browser_builtin" =
-    provider.name === "aliyun-realtime" ? "realtime_websocket" :
+    provider.name === "aliyun-realtime" || provider.name === "aliyun-chinese-realtime" ? "realtime_websocket" :
     provider.name === "aliyun" ? "batch_upload" :
     "browser_builtin";
 
-  // Realtime providers (aliyun-realtime) stream via WebSocket — no setAudioBlob
-  const isRealtimeProvider = provider.name === "aliyun-realtime";
+  // Realtime providers stream via WebSocket — no setAudioBlob
+  const isRealtimeProvider =
+    provider.name === "aliyun-realtime" || provider.name === "aliyun-chinese-realtime";
 
   useEffect(() => {
     return () => {
@@ -74,20 +75,30 @@ export function useSpeechRecognition(providerFactory?: () => SpeechProvider) {
     setError(provider.error);
   }, [provider]);
 
-  const stop = useCallback(async (audioBlob?: Blob) => {
+  /**
+   * Stop recognition and return the final transcript string.
+   * For streaming providers: flushes remaining audio, waits for final results.
+   * For batch providers: processes the audio blob through the ASR service.
+   */
+  const stop = useCallback(async (audioBlob?: Blob): Promise<string> => {
+    let finalTranscript = "";
+
     // Batch providers need the blob set before stop()
     if (audioBlob && "setAudioBlob" in provider) {
       (provider as SpeechProvider & { setAudioBlob(b: Blob): void }).setAudioBlob(audioBlob);
       setIsProcessing(true);
-      await provider.stop();
+      finalTranscript = await provider.stop();
       setIsProcessing(false);
     } else {
-      await provider.stop();
+      finalTranscript = await provider.stop();
     }
+
     setIsListening(provider.isListening);
     setTranscript(provider.transcript);
     setInterim(provider.interim);
     setError(provider.error);
+
+    return finalTranscript;
   }, [provider]);
 
   const reset = useCallback(() => {

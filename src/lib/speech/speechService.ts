@@ -23,7 +23,7 @@ const FALLBACK_ORDER: SpeechProviderType[] = [
 function createProvider(type: SpeechProviderType): SpeechProvider {
   switch (type) {
     case "aliyun-realtime":
-      return new AliyunRealtimeSpeechProvider();
+      return new AliyunRealtimeSpeechProvider({ tokenLanguage: "english", providerId: "aliyun-realtime" });
     case "aliyun":
       return new AliyunSpeechProvider();
     case "openai-whisper":

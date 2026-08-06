@@ -3,10 +3,12 @@ import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, Mic, Square, Play, Pause, Loader2, CheckCircle2,
   AlertTriangle, Sparkles, Lightbulb, ChevronRight, RotateCcw,
-  Eye, EyeOff, Target, BarChart3,
+  Eye, EyeOff, Target, BarChart3, Volume2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAudioRecorder } from "@/lib/hooks/useAudioRecorder";
+import { createChineseSpeechProvider } from "@/lib/speech/chineseSpeechService";
+import type { SpeechProvider } from "@/lib/speech/types";
 import {
   useChineseSpeakingSession,
   useCreateChineseSpeakingAttempt,
@@ -24,21 +26,27 @@ import {
   type DeliveryMetrics,
 } from "@/lib/hooks/useChineseSpeaking";
 
+// ── Constants ──
+const MIN_TRANSCRIPT_LENGTH = 5; // minimum chars for a valid Chinese transcript
+
 // ── Step type ──
 
 type Step =
-  | "prep"
+  | "idle"
+  | "preparing"
   | "recording"
+  | "stopping"
+  | "transcribing"
   | "review"
   | "analyzing"
-  | "results"
+  | "result"
   | "retry_recording"
+  | "retry_stopping"
   | "retry_review"
-  | "retry_analyzing"
-  | "retry_results"
-  | "saved";
+  | "comparing"
+  | "save_error";
 
-// ── Prep Countdown ──
+// ── Prep Countdown Component ──
 
 function PrepCountdown({ seconds, onSkip }: { seconds: number; onSkip: () => void }) {
   const [count, setCount] = useState(seconds);
@@ -81,7 +89,7 @@ function PrepCountdown({ seconds, onSkip }: { seconds: number; onSkip: () => voi
   );
 }
 
-// ── Recording Timer ──
+// ── Recording Timer Component ──
 
 function RecordingTimer({ elapsed, limit, onStop }: { elapsed: number; limit: number; onStop: () => void }) {
   const remaining = Math.max(0, limit - elapsed);
@@ -142,6 +150,18 @@ function DimensionBar({ name, score, maxScore, comment, quotes }: {
   );
 }
 
+// ── Helpers ──
+
+function isValidTranscript(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < MIN_TRANSCRIPT_LENGTH) return false;
+  // Block known placeholder patterns
+  if (trimmed.includes("转录功能将在")) return false;
+  if (trimmed.includes("Stage 3")) return false;
+  if (trimmed.startsWith("（") && trimmed.endsWith("）")) return false;
+  return true;
+}
+
 // ── Main Page ──
 
 export default function ChineseSpeakingSession() {
@@ -155,11 +175,21 @@ export default function ChineseSpeakingSession() {
 
   const recorder = useAudioRecorder();
 
-  const [step, setStep] = useState<Step>("prep");
+  // ── Step state machine ──
+  const [step, setStep] = useState<Step>("idle");
+
+  // Round 1 transcript state
   const [transcript, setTranscript] = useState("");
   const [editedTranscript, setEditedTranscript] = useState("");
+  const [asrInterim, setAsrInterim] = useState("");
 
-  // AI results state (Round 1)
+  // Round 1 STT metadata
+  const [r1SttProvider, setR1SttProvider] = useState("");
+  const [r1SttMode, setR1SttMode] = useState("");
+  const [r1TranscriptSource, setR1TranscriptSource] = useState<string | undefined>(undefined);
+  const [r1SttSuccess, setR1SttSuccess] = useState(false);
+
+  // Round 1 AI results
   const [round1Scores, setRound1Scores] = useState<AttemptScores | null>(null);
   const [round1Diagnosis, setRound1Diagnosis] = useState<AttemptDiagnosis | null>(null);
   const [round1Outline, setRound1Outline] = useState<OutlineStep[] | null>(null);
@@ -168,12 +198,15 @@ export default function ChineseSpeakingSession() {
   const [round1DeliveryMetrics, setRound1DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round1AttemptId, setRound1AttemptId] = useState<string | null>(null);
   const [round1AudioUrl, setRound1AudioUrl] = useState<string | null>(null);
-  const [round1Transcript, setRound1Transcript] = useState("");
 
-  // Round 2
+  // Round 2 state
   const [retryRefMode, setRetryRefMode] = useState<"structure" | "full" | "hidden">("structure");
   const [round2Transcript, setRound2Transcript] = useState("");
   const [round2EditedTranscript, setRound2EditedTranscript] = useState("");
+  const [r2SttProvider, setR2SttProvider] = useState("");
+  const [r2SttMode, setR2SttMode] = useState("");
+  const [r2TranscriptSource, setR2TranscriptSource] = useState<string | undefined>(undefined);
+  const [r2SttSuccess, setR2SttSuccess] = useState(false);
   const [round2Scores, setRound2Scores] = useState<AttemptScores | null>(null);
   const [round2Diagnosis, setRound2Diagnosis] = useState<AttemptDiagnosis | null>(null);
   const [round2ImprovedSpeech, setRound2ImprovedSpeech] = useState<string | null>(null);
@@ -183,55 +216,126 @@ export default function ChineseSpeakingSession() {
   const [analyzing, setAnalyzing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // ASR provider ref — created fresh each round
+  const asrRef = useRef<SpeechProvider | null>(null);
+  // Guard against double-stop
+  const stoppingRef = useRef(false);
+
   // Timer ref for recording
   const recordStartRef = useRef(0);
   const [recordElapsed, setRecordElapsed] = useState(0);
 
+  // Cleanup ASR on unmount
+  useEffect(() => {
+    return () => {
+      asrRef.current?.reset();
+    };
+  }, []);
+
+  // ── Creates a fresh ASR provider for each round ──
+  function createAsr(): SpeechProvider {
+    asrRef.current?.reset();
+    const p = createChineseSpeechProvider();
+    p.onTranscriptUpdate = () => {};
+    p.onInterimUpdate = (text: string) => setAsrInterim(text);
+    p.onStateChange = () => {};
+    asrRef.current = p;
+    return p;
+  }
+
   // ── Prep → Recording ──
 
   const handlePrepDone = useCallback(async () => {
-    setStep("recording");
-    recordStartRef.current = Date.now();
-    setRecordElapsed(0);
+    setStep("preparing");
+    setAiError(null);
+    stoppingRef.current = false;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder.start(stream);
-    } catch {
-      // Mic error handled by recorder hook
-      setStep("prep");
+      const asr = createAsr();
+
+      // Start both recorder and ASR with shared stream
+      await Promise.all([
+        recorder.start(stream),
+        asr.start(stream),
+      ]);
+
+      setStep("recording");
+      recordStartRef.current = Date.now();
+      setRecordElapsed(0);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "启动失败";
+      // Check for CHINESE_APP_KEY_NOT_CONFIGURED
+      if (msg.includes("CHINESE_APP_KEY_NOT_CONFIGURED")) {
+        setAiError("中文语音识别尚未配置。请在阿里云控制台创建普通话实时识别项目，并将 AppKey 添加到 Supabase Edge Function Secrets (ALIYUN_ASR_CHINESE_APP_KEY)。");
+      } else if (recorder.error) {
+        // Mic error — already handled by recorder
+      } else {
+        setAiError(msg);
+      }
+      setStep("idle");
     }
   }, [recorder]);
 
   // Recording timer
   useEffect(() => {
-    if (step !== "recording") return;
+    if (step !== "recording" && step !== "retry_recording") return;
     const t = setInterval(() => {
       setRecordElapsed(Math.round((Date.now() - recordStartRef.current) / 1000));
     }, 200);
     return () => clearInterval(t);
   }, [step]);
 
-  // ── Recording → Review ──
+  // ── Recording → Review (Round 1) ──
 
   const handleStopRecording = useCallback(async () => {
-    recorder.stop();
-    // For now, use a placeholder transcript until STT is integrated in Stage 3
-    const placeholder = "（转录功能将在 Stage 3 集成中文语音识别后启用。您的录音已保存。）";
-    setTranscript(placeholder);
-    setEditedTranscript(placeholder);
-    setStep("review");
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    setStep("stopping");
+
+    try {
+      // Stop both in parallel — get final blob and transcript
+      const asr = asrRef.current;
+      const [audioBlob, finalTranscript] = await Promise.all([
+        recorder.stop(),
+        asr ? asr.stop() : Promise.resolve(""),
+      ]);
+
+      setR1SttProvider(asr?.name || "");
+      setR1SttMode("realtime_websocket");
+      setR1TranscriptSource(finalTranscript.trim() ? "aliyun_realtime" : "none");
+      setR1SttSuccess(finalTranscript.trim().length >= MIN_TRANSCRIPT_LENGTH);
+
+      setTranscript(finalTranscript);
+      setEditedTranscript(finalTranscript);
+
+      if (!isValidTranscript(finalTranscript)) {
+        setStep("transcribing"); // show "no transcript" state
+      } else {
+        setStep("review");
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "停止录音失败");
+      setStep("transcribing");
+    } finally {
+      stoppingRef.current = false;
+    }
   }, [recorder]);
 
   // ── Review → Analyzing ──
 
   const handleAnalyze = useCallback(async () => {
     if (!session) return;
+    if (!isValidTranscript(editedTranscript)) {
+      setAiError("转录文本无效，无法进行AI分析。请重新录音。");
+      return;
+    }
+
     setAnalyzing(true);
     setAiError(null);
     setStep("analyzing");
 
-    // Upload audio first
+    // Upload audio
     let audioUrl = "";
     if (recorder.blob) {
       try {
@@ -255,6 +359,10 @@ export default function ChineseSpeakingSession() {
         audio_duration: recorder.duration,
         transcript: editedTranscript,
         edited_transcript: editedTranscript,
+        stt_provider: r1SttProvider,
+        stt_mode: r1SttMode,
+        transcript_source: r1TranscriptSource,
+        stt_success: r1SttSuccess,
       });
       setRound1AttemptId(attempt.id);
     } catch {
@@ -264,7 +372,7 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // AI Analysis
+    // AI Analysis — uses user-edited transcript
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
@@ -286,7 +394,6 @@ export default function ChineseSpeakingSession() {
     setRound1ImprovedSpeech(d.final_improved_speech);
     setRound1KeyImprovements(d.key_improvements);
     setRound1DeliveryMetrics(d.delivery_metrics);
-    setRound1Transcript(editedTranscript);
 
     // Update attempt with AI results
     if (round1AttemptId) {
@@ -305,44 +412,87 @@ export default function ChineseSpeakingSession() {
     }
 
     setAnalyzing(false);
-    setStep("results");
-  }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, createAttempt, updateAttempt, round1AttemptId]);
+    setStep("result");
+  }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, r1SttProvider, r1SttMode, r1TranscriptSource, r1SttSuccess, createAttempt, updateAttempt, round1AttemptId]);
 
   // ── Results → Retry Recording ──
 
   const handleStartRetry = useCallback(async () => {
     if (!round1AttemptId) return;
     setAiError(null);
+    stoppingRef.current = false;
+
+    // Reset recorder state (preserves microphone access)
     recorder.reset();
+    // Clean up Round 1 ASR
+    asrRef.current?.reset();
+
     setStep("retry_recording");
     recordStartRef.current = Date.now();
     setRecordElapsed(0);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder.start(stream);
-    } catch {
-      setStep("results");
+      const asr = createAsr(); // NEW provider for Round 2
+
+      await Promise.all([
+        recorder.start(stream),
+        asr.start(stream),
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "启动失败";
+      if (msg.includes("CHINESE_APP_KEY_NOT_CONFIGURED")) {
+        setAiError("中文语音识别尚未配置。");
+      }
+      setStep("result");
     }
   }, [recorder, round1AttemptId]);
 
   // ── Retry Recording → Retry Review ──
 
   const handleStopRetry = useCallback(async () => {
-    recorder.stop();
-    const placeholder = "（转录功能将在 Stage 3 集成后启用）";
-    setRound2Transcript(placeholder);
-    setRound2EditedTranscript(placeholder);
-    setStep("retry_review");
+    if (stoppingRef.current) return;
+    stoppingRef.current = true;
+    setStep("retry_stopping");
+
+    try {
+      const asr = asrRef.current;
+      const [audioBlob, finalTranscript] = await Promise.all([
+        recorder.stop(),
+        asr ? asr.stop() : Promise.resolve(""),
+      ]);
+
+      setR2SttProvider(asr?.name || "");
+      setR2SttMode("realtime_websocket");
+      setR2TranscriptSource(finalTranscript.trim() ? "aliyun_realtime" : "none");
+      setR2SttSuccess(finalTranscript.trim().length >= MIN_TRANSCRIPT_LENGTH);
+
+      setRound2Transcript(finalTranscript);
+      setRound2EditedTranscript(finalTranscript);
+
+      if (!isValidTranscript(finalTranscript)) {
+        setAiError("第二次录音未获得有效转录。");
+      }
+      setStep("retry_review");
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "停止录音失败");
+      setStep("retry_review");
+    } finally {
+      stoppingRef.current = false;
+    }
   }, [recorder]);
 
   // ── Retry Review → Retry Analyzing ──
 
   const handleRetryAnalyze = useCallback(async () => {
-    if (!session) return;
+    if (!session || !round1AttemptId) return;
+    if (!isValidTranscript(round2EditedTranscript)) {
+      setAiError("转录文本无效，无法进行AI分析。");
+      return;
+    }
+
     setAnalyzing(true);
     setAiError(null);
-    setStep("retry_analyzing");
 
     let audioUrl = "";
     if (recorder.blob) {
@@ -364,11 +514,15 @@ export default function ChineseSpeakingSession() {
         session_id: sessionId,
         attempt_round: 2,
         is_retry: true,
-        retry_of_attempt_id: round1AttemptId || undefined,
+        retry_of_attempt_id: round1AttemptId,
         audio_url: audioUrl,
         audio_duration: recorder.duration,
         transcript: round2EditedTranscript,
         edited_transcript: round2EditedTranscript,
+        stt_provider: r2SttProvider,
+        stt_mode: r2SttMode,
+        transcript_source: r2TranscriptSource,
+        stt_success: r2SttSuccess,
       });
       attempt2Id = attempt.id;
     } catch {
@@ -415,8 +569,8 @@ export default function ChineseSpeakingSession() {
     }
 
     setAnalyzing(false);
-    setStep("retry_results");
-  }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, createAttempt, updateAttempt, round1AttemptId]);
+    setStep("comparing");
+  }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, r2SttProvider, r2SttMode, r2TranscriptSource, r2SttSuccess, createAttempt, updateAttempt, round1AttemptId]);
 
   // ── Helpers ──
 
@@ -467,21 +621,43 @@ export default function ChineseSpeakingSession() {
         </div>
       </header>
 
-      {/* ── PREP ── */}
-      {step === "prep" && (
+      {/* ── IDLE / PREP ── */}
+      {(step === "idle" || step === "preparing") && (
         <div className="bg-card rounded-2xl border border-border p-6">
           <div className="text-center mb-6">
             <p className="text-sm text-ink-lighter mb-2">话题</p>
             <p className="text-xl font-semibold text-ink">{session.topic}</p>
           </div>
-          <PrepCountdown seconds={30} onSkip={handlePrepDone} />
+
+          {step === "preparing" ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <Loader2 size={36} className="animate-spin text-sage-deep" />
+              <p className="text-sm text-ink-lighter">正在准备语音识别...</p>
+            </div>
+          ) : (
+            <PrepCountdown seconds={30} onSkip={handlePrepDone} />
+          )}
+
+          {aiError && (
+            <div className="mt-4 bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3 text-xs text-accent-rose flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>{aiError}</span>
+            </div>
+          )}
+
+          {recorder.error && (
+            <div className="mt-4 bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2 text-xs text-accent-rose flex items-center gap-2">
+              <AlertTriangle size={12} />
+              {recorder.error}
+            </div>
+          )}
         </div>
       )}
 
       {/* ── RECORDING ── */}
-      {(step === "recording" || step === "retry_recording") && (
+      {(step === "recording" || step === "stopping" || step === "retry_recording" || step === "retry_stopping") && (
         <div className="bg-card rounded-2xl border border-border p-6 space-y-6">
-          {(step === "retry_recording") && (
+          {(step === "retry_recording" || step === "retry_stopping") && (
             <div className="bg-sage-light/10 border border-sage-light/30 rounded-xl p-3 text-xs text-sage-deep">
               重新表达 — 根据 AI 建议改进你的表达
             </div>
@@ -534,13 +710,27 @@ export default function ChineseSpeakingSession() {
 
           <RecordingTimer elapsed={recordElapsed} limit={session.time_limit_seconds} onStop={() => {
             if (step === "retry_recording") handleStopRetry();
-            else handleStopRecording();
+            else if (step === "recording") handleStopRecording();
           }} />
+
+          {/* Live interim transcript */}
+          {asrInterim && (
+            <div className="bg-ink/[0.02] rounded-xl p-3 max-h-24 overflow-y-auto">
+              <p className="text-xs text-ink-lighter/70">{asrInterim}</p>
+            </div>
+          )}
 
           {recorder.error && (
             <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2 text-xs text-accent-rose flex items-center gap-2">
               <AlertTriangle size={12} />
               {recorder.error}
+            </div>
+          )}
+
+          {aiError && (
+            <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2 text-xs text-accent-rose flex items-center gap-2">
+              <AlertTriangle size={12} />
+              {aiError}
             </div>
           )}
 
@@ -550,11 +740,71 @@ export default function ChineseSpeakingSession() {
                 if (step === "retry_recording") handleStopRetry();
                 else handleStopRecording();
               }}
-              className="h-14 w-14 rounded-full bg-accent-rose text-white flex items-center justify-center hover:bg-accent-rose/90 transition-colors"
+              disabled={step === "stopping" || step === "retry_stopping"}
+              className="h-14 w-14 rounded-full bg-accent-rose text-white flex items-center justify-center hover:bg-accent-rose/90 transition-colors disabled:opacity-50"
             >
-              <Square size={22} />
+              {step === "stopping" || step === "retry_stopping" ? (
+                <Loader2 size={22} className="animate-spin" />
+              ) : (
+                <Square size={22} />
+              )}
             </button>
-            <span className="text-xs text-ink-lighter">点击停止录音</span>
+            <span className="text-xs text-ink-lighter">
+              {step === "stopping" || step === "retry_stopping" ? "正在停止..." : "点击停止录音"}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── TRANSCRIBING (no valid transcript) ── */}
+      {step === "transcribing" && (
+        <div className="bg-card rounded-2xl border border-border p-6 space-y-4">
+          <div className="text-center py-6 space-y-3">
+            <Volume2 size={36} className="opacity-30 mx-auto" />
+            <p className="text-sm font-medium text-ink">未获得有效转录</p>
+            <p className="text-xs text-ink-lighter">
+              录音已保存，但语音识别未能生成有效文本。请重新录音或检查网络连接。
+            </p>
+          </div>
+
+          {aiError && (
+            <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3 text-xs text-accent-rose flex items-center gap-2">
+              <AlertTriangle size={14} />
+              {aiError}
+            </div>
+          )}
+
+          {/* Audio playback of current recording */}
+          {recorder.audioUrl && (
+            <div className="flex items-center gap-2 justify-center">
+              <audio controls src={recorder.audioUrl} className="h-8 max-w-[220px]" />
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                recorder.reset();
+                asrRef.current?.reset();
+                stoppingRef.current = false;
+                setStep("idle");
+                setAiError(null);
+              }}
+              className="flex-1 border border-border rounded-xl py-2 text-sm text-ink-light"
+            >
+              重新录音
+            </button>
+            <button
+              onClick={() => {
+                // Manual text input fallback
+                setStep("review");
+                setTranscript("");
+                setEditedTranscript("");
+              }}
+              className="flex-1 bg-ink/5 rounded-xl py-2 text-sm text-ink-light"
+            >
+              手动输入文本
+            </button>
           </div>
         </div>
       )}
@@ -571,6 +821,21 @@ export default function ChineseSpeakingSession() {
                 <audio controls src={recorder.audioUrl} className="h-8 max-w-[180px]" />
               )}
             </div>
+
+            {/* STT metadata */}
+            {(step === "review" ? r1SttProvider : r2SttProvider) && (
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] text-ink-lighter/70">
+                  {(step === "review" ? r1SttProvider : r2SttProvider)}
+                </span>
+                {(step === "review" ? r1SttSuccess : r2SttSuccess) ? (
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">识别成功</span>
+                ) : (
+                  <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">识别未完成</span>
+                )}
+              </div>
+            )}
+
             <textarea
               className="w-full bg-transparent border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-deep/50 resize-none"
               rows={6}
@@ -594,7 +859,14 @@ export default function ChineseSpeakingSession() {
             <button
               onClick={() => {
                 recorder.reset();
-                setStep("recording");
+                asrRef.current?.reset();
+                stoppingRef.current = false;
+                if (step === "retry_review") {
+                  setStep("retry_recording");
+                } else {
+                  setStep("idle");
+                }
+                setAiError(null);
               }}
               className="flex-1 border border-border rounded-xl py-2 text-sm text-ink-light"
             >
@@ -612,7 +884,7 @@ export default function ChineseSpeakingSession() {
       )}
 
       {/* ── ANALYZING ── */}
-      {(step === "analyzing" || step === "retry_analyzing") && (
+      {step === "analyzing" && (
         <div className="bg-card rounded-2xl border border-border p-8 flex flex-col items-center justify-center space-y-4">
           <Loader2 size={36} className="animate-spin text-sage-deep" />
           <p className="text-sm font-medium text-ink">AI 正在分析你的表达...</p>
@@ -629,8 +901,8 @@ export default function ChineseSpeakingSession() {
         </div>
       )}
 
-      {/* ── RESULTS ── */}
-      {step === "results" && (
+      {/* ── RESULT ── */}
+      {step === "result" && (
         <div className="space-y-4">
           {/* Score card */}
           {round1Scores && (
@@ -645,7 +917,6 @@ export default function ChineseSpeakingSession() {
                 </div>
               </div>
 
-              {/* Dimensions */}
               <div className="space-y-3 pt-2 border-t border-border/50">
                 {round1Scores.dimensions.map((dim) => (
                   <DimensionBar key={dim.name} {...dim} maxScore={dim.max_score} />
@@ -763,10 +1034,11 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* Re-express button */}
+          {/* Re-express button — only enabled after Round 1 saved */}
           <button
             onClick={handleStartRetry}
-            className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+            disabled={!round1AttemptId}
+            className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
           >
             <RotateCcw size={16} />
             按这个结构重新讲一次
@@ -774,8 +1046,8 @@ export default function ChineseSpeakingSession() {
         </div>
       )}
 
-      {/* ── RETRY RESULTS ── */}
-      {step === "retry_results" && (
+      {/* ── COMPARING (Round 2 results) ── */}
+      {step === "comparing" && (
         <div className="space-y-4">
           {/* Comparison header */}
           <div className="bg-gradient-to-r from-sage-light/5 to-purple-50/50 border border-sage-light/30 rounded-2xl p-4">
@@ -856,12 +1128,6 @@ export default function ChineseSpeakingSession() {
                   <audio controls src={round2AudioUrl} className="h-8 flex-1 max-w-[220px]" />
                 </div>
               )}
-              {round1AudioUrl && !round2AudioUrl && recorder.audioUrl && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-ink-lighter w-14">第二次</span>
-                  <audio controls src={recorder.audioUrl} className="h-8 flex-1 max-w-[220px]" />
-                </div>
-              )}
             </div>
           )}
 
@@ -888,7 +1154,7 @@ export default function ChineseSpeakingSession() {
 
           {/* Done */}
           <button
-            onClick={() => setStep("saved")}
+            onClick={() => navigate("/chinese/history")}
             className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
           >
             <CheckCircle2 size={16} />
@@ -897,28 +1163,20 @@ export default function ChineseSpeakingSession() {
         </div>
       )}
 
-      {/* ── SAVED ── */}
-      {step === "saved" && (
+      {/* ── SAVE ERROR ── */}
+      {step === "save_error" && (
         <div className="text-center py-12 space-y-4">
-          <div className="h-16 w-16 rounded-full bg-sage-light flex items-center justify-center mx-auto">
-            <CheckCircle2 size={28} className="text-sage-deep" />
+          <div className="h-16 w-16 rounded-full bg-accent-rose/10 flex items-center justify-center mx-auto">
+            <AlertTriangle size={28} className="text-accent-rose" />
           </div>
-          <p className="text-lg font-semibold text-ink">练习完成</p>
-          <p className="text-sm text-ink-lighter">两轮表达已保存</p>
-          <div className="flex gap-3 justify-center pt-2">
-            <button
-              onClick={() => navigate("/chinese/history")}
-              className="rounded-xl border border-border px-4 py-2 text-sm text-ink-light"
-            >
-              查看历史
-            </button>
-            <button
-              onClick={() => navigate("/chinese")}
-              className="rounded-xl bg-sage-light text-sage-deep px-4 py-2 text-sm font-semibold"
-            >
-              再来一次
-            </button>
-          </div>
+          <p className="text-lg font-semibold text-ink">保存出错</p>
+          <p className="text-sm text-ink-lighter">{aiError || "保存失败，请检查网络后重试"}</p>
+          <button
+            onClick={() => navigate("/chinese")}
+            className="rounded-xl bg-sage-light text-sage-deep px-4 py-2 text-sm font-semibold"
+          >
+            返回主页
+          </button>
         </div>
       )}
     </div>

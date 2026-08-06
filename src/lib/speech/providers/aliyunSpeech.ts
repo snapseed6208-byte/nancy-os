@@ -35,11 +35,11 @@ export class AliyunSpeechProvider implements SpeechProvider {
     this.isListening = true;
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<string> {
     const audioBlob = this.pendingBlob;
     this.pendingBlob = null;
 
-    if (!audioBlob || audioBlob.size === 0) return;
+    if (!audioBlob || audioBlob.size === 0) return "";
 
     this.isListening = false;
     this._onStateChange?.();
@@ -81,9 +81,11 @@ export class AliyunSpeechProvider implements SpeechProvider {
 
       this.transcript = result.transcript || "";
       this._onTranscriptUpdate?.(this.transcript);
+      return this.transcript;
     } catch (err) {
       this.error = err instanceof Error ? err.message : "语音识别失败";
       console.error("[aliyunSpeech] Error:", this.error);
+      return "";
     }
   }
 

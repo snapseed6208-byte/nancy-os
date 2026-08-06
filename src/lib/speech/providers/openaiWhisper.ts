@@ -27,9 +27,10 @@ export class OpenAIWhisperProvider implements SpeechProvider {
     this.isListening = true;
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<string> {
     this.isListening = false;
     this.error = "OpenAI Whisper provider is not yet implemented.";
+    return "";
   }
 
   reset(): void {

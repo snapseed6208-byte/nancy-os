@@ -4,6 +4,8 @@
 //
 // IMPORTANT: audioUrl is a transient blob URL revoked on reset().
 // For persistent playback (e.g. comparison UI), use the uploaded DB URL.
+//
+// stop() returns Promise<Blob> — the final audio blob after MediaRecorder stops.
 // ============================================
 
 import { useState, useRef, useCallback } from "react";
@@ -25,6 +27,7 @@ export function useAudioRecorder() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const ownsStreamRef = useRef(true);
+  const blobRef = useRef<Blob | null>(null);
 
   const _setupRecorder = useCallback((stream: MediaStream) => {
     streamRef.current = stream;
@@ -42,6 +45,7 @@ export function useAudioRecorder() {
     mr.onstop = () => {
       const audioBlob = new Blob(chunks.current, { type: mr.mimeType });
       const url = URL.createObjectURL(audioBlob);
+      blobRef.current = audioBlob;
       setBlob(audioBlob);
       setAudioUrl(url);
       setDuration(Math.round((Date.now() - startTime.current) / 1000));
@@ -93,9 +97,26 @@ export function useAudioRecorder() {
     return start(stream);
   }, [start]);
 
-  const stop = useCallback(() => {
-    mediaRecorder.current?.stop();
-    if (timerRef.current) clearInterval(timerRef.current);
+  /** Stop recording and return the final audio Blob. */
+  const stop = useCallback((): Promise<Blob> => {
+    return new Promise<Blob>((resolve) => {
+      const mr = mediaRecorder.current;
+      if (!mr) {
+        resolve(new Blob([]));
+        return;
+      }
+      if (mr.state === "inactive") {
+        resolve(blobRef.current || new Blob([]));
+        return;
+      }
+      const origOnStop = mr.onstop;
+      mr.onstop = (e) => {
+        if (origOnStop) origOnStop.call(mr, e);
+        resolve(blobRef.current || new Blob([]));
+      };
+      mr.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+    });
   }, []);
 
   const reset = useCallback(() => {
@@ -103,6 +124,7 @@ export function useAudioRecorder() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     ownsStreamRef.current = true;
+    blobRef.current = null;
     setAudioUrl(null);
     setBlob(null);
     setDuration(0);

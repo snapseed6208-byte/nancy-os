@@ -2,6 +2,9 @@
 // Nancy OS — Aliyun NLS Token Edge Function
 // Returns a temporary token for real-time ASR WebSocket.
 // Client uses token to connect directly to Aliyun WebSocket.
+//
+// Supports language parameter: { language: "english" | "chinese" }
+// Returns appKeySource indicating which appkey was selected.
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -120,26 +123,44 @@ serve(async (req: Request) => {
       return jsonResponse(req, { error: "Aliyun credentials not configured" }, 500);
     }
 
-    // Parse language preference from body for Chinese STT support
-    let language = "english";
+    // Parse language preference from body
+    let language: "english" | "chinese" = "english";
     try {
       const body = await req.json();
-      language = (body.language as string) || "english";
+      if (body.language === "chinese") language = "chinese";
     } catch {
-      // Body might be empty — use default English
+      // No body — default to English
     }
 
-    const appKey = language === "chinese" && ALIYUN_CHINESE_APP_KEY
-      ? ALIYUN_CHINESE_APP_KEY
-      : ALIYUN_APP_KEY;
+    // Select appkey and determine source
+    let appKey: string;
+    let appKeySource: string;
+
+    if (language === "chinese") {
+      if (ALIYUN_CHINESE_APP_KEY) {
+        appKey = ALIYUN_CHINESE_APP_KEY;
+        appKeySource = "chinese";
+      } else {
+        return jsonResponse(req, {
+          error: "CHINESE_APP_KEY_NOT_CONFIGURED",
+          detail: "ALIYUN_ASR_CHINESE_APP_KEY is not set. Add it in Supabase Edge Function Secrets.",
+        }, 400);
+      }
+    } else {
+      appKey = ALIYUN_APP_KEY;
+      appKeySource = "english";
+    }
 
     const { token, expireTime } = await createToken();
+
+    console.log(`[aliyun-token] Token issued: appKeySource=${appKeySource} language=${language}`);
 
     return jsonResponse(req, {
       token,
       expireTime,
       expiresAt: new Date(expireTime * 1000).toISOString(),
       appkey: appKey,
+      appKeySource,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal error";

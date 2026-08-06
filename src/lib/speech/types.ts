@@ -16,12 +16,12 @@ export interface SpeechProvider {
   start(stream?: MediaStream): Promise<void>;
 
   /**
-   * End recognition session and finalize transcript.
-   * Browser: stops SpeechRecognition.
-   * Cloud realtime: closes WebSocket, disconnects AudioContext.
-   * Cloud batch: uploads audio blob → Edge Function → ASR.
+   * End recognition session and return final transcript.
+   * Browser: stops SpeechRecognition, returns accumulated transcript.
+   * Cloud realtime: closes WebSocket, disconnects AudioContext, returns final transcript.
+   * Cloud batch: uploads audio blob → Edge Function → ASR, returns transcript.
    */
-  stop(): Promise<void>;
+  stop(): Promise<string>;
 
   /** Hard reset: abort any ongoing session, clear transcript & error. */
   reset(): void;
