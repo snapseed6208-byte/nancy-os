@@ -1059,6 +1059,35 @@ serve(async (req: Request) => {
         });
       }
 
+      // Server-side B站 API fallback: when page fetch fails, call api.bilibili.com directly
+      if (platform === "bilibili" && isWorkoutPath && !preFetchedTitle && (!fetchedContent.title || fetchedContent.text.length <= 50)) {
+        const bvMatch = input.match(/bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/);
+        const bvid = bvMatch ? bvMatch[1] : null;
+        if (bvid) {
+          console.log("[content-parser-agent] stage=bilibili_api_fallback fetching metadata for", { bvid });
+          try {
+            const apiResp = await fetch(
+              `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+              { headers: { "User-Agent": BROWSER_UA, "Referer": "https://www.bilibili.com/" } },
+            );
+            if (apiResp.ok) {
+              const apiJson = await apiResp.json();
+              if (apiJson.code === 0 && apiJson.data) {
+                // Use B站 API result as pre-fetched title
+                const apiTitle = apiJson.data.title || "";
+                if (apiTitle && !["训练视频", "健身训练视频", "B站训练视频"].includes(apiTitle)) {
+                  // Inject API title into fetchedContent so it's used in userMessage
+                  fetchedContent.title = apiTitle;
+                  console.log("[content-parser-agent] stage=bilibili_api_fallback success", { title: apiTitle.slice(0, 60) });
+                }
+              }
+            }
+          } catch (err) {
+            console.log("[content-parser-agent] stage=bilibili_api_fallback error", { error: String(err) });
+          }
+        }
+      }
+
       // ── Stage: content_extract ──
       userMessage = "";
       if (sourceContext) {
@@ -1208,6 +1237,20 @@ serve(async (req: Request) => {
       const GENERIC_TITLES = ["训练视频", "健身训练视频", "B站训练视频", "抖音训练视频", "小红书训练视频", "YouTube训练视频"];
       const isGenericTitle = !title || GENERIC_TITLES.includes(title) || /^[a-zA-Z\s]*$/.test(title);
 
+      // Protect pre-fetched API title from being overwritten by generic AI output
+      const isPreFetchedTitleGeneric = !preFetchedTitle || GENERIC_TITLES.includes(preFetchedTitle) || preFetchedTitle.length < 3;
+      if (isGenericTitle && !isPreFetchedTitleGeneric && preFetchedTitle) {
+        console.log("[content-parser-agent] stage=title_fallback using pre-fetched title instead of generic AI output", {
+          aiTitle: title?.slice(0, 40),
+          preFetchedTitle: preFetchedTitle.slice(0, 40),
+        });
+      }
+      const finalTitle = isGenericTitle && !isPreFetchedTitleGeneric && preFetchedTitle
+        ? preFetchedTitle
+        : title;
+      // Recalculate generic check with the final title
+      const isFinalTitleGeneric = !finalTitle || GENERIC_TITLES.includes(finalTitle) || /^[a-zA-Z\s]*$/.test(finalTitle);
+
       let analysisSource: string;
       if (preFetchedTitle && fetchedContent.text.length > 50) {
         analysisSource = "full_page";
@@ -1223,9 +1266,9 @@ serve(async (req: Request) => {
       const hasValidCategory = metadata.category && ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"].includes(metadata.category as string);
       const hasValidTrainingType = metadata.training_type && ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "瑜伽", "康复"].includes(metadata.training_type as string);
 
-      if (!isGenericTitle && hasValidCategory && hasValidTrainingType && analysisSource !== "url_only") {
+      if (!isFinalTitleGeneric && hasValidCategory && hasValidTrainingType && analysisSource !== "url_only") {
         analysisConfidence = "high";
-      } else if (isGenericTitle || analysisSource === "url_only") {
+      } else if (isFinalTitleGeneric || analysisSource === "url_only") {
         analysisConfidence = "low";
       } else {
         analysisConfidence = "medium";
@@ -1237,7 +1280,8 @@ serve(async (req: Request) => {
         analysisSource,
         analysisConfidence,
         finalStatus,
-        isGenericTitle,
+        isGenericTitle: isFinalTitleGeneric,
+        finalTitle: finalTitle?.slice(0, 40),
         hasCategory: hasValidCategory,
         hasTrainingType: hasValidTrainingType,
       });
@@ -1257,7 +1301,7 @@ serve(async (req: Request) => {
         const { data: updated } = await supabase
           .from("workout_videos")
           .update({
-            title: title || undefined,
+            title: finalTitle || undefined,
             category: metadata.category as string,
             difficulty: metadata.difficulty as string,
             training_type: metadata.training_type as string,
@@ -1286,7 +1330,7 @@ serve(async (req: Request) => {
           .from("workout_videos")
           .insert({
             user_id: user.id,
-            title: title,
+            title: finalTitle,
             category: metadata.category as string,
             difficulty: (metadata.difficulty as string) || "初级",
             training_type: metadata.training_type as string,
