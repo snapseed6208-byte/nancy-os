@@ -931,6 +931,8 @@ serve(async (req: Request) => {
   const sourceContext = body.source_context || "";
   const sourceContent = body.source_content || null;
   const sourceType = body.source_type || "";
+  const preFetchedTitle = body.pre_fetched_title || "";
+  const preFetchedCoverUrl = body.pre_fetched_cover_url || "";
 
   const input = body.url || body.text || "";
   if (!input && !workoutVideoId && !recipeId) {
@@ -1065,6 +1067,10 @@ serve(async (req: Request) => {
 
       if (inputIsUrl) {
         userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+        // Pre-fetched metadata from client (B站 API) — use as primary signal
+        if (preFetchedTitle) {
+          userMessage += `\n预取标题（高置信度）: ${preFetchedTitle}`;
+        }
         // Tell AI this is expected to be a fitness/training video so it uses workout metadata
         if (isWorkoutPath) {
           userMessage += `\n\n注意：这是一个训练视频链接。请使用 workout 类型的 metadata 格式，包含 difficulty（初级/中级/高级）、training_type（力量训练/塑形训练/有氧燃脂/HIIT/拉伸/瑜伽/康复）、category（臀腿/背部/肩胸/核心/全身/有氧/拉伸）、estimated_duration（预估分钟数）、target_muscles（目标肌群数组）。如果无法从页面内容确定这些信息，请根据视频标题合理推断。`;
@@ -1072,7 +1078,7 @@ serve(async (req: Request) => {
         if (fetchedContent.title) userMessage += `\n页面标题: ${fetchedContent.title}`;
         if (fetchedContent.description) userMessage += `\n页面描述: ${fetchedContent.description}`;
         if (fetchedContent.text) userMessage += `\n页面文本片段: ${fetchedContent.text}`;
-        if (!sourceContext && fetchedContent.text.length <= 50 && !fetchedContent.title) {
+        if (!sourceContext && fetchedContent.text.length <= 50 && !fetchedContent.title && !preFetchedTitle) {
           userMessage += `\n\n⚠️ 无法获取此链接的页面内容，请根据URL和平台名称进行合理推断。`;
         }
       } else {
@@ -1198,6 +1204,44 @@ serve(async (req: Request) => {
       // Use corrected metadata
       metadata = validation.corrected;
 
+      // ── Quality assessment (shared by UPDATE and INSERT paths) ──
+      const GENERIC_TITLES = ["训练视频", "健身训练视频", "B站训练视频", "抖音训练视频", "小红书训练视频", "YouTube训练视频"];
+      const isGenericTitle = !title || GENERIC_TITLES.includes(title) || /^[a-zA-Z\s]*$/.test(title);
+
+      let analysisSource: string;
+      if (preFetchedTitle && fetchedContent.text.length > 50) {
+        analysisSource = "full_page";
+      } else if (preFetchedTitle) {
+        analysisSource = "api_metadata";
+      } else if (fetchedContent.text.length > 50) {
+        analysisSource = "full_page";
+      } else {
+        analysisSource = "url_only";
+      }
+
+      let analysisConfidence: string;
+      const hasValidCategory = metadata.category && ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"].includes(metadata.category as string);
+      const hasValidTrainingType = metadata.training_type && ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "瑜伽", "康复"].includes(metadata.training_type as string);
+
+      if (!isGenericTitle && hasValidCategory && hasValidTrainingType && analysisSource !== "url_only") {
+        analysisConfidence = "high";
+      } else if (isGenericTitle || analysisSource === "url_only") {
+        analysisConfidence = "low";
+      } else {
+        analysisConfidence = "medium";
+      }
+
+      const finalStatus = analysisConfidence === "low" ? "failed" : "completed";
+
+      console.log("[content-parser-agent] stage=quality_check", {
+        analysisSource,
+        analysisConfidence,
+        finalStatus,
+        isGenericTitle,
+        hasCategory: hasValidCategory,
+        hasTrainingType: hasValidTrainingType,
+      });
+
       if (workoutVideoId) {
         // ── Stage: database_save ──
         console.log("[content-parser-agent] stage=database_save workout", {
@@ -1221,7 +1265,10 @@ serve(async (req: Request) => {
             target_muscles: (metadata.target_muscles as string[]) || [],
             equipment: (metadata.equipment as string) || null,
             tags: (metadata.tags as string[]) || [],
-            ai_analysis_status: "completed",
+            description: (metadata.analysis_notes as string) || null,
+            analysis_source: analysisSource,
+            analysis_confidence: analysisConfidence,
+            ai_analysis_status: finalStatus,
           })
           .eq("id", workoutVideoId)
           .select("id")
@@ -1229,7 +1276,7 @@ serve(async (req: Request) => {
 
         if (updated) {
           recordId = updated.id as string;
-          console.log("[content-parser-agent] stage=database_save done", { recordId, status: "completed" });
+          console.log("[content-parser-agent] stage=database_save done", { recordId, status: finalStatus });
         } else {
           console.error("[content-parser-agent] stage=database_save FAILED: no row updated", { workoutVideoId });
         }
@@ -1247,9 +1294,12 @@ serve(async (req: Request) => {
             target_muscles: (metadata.target_muscles as string[]) || [],
             equipment: (metadata.equipment as string) || null,
             tags: (metadata.tags as string[]) || [],
+            description: (metadata.analysis_notes as string) || null,
             platform: inputIsUrl ? platform : null,
             url: inputIsUrl ? input : null,
-            ai_analysis_status: "completed",
+            analysis_source: analysisSource,
+            analysis_confidence: analysisConfidence,
+            ai_analysis_status: finalStatus,
           })
           .select("id")
           .single();

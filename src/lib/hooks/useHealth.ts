@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
-import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
+import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, extractPageFromUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
 
 // ── Types ──
 
@@ -44,6 +44,9 @@ export type WorkoutVideo = {
   thumbnail_url: string | null;
   equipment: string | null;
   tags: string[] | null;
+  description: string | null;
+  analysis_source: string | null;
+  analysis_confidence: string | null;
   ai_analysis_status: string | null;
   created_at: string;
 };
@@ -288,18 +291,51 @@ export function useCreateWorkoutVideo() {
       const normalized = normalizeUrl(input.url);
       if (!normalized) throw new Error("无效的链接地址，请检查链接格式");
       const platform = detectUrlPlatform(normalized);
-      const videoId = extractVideoId(normalized, platform);
-      const embedUrl = videoId ? buildEmbedUrl(platform, videoId) : null;
-      const thumbnailUrl = platform === "youtube" && videoId ? getYouTubeThumbnail(videoId) : null;
 
-      // Step 1: Insert basic record
+      // Resolve B站 short links / av号 → canonical URL + metadata via Edge Function
+      let resolvedTitle: string | null = null;
+      let resolvedCover: string | null = null;
+      let resolvedCanonical: string | null = null;
+      let resolvedBvid: string | null = extractVideoId(normalized, platform);
+      let resolvedPage = extractPageFromUrl(normalized);
+
+      if (platform === "bilibili") {
+        const { data: resolveData, error: resolveError } = await supabase.functions.invoke(
+          "bilibili-resolve",
+          { body: { url: normalized } },
+        );
+        if (!resolveError && resolveData) {
+          const rd = resolveData as {
+            canonical_url: string; bvid: string | null; page: number;
+            title: string | null; cover_url: string | null;
+          };
+          resolvedCanonical = rd.canonical_url || null;
+          resolvedBvid = rd.bvid || resolvedBvid;
+          resolvedPage = rd.page || resolvedPage;
+          resolvedTitle = rd.title || null;
+          resolvedCover = rd.cover_url || null;
+        }
+      }
+
+      const finalUrl = resolvedCanonical || normalized;
+      const videoId = resolvedBvid;
+      const page = resolvedPage || 1;
+      const embedUrl = videoId ? buildEmbedUrl(platform, videoId, page) : null;
+      const thumbnailUrl = platform === "youtube" && videoId
+        ? getYouTubeThumbnail(videoId)
+        : resolvedCover || null;
+
+      // Use resolved title from B站 API, fallback to generic default
+      const initialTitle = resolvedTitle || getDefaultVideoTitle(platform);
+
+      // Step 1: Insert record with resolved metadata
       const { data, error } = await supabase
         .from("workout_videos")
         .insert({
           user_id: userId,
-          url: normalized,
+          url: finalUrl,
           platform,
-          title: getDefaultVideoTitle(platform),
+          title: initialTitle,
           video_id: videoId,
           embed_url: embedUrl,
           thumbnail_url: thumbnailUrl,
@@ -313,25 +349,13 @@ export function useCreateWorkoutVideo() {
       if (error) throw error;
       const record = data as WorkoutVideo;
 
-      // Step 2: Fetch B站 thumbnail via edge function (non-blocking)
-      if (platform === "bilibili" && videoId) {
-        supabase.functions.invoke("bilibili-thumbnail", { body: { bvid: videoId } })
-          .then(({ data: thumbData }) => {
-            const thumb = thumbData as { thumbnail_url?: string } | null;
-            if (thumb?.thumbnail_url) {
-              return supabase.from("workout_videos")
-                .update({ thumbnail_url: thumb.thumbnail_url })
-                .eq("id", record.id);
-            }
-          })
-          .catch(() => { /* non-blocking, silent fail */ });
-      }
-
-      // Step 3: Trigger AI analysis (non-blocking) for all platforms
+      // Step 2: Trigger AI analysis (non-blocking) with pre-fetched metadata
       invokeAI("content-parser-agent", {
-        url: normalized,
+        url: finalUrl,
         content_type: "workout",
         workout_video_id: record.id,
+        pre_fetched_title: resolvedTitle,
+        pre_fetched_cover_url: resolvedCover,
       }).then((result) => {
         if (!result.success) {
           console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, platform, error: result.error, detail: result.detail });
@@ -361,6 +385,9 @@ export function useUpdateWorkoutVideo() {
       estimated_duration?: number;
       equipment?: string;
       tags?: string[];
+      description?: string;
+      analysis_source?: string;
+      analysis_confidence?: string;
       is_favorite?: boolean;
       notes?: string;
     }) => {

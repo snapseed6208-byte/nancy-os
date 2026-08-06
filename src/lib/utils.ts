@@ -113,13 +113,19 @@ export function detectUrlPlatform(url: string): string {
 // ── Video ID extraction & embed URL building ──
 
 const BILIBILI_VID_RE = /bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/;
+const BILIBILI_AV_RE = /bilibili\.com\/video\/av(\d+)/i;
 const YOUTUBE_WATCH_RE = /[?&]v=([a-zA-Z0-9_-]{11})/;
 const YOUTUBE_SHORT_RE = /youtu\.be\/([a-zA-Z0-9_-]{11})/;
 
 export function extractVideoId(url: string, platform: string): string | null {
   if (platform === "bilibili") {
-    const m = url.match(BILIBILI_VID_RE);
-    return m ? m[1] : null;
+    // BV号优先
+    const bvMatch = url.match(BILIBILI_VID_RE);
+    if (bvMatch) return bvMatch[1];
+    // av号作为 fallback
+    const avMatch = url.match(BILIBILI_AV_RE);
+    if (avMatch) return `av${avMatch[1]}`;
+    return null;
   }
   if (platform === "youtube") {
     const m = url.match(YOUTUBE_WATCH_RE) || url.match(YOUTUBE_SHORT_RE);
@@ -128,9 +134,18 @@ export function extractVideoId(url: string, platform: string): string | null {
   return null;
 }
 
-export function buildEmbedUrl(platform: string, videoId: string): string | null {
+export function extractPageFromUrl(url: string): number {
+  try {
+    const parsed = new URL(url);
+    const p = parsed.searchParams.get("p");
+    if (p) return parseInt(p, 10) || 1;
+  } catch { /* ignore */ }
+  return 1;
+}
+
+export function buildEmbedUrl(platform: string, videoId: string, page = 1): string | null {
   if (platform === "bilibili") {
-    return `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(videoId)}&page=1&high_quality=1`;
+    return `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(videoId)}&page=${page}&high_quality=1`;
   }
   if (platform === "youtube") {
     return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;

@@ -821,7 +821,7 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     title: "", category: "", difficulty: "", estimated_duration: null as number | null,
-    training_type: "", equipment: "", tags: "",
+    training_type: "", equipment: "", tags: "", target_muscles: "",
   });
   const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0 });
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
@@ -933,6 +933,7 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
       training_type: v.training_type || "",
       equipment: v.equipment || "",
       tags: (v.tags || []).join("，"),
+      target_muscles: (v.target_muscles || []).join("，"),
     });
   };
 
@@ -946,6 +947,9 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
       training_type: editForm.training_type || undefined,
       equipment: editForm.equipment || undefined,
       tags: editForm.tags ? editForm.tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : undefined,
+      target_muscles: editForm.target_muscles ? editForm.target_muscles.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : undefined,
+      analysis_source: "manual",
+      analysis_confidence: "high",
     }, { onSuccess: () => setEditingId(null) });
   };
 
@@ -1194,6 +1198,7 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
                     <input type="number" value={editForm.estimated_duration ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, estimated_duration: e.target.value ? parseInt(e.target.value) : null }))} placeholder="时长(分钟)" className="bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   </div>
                   <input type="text" value={editForm.equipment} onChange={(e) => setEditForm((f) => ({ ...f, equipment: e.target.value }))} placeholder="器材（如：哑铃、弹力带）" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
+                  <input type="text" value={editForm.target_muscles} onChange={(e) => setEditForm((f) => ({ ...f, target_muscles: e.target.value }))} placeholder="目标肌群，逗号分隔（如：臀大肌, 腹直肌）" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   <input type="text" value={editForm.tags} onChange={(e) => setEditForm((f) => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔（如：翘臀, 无器械, 新手友好）" className="w-full bg-transparent text-xs text-ink outline-none border border-border rounded-lg px-2.5 py-1.5" />
                   <div className="flex gap-2">
                     <button onClick={() => saveEdit(v.id)} className="flex-1 bg-sage-light text-sage-deep rounded-lg py-1.5 text-xs font-semibold">保存</button>
@@ -1218,7 +1223,10 @@ function WorkoutLibraryTab({ onStartTraining }: { onStartTraining: (video: Worko
                             <span title="AI 分析失败" className="shrink-0"><AlertTriangle size={11} className="text-amber-500" /></span>
                           )}
                           {v.ai_analysis_status === "completed" && (
-                            <span title="AI 分析完成" className="shrink-0"><Brain size={11} className="text-sage-deep" /></span>
+                            <span title={`AI 分析完成${v.analysis_confidence ? ` · 置信度: ${v.analysis_confidence === 'high' ? '高' : v.analysis_confidence === 'low' ? '低' : '中'}` : ''}${v.analysis_source === 'manual' ? ' (手动修正)' : ''}`} className="shrink-0 flex items-center gap-1">
+                              <Brain size={11} className={v.analysis_confidence === "high" ? "text-sage-deep" : v.analysis_confidence === "low" ? "text-amber-500" : "text-ink-lighter"} />
+                              {v.analysis_source === "manual" && <span className="text-[9px] text-ink-lighter bg-ink/5 rounded-full px-1">手动</span>}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
