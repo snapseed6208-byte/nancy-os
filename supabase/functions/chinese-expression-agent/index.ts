@@ -332,18 +332,25 @@ serve(async (req: Request) => {
           }, httpStatus);
         }
 
-        // Log
+        // Log (best-effort telemetry)
         if (userId) {
-          await supabase.from("agent_logs").insert({
-            user_id: userId,
-            agent_type: "chinese_expression",
-            action: "analyze_expression",
-            input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound },
-            output_data: {
-              total: (result.data.scores as Record<string, unknown>)?.total,
-              framework: (result.data.diagnosis as Record<string, unknown>)?.recommended_framework,
-            },
-          }).catch(() => {});
+          try {
+            const { error: logErr } = await supabase.from("agent_logs").insert({
+              user_id: userId,
+              agent_type: "chinese_expression",
+              action: "analyze_expression",
+              input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound },
+              output_data: {
+                total: (result.data.scores as Record<string, unknown>)?.total,
+                framework: (result.data.diagnosis as Record<string, unknown>)?.recommended_framework,
+              },
+            });
+            if (logErr) {
+              console.error(`[chinese-expression-agent] ${requestId} agent_logs insert error:`, logErr.code, logErr.message);
+            }
+          } catch (logEx) {
+            console.error(`[chinese-expression-agent] ${requestId} agent_logs insert exception:`, (logEx as Error).message);
+          }
         }
 
         const elapsedMs = Date.now() - t0;
@@ -387,12 +394,19 @@ serve(async (req: Request) => {
         }
 
         if (userId) {
-          await supabase.from("agent_logs").insert({
-            user_id: userId,
-            agent_type: "chinese_expression",
-            action: "generate_topics",
-            input_data: { topic_type: topicType, count },
-          }).catch(() => {});
+          try {
+            const { error: logErr } = await supabase.from("agent_logs").insert({
+              user_id: userId,
+              agent_type: "chinese_expression",
+              action: "generate_topics",
+              input_data: { topic_type: topicType, count },
+            });
+            if (logErr) {
+              console.error(`[chinese-expression-agent] ${requestId} agent_logs insert error:`, logErr.code, logErr.message);
+            }
+          } catch (logEx) {
+            console.error(`[chinese-expression-agent] ${requestId} agent_logs insert exception:`, (logEx as Error).message);
+          }
         }
 
         const elapsedMs = Date.now() - t0;
