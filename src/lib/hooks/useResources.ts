@@ -494,7 +494,83 @@ export function useDeleteResource() {
   });
 }
 
-// ── Content Parser ──
+// ── Two-Stage Resource Import (v2) ──
+
+export type ExtractResult = {
+  resource_id: string;
+  title: string;
+  description: string;
+  extracted_text: string;
+  extract_error: string | null;
+  platform: string;
+  source_url: string;
+  parse_status: "extracted" | "extract_failed";
+};
+
+export type AnalyzeResult = {
+  resource_id: string;
+  content_type: string;
+  title: string;
+  category: string;
+  summary: string;
+  key_points: string[];
+  important_quotes: string[];
+  action_items: Array<{ action: string; priority: string }>;
+  suggested_category: string;
+  applicable_scenarios: string[];
+  related_knowledge: string[];
+  tags: string[];
+  tokens_used: number;
+};
+
+/**
+ * Stage 1: Extract — URL fetch + HTML parse, no AI.
+ * Saves raw content to DB, returns resource_id.
+ */
+export function useResourceExtract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      url?: string;
+      text?: string;
+    }): Promise<ExtractResult> => {
+      const result = await invokeAI<ExtractResult>("resource-extract", {
+        url: input.url || undefined,
+        text: input.text || undefined,
+      }, { timeout: 30_000 });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
+/**
+ * Stage 2: Analyze — AI analysis of pre-extracted content.
+ * Reads from DB, single AI call, updates DB. No URL fetch.
+ * Safe to retry — never re-fetches URL.
+ */
+export function useResourceAnalyze() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      resource_id: string;
+    }): Promise<AnalyzeResult> => {
+      const result = await invokeAI<AnalyzeResult>("resource-analyze", {
+        resource_id: input.resource_id,
+      }, { timeout: 90_000, retries: 1 });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["resources"] });
+    },
+  });
+}
+
+// ── Content Parser (Legacy — monolithic fetch+AI, deprecated) ──
 
 export type ParsedContent = {
   content_type: string;
@@ -517,6 +593,7 @@ export type ParsedContent = {
   raw_content: string | null;
 };
 
+/** @deprecated Use useResourceExtract + useResourceAnalyze for new imports */
 export function useContentParser() {
   const qc = useQueryClient();
   return useMutation({

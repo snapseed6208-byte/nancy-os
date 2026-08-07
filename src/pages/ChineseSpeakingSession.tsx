@@ -15,25 +15,26 @@ import {
   useUpdateChineseSpeakingAttempt,
   uploadChineseAudio,
   analyzeChineseExpression,
+  generateChineseReference,
   compareChineseRounds,
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
   V2_DIMENSION_LABELS,
   type ChineseTopicType,
   type ChineseFramework,
-  type V2Diagnosis,
+  type V3Diagnosis,
+  type V3KeyImprovement,
+  type V3Reference,
   type V2Scores,
   type V2DimensionScore,
   type V2KeyIssue,
   type V2OutlineStep,
   type V2KeyUpgrade,
-  type V2Rewrite,
   type V2ThinkingUpgrade,
-  type V2Round2Guidance,
   type V2IntegrityCheck,
   type V2Comparison,
   type DeliveryMetrics,
-  type ChineseAnalysisResultV2,
+  type ChineseAnalysisResultV3,
 } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Constants ──
@@ -197,13 +198,14 @@ export default function ChineseSpeakingSession() {
   const [r1TranscriptSource, setR1TranscriptSource] = useState<string | undefined>(undefined);
   const [r1SttSuccess, setR1SttSuccess] = useState(false);
 
-  // Round 1 V2 AI results
-  const [round1Diagnosis, setRound1Diagnosis] = useState<V2Diagnosis | null>(null);
-  const [round1Rewrite, setRound1Rewrite] = useState<V2Rewrite | null>(null);
+  // Round 1 V3 AI results (diagnosis only; reference loaded on-demand)
+  const [round1Diagnosis, setRound1Diagnosis] = useState<V3Diagnosis | null>(null);
+  const [round1Reference, setRound1Reference] = useState<V3Reference | null>(null);
   const [round1DeliveryMetrics, setRound1DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round1AttemptId, setRound1AttemptId] = useState<string | null>(null);
   const [round1AudioUrl, setRound1AudioUrl] = useState<string | null>(null);
   const [round1FullReferenceViewed, setRound1FullReferenceViewed] = useState(false);
+  const [round1GeneratingReference, setRound1GeneratingReference] = useState(false);
 
   // Round 2 state
   const [retryRefMode, setRetryRefMode] = useState<"structure" | "full" | "hidden">("structure");
@@ -213,8 +215,8 @@ export default function ChineseSpeakingSession() {
   const [r2SttMode, setR2SttMode] = useState("");
   const [r2TranscriptSource, setR2TranscriptSource] = useState<string | undefined>(undefined);
   const [r2SttSuccess, setR2SttSuccess] = useState(false);
-  const [round2Diagnosis, setRound2Diagnosis] = useState<V2Diagnosis | null>(null);
-  const [round2Rewrite, setRound2Rewrite] = useState<V2Rewrite | null>(null);
+  const [round2Diagnosis, setRound2Diagnosis] = useState<V3Diagnosis | null>(null);
+  const [round2Reference, setRound2Reference] = useState<V3Reference | null>(null);
   const [round2DeliveryMetrics, setRound2DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round2AudioUrl, setRound2AudioUrl] = useState<string | null>(null);
   const [round2FullReferenceViewed, setRound2FullReferenceViewed] = useState(false);
@@ -324,7 +326,7 @@ export default function ChineseSpeakingSession() {
     }
   }, [recorder]);
 
-  // ── Review → Analyzing (V2 two-stage) ──
+  // ── Review → Analyzing (V3: diagnosis only) ──
 
   const handleAnalyze = useCallback(async () => {
     if (!session) return;
@@ -352,6 +354,7 @@ export default function ChineseSpeakingSession() {
     }
 
     // Save Round 1 attempt (before AI to get the ID)
+    let attemptId: string;
     try {
       const attempt = await createAttempt.mutateAsync({
         session_id: sessionId,
@@ -366,6 +369,7 @@ export default function ChineseSpeakingSession() {
         transcript_source: r1TranscriptSource,
         stt_success: r1SttSuccess,
       });
+      attemptId = attempt.id;
       setRound1AttemptId(attempt.id);
     } catch {
       setAiError("保存失败，请重试");
@@ -374,7 +378,7 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // V2 AI Analysis (two-stage)
+    // V3 AI Analysis — diagnosis only (no full speech)
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
@@ -392,42 +396,80 @@ export default function ChineseSpeakingSession() {
 
     const d = result.data;
     setRound1Diagnosis(d.diagnosis);
-    setRound1Rewrite(d.rewrite);
     setRound1DeliveryMetrics(d.delivery_metrics);
 
-    // Update attempt with V2 AI results
-    if (round1AttemptId) {
-      await updateAttempt.mutateAsync({
-        id: round1AttemptId,
-        session_id: sessionId,
-        updates: {
-          scores: {
-            overall_score: d.diagnosis.overall_score,
-            overall_judgment: d.diagnosis.overall_judgment,
-            ...d.diagnosis.scores,
-          },
-          diagnosis: {
-            version: d.diagnosis.version,
-            stance: d.diagnosis.stance,
-            primary_framework: d.diagnosis.primary_framework,
-            three_key_issues: d.diagnosis.three_key_issues,
-            thinking_upgrade: d.diagnosis.thinking_upgrade,
-            rewrite_brief: d.diagnosis.rewrite_brief,
-            round2_guidance: d.diagnosis.round2_guidance,
-            integrity_check: d.diagnosis.integrity_check,
-          },
-          answer_outline: d.diagnosis.answer_outline,
-          final_improved_speech: d.rewrite.improved_speech,
-          key_improvements: d.rewrite.key_upgrades,
-          delivery_metrics: d.delivery_metrics,
-          ai_prompt_version: "2.0",
+    // Update attempt with V3 diagnosis (no reference data yet — saved on-demand via generate_reference)
+    await updateAttempt.mutateAsync({
+      id: attemptId,
+      session_id: sessionId,
+      updates: {
+        scores: {
+          overall_score: d.diagnosis.overall_score,
+          overall_judgment: d.diagnosis.overall_judgment,
+          ...d.diagnosis.scores,
         },
-      });
-    }
+        diagnosis: {
+          version: d.diagnosis.version,
+          stance: d.diagnosis.stance,
+          primary_framework: d.diagnosis.primary_framework,
+          three_key_issues: d.diagnosis.three_key_issues,
+          thinking_upgrade: d.diagnosis.thinking_upgrade,
+          self_questions: d.diagnosis.self_questions,
+          key_improvements: d.diagnosis.key_improvements,
+          integrity_check: d.diagnosis.integrity_check,
+        },
+        answer_outline: d.diagnosis.answer_outline,
+        delivery_metrics: d.delivery_metrics,
+        ai_prompt_version: "3.0",
+      },
+    });
 
     setAnalyzing(false);
     setStep("result");
-  }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, r1SttProvider, r1SttMode, r1TranscriptSource, r1SttSuccess, createAttempt, updateAttempt, round1AttemptId]);
+  }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, r1SttProvider, r1SttMode, r1TranscriptSource, r1SttSuccess, createAttempt, updateAttempt]);
+
+  // ── Generate Reference (V3 — on-demand full speech) ──
+
+  const handleGenerateReference = useCallback(async (round: 1 | 2) => {
+    if (!session) return;
+    const transcript = round === 1 ? editedTranscript : round2EditedTranscript;
+    const diagnosis = round === 1 ? round1Diagnosis : round2Diagnosis;
+    if (!transcript || !diagnosis) return;
+
+    if (round === 1) {
+      setRound1GeneratingReference(true);
+      setRound1FullReferenceViewed(true);
+    }
+
+    const result = await generateChineseReference(
+      session.topic,
+      transcript,
+      diagnosis as unknown as Record<string, unknown>,
+    );
+
+    if (result.success) {
+      if (round === 1) {
+        setRound1Reference(result.data.reference);
+        setRound1GeneratingReference(false);
+        // Update attempt with reference data
+        if (round1AttemptId) {
+          await updateAttempt.mutateAsync({
+            id: round1AttemptId,
+            session_id: sessionId,
+            updates: {
+              final_improved_speech: result.data.reference.improved_speech,
+              key_improvements: result.data.reference.key_upgrades,
+            },
+          });
+        }
+      } else {
+        setRound2Reference(result.data.reference);
+      }
+    } else {
+      setAiError(result.error);
+      if (round === 1) setRound1GeneratingReference(false);
+    }
+  }, [session, editedTranscript, round2EditedTranscript, round1Diagnosis, round2Diagnosis, round1AttemptId, sessionId, updateAttempt]);
 
   // ── Results → Retry Recording ──
 
@@ -435,7 +477,7 @@ export default function ChineseSpeakingSession() {
     if (!round1AttemptId) return;
     setAiError(null);
     stoppingRef.current = false;
-    setRound2FullReferenceViewed(false);
+    setRound2FullReferenceViewed(round1FullReferenceViewed);
 
     recorder.reset();
     asrRef.current?.reset();
@@ -546,7 +588,7 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // V2 AI Analysis Round 2
+    // V3 AI Analysis Round 2 — diagnosis only
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
@@ -564,7 +606,6 @@ export default function ChineseSpeakingSession() {
 
     const d = result.data;
     setRound2Diagnosis(d.diagnosis);
-    setRound2Rewrite(d.rewrite);
     setRound2DeliveryMetrics(d.delivery_metrics);
 
     if (attempt2Id) {
@@ -583,15 +624,13 @@ export default function ChineseSpeakingSession() {
             primary_framework: d.diagnosis.primary_framework,
             three_key_issues: d.diagnosis.three_key_issues,
             thinking_upgrade: d.diagnosis.thinking_upgrade,
-            rewrite_brief: d.diagnosis.rewrite_brief,
-            round2_guidance: d.diagnosis.round2_guidance,
+            self_questions: d.diagnosis.self_questions,
+            key_improvements: d.diagnosis.key_improvements,
             integrity_check: d.diagnosis.integrity_check,
           },
           answer_outline: d.diagnosis.answer_outline,
-          final_improved_speech: d.rewrite.improved_speech,
-          key_improvements: d.rewrite.key_upgrades,
           delivery_metrics: d.delivery_metrics,
-          ai_prompt_version: "2.0",
+          ai_prompt_version: "3.0",
         },
       });
     }
@@ -766,40 +805,43 @@ export default function ChineseSpeakingSession() {
                   </div>
                 )}
 
-                {/* Self-questions from round2_guidance */}
-                {round1Diagnosis.round2_guidance?.self_questions && (
+                {/* Self-questions from diagnosis (V3: top-level) */}
+                {round1Diagnosis.self_questions && round1Diagnosis.self_questions.length > 0 && (
                   <div className="space-y-0.5">
                     <p className="text-[10px] text-purple-500 font-medium">自我提问</p>
-                    {round1Diagnosis.round2_guidance.self_questions.map((q, i) => (
+                    {round1Diagnosis.self_questions.map((q, i) => (
                       <p key={i} className="text-[10px] text-purple-600/70 italic">&ldquo;{q}&rdquo;</p>
                     ))}
                   </div>
                 )}
 
-                {/* Key upgrades summary */}
-                {round1Rewrite?.key_upgrades && round1Rewrite.key_upgrades.length > 0 && (
+                {/* Key improvements from diagnosis (V3: top-level) */}
+                {round1Diagnosis.key_improvements && round1Diagnosis.key_improvements.length > 0 && (
                   <div className="space-y-0.5">
-                    <p className="text-[10px] text-purple-500 font-medium">关键升级点</p>
-                    {round1Rewrite.key_upgrades.slice(0, 3).map((ku, i) => (
-                      <p key={i} className="text-[10px] text-purple-600/80">{ku.title}</p>
+                    <p className="text-[10px] text-purple-500 font-medium">关键提升点</p>
+                    {round1Diagnosis.key_improvements.slice(0, 3).map((ki, i) => (
+                      <p key={i} className="text-[10px] text-purple-600/80">{ki.area}: {ki.before} → {ki.after}</p>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Full answer — collapsed by default */}
-              {round1Rewrite?.improved_speech && (
+              {/* Full answer — collapsed by default (V3: from reference or generate on-demand) */}
+              {(round1Reference?.improved_speech || round1Diagnosis.reference_ready) && (
                 <div className="pt-2 border-t border-purple-100">
-                  {retryRefMode === "full" ? (
+                  {retryRefMode === "full" && round1Reference?.improved_speech ? (
                     <div>
-                      <p className="text-[11px] text-purple-800 leading-relaxed">{round1Rewrite.improved_speech}</p>
+                      <p className="text-[11px] text-purple-800 leading-relaxed">{round1Reference.improved_speech}</p>
                       <p className="text-[9px] text-purple-400 mt-1">AI 优化参考，仅用于学习结构与思路，不代表唯一正确答案。</p>
                     </div>
                   ) : (
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         setRetryRefMode("full");
                         setRound2FullReferenceViewed(true);
+                        if (!round1Reference) {
+                          await handleGenerateReference(1);
+                        }
                       }}
                       className="text-[10px] text-purple-500 underline hover:text-purple-700"
                     >
@@ -994,7 +1036,7 @@ export default function ChineseSpeakingSession() {
           <p className="text-sm font-medium text-ink">AI 正在分析你的表达...</p>
           <div className="flex gap-3 text-[11px] text-ink-lighter">
             <span className="flex items-center gap-1"><CheckCircle2 size={10} className="text-emerald-500" /> 思辨诊断</span>
-            <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> 优化表达</span>
+            <span className="flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> 结构推荐</span>
           </div>
           {aiError && (
             <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3 text-xs text-accent-rose">
@@ -1172,30 +1214,29 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* AI优化参考 — V2 rewrite */}
-          {round1Rewrite && (
-            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} className="text-sage-deep" />
-                <p className="text-sm font-medium text-ink">AI 优化参考</p>
-              </div>
-              <p className="text-[10px] text-ink-lighter/70 -mt-1">
-                仅用于学习结构与思路，不代表唯一正确答案。
-              </p>
+          {/* AI 优化参考 — V3: on-demand reference */}
+          <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles size={16} className="text-sage-deep" />
+              <p className="text-sm font-medium text-ink">AI 优化参考</p>
+            </div>
+            <p className="text-[10px] text-ink-lighter/70 -mt-1">
+              仅用于学习结构与思路，不代表唯一正确答案。
+            </p>
 
-              {round1Rewrite.integrity_failed ? (
+            {round1Reference ? (
+              round1Reference.integrity_failed ? (
                 <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3">
                   <p className="text-xs text-accent-rose flex items-center gap-1.5">
                     <AlertTriangle size={12} />
-                    本次优化检测到虚构内容，已自动跳过。请查看答案骨架和关键升级点。
+                    本次优化检测到虚构内容，已自动跳过。请查看答案骨架和关键提升点。
                   </p>
                 </div>
               ) : (
                 <>
-                  {/* Default collapsed: show first 100 chars preview + expand button */}
                   <details className="group">
                     <summary className="text-sm text-ink leading-relaxed cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-                      <span className="line-clamp-2">{round1Rewrite.improved_speech}</span>
+                      <span className="line-clamp-2">{round1Reference.improved_speech}</span>
                       <span className="text-[11px] text-sage-deep font-medium mt-1 inline-block">
                         <ChevronDown size={14} className="inline mr-1 group-open:hidden" />
                         <ChevronUp size={14} className="hidden mr-1 group-open:inline" />
@@ -1203,45 +1244,71 @@ export default function ChineseSpeakingSession() {
                       </span>
                     </summary>
                     <p className="text-sm text-ink leading-relaxed mt-2 pt-2 border-t border-border/50">
-                      {round1Rewrite.improved_speech}
+                      {round1Reference.improved_speech}
                     </p>
                   </details>
-                </>
-              )}
 
-              {/* Thought features */}
-              {round1Rewrite.thought_features && round1Rewrite.thought_features.length > 0 && (
-                <div className="space-y-1 pt-2 border-t border-border/50">
-                  <p className="text-xs font-medium text-ink">思辨特征</p>
-                  {round1Rewrite.thought_features.map((tf, i) => (
-                    <div key={i} className="text-[11px]">
-                      <span className="text-purple-600 font-medium">{tf.type}</span>
-                      <span className="text-ink-lighter"> — {tf.purpose}</span>
+                  {round1Reference.thought_features && round1Reference.thought_features.length > 0 && (
+                    <div className="space-y-1 pt-2 border-t border-border/50">
+                      <p className="text-xs font-medium text-ink">思辨特征</p>
+                      {round1Reference.thought_features.map((tf, i) => (
+                        <div key={i} className="text-[11px]">
+                          <span className="text-purple-600 font-medium">{tf.type}</span>
+                          <span className="text-ink-lighter"> — {tf.purpose}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                  )}
+                </>
+              )
+            ) : (
+              <button
+                onClick={() => handleGenerateReference(1)}
+                disabled={round1GeneratingReference}
+                className="w-full bg-purple-50 border border-purple-100 rounded-xl py-2.5 text-sm text-purple-700 font-medium flex items-center justify-center gap-2 hover:bg-purple-100 transition-colors disabled:opacity-50"
+              >
+                {round1GeneratingReference ? (
+                  <><Loader2 size={14} className="animate-spin" /> 正在生成参考...</>
+                ) : (
+                  <><Sparkles size={14} /> 查看完整参考答案</>
+                )}
+              </button>
+            )}
+          </div>
 
-          {/* Key upgrades — V2 format (before/after/reason) */}
-          {round1Rewrite?.key_upgrades && round1Rewrite.key_upgrades.length > 0 && (
+          {/* Key improvements — V3: from diagnosis.top-level, or reference.key_upgrades if loaded */}
+          {((round1Diagnosis.key_improvements && round1Diagnosis.key_improvements.length > 0) ||
+            (round1Reference?.key_upgrades && round1Reference.key_upgrades.length > 0)) && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <p className="text-sm font-medium text-ink">关键提升点</p>
-              {round1Rewrite.key_upgrades.map((ku, i) => (
-                <div key={i} className="flex gap-2">
-                  <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-medium text-ink">{ku.title}</p>
-                    <p className="text-[10px] text-ink-lighter">
-                      <span className="text-accent-rose/70">原：「{ku.before}」</span>
-                      {" → "}
-                      <span className="text-emerald-600/70">改：「{ku.after}」</span>
-                    </p>
-                    <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
-                  </div>
-                </div>
-              ))}
+              {round1Reference?.key_upgrades
+                ? round1Reference.key_upgrades.map((ku, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-medium text-ink">{ku.title}</p>
+                        <p className="text-[10px] text-ink-lighter">
+                          <span className="text-accent-rose/70">原：「{ku.before}」</span>
+                          {" → "}
+                          <span className="text-emerald-600/70">改：「{ku.after}」</span>
+                        </p>
+                        <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
+                      </div>
+                    </div>
+                  ))
+                : round1Diagnosis.key_improvements.map((ki, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-medium text-ink">{ki.area}</p>
+                        <p className="text-[10px] text-ink-lighter">
+                          <span className="text-accent-rose/70">原：「{ki.before}」</span>
+                          {" → "}
+                          <span className="text-emerald-600/70">改：「{ki.after}」</span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
             </div>
           )}
 
@@ -1429,17 +1496,17 @@ export default function ChineseSpeakingSession() {
             )}
           </div>
 
-          {/* Round 2 improved speech */}
-          {round2Rewrite?.improved_speech && (
+          {/* Round 2 improved speech (V3 reference) */}
+          {round2Reference?.improved_speech && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-sage-deep" />
                 <p className="text-sm font-medium text-ink">你的第二次表达 · AI 参考</p>
               </div>
-              <p className="text-sm text-ink leading-relaxed">{round2Rewrite.improved_speech}</p>
-              {round2Rewrite.thought_features && round2Rewrite.thought_features.length > 0 && (
+              <p className="text-sm text-ink leading-relaxed">{round2Reference.improved_speech}</p>
+              {round2Reference.thought_features && round2Reference.thought_features.length > 0 && (
                 <div className="pt-2 border-t border-border/50 space-y-1">
-                  {round2Rewrite.thought_features.map((tf, i) => (
+                  {round2Reference.thought_features.map((tf, i) => (
                     <div key={i} className="text-[11px]">
                       <span className="text-purple-600 font-medium">{tf.type}</span>
                       <span className="text-ink-lighter"> — {tf.purpose}</span>

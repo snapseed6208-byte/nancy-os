@@ -9,10 +9,12 @@ import { cn } from "@/lib/utils";
 import {
   useResources, useCreateResource, useUpdateResource, useDeleteResource,
   useRestoreResource,
-  useContentParser, useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
+  useResourceExtract, useResourceAnalyze, useContentParser,
+  useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory,
   useAllResourceTags, useTags, useCreateTags, useUpdateTag, useDeleteTag,
   useAttachTagsToResource, useDetachTagFromResource,
-  type ResourceRow, type ParsedContent, type Category, type TagType, type ArchiveFilter,
+  type ResourceRow, type ParsedContent, type ExtractResult, type AnalyzeResult,
+  type Category, type TagType, type ArchiveFilter,
 } from "@/lib/hooks/useResources";
 
 // ── Constants ──
@@ -59,10 +61,15 @@ export default function Resources() {
   const detachTag = useDetachTagFromResource();
 
   const parseContent = useContentParser();
+  const extractContent = useResourceExtract();
+  const analyzeContent = useResourceAnalyze();
 
   // UI state
   const [showImport, setShowImport] = useState(false);
   const [importInput, setImportInput] = useState("");
+  const [importStage, setImportStage] = useState<"input" | "extracting" | "extracted" | "analyzing" | "analyzed" | "extract_failed">("input");
+  const [extractResult, setExtractResult] = useState<ExtractResult | null>(null);
+  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null);
   const [parsed, setParsed] = useState<ParsedContent | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,30 +105,98 @@ export default function Resources() {
   const [editCatName, setEditCatName] = useState("");
   const [showCategoryManager, setShowCategoryManager] = useState(false);
 
-  // ── Handlers ──
+  // ── Two-stage import handlers ──
 
+  /** Stage 1: Extract content from URL (no AI) */
   const handleParse = () => {
     if (!importInput.trim()) return;
     const isUrl = /^https?:\/\//.test(importInput.trim());
-    parseContent.mutate(
+    setImportStage("extracting");
+    extractContent.mutate(
       isUrl ? { url: importInput.trim() } : { text: importInput.trim() },
-      { onSuccess: (data) => setParsed(data) },
+      {
+        onSuccess: (data) => {
+          setExtractResult(data);
+          setImportStage(data.parse_status === "extract_failed" ? "extract_failed" : "extracted");
+        },
+        onError: () => {
+          setImportStage("extract_failed");
+        },
+      },
     );
   };
 
+  /** Stage 2: AI analysis of extracted content */
+  const handleAnalyze = () => {
+    if (!extractResult?.resource_id) return;
+    setImportStage("analyzing");
+    analyzeContent.mutate(
+      { resource_id: extractResult.resource_id },
+      {
+        onSuccess: (data) => {
+          setAnalyzeResult(data);
+          setImportStage("analyzed");
+        },
+        onError: () => {
+          // Keep extracted content, mark as failed
+          setImportStage("extracted");
+        },
+      },
+    );
+  };
+
+  /** Retry AI analysis (does NOT re-fetch URL) */
+  const handleRetryAnalyze = () => {
+    handleAnalyze();
+  };
+
   const handleSaveParsed = async (overrides?: { title?: string; category_id?: string; tags?: string[]; status?: string }) => {
-    if (!parsed) return;
-    const tagNames = overrides?.tags || parsed.tags;
+    // Support both legacy (ParsedContent) and new two-stage (AnalyzeResult) flows
+    const data = analyzeResult || parsed;
+    if (!data) return;
+
+    // Determine tags: new flow uses analyzeResult.tags, legacy uses parsed.tags
+    const tags = "tags" in data ? (data as AnalyzeResult).tags : (data as ParsedContent).tags;
+    const title = overrides?.title || ("title" in data ? data.title : "");
+    const sourceUrl = "source_url" in data ? (data as ParsedContent).source_url : extractResult?.source_url;
+    const sourcePlatform = "source_platform" in data ? (data as ParsedContent).source_platform : extractResult?.platform;
+    const contentType = "content_type" in data ? data.content_type : "article";
+
+    const tagNames = overrides?.tags || tags;
 
     try {
-      // Step 1: Create resource (without inline tags — tags go through junction table)
+      // For new two-stage flow: resource already exists in DB, just need to confirm with user edits
+      // Use updateResource if we have a resource_id from extract
+      if (extractResult?.resource_id && !parsed) {
+        await updateResource.mutateAsync({
+          id: extractResult.resource_id,
+          title: title || extractResult.title,
+          status: overrides?.status || "saved",
+        });
+        // Attach tags
+        if (tagNames && tagNames.length > 0) {
+          const createdTags = await createTags.mutateAsync(tagNames);
+          await attachTags.mutateAsync({
+            resourceId: extractResult.resource_id,
+            tagIds: createdTags.map((t) => t.id),
+          });
+        }
+        setImportStage("input");
+        setExtractResult(null);
+        setAnalyzeResult(null);
+        setImportInput("");
+        return;
+      }
+
+      // Legacy flow: create new resource (only reached when parsed is non-null)
+      if (!parsed) return;
       const newResource = await createResource.mutateAsync({
-        title: overrides?.title || parsed.title,
-        url: parsed.source_url || undefined,
-        resource_type: parsed.content_type,
+        title: overrides?.title || title,
+        url: sourceUrl || undefined,
+        resource_type: contentType,
         category_id: overrides?.category_id || undefined,
-        source_url: parsed.source_url || undefined,
-        source_platform: parsed.source_platform || undefined,
+        source_url: sourceUrl || undefined,
+        source_platform: sourcePlatform || undefined,
         source_title: parsed.title,
         ai_summary: parsed.summary,
         ai_category: parsed.category,
@@ -371,7 +446,7 @@ export default function Resources() {
         ))}
       </div>
 
-      {/* AI Smart Import */}
+      {/* AI Smart Import — Two-Stage Flow */}
       {showImport && (
         <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-amber-700">
@@ -379,39 +454,164 @@ export default function Resources() {
             AI 智能导入
           </div>
 
-          {!parsed ? (
+          {/* Stage: Input */}
+          {(importStage === "input") && (
             <div className="space-y-3">
               <textarea
                 value={importInput}
                 onChange={(e) => setImportInput(e.target.value)}
-                placeholder="粘贴文章链接、视频链接，或直接输入文本内容...&#10;AI 会自动识别类型并提取关键信息，构建你的个人知识库"
+                placeholder="粘贴文章链接、视频链接，或直接输入文本内容...&#10;先提取正文，再 AI 分析"
                 className="w-full bg-transparent text-sm text-ink placeholder:text-ink-lighter outline-none border border-border rounded-xl px-3 py-3 h-24 resize-none focus:border-amber-300/50 transition-colors"
                 onKeyDown={(e) => { if (e.key === "Enter" && e.ctrlKey) handleParse(); }}
               />
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleParse}
-                  disabled={parseContent.isPending || !importInput.trim()}
+                  disabled={extractContent.isPending || !importInput.trim()}
                   className="bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:from-amber-200 hover:to-orange-200 transition-colors flex items-center gap-1.5"
                 >
-                  {parseContent.isPending ? (
-                    <><Loader2 size={13} className="animate-spin" />AI 分析中...</>
+                  {extractContent.isPending ? (
+                    <><Loader2 size={13} className="animate-spin" />提取中...</>
                   ) : (
-                    <><Sparkles size={13} />开始分析</>
+                    <><Sparkles size={13} />开始提取</>
                   )}
                 </button>
                 <button
-                  onClick={() => { setShowImport(false); setImportInput(""); }}
+                  onClick={() => { setShowImport(false); setImportInput(""); setImportStage("input"); }}
                   className="text-xs text-ink-lighter hover:text-ink px-3 py-2 transition-colors"
                 >
                   取消
                 </button>
-                {parseContent.error && (
-                  <p className="text-xs text-accent-rose">{(parseContent.error as Error).message}</p>
-                )}
               </div>
             </div>
-          ) : (
+          )}
+
+          {/* Stage: Extracting */}
+          {importStage === "extracting" && (
+            <div className="flex items-center gap-3 py-4">
+              <Loader2 size={20} className="animate-spin text-amber-600 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-ink">正在提取正文...</p>
+                <p className="text-xs text-ink-lighter">获取页面内容，不涉及 AI 分析</p>
+              </div>
+            </div>
+          )}
+
+          {/* Stage: Extracted — show preview + AI analyze button */}
+          {(importStage === "extracted" || importStage === "extract_failed") && extractResult && (
+            <div className="space-y-3">
+              {/* Extract result banner */}
+              {extractResult.parse_status === "extract_failed" ? (
+                <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-3">
+                  <p className="text-sm font-medium text-accent-rose">正文提取失败</p>
+                  <p className="text-xs text-ink-lighter mt-0.5">
+                    {extractResult.extract_error || "无法获取页面内容，请检查链接是否有效"}
+                  </p>
+                  <p className="text-xs text-ink-lighter mt-1">资源已保存，可稍后手动补充内容。</p>
+                </div>
+              ) : (
+                <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
+                  <p className="text-sm font-medium text-emerald-700">正文提取成功</p>
+                  {extractResult.title && (
+                    <p className="text-xs font-medium text-ink mt-1 truncate">{extractResult.title}</p>
+                  )}
+                  <p className="text-xs text-ink-lighter mt-0.5">
+                    已提取 {extractResult.extracted_text.length} 字
+                    {extractResult.platform && extractResult.platform !== "text" && (
+                      <span className="ml-2 text-[10px] bg-ink/5 rounded px-1.5 py-0.5">
+                        {PLATFORM_BADGES[extractResult.platform] || extractResult.platform}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* Extracted text preview */}
+              {extractResult.extracted_text && (
+                <div className="max-h-32 overflow-y-auto bg-ink/[0.02] rounded-xl p-3">
+                  <p className="text-xs text-ink-light leading-relaxed whitespace-pre-wrap line-clamp-6">
+                    {extractResult.extracted_text.slice(0, 500)}
+                    {extractResult.extracted_text.length > 500 && "..."}
+                  </p>
+                </div>
+              )}
+
+              {/* Error from previous analyze attempt */}
+              {analyzeContent.error && (
+                <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2 flex items-center gap-2">
+                  <XCircle size={14} className="text-accent-rose shrink-0" />
+                  <p className="text-xs text-accent-rose">
+                    AI 分析失败：{(analyzeContent.error as Error).message}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAnalyze}
+                  disabled={analyzeContent.isPending}
+                  className="bg-gradient-to-r from-purple-100 to-violet-100 text-purple-800 rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50 hover:from-purple-200 hover:to-violet-200 transition-colors flex items-center gap-1.5"
+                >
+                  {analyzeContent.isPending ? (
+                    <><Loader2 size={13} className="animate-spin" />AI 分析中...</>
+                  ) : (
+                    <><Sparkles size={13} />开始 AI 分析</>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setImportStage("input");
+                    setExtractResult(null);
+                    setAnalyzeResult(null);
+                  }}
+                  className="text-xs text-ink-lighter hover:text-ink px-3 py-2 transition-colors"
+                >
+                  重新提取
+                </button>
+                {/* Allow skipping AI: save with just extracted text */}
+                <button
+                  onClick={() => {
+                    if (extractResult) handleSaveParsed();
+                  }}
+                  className="text-xs text-sage-deep hover:underline px-3 py-2 transition-colors ml-auto"
+                >
+                  跳过AI，直接保存
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Stage: Analyzing */}
+          {importStage === "analyzing" && (
+            <div className="flex items-center gap-3 py-4">
+              <Loader2 size={20} className="animate-spin text-purple-600 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-ink">AI 分析中...</p>
+                <p className="text-xs text-ink-lighter">正在理解内容，提取关键信息</p>
+              </div>
+            </div>
+          )}
+
+          {/* Stage: Analyzed — show full confirm panel */}
+          {importStage === "analyzed" && analyzeResult && (
+            <TwoStageConfirmPanel
+              result={analyzeResult}
+              extractResult={extractResult}
+              categories={categories || []}
+              isSaving={updateResource.isPending}
+              onSave={handleSaveParsed}
+              onRetryAnalyze={handleRetryAnalyze}
+              onCancel={() => {
+                setImportStage("input");
+                setExtractResult(null);
+                setAnalyzeResult(null);
+                setImportInput("");
+              }}
+            />
+          )}
+
+          {/* Legacy: monolithic content-parser result */}
+          {parsed && (
             <ImportConfirmPanel
               parsed={parsed}
               categories={categories || []}
@@ -1070,6 +1270,236 @@ function ImportConfirmPanel({
     </div>
   );
 }
+
+// ═══════════════════════════════════════════
+// Two-Stage Import Confirmation Panel (v2)
+// Uses AnalyzeResult (from resource-analyze) + ExtractResult
+// ═══════════════════════════════════════════
+
+function TwoStageConfirmPanel({
+  result: r,
+  extractResult,
+  categories,
+  isSaving,
+  onSave,
+  onRetryAnalyze,
+  onCancel,
+}: {
+  result: AnalyzeResult;
+  extractResult: ExtractResult | null;
+  categories: Category[];
+  isSaving: boolean;
+  onSave: (overrides: { title?: string; category_id?: string; tags?: string[]; status?: string }) => void;
+  onRetryAnalyze: () => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(r.title);
+  const suggestedCat = r.suggested_category;
+  const matchedCategoryId = suggestedCat
+    ? categories.find((c) => c.name === suggestedCat)?.id || ""
+    : "";
+  const [categoryId, setCategoryId] = useState<string>(matchedCategoryId);
+  const [tagChips, setTagChips] = useState<string[]>(r.tags || []);
+  const [tagInput, setTagInput] = useState("");
+
+  const handleAddTag = () => {
+    const name = tagInput.trim().replace(/^#/, "");
+    if (name && !tagChips.includes(name)) {
+      setTagChips([...tagChips, name]);
+    }
+    setTagInput("");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Source info banner */}
+      {extractResult?.source_url && (
+        <div className="flex items-center gap-2 text-xs text-ink-lighter bg-ink/[0.02] rounded-xl px-3 py-2">
+          {extractResult.platform && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ink/5">
+              {PLATFORM_BADGES[extractResult.platform] || extractResult.platform}
+            </span>
+          )}
+          <a href={extractResult.source_url} target="_blank" rel="noopener noreferrer" className="truncate hover:text-accent-sky flex items-center gap-0.5">
+            <ExternalLink size={9} /> 查看来源
+          </a>
+        </div>
+      )}
+
+      {/* Title (editable) */}
+      <div>
+        <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">标题</label>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full bg-transparent text-sm font-semibold text-ink outline-none border border-border rounded-xl px-3 py-2 mt-1 focus:border-sage-deep/50"
+        />
+      </div>
+
+      {/* Category selector */}
+      <div>
+        <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">
+          分类
+          {suggestedCat && (
+            <span className="ml-1 text-amber-600">
+              AI推荐: {suggestedCat}
+              {!matchedCategoryId && <span className="text-accent-rose ml-1">(待确认)</span>}
+            </span>
+          )}
+        </label>
+        <select
+          value={categoryId}
+          onChange={(e) => setCategoryId(e.target.value)}
+          className="w-full text-xs bg-transparent border border-border rounded-xl px-3 py-2 mt-1 outline-none text-ink"
+        >
+          <option value="">选择分类...</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.icon || "📁"} {c.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Tags */}
+      <div>
+        <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">标签</label>
+        <div className="mt-1 space-y-2">
+          {tagChips.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {tagChips.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 text-[10px] bg-sage-light/40 text-sage-deep rounded-full pl-2.5 pr-1 py-1">
+                  {t}
+                  <button onClick={() => setTagChips(tagChips.filter((x) => x !== t))} className="hover:text-accent-rose">
+                    <XCircle size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-1.5">
+            <input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTag(); } }}
+              placeholder="输入标签后回车添加"
+              className="flex-1 text-xs bg-transparent border border-border rounded-xl px-3 py-1.5 outline-none placeholder:text-ink-lighter"
+            />
+            <button
+              onClick={handleAddTag}
+              disabled={!tagInput.trim()}
+              className="shrink-0 text-xs text-sage-deep hover:bg-sage-light/30 rounded-lg px-2 py-1.5 disabled:opacity-30 transition-colors"
+            >
+              <Plus size={12} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Summary */}
+      {r.summary && (
+        <div>
+          <label className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider">AI 摘要</label>
+          <p className="text-xs text-ink-light leading-relaxed mt-1 bg-ink/[0.02] rounded-xl p-3">{r.summary}</p>
+        </div>
+      )}
+
+      {/* Key Points */}
+      {r.key_points.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1 flex items-center gap-1">
+            <Lightbulb size={10} className="text-amber-500" /> 核心观点
+          </p>
+          <ul className="space-y-0.5">
+            {r.key_points.map((kp, i) => (
+              <li key={i} className="text-[11px] text-ink-light flex items-start gap-1.5">
+                <span className="text-amber-400 mt-0.5 shrink-0">•</span>
+                {kp}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Important Quotes */}
+      {r.important_quotes.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1 flex items-center gap-1">
+            <Quote size={10} className="text-purple-500" /> 重要引用
+          </p>
+          {r.important_quotes.map((q, i) => (
+            <p key={i} className="text-[11px] text-ink-light italic border-l-2 border-purple-200 pl-2 mb-1">{q}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Action Items */}
+      {r.action_items.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1 flex items-center gap-1">
+            <Target size={10} className="text-accent-sky" /> 行动建议
+          </p>
+          {r.action_items.map((ai, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px] text-ink-light mb-0.5">
+              <span className={cn(
+                "text-[9px] px-1 py-0.5 rounded font-semibold shrink-0",
+                ai.priority === "high" ? "bg-accent-rose/10 text-accent-rose" :
+                ai.priority === "medium" ? "bg-amber-50 text-amber-700" : "bg-ink/5 text-ink-lighter",
+              )}>
+                {ai.priority === "high" ? "高" : ai.priority === "medium" ? "中" : "低"}
+              </span>
+              {ai.action}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Related Knowledge */}
+      {r.related_knowledge.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-ink-lighter uppercase tracking-wider mb-1">关联知识</p>
+          <div className="flex flex-wrap gap-1">
+            {r.related_knowledge.map((rk, i) => (
+              <span key={i} className="text-[10px] bg-purple-50 text-purple-700 rounded-full px-2 py-0.5">{rk}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center justify-between pt-2 border-t border-border">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-ink-lighter">{r.tokens_used} tokens</span>
+          <button
+            onClick={onRetryAnalyze}
+            className="text-[10px] text-purple-600 hover:text-purple-800 underline transition-colors flex items-center gap-1"
+          >
+            <RotateCcw size={10} /> 重新分析
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onCancel} className="text-xs text-ink-lighter hover:text-ink px-3 py-2 transition-colors">
+            取消
+          </button>
+          <button
+            onClick={() => onSave({
+              title: title.trim(),
+              category_id: categoryId || undefined,
+              tags: tagChips,
+            })}
+            disabled={isSaving || !title.trim()}
+            className="bg-sage-light text-sage-deep rounded-xl px-5 py-2 text-xs font-semibold disabled:opacity-50 hover:bg-sage-light/80 transition-colors flex items-center gap-1.5"
+          >
+            {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+            保存到知识库
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// Resource Card
+// ═══════════════════════════════════════════
 
 // ═══════════════════════════════════════════
 // Resource Card

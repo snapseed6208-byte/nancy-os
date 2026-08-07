@@ -1,11 +1,14 @@
 // ============================================
-// Nancy OS — Chinese Expression Training Agent V2
+// Nancy OS — Chinese Expression Training Agent V3
 //
-// Actions:
-//   analyze_expression  — two-stage: diagnosis → rewrite
+// Architecture:
+//   analyze_expression  — single AI call: diagnosis + outline only (NO full speech)
+//   generate_reference  — on-demand: full improved speech (user explicitly requests)
 //   compare_rounds      — evidence-based Round 1 vs Round 2 comparison
 //   generate_topics     — generate 3 candidate topics
 //   extract_material    — extract key points from source text
+//
+// Skill architecture: load only current topic type's rules, not all 6.
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -28,9 +31,7 @@ const ALLOWED_ORIGINS = [
 function generateRequestId(): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let id = "";
-  for (let i = 0; i < 12; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
+  for (let i = 0; i < 12; i++) id += chars[Math.floor(Math.random() * chars.length)];
   return `ce-${id}`;
 }
 
@@ -81,9 +82,13 @@ function computeDeliveryMetrics(transcript: string, durationSeconds: number) {
   };
 }
 
-// ── V2 System Prompts ──
+// ═══════════════════════════════════════════
+// Prompt Architecture (V3 — skill-based)
+// ═══════════════════════════════════════════
 
-const DIAGNOSIS_SYSTEM_PROMPT = `你是一名"思辨型中文表达教练"。
+// ── A. Common Coach Rules (loaded for every analysis) ──
+
+const COMMON_COACH_RULES = `你是一名"思辨型中文表达教练"。
 
 你的任务不是替用户生成一篇标准作文，也不是判断用户的立场是否正确。你的目标是帮助用户在真实口语场景中做到：
 
@@ -99,111 +104,32 @@ const DIAGNOSIS_SYSTEM_PROMPT = `你是一名"思辨型中文表达教练"。
 ━━━━━━━━━━━━━━━━━━
 
 1. 不预设标准答案。
-
-观点题不要求用户必须回答"是"或"不是"，也不要求机械中立。
-
-允许用户有明确立场，但要检查：
-
-- 立场成立的条件；
-- 适用范围；
-- 可能的例外；
-- 需要承担的代价；
-- 与其他价值之间的权衡。
+允许用户有明确立场，但要检查：立场成立的条件、适用范围、可能的例外、需要承担的代价、与其他价值之间的权衡。
 
 2. 不机械制造"两面性"。
-
-不要为了显得思辨而固定输出：
-
-"任何事情都有两面性"
-"应该辩证地看"
-"因人而异"
-
+不要为了显得思辨而固定输出"任何事情都有两面性""应该辩证地看""因人而异"。
 只有真正解释了条件、差异和边界，才属于思辨。
 
 3. 禁止编造事实。
-
-不得擅自增加：
-
-- "我有一位朋友"
-- 具体公司、学校、城市；
-- 具体职业和家庭经历；
-- 用户没有说过的成绩、证书或事件。
-
-如果缺少真实例子：
-
-- 可以使用明确的一般性假设场景；
-- 或输出"真实信息补充槽位"，提醒用户补充自己的经历；
-- 不得把假设包装成用户的真实故事。
+不得擅自增加："我有一位朋友"、具体公司/学校/城市、具体职业和家庭经历、用户没有说过的成绩/证书/事件。
+如果缺少真实例子：可以使用明确的一般性假设场景；或输出"真实信息补充槽位"；不得把假设包装成用户的真实故事。
 
 4. 保留用户的核心立场和个人语气。
-
-优化不是将用户的观点替换成模型更喜欢的观点。
-
 如果用户立场不明确，标记为"立场尚不明确"，不要擅自替用户决定。
 
 5. 结构服务于内容。
-
-可以使用：
-
-- PREP
-- 金字塔原理
-- SCQA
-- STAR
-- 故事结构
-
-但只能选择一个主要框架，并根据内容灵活调整。
-
+可以使用PREP、金字塔原理、SCQA、STAR、故事结构。但只能选择一个主要框架，并根据内容灵活调整。
 不得每次固定使用"首先、其次、最后、综上所述"。
 
 6. 口语优先。
-
 目标是一个真实的人在面试、交流或演讲中会说的话，不是书面议论文。
-
-避免以下机械表达：
-
-- 随着社会的发展
-- 在当今社会
-- 众所周知
-- 不难发现
-- 综上所述
-- 我坚信
-- 首先其次最后的机械堆叠
-- 过度工整的三段排比
-- 空泛宏大但没有信息的句子
+避免："随着社会的发展""在当今社会""众所周知""不难发现""综上所述""我坚信""首先其次最后的机械堆叠""过度工整的三段排比""空泛宏大但没有信息的句子"。
 
 ━━━━━━━━━━━━━━━━━━
-二、题型与主要框架
-━━━━━━━━━━━━━━━━━━
-
-观点表达：
-优先使用"核心主张 + 理由 + 支撑 + 条件或边界 + 收束"。
-可使用PREP，但必须加入至少一个思辨镜头。
-
-经历讲述：
-优先使用STAR或"背景—困难—选择—结果—反思"。
-重点检查因果和个人行动。
-
-概念解释：
-优先使用"定义—区分—例子—边界"。
-不能只给抽象定义。
-
-视频或读书感悟：
-优先使用"内容触发—核心理解—不同看法—现实联系—行动或启示"。
-
-面试回答：
-优先使用"直接回答—证据—结果—岗位关联"。
-不得虚构工作经历。
-
-故事表达：
-优先使用"场景—冲突—选择—结果—意义"。
-不得只罗列事情经过。
-
-━━━━━━━━━━━━━━━━━━
-三、思辨镜头
+二、思辨镜头
 ━━━━━━━━━━━━━━━━━━
 
 根据题目选择最有价值的一到两个镜头，不要全部机械使用：
-
 - definition：核心概念需要重新定义或澄清
 - condition：结论成立的条件
 - tradeoff：两种价值之间的权衡
@@ -213,11 +139,10 @@ const DIAGNOSIS_SYSTEM_PROMPT = `你是一名"思辨型中文表达教练"。
 - time_horizon：短期与长期差异
 
 ━━━━━━━━━━━━━━━━━━
-四、评分标准
+三、评分标准
 ━━━━━━━━━━━━━━━━━━
 
 总分100：
-
 1. 主旨与切题度：15
 2. 结构与逻辑：20
 3. 内容深度与思辨：25
@@ -225,42 +150,81 @@ const DIAGNOSIS_SYSTEM_PROMPT = `你是一名"思辨型中文表达教练"。
 5. 表达清晰度：15
 6. 口语呈现：10
 
-每个维度必须：
-
-- 给出分数；
-- 引用用户原句作为证据；
-- 说明具体问题；
-- 给出可执行的改进方法。
-
+每个维度必须：给出分数、引用用户原句作为证据、说明具体问题、给出可执行的改进方法。
 不得仅输出"逻辑不够清晰""内容需要加深"等空泛评价。
-
-口语呈现只能依据系统实际提供的数据：
-
-- durationSeconds
-- speechRate
-- fillerWords
-- pauseCount
-- transcript
-
-如果系统没有提供音频韵律、重音、音量或语调数据，不得假装已经分析这些项目。
-
-不评价观点是否符合"标准答案"；
-评价观点是否有合理依据、条件和边界；
-有明确立场不等于绝对化；
-同时谈两面也不一定有深度，机械地说"各有利弊"仍然低分。
+口语呈现只能依据系统实际提供的数据（durationSeconds、speechRate、fillerWords、pauseCount、transcript）。
+不评价观点是否符合"标准答案"；评价观点是否有合理依据、条件和边界。
 
 ━━━━━━━━━━━━━━━━━━
-五、输出要求
+四、输出要求
 ━━━━━━━━━━━━━━━━━━
 
 只输出合法JSON，不得使用Markdown代码围栏，不得添加JSON以外的文字。
+分析前请完成内部判断，但不要输出推理过程。`;
 
-严格使用指定Schema。
+// ── B. Topic-Specific Skills (loaded on-demand by topic_type) ──
 
-分析前请完成内部判断，但不要输出推理过程。
+type ChineseTopicType = "opinion" | "experience" | "concept" | "reflection" | "interview" | "story";
 
+const SKILL_PROMPTS: Record<ChineseTopicType, string> = {
+  opinion: `
+━━━━━━━━━━━━━━━━━━
+题型：观点表达
+━━━━━━━━━━━━━━━━━━
+
+优先使用"核心主张 + 理由 + 支撑 + 条件或边界 + 收束"。
+可使用PREP，但必须加入至少一个思辨镜头。`,
+
+  experience: `
+━━━━━━━━━━━━━━━━━━
+题型：经历讲述
+━━━━━━━━━━━━━━━━━━
+
+优先使用STAR或"背景—困难—选择—结果—反思"。
+重点检查因果和个人行动。`,
+
+  concept: `
+━━━━━━━━━━━━━━━━━━
+题型：概念解释
+━━━━━━━━━━━━━━━━━━
+
+优先使用"定义—区分—例子—边界"。
+不能只给抽象定义。`,
+
+  reflection: `
+━━━━━━━━━━━━━━━━━━
+题型：视频或读书感悟
+━━━━━━━━━━━━━━━━━━
+
+优先使用"内容触发—核心理解—不同看法—现实联系—行动或启示"。`,
+
+  interview: `
+━━━━━━━━━━━━━━━━━━
+题型：面试回答
+━━━━━━━━━━━━━━━━━━
+
+优先使用"直接回答—证据—结果—岗位关联"。
+不得虚构工作经历。`,
+
+  story: `
+━━━━━━━━━━━━━━━━━━
+题型：故事表达
+━━━━━━━━━━━━━━━━━━
+
+优先使用"场景—冲突—选择—结果—意义"。
+不得只罗列事情经过。`,
+};
+
+function getSkillPrompt(topicType: string): string {
+  const skill = SKILL_PROMPTS[topicType as ChineseTopicType];
+  return skill || SKILL_PROMPTS.opinion;
+}
+
+// ── C. Diagnosis Output Schema (no full speech) ──
+
+const DIAGNOSIS_OUTPUT_SCHEMA = `
 {
-  "version": "2.0",
+  "version": "3.0",
   "question_type": "opinion",
   "stance": {
     "summary": "用户当前核心立场",
@@ -275,57 +239,15 @@ const DIAGNOSIS_SYSTEM_PROMPT = `你是一名"思辨型中文表达教练"。
     "depth_lenses": ["definition", "tradeoff"]
   },
   "scores": {
-    "relevance": {
-      "score": 12,
-      "max": 15,
-      "evidence_quotes": ["用户原句"],
-      "diagnosis": "具体判断",
-      "improvement": "具体改法"
-    },
-    "structure_logic": {
-      "score": 15,
-      "max": 20,
-      "evidence_quotes": ["用户原句"],
-      "diagnosis": "具体判断",
-      "improvement": "具体改法"
-    },
-    "depth_critical_thinking": {
-      "score": 14,
-      "max": 25,
-      "evidence_quotes": ["用户原句"],
-      "diagnosis": "缺少了哪些条件、权衡、边界或反面分析",
-      "improvement": "具体增加哪一层思考"
-    },
-    "evidence_support": {
-      "score": 8,
-      "max": 15,
-      "evidence_quotes": ["用户原句"],
-      "diagnosis": "例子是否具体真实",
-      "improvement": "应补充什么真实信息"
-    },
-    "clarity": {
-      "score": 12,
-      "max": 15,
-      "evidence_quotes": ["用户原句"],
-      "diagnosis": "重复、模糊或冗余问题",
-      "improvement": "具体改法"
-    },
-    "delivery": {
-      "score": 7,
-      "max": 10,
-      "evidence_quotes": ["口头禅或重复表达"],
-      "diagnosis": "仅依据已有转录和口语数据",
-      "improvement": "具体练习建议"
-    }
+    "relevance": { "score": 12, "max": 15, "evidence_quotes": ["用户原句"], "diagnosis": "具体判断", "improvement": "具体改法" },
+    "structure_logic": { "score": 15, "max": 20, "evidence_quotes": ["用户原句"], "diagnosis": "具体判断", "improvement": "具体改法" },
+    "depth_critical_thinking": { "score": 14, "max": 25, "evidence_quotes": ["用户原句"], "diagnosis": "缺少了哪些条件、权衡、边界或反面分析", "improvement": "具体增加哪一层思考" },
+    "evidence_support": { "score": 8, "max": 15, "evidence_quotes": ["用户原句"], "diagnosis": "例子是否具体真实", "improvement": "应补充什么真实信息" },
+    "clarity": { "score": 12, "max": 15, "evidence_quotes": ["用户原句"], "diagnosis": "重复、模糊或冗余问题", "improvement": "具体改法" },
+    "delivery": { "score": 7, "max": 10, "evidence_quotes": ["口头禅或重复表达"], "diagnosis": "仅依据已有转录和口语数据", "improvement": "具体练习建议" }
   },
   "three_key_issues": [
-    {
-      "severity": "high",
-      "title": "问题标题",
-      "evidence_quote": "用户原句",
-      "why_it_matters": "为什么影响表达",
-      "how_to_fix": "下一次应该怎么做"
-    }
+    { "severity": "high", "title": "问题标题", "evidence_quote": "用户原句", "why_it_matters": "为什么影响表达", "how_to_fix": "下一次应该怎么做" }
   ],
   "thinking_upgrade": {
     "core_tension": "题目背后的核心矛盾",
@@ -334,58 +256,36 @@ const DIAGNOSIS_SYSTEM_PROMPT = `你是一名"思辨型中文表达教练"。
     "tradeoff": "需要权衡的价值；没有则为空字符串",
     "counterpoint": "值得回应的反面情况；没有则为空字符串",
     "boundary": "观点适用的边界；没有则为空字符串",
-    "real_detail_slots": [
-      "可以补充的真实经历或事实，不得编造"
-    ]
+    "real_detail_slots": ["可以补充的真实经历或事实，不得编造"]
   },
   "answer_outline": [
-    {
-      "step": 1,
-      "label": "核心观点",
-      "content": "这一部分应该说什么",
-      "seconds": 10
-    }
+    { "step": 1, "label": "核心观点", "content": "这一部分应该说什么", "seconds": 10 }
   ],
-  "rewrite_brief": {
-    "target_tone": "自然、克制、有思考的真实口语",
-    "target_length_chinese_chars": "180-260",
-    "must_preserve": ["用户核心立场"],
-    "must_add": ["条件或权衡", "清晰边界"],
-    "must_avoid": ["虚构经历", "标准作文腔", "绝对化结论"]
-  },
-  "round2_guidance": {
-    "default_view": "outline_only",
-    "self_questions": [
-      "我的结论是什么？",
-      "这个结论在什么条件下成立？",
-      "我能用哪个真实细节支撑？"
-    ],
-    "show_full_reference_by_default": false
-  },
+  "self_questions": [
+    "我的结论是什么？",
+    "这个结论在什么条件下成立？",
+    "我能用哪个真实细节支撑？"
+  ],
+  "key_improvements": [
+    { "area": "改进领域", "before": "当前状态", "after": "建议方向" }
+  ],
+  "reference_ready": true,
   "integrity_check": {
     "fabricated_person_or_event": false,
     "unsupported_specific_details": [],
     "stance_was_replaced": false
-  },
-  "delivery_metrics": {
-    "pace_wpm": 220,
-    "pause_count": 3,
-    "filler_word_count": 5,
-    "filler_words": ["然后", "那个"],
-    "duration_seconds": 58,
-    "word_count": 215
   }
 }`;
 
+function buildDiagnosisSystemPrompt(topicType: string): string {
+  return COMMON_COACH_RULES + "\n" + getSkillPrompt(topicType) + "\n" + DIAGNOSIS_OUTPUT_SCHEMA;
+}
+
+// ── D. Rewrite Prompt (for generate_reference) ──
+
 const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达编辑。
 
-你将收到：
-
-1. 原始题目；
-2. 用户真实转录；
-3. 思辨诊断结果；
-4. 推荐结构；
-5. 可以使用的用户真实信息。
+你将收到：原始题目、用户真实转录、思辨诊断结果、推荐结构、可以使用的用户真实信息。
 
 请生成唯一一份"优化表达参考"。
 
@@ -395,77 +295,30 @@ const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达编辑。
 写作要求
 ━━━━━━━━━━━━━━━━━━
 
-1. 保留用户核心立场。
+1. 保留用户核心立场。可以让立场更准确、更有边界，但不得无理由改成相反观点。
 
-可以让立场更准确、更有边界，但不得无理由改成相反观点。
-
-2. 加入思辨深度。
-
-根据诊断结果，至少自然加入以下一项，最多两项：
-
-- 对核心概念的定义；
-- 结论成立的条件；
-- 不同价值之间的权衡；
-- 一个合理的反面情况；
-- 观点适用的边界；
-- 短期和长期差异。
-
+2. 加入思辨深度。根据诊断结果，至少自然加入以下一项，最多两项：
+- 对核心概念的定义
+- 结论成立的条件
+- 不同价值之间的权衡
+- 一个合理的反面情况
+- 观点适用的边界
+- 短期和长期差异
 不要机械说"任何事都有两面性"。
 
 3. 禁止编造经历。
+不得增加用户没有提供的：朋友、公司、学校、城市、工作、证书、家庭事件、明确的个人经历。
+用户没有提供真实例子时，可以使用一般性假设："比如，一个刚毕业的人如果……"
+不能写："我有一位朋友……"
 
-不得增加用户没有提供的：
+4. 自然口语。整段必须像一个真实的人在面试或讨论中说话。
+避免：首先其次最后的机械重复、综上所述、我坚信、随着社会的发展、在当今社会、空泛口号、过度工整的AI式排比。
 
-- 朋友；
-- 公司；
-- 学校；
-- 城市；
-- 工作；
-- 证书；
-- 家庭事件；
-- 明确的个人经历。
+5. 结构清晰但不僵硬。听众应能感受到：核心观点、理由、支撑、思辨层次、收束。不需要显式标注每个结构名称。
 
-用户没有提供真实例子时，可以使用一般性假设：
+6. 长度控制。控制在180—260个汉字左右，适合正常语速下约一分钟表达。
 
-"比如，一个刚毕业的人如果……"
-
-不能写：
-
-"我有一位朋友……"
-
-4. 自然口语。
-
-整段必须像一个真实的人在面试或讨论中说话。
-
-避免：
-
-- 首先、其次、最后的机械重复；
-- 综上所述；
-- 我坚信；
-- 随着社会的发展；
-- 在当今社会；
-- 空泛口号；
-- 过度工整的AI式排比。
-
-5. 结构清晰但不僵硬。
-
-听众应能感受到：
-
-- 核心观点；
-- 理由；
-- 支撑；
-- 思辨层次；
-- 收束。
-
-不需要显式标注每个结构名称。
-
-6. 长度控制。
-
-控制在180—260个汉字左右，适合正常语速下约一分钟表达。
-
-7. 不替用户装成熟。
-
-内容可以更深入，但不要使用明显超出用户身份和真实经验的专业论断。
+7. 不替用户装成熟。内容可以更深入，但不要使用明显超出用户身份和真实经验的专业论断。
 
 8. 只输出合法JSON，不得使用Markdown。
 
@@ -476,39 +329,32 @@ const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达编辑。
 {
   "improved_speech": "唯一一份自然口语版参考答案",
   "thought_features": [
-    {
-      "type": "definition | condition | tradeoff | counterpoint | boundary | causality",
-      "used_in_sentence": "答案中对应的内容",
-      "purpose": "这一层思考解决了什么问题"
-    }
+    { "type": "definition | condition | tradeoff | counterpoint | boundary | causality", "used_in_sentence": "答案中对应的内容", "purpose": "这一层思考解决了什么问题" }
   ],
   "key_upgrades": [
-    {
-      "title": "升级点",
-      "before": "用户原表达",
-      "after": "优化思路",
-      "reason": "为什么更好"
-    }
+    { "title": "升级点", "before": "用户原表达", "after": "优化思路", "reason": "为什么更好" }
   ],
+  "deepening_suggestions": [
+    "进一步深化思考的建议"
+  ],
+  "thinking_lenses_used": ["实际使用的思辨镜头名称"],
   "authenticity": {
     "fabricated_details": false,
     "general_hypothetical_used": true,
-    "missing_real_detail_slots": [
-      "下一次可以补充的真实经历"
-    ]
+    "missing_real_detail_slots": ["下一次可以补充的真实经历"]
   }
 }`;
+
+// ── E. Comparison Prompt (unchanged) ──
 
 const COMPARISON_SYSTEM_PROMPT = `你是一名中文表达训练复盘教练。
 
 请比较用户同一道题的第一次表达和第二次表达。
 
 评价必须基于两份真实转录和系统提供的口语指标。
-
 不要默认第二次一定更好。第二次也可能出现退步。
 
 重点比较：
-
 1. 核心观点是否更早、更清楚；
 2. 结构和论证链是否更完整；
 3. 是否增加了定义、条件、权衡、反面或边界；
@@ -518,33 +364,16 @@ const COMPARISON_SYSTEM_PROMPT = `你是一名中文表达训练复盘教练。
 7. 第二次是否过度照搬AI参考答案。
 
 每个分数变化必须给出证据。
-
-例如：
-
-"口头禅从5次减少到2次，但语速明显加快，部分句子衔接仍紧张，因此口语呈现保持7分。"
-
-不得只输出：
-
-"进步明显"
-"结构更清晰"
+不得只输出"进步明显""结构更清晰"。
 
 如果用户查看过完整参考答案，必须在结果中注明：
-
 "本轮在查看完整参考答案后完成，分数提升可能同时包含模仿因素。"
 
 只输出合法JSON，不得使用Markdown代码围栏。
 
 {
   "dimension_changes": [
-    {
-      "dimension": "内容深度与思辨",
-      "round1_score": 10,
-      "round2_score": 15,
-      "delta": 5,
-      "round1_evidence": "第一次原句",
-      "round2_evidence": "第二次原句",
-      "explanation": "为什么提升"
-    }
+    { "dimension": "内容深度与思辨", "round1_score": 10, "round2_score": 15, "delta": 5, "round1_evidence": "第一次原句", "round2_evidence": "第二次原句", "explanation": "为什么提升" }
   ],
   "progress_points": [
     { "area": "进步领域", "detail": "具体表现" }
@@ -557,6 +386,8 @@ const COMPARISON_SYSTEM_PROMPT = `你是一名中文表达训练复盘教练。
     "interpretation": "本轮主要依靠答案骨架完成"
   }
 }`;
+
+// ── F. Topic Generation Prompt (unchanged) ──
 
 const GENERATE_TOPICS_PROMPT = `你是一位中文表达训练教练。根据用户选择的话题类型，生成多样化的练习题目。
 
@@ -581,7 +412,9 @@ const GENERATE_TOPICS_PROMPT = `你是一位中文表达训练教练。根据用
   ]
 }`;
 
-// ── Main handler ──
+// ═══════════════════════════════════════════
+// Main Handler
+// ═══════════════════════════════════════════
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -603,18 +436,14 @@ serve(async (req: Request) => {
   } catch {
     console.error(`[chinese-expression-agent] ${requestId} failed to parse request body`);
     return jsonResponse(req, {
-      success: false,
-      stage: "payload",
-      error: "请求体格式错误，需要有效的 JSON",
-      requestId,
+      success: false, stage: "payload", error: "请求体格式错误，需要有效的 JSON", requestId,
     }, 400);
   }
 
   action = (body.action as string) || "";
-
   console.log(`[chinese-expression-agent] ${requestId} start action=${action || "(empty)"}`);
 
-  // ── Auth (non-fatal: continues with empty userId on failure) ──
+  // ── Auth (non-fatal) ──
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   let userId = "";
 
@@ -624,46 +453,40 @@ serve(async (req: Request) => {
       const token = authHeader.slice(7);
       const { data } = await supabase.auth.getUser(token);
       userId = data.user?.id || "";
-      if (!userId) {
-        console.log(`[chinese-expression-agent] ${requestId} auth: no user found for token`);
-      }
-    } else {
-      console.log(`[chinese-expression-agent] ${requestId} auth: no Bearer token in Authorization header`);
     }
   } catch (authErr) {
-    console.error(`[chinese-expression-agent] ${requestId} auth error (non-fatal):`,
-      (authErr as Error).message);
+    console.error(`[chinese-expression-agent] ${requestId} auth error (non-fatal):`, (authErr as Error).message);
   }
 
   try {
 
     switch (action) {
 
-      // ── V2 Analyze Expression (two-stage) ──
+      // ═══════════════════════════════════════
+      // V3: Analyze Expression — diagnosis only (single AI call)
+      // ═══════════════════════════════════════
       case "analyze_expression": {
         const topic = (body.topic as string) || "";
-        const topicType = (body.topic_type as string) || "";
+        const topicType = (body.topic_type as string) || "opinion";
         const transcript = (body.transcript as string) || "";
         const attemptRound = (body.attempt_round as number) || 1;
         const durationSeconds = (body.duration_seconds as number) || 60;
 
         if (!topic || !transcript) {
           return jsonResponse(req, {
-            success: false,
-            stage: "payload",
-            error: "缺少话题或转录文本",
-            requestId,
+            success: false, stage: "payload", error: "缺少话题或转录文本", requestId,
           }, 400);
         }
 
-        // Compute delivery metrics from transcript
         const deliveryMetrics = computeDeliveryMetrics(transcript, durationSeconds);
 
-        // ── Stage 1: Critical Thinking Diagnosis ──
-        const diagnosisUserMessage = [
+        // Build prompt: common rules + topic-specific skill + output schema
+        const systemPrompt = buildDiagnosisSystemPrompt(topicType);
+
+        const userMessage = [
           `## 题目`,
           `题目：${topic}`,
-          topicType ? `类型：${topicType}` : "",
+          `类型：${topicType}`,
           `轮次：第${attemptRound}轮`,
           ``,
           `## 用户转录`,
@@ -675,140 +498,47 @@ serve(async (req: Request) => {
           `- 估算语速：${deliveryMetrics.pace_wpm}字/分钟`,
           `- 检测到的口头禅：${deliveryMetrics.filler_words.length > 0 ? deliveryMetrics.filler_words.join("、") : "无"}`,
           `- 口头禅总次数：${deliveryMetrics.filler_word_count}`,
-        ].filter(Boolean).join("\n");
+        ].join("\n");
+
+        const promptLen = systemPrompt.length;
+        const msgLen = userMessage.length;
+        console.log(`[chinese-expression-agent] ${requestId} stage=diagnosis_start topicType=${topicType} promptLen=${promptLen} msgLen=${msgLen} totalChars=${promptLen + msgLen}`);
 
         const diagnosisMessages: DeepSeekMessage[] = [
-          { role: "system", content: DIAGNOSIS_SYSTEM_PROMPT },
-          { role: "user", content: diagnosisUserMessage },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} stage 1/2: diagnosis`);
-        const diagnosisResult = await aiRuntime<Record<string, unknown>>(diagnosisMessages, {
+        const result = await aiRuntime<Record<string, unknown>>(diagnosisMessages, {
           agentName: "chinese-expression-agent",
           maxTokens: 4096,
           temperature: 0.3,
           timeout: 90_000,
         });
 
-        if (!diagnosisResult.success) {
-          const httpStatus = diagnosisResult.stage === "deepseek" ? 502 : 500;
-          console.error(`[chinese-expression-agent] ${requestId} diagnosis failed stage=${diagnosisResult.stage} error=${diagnosisResult.error}`);
+        if (!result.success) {
+          const httpStatus = result.stage === "deepseek" ? 502 : 500;
+          console.error(`[chinese-expression-agent] ${requestId} diagnosis failed stage=${result.stage} error=${result.error}`);
           return jsonResponse(req, {
-            success: false,
-            stage: diagnosisResult.stage,
-            error: diagnosisResult.error,
-            detail: diagnosisResult.detail,
-            requestId,
+            success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
           }, httpStatus);
         }
 
-        const diagnosis = diagnosisResult.data;
-        console.log(`[chinese-expression-agent] ${requestId} stage 1/2 done overall_score=${diagnosis.overall_score}`);
+        const diagnosis = result.data;
+        console.log(`[chinese-expression-agent] ${requestId} stage=diagnosis_done overall_score=${diagnosis.overall_score}`);
 
-        // ── Stage 2: Natural Expression Rewrite ──
-
-        // Extract user real info from the transcript (what the user actually said)
-        const rewriteContext = {
-          topic,
-          transcript,
-          diagnosis: {
-            overall_score: diagnosis.overall_score,
-            overall_judgment: diagnosis.overall_judgment,
-            stance: diagnosis.stance,
-            primary_framework: diagnosis.primary_framework,
-            three_key_issues: diagnosis.three_key_issues,
-            thinking_upgrade: diagnosis.thinking_upgrade,
-            answer_outline: diagnosis.answer_outline,
-            rewrite_brief: diagnosis.rewrite_brief,
-          },
-        };
-
-        const rewriteUserMessage = [
-          `## 原始题目`,
-          topic,
-          ``,
-          `## 用户真实转录`,
-          transcript,
-          ``,
-          `## 思辨诊断结果`,
-          JSON.stringify(rewriteContext.diagnosis, null, 2),
-          ``,
-          `## 用户明确提供的真实信息`,
-          `请仅使用以下转录中用户实际提到的信息：`,
-          transcript,
-          ``,
-          `请生成优化表达参考。`,
-        ].join("\n");
-
-        const rewriteMessages: DeepSeekMessage[] = [
-          { role: "system", content: REWRITE_SYSTEM_PROMPT },
-          { role: "user", content: rewriteUserMessage },
-        ];
-
-        console.log(`[chinese-expression-agent] ${requestId} stage 2/2: rewrite`);
-        const rewriteResult = await aiRuntime<Record<string, unknown>>(rewriteMessages, {
-          agentName: "chinese-expression-agent",
-          maxTokens: 2048,
-          temperature: 0.4,
-          timeout: 60_000,
-        });
-
-        if (!rewriteResult.success) {
-          const httpStatus = rewriteResult.stage === "deepseek" ? 502 : 500;
-          console.error(`[chinese-expression-agent] ${requestId} rewrite failed stage=${rewriteResult.stage} error=${rewriteResult.error}`);
-          return jsonResponse(req, {
-            success: false,
-            stage: rewriteResult.stage,
-            error: rewriteResult.error,
-            detail: rewriteResult.detail,
-            requestId,
-          }, httpStatus);
-        }
-
-        const rewrite = rewriteResult.data;
-        console.log(`[chinese-expression-agent] ${requestId} stage 2/2 done`);
-
-        // ── Integrity check: auto-regenerate if fabrication detected ──
+        // ── Integrity check ──
         const integrityCheck = diagnosis.integrity_check as Record<string, unknown> | undefined;
-        const rewriteAuth = rewrite.authenticity as Record<string, unknown> | undefined;
-        const hasFabrication =
-          (integrityCheck?.fabricated_person_or_event === true) ||
-          (rewriteAuth?.fabricated_details === true);
+        const hasFabrication = integrityCheck?.fabricated_person_or_event === true;
 
         if (hasFabrication) {
-          console.warn(`[chinese-expression-agent] ${requestId} integrity check failed, discarding rewrite`);
-          // Return diagnosis but with a flagged rewrite
-          const combined = {
-            diagnosis,
-            rewrite: {
-              improved_speech: "",
-              thought_features: [],
-              key_upgrades: [],
-              authenticity: {
-                fabricated_details: true,
-                general_hypothetical_used: false,
-                missing_real_detail_slots: [],
-              },
-              integrity_failed: true,
-            },
-            delivery_metrics: deliveryMetrics,
-          };
-          const elapsedMs = Date.now() - t0;
-          console.log(`[chinese-expression-agent] ${requestId} done (integrity failed) action=analyze_expression elapsedMs=${elapsedMs}`);
-          return jsonResponse(req, { success: true, data: combined, requestId, elapsedMs });
+          console.warn(`[chinese-expression-agent] ${requestId} integrity check failed — fabrication detected`);
         }
 
-        // ── Combine results ──
-        const combined = {
-          diagnosis,
-          rewrite,
-          delivery_metrics: deliveryMetrics,
-        };
-
-        // Log (best-effort telemetry)
+        // ── Agent log ──
         if (userId) {
           try {
-            const { error: logErr } = await supabase.from("agent_logs").insert({
+            await supabase.from("agent_logs").insert({
               user_id: userId,
               agent_type: "chinese_expression",
               action: "analyze_expression",
@@ -816,22 +546,112 @@ serve(async (req: Request) => {
               output_data: {
                 overall_score: diagnosis.overall_score,
                 framework: (diagnosis.primary_framework as Record<string, unknown>)?.name,
+                version: "3.0",
               },
+              model: "deepseek-chat",
+              tokens_used: result.usage?.totalTokens || 0,
             });
-            if (logErr) {
-              console.error(`[chinese-expression-agent] ${requestId} agent_logs insert error:`, logErr.code, logErr.message);
-            }
           } catch (logEx) {
-            console.error(`[chinese-expression-agent] ${requestId} agent_logs insert exception:`, (logEx as Error).message);
+            console.error(`[chinese-expression-agent] ${requestId} agent_logs error:`, (logEx as Error).message);
           }
         }
 
         const elapsedMs = Date.now() - t0;
         console.log(`[chinese-expression-agent] ${requestId} done action=analyze_expression elapsedMs=${elapsedMs}`);
-        return jsonResponse(req, { success: true, data: combined, requestId, elapsedMs });
+
+        return jsonResponse(req, {
+          success: true,
+          data: { diagnosis, delivery_metrics: deliveryMetrics },
+          requestId,
+          elapsedMs,
+        });
       }
 
-      // ── V2 Compare Rounds ──
+      // ═══════════════════════════════════════
+      // V3: Generate Reference — on-demand full speech
+      // ═══════════════════════════════════════
+      case "generate_reference": {
+        const topic = (body.topic as string) || "";
+        const transcript = (body.transcript as string) || "";
+        const diagnosis = (body.diagnosis as Record<string, unknown>) || {};
+
+        if (!topic || !transcript || !diagnosis || Object.keys(diagnosis).length === 0) {
+          return jsonResponse(req, {
+            success: false, stage: "payload", error: "缺少话题、转录文本或诊断结果", requestId,
+          }, 400);
+        }
+
+        // Extract relevant diagnosis fields for rewrite context
+        const rewriteContext = {
+          overall_score: diagnosis.overall_score,
+          overall_judgment: diagnosis.overall_judgment,
+          stance: diagnosis.stance,
+          primary_framework: diagnosis.primary_framework,
+          three_key_issues: diagnosis.three_key_issues,
+          thinking_upgrade: diagnosis.thinking_upgrade,
+          answer_outline: diagnosis.answer_outline,
+        };
+
+        const userMessage = [
+          `## 原始题目`,
+          topic,
+          ``,
+          `## 用户真实转录`,
+          transcript,
+          ``,
+          `## 思辨诊断结果`,
+          JSON.stringify(rewriteContext, null, 2),
+          ``,
+          `请生成优化表达参考。`,
+        ].join("\n");
+
+        console.log(`[chinese-expression-agent] ${requestId} stage=generate_reference_start promptLen=${REWRITE_SYSTEM_PROMPT.length} msgLen=${userMessage.length}`);
+
+        const rewriteMessages: DeepSeekMessage[] = [
+          { role: "system", content: REWRITE_SYSTEM_PROMPT },
+          { role: "user", content: userMessage },
+        ];
+
+        const result = await aiRuntime<Record<string, unknown>>(rewriteMessages, {
+          agentName: "chinese-expression-agent",
+          maxTokens: 2048,
+          temperature: 0.4,
+          timeout: 60_000,
+        });
+
+        if (!result.success) {
+          const httpStatus = result.stage === "deepseek" ? 502 : 500;
+          console.error(`[chinese-expression-agent] ${requestId} generate_reference failed stage=${result.stage} error=${result.error}`);
+          return jsonResponse(req, {
+            success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
+          }, httpStatus);
+        }
+
+        const rewrite = result.data;
+
+        // Integrity check
+        const rewriteAuth = rewrite.authenticity as Record<string, unknown> | undefined;
+        if (rewriteAuth?.fabricated_details === true) {
+          console.warn(`[chinese-expression-agent] ${requestId} generate_reference: fabrication detected, flagging`);
+          rewrite.integrity_failed = true;
+        }
+
+        console.log(`[chinese-expression-agent] ${requestId} stage=generate_reference_done`);
+
+        const elapsedMs = Date.now() - t0;
+        console.log(`[chinese-expression-agent] ${requestId} done action=generate_reference elapsedMs=${elapsedMs}`);
+
+        return jsonResponse(req, {
+          success: true,
+          data: { reference: rewrite },
+          requestId,
+          elapsedMs,
+        });
+      }
+
+      // ═══════════════════════════════════════
+      // V2 Compare Rounds (unchanged)
+      // ═══════════════════════════════════════
       case "compare_rounds": {
         const topic = (body.topic as string) || "";
         const round1Transcript = (body.round1_transcript as string) || "";
@@ -842,29 +662,16 @@ serve(async (req: Request) => {
 
         if (!round1Transcript || !round2Transcript) {
           return jsonResponse(req, {
-            success: false,
-            stage: "payload",
-            error: "缺少两轮转录文本",
-            requestId,
+            success: false, stage: "payload", error: "缺少两轮转录文本", requestId,
           }, 400);
         }
 
         const compareUserMessage = [
-          `## 题目`,
-          topic,
-          ``,
-          `## 第一次表达转录`,
-          round1Transcript,
-          ``,
-          `## 第二次表达转录`,
-          round2Transcript,
-          ``,
-          `## 第一次评分`,
-          round1Scores ? JSON.stringify(round1Scores) : "无",
-          ``,
-          `## 第二次评分`,
-          round2Scores ? JSON.stringify(round2Scores) : "无",
-          ``,
+          `## 题目`, topic, ``,
+          `## 第一次表达转录`, round1Transcript, ``,
+          `## 第二次表达转录`, round2Transcript, ``,
+          `## 第一次评分`, round1Scores ? JSON.stringify(round1Scores) : "无", ``,
+          `## 第二次评分`, round2Scores ? JSON.stringify(round2Scores) : "无", ``,
           `## 参考信息`,
           `用户查看了完整参考答案：${fullReferenceViewed ? "是" : "否"}`,
         ].join("\n");
@@ -874,7 +681,7 @@ serve(async (req: Request) => {
           { role: "user", content: compareUserMessage },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} calling deepseek for compare_rounds`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=compare_rounds_start`);
         const result = await aiRuntime<Record<string, unknown>>(compareMessages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,
@@ -884,13 +691,9 @@ serve(async (req: Request) => {
 
         if (!result.success) {
           const httpStatus = result.stage === "deepseek" ? 502 : 500;
-          console.error(`[chinese-expression-agent] ${requestId} compare_rounds failed stage=${result.stage} error=${result.error}`);
+          console.error(`[chinese-expression-agent] ${requestId} compare_rounds failed stage=${result.stage}`);
           return jsonResponse(req, {
-            success: false,
-            stage: result.stage,
-            error: result.error,
-            detail: result.detail,
-            requestId,
+            success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
           }, httpStatus);
         }
 
@@ -899,13 +702,17 @@ serve(async (req: Request) => {
         return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
       }
 
-      // ── Generate Topics ──
+      // ═══════════════════════════════════════
+      // Generate Topics (unchanged)
+      // ═══════════════════════════════════════
       case "generate_topics": {
         const topicType = (body.topic_type as string) || "";
         const count = (body.count as number) || 3;
 
         const userMessage = [
-          topicType ? `请生成${count}个"${topicType}"类型的一分钟表达练习题目。` : `请生成${count}个多样化的一分钟表达练习题目。`,
+          topicType
+            ? `请生成${count}个"${topicType}"类型的一分钟表达练习题目。`
+            : `请生成${count}个多样化的一分钟表达练习题目。`,
           `每个题目附带topic_type字段。`,
         ].join("\n");
 
@@ -914,7 +721,7 @@ serve(async (req: Request) => {
           { role: "user", content: userMessage },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} calling deepseek for generate_topics`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=generate_topics_start`);
         const result = await aiRuntime<{ topics: Array<{ topic: string; topic_type: string; description: string }> }>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,
@@ -924,30 +731,10 @@ serve(async (req: Request) => {
 
         if (!result.success) {
           const httpStatus = result.stage === "deepseek" ? 502 : 500;
-          console.error(`[chinese-expression-agent] ${requestId} aiRuntime failed stage=${result.stage} error=${result.error}`);
+          console.error(`[chinese-expression-agent] ${requestId} generate_topics failed`);
           return jsonResponse(req, {
-            success: false,
-            stage: result.stage,
-            error: result.error,
-            detail: result.detail,
-            requestId,
+            success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
           }, httpStatus);
-        }
-
-        if (userId) {
-          try {
-            const { error: logErr } = await supabase.from("agent_logs").insert({
-              user_id: userId,
-              agent_type: "chinese_expression",
-              action: "generate_topics",
-              input_data: { topic_type: topicType, count },
-            });
-            if (logErr) {
-              console.error(`[chinese-expression-agent] ${requestId} agent_logs insert error:`, logErr.code, logErr.message);
-            }
-          } catch (logEx) {
-            console.error(`[chinese-expression-agent] ${requestId} agent_logs insert exception:`, (logEx as Error).message);
-          }
         }
 
         const elapsedMs = Date.now() - t0;
@@ -955,16 +742,15 @@ serve(async (req: Request) => {
         return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
       }
 
-      // ── Extract Material ──
+      // ═══════════════════════════════════════
+      // Extract Material (unchanged)
+      // ═══════════════════════════════════════
       case "extract_material": {
         const sourceText = (body.source_text as string) || "";
 
         if (!sourceText) {
           return jsonResponse(req, {
-            success: false,
-            stage: "payload",
-            error: "缺少材料文本",
-            requestId,
+            success: false, stage: "payload", error: "缺少材料文本", requestId,
           }, 400);
         }
 
@@ -986,7 +772,7 @@ serve(async (req: Request) => {
           { role: "user", content: truncatedText },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} calling deepseek for extract_material`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=extract_material_start`);
         const result = await aiRuntime<Record<string, unknown>>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,
@@ -996,13 +782,9 @@ serve(async (req: Request) => {
 
         if (!result.success) {
           const httpStatus = result.stage === "deepseek" ? 502 : 500;
-          console.error(`[chinese-expression-agent] ${requestId} aiRuntime failed stage=${result.stage} error=${result.error}`);
+          console.error(`[chinese-expression-agent] ${requestId} extract_material failed`);
           return jsonResponse(req, {
-            success: false,
-            stage: result.stage,
-            error: result.error,
-            detail: result.detail,
-            requestId,
+            success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
           }, httpStatus);
         }
 
@@ -1014,10 +796,7 @@ serve(async (req: Request) => {
       default: {
         console.warn(`[chinese-expression-agent] ${requestId} unknown action="${action}"`);
         return jsonResponse(req, {
-          success: false,
-          stage: "payload",
-          error: `Unknown action: ${action}`,
-          requestId,
+          success: false, stage: "payload", error: `Unknown action: ${action}`, requestId,
         }, 400);
       }
     }
@@ -1028,20 +807,13 @@ serve(async (req: Request) => {
     if (err instanceof DOMException && err.name === "AbortError") {
       console.error(`[chinese-expression-agent] ${requestId} timeout action=${action} elapsedMs=${elapsedMs}`);
       return jsonResponse(req, {
-        success: false,
-        stage: "internal",
-        error: "请求处理超时",
-        detail: String(message),
-        requestId,
+        success: false, stage: "internal", error: "请求处理超时", detail: String(message), requestId,
       }, 504);
     }
 
     console.error(`[chinese-expression-agent] ${requestId} unhandled error action=${action} elapsedMs=${elapsedMs}`, message);
     return jsonResponse(req, {
-      success: false,
-      stage: "internal",
-      error: message,
-      requestId,
+      success: false, stage: "internal", error: message, requestId,
     }, 500);
   }
 });

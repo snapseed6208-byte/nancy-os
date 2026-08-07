@@ -68,7 +68,7 @@ export const V2_DIMENSION_LABELS: Record<string, string> = {
   delivery: "口语呈现",
 };
 
-// ── V2 Diagnosis types ──
+// ── V3 Diagnosis types (analyze_expression output) ──
 
 export interface V2Stance {
   summary: string;
@@ -107,27 +107,19 @@ export interface V2OutlineStep {
   seconds: number;
 }
 
-export interface V2RewriteBrief {
-  target_tone: string;
-  target_length_chinese_chars: string;
-  must_preserve: string[];
-  must_add: string[];
-  must_avoid: string[];
-}
-
-export interface V2Round2Guidance {
-  default_view: string;
-  self_questions: string[];
-  show_full_reference_by_default: boolean;
-}
-
 export interface V2IntegrityCheck {
   fabricated_person_or_event: boolean;
   unsupported_specific_details: string[];
   stance_was_replaced: boolean;
 }
 
-export interface V2Diagnosis {
+export interface V3KeyImprovement {
+  area: string;
+  before: string;
+  after: string;
+}
+
+export interface V3Diagnosis {
   version: string;
   question_type: string;
   stance: V2Stance;
@@ -138,13 +130,13 @@ export interface V2Diagnosis {
   three_key_issues: V2KeyIssue[];
   thinking_upgrade: V2ThinkingUpgrade;
   answer_outline: V2OutlineStep[];
-  rewrite_brief: V2RewriteBrief;
-  round2_guidance: V2Round2Guidance;
+  self_questions: string[];
+  key_improvements: V3KeyImprovement[];
+  reference_ready: boolean;
   integrity_check: V2IntegrityCheck;
-  delivery_metrics?: DeliveryMetrics;
 }
 
-// ── V2 Rewrite types ──
+// ── V2 Rewrite types (kept for backward compat; V3 uses V3Reference) ──
 
 export interface V2ThoughtFeature {
   type: string;
@@ -165,10 +157,23 @@ export interface V2Authenticity {
   missing_real_detail_slots: string[];
 }
 
+/** @deprecated V2 combined analysis result; V3 splits into V3Diagnosis + V3Reference */
 export interface V2Rewrite {
   improved_speech: string;
   thought_features: V2ThoughtFeature[];
   key_upgrades: V2KeyUpgrade[];
+  authenticity: V2Authenticity;
+  integrity_failed?: boolean;
+}
+
+// ── V3 Reference type (generate_reference output) ──
+
+export interface V3Reference {
+  improved_speech: string;
+  thought_features: V2ThoughtFeature[];
+  key_upgrades: V2KeyUpgrade[];
+  deepening_suggestions: string[];
+  thinking_lenses_used: string[];
   authenticity: V2Authenticity;
   integrity_failed?: boolean;
 }
@@ -220,12 +225,17 @@ export interface V2Comparison {
   reference_dependency: ReferenceDependency;
 }
 
-// ── Combined AI result ──
+// ── V3 Analysis result (diagnosis only, no full speech) ──
 
-export interface ChineseAnalysisResultV2 {
-  diagnosis: V2Diagnosis;
-  rewrite: V2Rewrite;
+export interface ChineseAnalysisResultV3 {
+  diagnosis: V3Diagnosis;
   delivery_metrics: DeliveryMetrics;
+}
+
+// ── V3 Reference result (on-demand full speech) ──
+
+export interface ChineseReferenceResultV3 {
+  reference: V3Reference;
 }
 
 // ── Database row types ──
@@ -530,7 +540,7 @@ export async function uploadChineseAudio(sessionId: string, blob: Blob): Promise
   return urlData.publicUrl;
 }
 
-// ── AI Analysis (V2 — two-stage) ──
+// ── AI Analysis (V3 — diagnosis only, single AI call) ──
 
 export async function analyzeChineseExpression(
   topic: string,
@@ -538,8 +548,8 @@ export async function analyzeChineseExpression(
   transcript: string,
   attemptRound: number,
   durationSeconds = 60,
-): Promise<{ success: true; data: ChineseAnalysisResultV2 } | { success: false; error: string }> {
-  return invokeAI<ChineseAnalysisResultV2>("chinese-expression-agent", {
+): Promise<{ success: true; data: ChineseAnalysisResultV3 } | { success: false; error: string }> {
+  return invokeAI<ChineseAnalysisResultV3>("chinese-expression-agent", {
     action: "analyze_expression",
     topic,
     topic_type: topicType,
@@ -548,6 +558,24 @@ export async function analyzeChineseExpression(
     duration_seconds: durationSeconds,
   }, {
     timeout: 180_000,
+    retries: 1,
+  });
+}
+
+// ── Generate Reference (V3 — on-demand full speech, separate AI call) ──
+
+export async function generateChineseReference(
+  topic: string,
+  transcript: string,
+  diagnosis: Record<string, unknown>,
+): Promise<{ success: true; data: ChineseReferenceResultV3 } | { success: false; error: string }> {
+  return invokeAI<ChineseReferenceResultV3>("chinese-expression-agent", {
+    action: "generate_reference",
+    topic,
+    transcript,
+    diagnosis,
+  }, {
+    timeout: 90_000,
     retries: 1,
   });
 }
