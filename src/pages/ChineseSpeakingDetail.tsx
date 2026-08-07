@@ -1,16 +1,23 @@
 import { useRoute, useLocation } from "wouter";
 import {
   ArrowLeft, Loader2, AlertTriangle, Mic, Sparkles,
-  Target, Lightbulb, RotateCcw,
+  Target, Lightbulb, RotateCcw, CheckCircle2, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   useChineseSpeakingSession,
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
+  isV4Diagnosis,
   type ChineseTopicType,
   type ChineseFramework,
   type ChineseSpeakingAttempt,
+  type V4Diagnosis,
+  type V4DimensionScore,
+  type DeliveryMetrics,
 } from "@/lib/hooks/useChineseSpeaking";
+
+// ── Shared dimension bar ──
 
 function DimensionBar({ name, score, maxScore, comment }: {
   name: string; score: number; maxScore: number; comment: string;
@@ -32,6 +39,167 @@ function DimensionBar({ name, score, maxScore, comment }: {
     </div>
   );
 }
+
+// ── V4 components ──
+
+function ScoresV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
+  return (
+    <div className="space-y-2 pt-2 border-t border-border/50">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-ink">得分</span>
+        <span className="text-lg font-bold text-sage-deep">{diagnosis.overall.score} 分</span>
+      </div>
+      <p className="text-xs text-ink-lighter">{diagnosis.overall.summary}</p>
+      {diagnosis.dimensions.map((dim) => (
+        <DimensionBar
+          key={dim.key}
+          name={dim.label}
+          score={dim.score}
+          maxScore={dim.max_score}
+          comment={dim.diagnosis}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DiagnosisV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Target size={14} className="text-accent-rose" />
+        <p className="text-xs font-medium text-ink">关键问题</p>
+      </div>
+      {diagnosis.top_issues.map((issue, i) => (
+        <div key={i} className="text-xs space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+              issue.severity === "high" ? "bg-accent-rose/10 text-accent-rose"
+                : issue.severity === "medium" ? "bg-amber-100 text-amber-700"
+                : "bg-ink/5 text-ink-light",
+            )}>
+              {issue.severity === "high" ? "严重" : issue.severity === "medium" ? "中等" : "轻微"}
+            </span>
+            <span className="font-medium text-ink">{issue.title}</span>
+          </div>
+          {issue.evidence_quote && <p className="text-ink-lighter italic">&ldquo;{issue.evidence_quote}&rdquo;</p>}
+          {issue.action && <p className="text-sage-deep">{issue.action}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StructureV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Lightbulb size={14} className="text-purple-600" />
+        <p className="text-xs font-medium text-ink">推荐结构</p>
+      </div>
+      <div className="inline-flex px-2.5 py-1 bg-purple-100 rounded-full">
+        <span className="text-xs font-medium text-purple-700">{diagnosis.recommended_structure.name}</span>
+      </div>
+      <p className="text-xs text-ink-lighter">{diagnosis.recommended_structure.reason}</p>
+      {diagnosis.recommended_structure.steps.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {diagnosis.recommended_structure.steps.map((step) => (
+            <span key={step} className="text-[10px] bg-purple-50 text-purple-600 rounded-full px-2 py-0.5">{step}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThinkingDeepeningV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
+  if (!diagnosis.thinking_or_deepening?.items?.length) return null;
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Lightbulb size={14} className="text-purple-600" />
+        <p className="text-xs font-medium text-ink">{diagnosis.thinking_or_deepening.title}</p>
+      </div>
+      {diagnosis.thinking_or_deepening.items.map((item, i) => (
+        <div key={i} className="bg-purple-50/50 rounded-lg p-2.5 space-y-1">
+          <p className="text-[11px] font-medium text-purple-700">{item.lens}</p>
+          <p className="text-[11px] text-ink-light">{item.insight}</p>
+          <p className="text-[10px] text-purple-500">{item.application}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FactConsistencyV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
+  if (!diagnosis.fact_consistency) return null;
+  const fc = diagnosis.fact_consistency;
+  return (
+    <div className={cn(
+      "rounded-xl p-3 text-xs",
+      fc.status === "needs_confirmation"
+        ? "bg-amber-50 border border-amber-100 text-amber-700"
+        : fc.status === "not_applicable"
+        ? "bg-ink/5 border border-border text-ink-light"
+        : "bg-emerald-50/50 border border-emerald-100 text-emerald-700",
+    )}>
+      <span className="flex items-center gap-1.5">
+        {fc.status === "needs_confirmation"
+          ? <><AlertTriangle size={12} /> {fc.message}</>
+          : <><CheckCircle2 size={12} /> {fc.message || "事实一致性保护 — AI未新增关键事实"}</>
+        }
+      </span>
+    </div>
+  );
+}
+
+function KeyUpgradesV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
+  if (!diagnosis.key_upgrades?.length) return null;
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <p className="text-xs font-medium text-ink">关键提升点</p>
+      {diagnosis.key_upgrades.map((ku, i) => (
+        <div key={i} className="flex gap-2">
+          <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
+          <div className="space-y-0.5">
+            <p className="text-xs font-medium text-ink">{ku.title}</p>
+            <p className="text-[10px] text-ink-lighter">
+              <span className="text-accent-rose/70">原：「{ku.original}」</span>
+              {" → "}
+              <span className="text-emerald-600/70">改：「{ku.direction}」</span>
+            </p>
+            <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OutlineV4({ outline }: { outline: { step: number; label: string; guidance: string; target_seconds: number }[] }) {
+  return (
+    <div className="pt-2 border-t border-border/50">
+      <div className="flex items-center gap-2 mb-2">
+        <Lightbulb size={14} className="text-purple-600" />
+        <p className="text-xs font-medium text-ink">答案骨架</p>
+      </div>
+      <div className="space-y-1">
+        {outline.map((s) => (
+          <div key={s.step} className="flex gap-2 text-xs">
+            <span className="text-purple-600 font-medium">{s.step}. {s.label}</span>
+            <span className="text-ink-lighter">{s.guidance}</span>
+            {s.target_seconds != null && (
+              <span className="text-ink-lighter/50">~{s.target_seconds}s</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Legacy V1/V2 components ──
 
 function ScoresV2({ scores }: { scores: Record<string, unknown> }) {
   const dimLabels: Record<string, string> = {
@@ -131,8 +299,8 @@ function OutlineSection({ outline }: { outline: Record<string, unknown>[] }) {
           <div key={i} className="flex gap-2 text-xs">
             <span className="text-purple-600 font-medium">{s.step as number}. {s.label as string}</span>
             <span className="text-ink-lighter">{(s.content || s.guidance) as string}</span>
-            {s.seconds != null && (
-              <span className="text-ink-lighter/50">~{s.seconds as number}s</span>
+            {(s.seconds != null || s.target_seconds != null) && (
+              <span className="text-ink-lighter/50">~{(s.seconds || s.target_seconds) as number}s</span>
             )}
           </div>
         ))}
@@ -146,9 +314,11 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
   const diagnosis = attempt.diagnosis as Record<string, unknown> | null;
   const outline = attempt.answer_outline as Record<string, unknown>[] | null;
   const speech = attempt.final_improved_speech;
-  const metrics = attempt.delivery_metrics;
+  const metrics = attempt.delivery_metrics as DeliveryMetrics | null;
 
-  const isV2 = scores && typeof scores.overall_score === "number";
+  const isV4 = isV4Diagnosis(attempt.diagnosis);
+  const isV2 = !isV4 && scores && typeof scores.overall_score === "number";
+  const v4Diag = isV4 ? (attempt.diagnosis as unknown as V4Diagnosis) : null;
 
   return (
     <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
@@ -168,11 +338,31 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
         </div>
       )}
 
-      {isV2 && scores && <ScoresV2 scores={scores} />}
-      {!isV2 && scores && (scores as Record<string, unknown>).dimensions ? <ScoresV1 scores={scores} /> : null}
+      {/* V4 scores */}
+      {isV4 && v4Diag && <ScoresV4 diagnosis={v4Diag} />}
 
-      {diagnosis && (diagnosis as Record<string, unknown>).three_key_issues ? <DiagnosisV2 diagnosis={diagnosis} /> : null}
-      {diagnosis && !(diagnosis as Record<string, unknown>).three_key_issues && (diagnosis as Record<string, unknown>).top_3_problems ? <DiagnosisV1 diagnosis={diagnosis} /> : null}
+      {/* V2 scores */}
+      {isV2 && scores && <ScoresV2 scores={scores} />}
+
+      {/* V1 scores */}
+      {!isV4 && !isV2 && scores && (scores as Record<string, unknown>).dimensions ? <ScoresV1 scores={scores} /> : null}
+
+      {/* V4 diagnosis */}
+      {isV4 && v4Diag && (
+        <>
+          <DiagnosisV4 diagnosis={v4Diag} />
+          <StructureV4 diagnosis={v4Diag} />
+          {v4Diag.thinking_or_deepening?.items?.length > 0 && <ThinkingDeepeningV4 diagnosis={v4Diag} />}
+          <KeyUpgradesV4 diagnosis={v4Diag} />
+          <FactConsistencyV4 diagnosis={v4Diag} />
+        </>
+      )}
+
+      {/* V2 diagnosis */}
+      {!isV4 && diagnosis && (diagnosis as Record<string, unknown>).three_key_issues ? <DiagnosisV2 diagnosis={diagnosis} /> : null}
+
+      {/* V1 diagnosis */}
+      {!isV4 && diagnosis && !(diagnosis as Record<string, unknown>).three_key_issues && (diagnosis as Record<string, unknown>).top_3_problems ? <DiagnosisV1 diagnosis={diagnosis} /> : null}
 
       {speech && (
         <div className="pt-2 border-t border-border/50">
@@ -180,13 +370,29 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
             <Sparkles size={14} className="text-sage-deep" />
             <p className="text-xs font-medium text-ink">AI 优化参考</p>
           </div>
-          <p className="text-sm text-ink leading-relaxed bg-sage-light/10 border border-sage-light/30 rounded-xl p-3">
-            {speech}
-          </p>
+          <details className="group">
+            <summary className="text-sm text-ink leading-relaxed cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span className="line-clamp-2">{speech}</span>
+              <span className="text-[11px] text-sage-deep font-medium mt-1 inline-block">
+                <ChevronDown size={14} className="inline mr-1 group-open:hidden" />
+                <ChevronUp size={14} className="hidden mr-1 group-open:inline" />
+                展开完整参考
+              </span>
+            </summary>
+            <p className="text-sm text-ink leading-relaxed mt-2 pt-2 border-t border-border/50">
+              {speech}
+            </p>
+          </details>
         </div>
       )}
 
-      {outline && outline.length > 0 && <OutlineSection outline={outline} />}
+      {/* V4 outline */}
+      {isV4 && v4Diag && v4Diag.answer_outline?.length > 0 && (
+        <OutlineV4 outline={v4Diag.answer_outline} />
+      )}
+
+      {/* Legacy outline */}
+      {!isV4 && outline && outline.length > 0 && <OutlineSection outline={outline} />}
 
       {metrics && (
         <div className="pt-2 border-t border-border/50">
@@ -265,9 +471,61 @@ export default function ChineseSpeakingDetail() {
       {round2 && <AttemptSection attempt={round2} label="第二次表达（重新表达）" />}
 
       {/* Comparison if both exist */}
-      {round1 && round2 && round1.scores && round2.scores && (() => {
-        const r1s = round1.scores as Record<string, unknown>;
-        const r2s = round2.scores as Record<string, unknown>;
+      {round1 && round2 && (() => {
+        const r1IsV4 = isV4Diagnosis(round1.diagnosis);
+        const r2IsV4 = isV4Diagnosis(round2.diagnosis);
+
+        if (r1IsV4 && r2IsV4) {
+          const d1 = round1.diagnosis as unknown as V4Diagnosis;
+          const d2 = round2.diagnosis as unknown as V4Diagnosis;
+          return (
+            <div className="bg-gradient-to-r from-sage-light/5 to-purple-50/50 border border-sage-light/30 rounded-2xl p-4">
+              <p className="text-sm font-medium text-ink mb-3">前后对比</p>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="bg-white/60 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-ink-lighter mb-0.5">第一次表达</p>
+                  <p className="text-xl font-bold text-ink">{d1.overall.score}</p>
+                </div>
+                <div className="bg-white/60 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-ink-lighter mb-0.5">第二次表达</p>
+                  <p className={cn(
+                    "text-xl font-bold",
+                    d2.overall.score > d1.overall.score ? "text-emerald-600"
+                      : d2.overall.score < d1.overall.score ? "text-accent-rose"
+                      : "text-sage-deep",
+                  )}>
+                    {d2.overall.score}
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {d1.dimensions.map((dim1) => {
+                  const dim2 = d2.dimensions.find((d) => d.key === dim1.key);
+                  const delta = dim2 ? dim2.score - dim1.score : 0;
+                  return (
+                    <div key={dim1.key} className="flex items-center gap-2 text-[10px] mb-0.5">
+                      <span className="text-ink-lighter w-20 shrink-0">{dim1.label}</span>
+                      <span className="font-mono w-5">{dim1.score}</span>
+                      <span className="font-mono font-medium text-sage-deep w-5">{dim2?.score ?? "-"}</span>
+                      <span className={cn(
+                        "font-medium",
+                        delta > 0 ? "text-emerald-600" : delta < 0 ? "text-accent-rose" : "text-ink-lighter",
+                      )}>
+                        {delta > 0 ? `+${delta}` : delta}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
+        // Legacy V1/V2 comparison
+        const r1s = round1.scores as Record<string, unknown> | null;
+        const r2s = round2.scores as Record<string, unknown> | null;
+        if (!r1s || !r2s) return null;
+
         const isV2 = typeof r1s.overall_score === "number";
         const r1Total = (isV2 ? r1s.overall_score : r1s.total) as number;
         const r2Total = (isV2 ? r2s.overall_score : r2s.total) as number;
@@ -282,11 +540,11 @@ export default function ChineseSpeakingDetail() {
             <p className="text-sm font-medium text-ink mb-3">前后对比</p>
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div className="bg-white/60 rounded-xl p-3 text-center">
-                <p className="text-[10px] text-ink-lighter mb-0.5">你的第一次表达</p>
+                <p className="text-[10px] text-ink-lighter mb-0.5">第一次表达</p>
                 <p className="text-xl font-bold text-ink">{r1Total}</p>
               </div>
               <div className="bg-white/60 rounded-xl p-3 text-center">
-                <p className="text-[10px] text-ink-lighter mb-0.5">你的第二次表达</p>
+                <p className="text-[10px] text-ink-lighter mb-0.5">第二次表达</p>
                 <p className="text-xl font-bold text-sage-deep">{r2Total}</p>
               </div>
             </div>

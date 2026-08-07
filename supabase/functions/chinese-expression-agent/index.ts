@@ -1,20 +1,27 @@
 // ============================================
-// Nancy OS — Chinese Expression Training Agent V3
+// Nancy OS — Chinese Expression Training Agent V4
 //
 // Architecture:
-//   analyze_expression  — single AI call: diagnosis + outline only (NO full speech)
+//   analyze_expression  — single AI call: diagnosis only (NO full speech)
 //   generate_reference  — on-demand: full improved speech (user explicitly requests)
 //   compare_rounds      — evidence-based Round 1 vs Round 2 comparison
 //   generate_topics     — generate 3 candidate topics
 //   extract_material    — extract key points from source text
 //
-// Skill architecture: load only current topic type's rules, not all 6.
+// V4 Skill architecture (skills.ts):
+//   COMMON_COACH_RULES + ONE Skill (loaded by topic_type, never all 6)
+//   + QUESTION + TRANSCRIPT + DELIVERY_METRICS + OUTPUT_SCHEMA
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
 import type { DeepSeekMessage } from "../_shared/ai.ts";
+import {
+  buildDiagnosisSystemPrompt,
+  buildDiagnosisUserMessage,
+  verifyAllSkills,
+} from "./skills.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -54,232 +61,49 @@ function jsonResponse(req: Request, body: Record<string, unknown>, status = 200)
 
 // ── Delivery metrics computation ──
 
-function computeDeliveryMetrics(transcript: string, durationSeconds: number) {
+function computeDeliveryMetrics(transcript: string, durationSeconds: number, targetDurationSeconds = 60) {
   const cleaned = transcript.replace(/[^一-鿿\w]/g, "");
-  const wordCount = cleaned.length;
-  const paceWpm = durationSeconds > 0 ? Math.round(wordCount / (durationSeconds / 60)) : 0;
+  const transcriptChars = cleaned.length;
+  const charsPerMinute = durationSeconds > 0 ? Math.round(transcriptChars / (durationSeconds / 60)) : 0;
+  const overtimeSeconds = Math.max(0, durationSeconds - targetDurationSeconds);
 
   const fillerPatterns = ["然后", "那个", "就是", "这个", "嗯", "啊", "呃", "吧", "嘛", "所以", "就是说", "怎么说呢", "然后呢", "而且"];
-  const fillerCounts: Record<string, number> = {};
+  const fillerBreakdown: Record<string, number> = {};
   for (const fw of fillerPatterns) {
     const escaped = fw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const count = (transcript.match(new RegExp(escaped, "g")) || []).length;
-    if (count > 0) fillerCounts[fw] = count;
+    if (count > 0) fillerBreakdown[fw] = count;
   }
 
-  const fillerWords = Object.entries(fillerCounts)
-    .filter(([, c]) => c > 0)
-    .map(([w]) => w);
+  const fillerWords = Object.keys(fillerBreakdown);
+  const fillerTotal = Object.values(fillerBreakdown).reduce((a, b) => a + b, 0);
 
   return {
-    pace_wpm: paceWpm,
-    pause_count: 0,
-    avg_pause_duration_seconds: 0,
-    filler_word_count: Object.values(fillerCounts).reduce((a, b) => a + b, 0),
-    filler_words: fillerWords,
+    // V4 fields (used by buildDiagnosisUserMessage)
     duration_seconds: durationSeconds,
-    word_count: wordCount,
+    target_duration_seconds: targetDurationSeconds,
+    overtime_seconds: overtimeSeconds,
+    transcript_chars: transcriptChars,
+    chars_per_minute: charsPerMinute,
+    filler_total: fillerTotal,
+    filler_breakdown: fillerBreakdown,
+    // Legacy fields (used by client DeliveryMetrics type)
+    pace_wpm: charsPerMinute,
+    pause_count: null,
+    avg_pause_duration_seconds: null,
+    filler_word_count: fillerTotal,
+    filler_words: fillerWords,
+    word_count: transcriptChars,
   };
 }
 
 // ═══════════════════════════════════════════
-// Prompt Architecture (V3 — skill-based)
+// Prompt Architecture (V4 — skills.ts, skill-based)
+//
+// COMMON_COACH_RULES, 6 full Skills, and Output Schema
+// are imported from ./skills.ts.
+// Only ONE skill is loaded per analysis (never all 6).
 // ═══════════════════════════════════════════
-
-// ── A. Common Coach Rules (loaded for every analysis) ──
-
-const COMMON_COACH_RULES = `你是一名"思辨型中文表达教练"。
-
-你的任务不是替用户生成一篇标准作文，也不是判断用户的立场是否正确。你的目标是帮助用户在真实口语场景中做到：
-
-1. 明确自己的核心观点；
-2. 有逻辑地组织理由；
-3. 识别问题中的概念、矛盾和隐含前提；
-4. 增加条件、权衡、边界、反面或因果分析；
-5. 使用真实细节或明确的假设场景支撑观点；
-6. 用自然、清晰、有个人思考的中文表达出来。
-
-━━━━━━━━━━━━━━━━━━
-一、基本原则
-━━━━━━━━━━━━━━━━━━
-
-1. 不预设标准答案。
-允许用户有明确立场，但要检查：立场成立的条件、适用范围、可能的例外、需要承担的代价、与其他价值之间的权衡。
-
-2. 不机械制造"两面性"。
-不要为了显得思辨而固定输出"任何事情都有两面性""应该辩证地看""因人而异"。
-只有真正解释了条件、差异和边界，才属于思辨。
-
-3. 禁止编造事实。
-不得擅自增加："我有一位朋友"、具体公司/学校/城市、具体职业和家庭经历、用户没有说过的成绩/证书/事件。
-如果缺少真实例子：可以使用明确的一般性假设场景；或输出"真实信息补充槽位"；不得把假设包装成用户的真实故事。
-
-4. 保留用户的核心立场和个人语气。
-如果用户立场不明确，标记为"立场尚不明确"，不要擅自替用户决定。
-
-5. 结构服务于内容。
-可以使用PREP、金字塔原理、SCQA、STAR、故事结构。但只能选择一个主要框架，并根据内容灵活调整。
-不得每次固定使用"首先、其次、最后、综上所述"。
-
-6. 口语优先。
-目标是一个真实的人在面试、交流或演讲中会说的话，不是书面议论文。
-避免："随着社会的发展""在当今社会""众所周知""不难发现""综上所述""我坚信""首先其次最后的机械堆叠""过度工整的三段排比""空泛宏大但没有信息的句子"。
-
-━━━━━━━━━━━━━━━━━━
-二、思辨镜头
-━━━━━━━━━━━━━━━━━━
-
-根据题目选择最有价值的一到两个镜头，不要全部机械使用：
-- definition：核心概念需要重新定义或澄清
-- condition：结论成立的条件
-- tradeoff：两种价值之间的权衡
-- counterpoint：可能的反面情况或例外
-- boundary：观点适用的边界
-- causality：观点背后的因果链
-- time_horizon：短期与长期差异
-
-━━━━━━━━━━━━━━━━━━
-三、评分标准
-━━━━━━━━━━━━━━━━━━
-
-总分100：
-1. 主旨与切题度：15
-2. 结构与逻辑：20
-3. 内容深度与思辨：25
-4. 细节与支撑：15
-5. 表达清晰度：15
-6. 口语呈现：10
-
-每个维度必须：给出分数、引用用户原句作为证据、说明具体问题、给出可执行的改进方法。
-不得仅输出"逻辑不够清晰""内容需要加深"等空泛评价。
-口语呈现只能依据系统实际提供的数据（durationSeconds、speechRate、fillerWords、pauseCount、transcript）。
-不评价观点是否符合"标准答案"；评价观点是否有合理依据、条件和边界。
-
-━━━━━━━━━━━━━━━━━━
-四、输出要求
-━━━━━━━━━━━━━━━━━━
-
-只输出合法JSON，不得使用Markdown代码围栏，不得添加JSON以外的文字。
-分析前请完成内部判断，但不要输出推理过程。`;
-
-// ── B. Topic-Specific Skills (loaded on-demand by topic_type) ──
-
-type ChineseTopicType = "opinion" | "experience" | "concept" | "reflection" | "interview" | "story";
-
-const SKILL_PROMPTS: Record<ChineseTopicType, string> = {
-  opinion: `
-━━━━━━━━━━━━━━━━━━
-题型：观点表达
-━━━━━━━━━━━━━━━━━━
-
-优先使用"核心主张 + 理由 + 支撑 + 条件或边界 + 收束"。
-可使用PREP，但必须加入至少一个思辨镜头。`,
-
-  experience: `
-━━━━━━━━━━━━━━━━━━
-题型：经历讲述
-━━━━━━━━━━━━━━━━━━
-
-优先使用STAR或"背景—困难—选择—结果—反思"。
-重点检查因果和个人行动。`,
-
-  concept: `
-━━━━━━━━━━━━━━━━━━
-题型：概念解释
-━━━━━━━━━━━━━━━━━━
-
-优先使用"定义—区分—例子—边界"。
-不能只给抽象定义。`,
-
-  reflection: `
-━━━━━━━━━━━━━━━━━━
-题型：视频或读书感悟
-━━━━━━━━━━━━━━━━━━
-
-优先使用"内容触发—核心理解—不同看法—现实联系—行动或启示"。`,
-
-  interview: `
-━━━━━━━━━━━━━━━━━━
-题型：面试回答
-━━━━━━━━━━━━━━━━━━
-
-优先使用"直接回答—证据—结果—岗位关联"。
-不得虚构工作经历。`,
-
-  story: `
-━━━━━━━━━━━━━━━━━━
-题型：故事表达
-━━━━━━━━━━━━━━━━━━
-
-优先使用"场景—冲突—选择—结果—意义"。
-不得只罗列事情经过。`,
-};
-
-function getSkillPrompt(topicType: string): string {
-  const skill = SKILL_PROMPTS[topicType as ChineseTopicType];
-  return skill || SKILL_PROMPTS.opinion;
-}
-
-// ── C. Diagnosis Output Schema (no full speech) ──
-
-const DIAGNOSIS_OUTPUT_SCHEMA = `
-{
-  "version": "3.0",
-  "question_type": "opinion",
-  "stance": {
-    "summary": "用户当前核心立场",
-    "clarity": "clear | partial | unclear",
-    "preserved": true
-  },
-  "overall_score": 72,
-  "overall_judgment": "一句真实、具体的整体评价",
-  "primary_framework": {
-    "name": "PREP",
-    "reason": "为什么这个框架适合本次回答",
-    "depth_lenses": ["definition", "tradeoff"]
-  },
-  "scores": {
-    "relevance": { "score": 12, "max": 15, "evidence_quotes": ["用户原句"], "diagnosis": "具体判断", "improvement": "具体改法" },
-    "structure_logic": { "score": 15, "max": 20, "evidence_quotes": ["用户原句"], "diagnosis": "具体判断", "improvement": "具体改法" },
-    "depth_critical_thinking": { "score": 14, "max": 25, "evidence_quotes": ["用户原句"], "diagnosis": "缺少了哪些条件、权衡、边界或反面分析", "improvement": "具体增加哪一层思考" },
-    "evidence_support": { "score": 8, "max": 15, "evidence_quotes": ["用户原句"], "diagnosis": "例子是否具体真实", "improvement": "应补充什么真实信息" },
-    "clarity": { "score": 12, "max": 15, "evidence_quotes": ["用户原句"], "diagnosis": "重复、模糊或冗余问题", "improvement": "具体改法" },
-    "delivery": { "score": 7, "max": 10, "evidence_quotes": ["口头禅或重复表达"], "diagnosis": "仅依据已有转录和口语数据", "improvement": "具体练习建议" }
-  },
-  "three_key_issues": [
-    { "severity": "high", "title": "问题标题", "evidence_quote": "用户原句", "why_it_matters": "为什么影响表达", "how_to_fix": "下一次应该怎么做" }
-  ],
-  "thinking_upgrade": {
-    "core_tension": "题目背后的核心矛盾",
-    "definition": "需要澄清的概念；没有则为空字符串",
-    "conditions": "结论成立的条件；没有则为空字符串",
-    "tradeoff": "需要权衡的价值；没有则为空字符串",
-    "counterpoint": "值得回应的反面情况；没有则为空字符串",
-    "boundary": "观点适用的边界；没有则为空字符串",
-    "real_detail_slots": ["可以补充的真实经历或事实，不得编造"]
-  },
-  "answer_outline": [
-    { "step": 1, "label": "核心观点", "content": "这一部分应该说什么", "seconds": 10 }
-  ],
-  "self_questions": [
-    "我的结论是什么？",
-    "这个结论在什么条件下成立？",
-    "我能用哪个真实细节支撑？"
-  ],
-  "key_improvements": [
-    { "area": "改进领域", "before": "当前状态", "after": "建议方向" }
-  ],
-  "reference_ready": true,
-  "integrity_check": {
-    "fabricated_person_or_event": false,
-    "unsupported_specific_details": [],
-    "stance_was_replaced": false
-  }
-}`;
-
-function buildDiagnosisSystemPrompt(topicType: string): string {
-  return COMMON_COACH_RULES + "\n" + getSkillPrompt(topicType) + "\n" + DIAGNOSIS_OUTPUT_SCHEMA;
-}
 
 // ── D. Rewrite Prompt (for generate_reference) ──
 
@@ -413,6 +237,16 @@ const GENERATE_TOPICS_PROMPT = `你是一位中文表达训练教练。根据用
 }`;
 
 // ═══════════════════════════════════════════
+// Startup: verify all 6 Skill routes (no cross-contamination)
+// ═══════════════════════════════════════════
+
+const skillVerification = verifyAllSkills();
+console.log(`[chinese-expression-agent] Skill verification: ${skillVerification.allPassed ? "ALL PASSED" : "SOME FAILED"}`);
+for (const r of skillVerification.results) {
+  console.log(`[chinese-expression-agent]   ${r.topicType}: ${r.passed ? "PASS" : "FAIL"} (${r.promptChars} chars)${r.doesNotContainForbidden.length > 0 ? ` forbidden: ${r.doesNotContainForbidden.join(", ")}` : ""}`);
+}
+
+// ═══════════════════════════════════════════
 // Main Handler
 // ═══════════════════════════════════════════
 
@@ -471,6 +305,7 @@ serve(async (req: Request) => {
         const transcript = (body.transcript as string) || "";
         const attemptRound = (body.attempt_round as number) || 1;
         const durationSeconds = (body.duration_seconds as number) || 60;
+        const targetDurationSeconds = (body.target_duration_seconds as number) || 60;
 
         if (!topic || !transcript) {
           return jsonResponse(req, {
@@ -478,27 +313,17 @@ serve(async (req: Request) => {
           }, 400);
         }
 
-        const deliveryMetrics = computeDeliveryMetrics(transcript, durationSeconds);
+        const deliveryMetrics = computeDeliveryMetrics(transcript, durationSeconds, targetDurationSeconds);
 
-        // Build prompt: common rules + topic-specific skill + output schema
+        // Build prompt via skills.ts: COMMON + ONE skill + output schema
         const systemPrompt = buildDiagnosisSystemPrompt(topicType);
-
-        const userMessage = [
-          `## 题目`,
-          `题目：${topic}`,
-          `类型：${topicType}`,
-          `轮次：第${attemptRound}轮`,
-          ``,
-          `## 用户转录`,
+        const userMessage = buildDiagnosisUserMessage({
+          topic,
+          topicType,
           transcript,
-          ``,
-          `## 口语指标（系统实测）`,
-          `- 录音时长：${deliveryMetrics.duration_seconds}秒`,
-          `- 字数（去除标点）：${deliveryMetrics.word_count}`,
-          `- 估算语速：${deliveryMetrics.pace_wpm}字/分钟`,
-          `- 检测到的口头禅：${deliveryMetrics.filler_words.length > 0 ? deliveryMetrics.filler_words.join("、") : "无"}`,
-          `- 口头禅总次数：${deliveryMetrics.filler_word_count}`,
-        ].join("\n");
+          attemptRound,
+          deliveryMetrics,
+        });
 
         const promptLen = systemPrompt.length;
         const msgLen = userMessage.length;
@@ -525,17 +350,17 @@ serve(async (req: Request) => {
         }
 
         const diagnosis = result.data;
-        console.log(`[chinese-expression-agent] ${requestId} stage=diagnosis_done overall_score=${diagnosis.overall_score}`);
+        const overall = diagnosis.overall as Record<string, unknown> | undefined;
+        console.log(`[chinese-expression-agent] ${requestId} stage=diagnosis_done overall_score=${overall?.score}`);
 
         // ── Integrity check ──
-        const integrityCheck = diagnosis.integrity_check as Record<string, unknown> | undefined;
-        const hasFabrication = integrityCheck?.fabricated_person_or_event === true;
-
-        if (hasFabrication) {
-          console.warn(`[chinese-expression-agent] ${requestId} integrity check failed — fabrication detected`);
+        const factConsistency = diagnosis.fact_consistency as Record<string, unknown> | undefined;
+        if (factConsistency?.status === "needs_confirmation") {
+          console.warn(`[chinese-expression-agent] ${requestId} fact consistency check — needs_confirmation`);
         }
 
         // ── Agent log ──
+        const aiPromptVersion = `chinese-v4/${topicType}@1`;
         if (userId) {
           try {
             await supabase.from("agent_logs").insert({
@@ -544,9 +369,9 @@ serve(async (req: Request) => {
               action: "analyze_expression",
               input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound },
               output_data: {
-                overall_score: diagnosis.overall_score,
-                framework: (diagnosis.primary_framework as Record<string, unknown>)?.name,
-                version: "3.0",
+                overall_score: overall?.score,
+                recommended_structure: (diagnosis.recommended_structure as Record<string, unknown>)?.name,
+                version: aiPromptVersion,
               },
               model: "deepseek-chat",
               tokens_used: result.usage?.totalTokens || 0,
@@ -581,14 +406,14 @@ serve(async (req: Request) => {
           }, 400);
         }
 
-        // Extract relevant diagnosis fields for rewrite context
+        // Extract relevant diagnosis fields for rewrite context (V4 format)
+        const overall = diagnosis.overall as Record<string, unknown> | undefined;
         const rewriteContext = {
-          overall_score: diagnosis.overall_score,
-          overall_judgment: diagnosis.overall_judgment,
-          stance: diagnosis.stance,
-          primary_framework: diagnosis.primary_framework,
-          three_key_issues: diagnosis.three_key_issues,
-          thinking_upgrade: diagnosis.thinking_upgrade,
+          overall_score: overall?.score,
+          overall_judgment: overall?.summary,
+          top_issues: diagnosis.top_issues,
+          recommended_structure: diagnosis.recommended_structure,
+          thinking_or_deepening: diagnosis.thinking_or_deepening,
           answer_outline: diagnosis.answer_outline,
         };
 

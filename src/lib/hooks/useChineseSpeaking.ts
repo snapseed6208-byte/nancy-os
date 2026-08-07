@@ -136,6 +136,99 @@ export interface V3Diagnosis {
   integrity_check: V2IntegrityCheck;
 }
 
+// ── V4 Diagnosis types (skill-specific dimensions per topic_type) ──
+
+export interface V4Overall {
+  score: number;
+  summary: string;
+}
+
+export interface V4DimensionScore {
+  key: string;
+  label: string;
+  score: number;
+  max_score: number;
+  diagnosis: string;
+  evidence_quote: string;
+}
+
+export interface V4TopIssue {
+  severity: "high" | "medium" | "low";
+  title: string;
+  evidence_quote: string;
+  why_it_matters: string;
+  action: string;
+}
+
+export interface V4RecommendedStructure {
+  name: string;
+  reason: string;
+  steps: string[];
+}
+
+export interface V4OutlineStep {
+  step: number;
+  label: string;
+  guidance: string;
+  target_seconds: number;
+}
+
+export interface V4KeyUpgrade {
+  title: string;
+  original: string;
+  direction: string;
+  reason: string;
+}
+
+export interface V4ThinkingOrDeepeningItem {
+  lens: string;
+  insight: string;
+  application: string;
+}
+
+export interface V4ThinkingOrDeepening {
+  title: string;
+  items: V4ThinkingOrDeepeningItem[];
+}
+
+export interface V4FactConsistency {
+  status: "safe" | "needs_confirmation" | "not_applicable";
+  message: string;
+  unconfirmed_details: string[];
+}
+
+export interface V4DeliveryFeedback {
+  summary: string;
+  time_control: string;
+  pace_comment: string;
+  filler_comment: string;
+}
+
+export interface V4Diagnosis {
+  skill_version: string;
+  topic_type: string;
+  overall: V4Overall;
+  dimensions: V4DimensionScore[];
+  top_issues: V4TopIssue[];
+  recommended_structure: V4RecommendedStructure;
+  answer_outline: V4OutlineStep[];
+  self_questions: string[];
+  key_upgrades: V4KeyUpgrade[];
+  thinking_or_deepening: V4ThinkingOrDeepening;
+  fact_consistency: V4FactConsistency;
+  delivery_feedback: V4DeliveryFeedback;
+  retry_focus: string[];
+}
+
+/** Union type for diagnosis: V4 if skill_version starts with "chinese-v4", else V3 */
+export type DiagnosisResult = V4Diagnosis | V3Diagnosis;
+
+export function isV4Diagnosis(d: unknown): d is V4Diagnosis {
+  if (!d || typeof d !== "object") return false;
+  const obj = d as Record<string, unknown>;
+  return typeof obj.skill_version === "string" && (obj.skill_version as string).startsWith("chinese-v4");
+}
+
 // ── V2 Rewrite types (kept for backward compat; V3 uses V3Reference) ──
 
 export interface V2ThoughtFeature {
@@ -178,15 +271,23 @@ export interface V3Reference {
   integrity_failed?: boolean;
 }
 
-// ── Delivery metrics (unchanged) ──
+// ── Delivery metrics (V4 — null for unmeasured data) ──
 
 export interface DeliveryMetrics {
+  // V4 fields (from Edge Function)
+  duration_seconds: number;
+  target_duration_seconds?: number;
+  overtime_seconds?: number;
+  transcript_chars?: number;
+  chars_per_minute?: number;
+  filler_total?: number;
+  filler_breakdown?: Record<string, number>;
+  // Legacy fields
   pace_wpm: number;
-  pause_count: number;
-  avg_pause_duration_seconds: number;
+  pause_count: number | null;
+  avg_pause_duration_seconds: number | null;
   filler_word_count: number;
   filler_words: string[];
-  duration_seconds: number;
   word_count: number;
 }
 
@@ -232,10 +333,33 @@ export interface ChineseAnalysisResultV3 {
   delivery_metrics: DeliveryMetrics;
 }
 
+// ── V4 Analysis result ──
+
+export interface ChineseAnalysisResultV4 {
+  diagnosis: V4Diagnosis;
+  delivery_metrics: DeliveryMetrics;
+}
+
 // ── V3 Reference result (on-demand full speech) ──
 
 export interface ChineseReferenceResultV3 {
   reference: V3Reference;
+}
+
+// ── V4 Reference result ──
+
+export interface V4Reference {
+  improved_speech: string;
+  thought_features: V2ThoughtFeature[];
+  key_upgrades: V4KeyUpgrade[];
+  deepening_suggestions: string[];
+  thinking_lenses_used: string[];
+  authenticity: V2Authenticity;
+  integrity_failed?: boolean;
+}
+
+export interface ChineseReferenceResultV4 {
+  reference: V4Reference;
 }
 
 // ── Database row types ──
@@ -279,6 +403,7 @@ export interface ChineseSpeakingAttempt {
   transcript_source: string | null;
   stt_success: boolean | null;
   fallback_used: boolean;
+  reference_viewed_before_retry: boolean;
   ai_model: string | null;
   ai_prompt_version: string | null;
   created_at: string;
@@ -494,6 +619,29 @@ export function useUpdateChineseSpeakingAttempt() {
   });
 }
 
+/**
+ * Persist reference_viewed_before_retry = true on the attempt.
+ * Called immediately when user clicks "查看完整参考" in Round 1 results.
+ */
+export function useMarkReferenceViewed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (attemptId: string) => {
+      const { data, error } = await supabase
+        .from("chinese_speaking_attempts")
+        .update({ reference_viewed_before_retry: true, updated_at: new Date().toISOString() })
+        .eq("id", attemptId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as ChineseSpeakingAttempt;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["chinese_sessions"] });
+    },
+  });
+}
+
 export function useSoftDeleteChineseSpeakingSession() {
   const qc = useQueryClient();
   return useMutation({
@@ -540,7 +688,7 @@ export async function uploadChineseAudio(sessionId: string, blob: Blob): Promise
   return urlData.publicUrl;
 }
 
-// ── AI Analysis (V3 — diagnosis only, single AI call) ──
+// ── AI Analysis (V4 — skill-specific diagnosis, single AI call) ──
 
 export async function analyzeChineseExpression(
   topic: string,
@@ -548,28 +696,30 @@ export async function analyzeChineseExpression(
   transcript: string,
   attemptRound: number,
   durationSeconds = 60,
-): Promise<{ success: true; data: ChineseAnalysisResultV3 } | { success: false; error: string }> {
-  return invokeAI<ChineseAnalysisResultV3>("chinese-expression-agent", {
+  targetDurationSeconds = 60,
+): Promise<{ success: true; data: ChineseAnalysisResultV4 } | { success: false; error: string }> {
+  return invokeAI<ChineseAnalysisResultV4>("chinese-expression-agent", {
     action: "analyze_expression",
     topic,
     topic_type: topicType,
     transcript,
     attempt_round: attemptRound,
     duration_seconds: durationSeconds,
+    target_duration_seconds: targetDurationSeconds,
   }, {
     timeout: 180_000,
     retries: 1,
   });
 }
 
-// ── Generate Reference (V3 — on-demand full speech, separate AI call) ──
+// ── Generate Reference (V4 — on-demand full speech, separate AI call) ──
 
 export async function generateChineseReference(
   topic: string,
   transcript: string,
   diagnosis: Record<string, unknown>,
-): Promise<{ success: true; data: ChineseReferenceResultV3 } | { success: false; error: string }> {
-  return invokeAI<ChineseReferenceResultV3>("chinese-expression-agent", {
+): Promise<{ success: true; data: ChineseReferenceResultV4 } | { success: false; error: string }> {
+  return invokeAI<ChineseReferenceResultV4>("chinese-expression-agent", {
     action: "generate_reference",
     topic,
     transcript,

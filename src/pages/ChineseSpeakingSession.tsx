@@ -13,28 +13,20 @@ import {
   useChineseSpeakingSession,
   useCreateChineseSpeakingAttempt,
   useUpdateChineseSpeakingAttempt,
+  useMarkReferenceViewed,
   uploadChineseAudio,
   analyzeChineseExpression,
   generateChineseReference,
   compareChineseRounds,
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
-  V2_DIMENSION_LABELS,
   type ChineseTopicType,
-  type ChineseFramework,
-  type V3Diagnosis,
-  type V3KeyImprovement,
-  type V3Reference,
-  type V2Scores,
-  type V2DimensionScore,
-  type V2KeyIssue,
-  type V2OutlineStep,
-  type V2KeyUpgrade,
-  type V2ThinkingUpgrade,
-  type V2IntegrityCheck,
+  type V4Diagnosis,
+  type V4Reference,
+  type V4DimensionScore,
+  type V4KeyUpgrade,
   type V2Comparison,
   type DeliveryMetrics,
-  type ChineseAnalysisResultV3,
 } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Constants ──
@@ -134,26 +126,26 @@ function RecordingTimer({ elapsed, limit, onStop }: { elapsed: number; limit: nu
   );
 }
 
-// ── V2 Dimension bar ──
+// ── V4 Dimension bar ──
 
-function V2DimensionBar({ label, data }: { label: string; data: V2DimensionScore }) {
-  const pct = (data.score / data.max) * 100;
+function V4DimensionBar({ data }: { data: V4DimensionScore }) {
+  const pct = (data.score / data.max_score) * 100;
   const color =
     pct >= 80 ? "bg-emerald-400" : pct >= 60 ? "bg-sage-deep/60" : pct >= 40 ? "bg-amber-400" : "bg-accent-rose/60";
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-ink">{label}</span>
-        <span className="text-xs font-mono text-ink-light">{data.score}/{data.max}</span>
+        <span className="text-xs font-medium text-ink">{data.label}</span>
+        <span className="text-xs font-mono text-ink-light">{data.score}/{data.max_score}</span>
       </div>
       <div className="h-1.5 bg-ink/8 rounded-full overflow-hidden">
         <div className={cn("h-full rounded-full transition-all duration-500", color)} style={{ width: `${pct}%` }} />
       </div>
       <p className="text-[11px] text-ink-lighter leading-relaxed">{data.diagnosis}</p>
-      {data.evidence_quotes.length > 0 && (
+      {data.evidence_quote && (
         <p className="text-[10px] text-ink-lighter/70 italic">
-          &ldquo;{data.evidence_quotes[0]}&rdquo;
+          &ldquo;{data.evidence_quote}&rdquo;
         </p>
       )}
     </div>
@@ -181,6 +173,7 @@ export default function ChineseSpeakingSession() {
   const { data: session, isLoading: sessionLoading } = useChineseSpeakingSession(sessionId);
   const createAttempt = useCreateChineseSpeakingAttempt();
   const updateAttempt = useUpdateChineseSpeakingAttempt();
+  const markReferenceViewed = useMarkReferenceViewed();
 
   const recorder = useAudioRecorder();
 
@@ -198,9 +191,9 @@ export default function ChineseSpeakingSession() {
   const [r1TranscriptSource, setR1TranscriptSource] = useState<string | undefined>(undefined);
   const [r1SttSuccess, setR1SttSuccess] = useState(false);
 
-  // Round 1 V3 AI results (diagnosis only; reference loaded on-demand)
-  const [round1Diagnosis, setRound1Diagnosis] = useState<V3Diagnosis | null>(null);
-  const [round1Reference, setRound1Reference] = useState<V3Reference | null>(null);
+  // Round 1 V4 AI results (diagnosis only; reference loaded on-demand)
+  const [round1Diagnosis, setRound1Diagnosis] = useState<V4Diagnosis | null>(null);
+  const [round1Reference, setRound1Reference] = useState<V4Reference | null>(null);
   const [round1DeliveryMetrics, setRound1DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round1AttemptId, setRound1AttemptId] = useState<string | null>(null);
   const [round1AudioUrl, setRound1AudioUrl] = useState<string | null>(null);
@@ -215,8 +208,8 @@ export default function ChineseSpeakingSession() {
   const [r2SttMode, setR2SttMode] = useState("");
   const [r2TranscriptSource, setR2TranscriptSource] = useState<string | undefined>(undefined);
   const [r2SttSuccess, setR2SttSuccess] = useState(false);
-  const [round2Diagnosis, setRound2Diagnosis] = useState<V3Diagnosis | null>(null);
-  const [round2Reference, setRound2Reference] = useState<V3Reference | null>(null);
+  const [round2Diagnosis, setRound2Diagnosis] = useState<V4Diagnosis | null>(null);
+  const [round2Reference, setRound2Reference] = useState<V4Reference | null>(null);
   const [round2DeliveryMetrics, setRound2DeliveryMetrics] = useState<DeliveryMetrics | null>(null);
   const [round2AudioUrl, setRound2AudioUrl] = useState<string | null>(null);
   const [round2FullReferenceViewed, setRound2FullReferenceViewed] = useState(false);
@@ -378,13 +371,15 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // V3 AI Analysis — diagnosis only (no full speech)
+    // V4 AI Analysis — skill-specific diagnosis (no full speech)
+    const timeLimit = session.time_limit_seconds || 60;
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
       editedTranscript,
       1,
       recorder.duration || 60,
+      timeLimit,
     );
 
     if (!result.success) {
@@ -398,29 +393,16 @@ export default function ChineseSpeakingSession() {
     setRound1Diagnosis(d.diagnosis);
     setRound1DeliveryMetrics(d.delivery_metrics);
 
-    // Update attempt with V3 diagnosis (no reference data yet — saved on-demand via generate_reference)
+    // Update attempt with V4 diagnosis (no reference data yet — saved on-demand via generate_reference)
     await updateAttempt.mutateAsync({
       id: attemptId,
       session_id: sessionId,
       updates: {
-        scores: {
-          overall_score: d.diagnosis.overall_score,
-          overall_judgment: d.diagnosis.overall_judgment,
-          ...d.diagnosis.scores,
-        },
-        diagnosis: {
-          version: d.diagnosis.version,
-          stance: d.diagnosis.stance,
-          primary_framework: d.diagnosis.primary_framework,
-          three_key_issues: d.diagnosis.three_key_issues,
-          thinking_upgrade: d.diagnosis.thinking_upgrade,
-          self_questions: d.diagnosis.self_questions,
-          key_improvements: d.diagnosis.key_improvements,
-          integrity_check: d.diagnosis.integrity_check,
-        },
-        answer_outline: d.diagnosis.answer_outline,
+        scores: d.diagnosis.overall,
+        diagnosis: d.diagnosis as unknown as Record<string, unknown>,
+        answer_outline: d.diagnosis.answer_outline as unknown as Record<string, unknown>[],
         delivery_metrics: d.delivery_metrics,
-        ai_prompt_version: "3.0",
+        ai_prompt_version: `chinese-v4/${session.topic_type || "opinion"}@1`,
       },
     });
 
@@ -439,6 +421,10 @@ export default function ChineseSpeakingSession() {
     if (round === 1) {
       setRound1GeneratingReference(true);
       setRound1FullReferenceViewed(true);
+      // Persist reference_viewed_before_retry immediately
+      if (round1AttemptId) {
+        markReferenceViewed.mutate(round1AttemptId);
+      }
     }
 
     const result = await generateChineseReference(
@@ -458,7 +444,7 @@ export default function ChineseSpeakingSession() {
             session_id: sessionId,
             updates: {
               final_improved_speech: result.data.reference.improved_speech,
-              key_improvements: result.data.reference.key_upgrades,
+              key_improvements: result.data.reference.key_upgrades as unknown as Record<string, unknown>[],
             },
           });
         }
@@ -469,7 +455,7 @@ export default function ChineseSpeakingSession() {
       setAiError(result.error);
       if (round === 1) setRound1GeneratingReference(false);
     }
-  }, [session, editedTranscript, round2EditedTranscript, round1Diagnosis, round2Diagnosis, round1AttemptId, sessionId, updateAttempt]);
+  }, [session, editedTranscript, round2EditedTranscript, round1Diagnosis, round2Diagnosis, round1AttemptId, sessionId, updateAttempt, markReferenceViewed]);
 
   // ── Results → Retry Recording ──
 
@@ -613,44 +599,25 @@ export default function ChineseSpeakingSession() {
         id: attempt2Id,
         session_id: sessionId,
         updates: {
-          scores: {
-            overall_score: d.diagnosis.overall_score,
-            overall_judgment: d.diagnosis.overall_judgment,
-            ...d.diagnosis.scores,
-          },
-          diagnosis: {
-            version: d.diagnosis.version,
-            stance: d.diagnosis.stance,
-            primary_framework: d.diagnosis.primary_framework,
-            three_key_issues: d.diagnosis.three_key_issues,
-            thinking_upgrade: d.diagnosis.thinking_upgrade,
-            self_questions: d.diagnosis.self_questions,
-            key_improvements: d.diagnosis.key_improvements,
-            integrity_check: d.diagnosis.integrity_check,
-          },
-          answer_outline: d.diagnosis.answer_outline,
+          scores: d.diagnosis.overall,
+          diagnosis: d.diagnosis as unknown as Record<string, unknown>,
+          answer_outline: d.diagnosis.answer_outline as unknown as Record<string, unknown>[],
           delivery_metrics: d.delivery_metrics,
-          ai_prompt_version: "3.0",
+          ai_prompt_version: `chinese-v4/${session.topic_type || "opinion"}@1`,
         },
       });
     }
 
-    // V2 AI Comparison
-    const r1Scores = round1Diagnosis ? {
-      overall_score: round1Diagnosis.overall_score,
-      ...round1Diagnosis.scores,
-    } : null;
-    const r2Scores = d.diagnosis ? {
-      overall_score: d.diagnosis.overall_score,
-      ...d.diagnosis.scores,
-    } : null;
+    // V2 AI Comparison (pass full diagnosis objects)
+    const r1Scores = round1Diagnosis?.overall || null;
+    const r2Scores = d.diagnosis?.overall || null;
 
     const compResult = await compareChineseRounds(
       session.topic,
       editedTranscript,
       round2EditedTranscript,
-      r1Scores as Record<string, unknown> | null,
-      r2Scores as Record<string, unknown> | null,
+      r1Scores as unknown as Record<string, unknown> | null,
+      r2Scores as unknown as Record<string, unknown> | null,
       round2FullReferenceViewed,
     );
 
@@ -668,9 +635,7 @@ export default function ChineseSpeakingSession() {
     ? TOPIC_TYPE_LABELS[session.topic_type as ChineseTopicType]
     : null;
 
-  const frameworkLabel = round1Diagnosis?.primary_framework?.name
-    ? FRAMEWORK_LABELS[round1Diagnosis.primary_framework.name as ChineseFramework] || round1Diagnosis.primary_framework.name
-    : null;
+  const frameworkLabel = round1Diagnosis?.recommended_structure?.name || null;
 
   // ── Loading state ──
 
@@ -783,23 +748,23 @@ export default function ChineseSpeakingSession() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] text-purple-500 font-medium">推荐框架：</span>
                     <span className="text-[11px] text-purple-700 font-medium">{frameworkLabel}</span>
-                    {round1Diagnosis.primary_framework.depth_lenses.length > 0 && (
+                    {round1Diagnosis.recommended_structure.steps.length > 0 && (
                       <span className="text-[10px] text-purple-400">
-                        （思辨镜头：{round1Diagnosis.primary_framework.depth_lenses.join("、")}）
+                        （{round1Diagnosis.recommended_structure.steps.join(" → ")}）
                       </span>
                     )}
                   </div>
                 )}
 
-                {/* Answer outline skeleton */}
+                {/* Answer outline skeleton (V4) */}
                 {round1Diagnosis.answer_outline && (
                   <div className="space-y-1">
                     <p className="text-[10px] text-purple-500 font-medium">答案骨架</p>
                     {round1Diagnosis.answer_outline.map((s) => (
                       <div key={s.step} className="flex gap-2 text-[11px]">
                         <span className="text-purple-600 font-medium shrink-0">{s.step}. {s.label}</span>
-                        <span className="text-purple-500/80">{s.content}</span>
-                        <span className="text-purple-400 text-[10px]">~{s.seconds}s</span>
+                        <span className="text-purple-500/80">{s.guidance}</span>
+                        <span className="text-purple-400 text-[10px]">~{s.target_seconds}s</span>
                       </div>
                     ))}
                   </div>
@@ -815,19 +780,19 @@ export default function ChineseSpeakingSession() {
                   </div>
                 )}
 
-                {/* Key improvements from diagnosis (V3: top-level) */}
-                {round1Diagnosis.key_improvements && round1Diagnosis.key_improvements.length > 0 && (
+                {/* Key upgrades from diagnosis (V4: key_upgrades) */}
+                {round1Diagnosis.key_upgrades && round1Diagnosis.key_upgrades.length > 0 && (
                   <div className="space-y-0.5">
                     <p className="text-[10px] text-purple-500 font-medium">关键提升点</p>
-                    {round1Diagnosis.key_improvements.slice(0, 3).map((ki, i) => (
-                      <p key={i} className="text-[10px] text-purple-600/80">{ki.area}: {ki.before} → {ki.after}</p>
+                    {round1Diagnosis.key_upgrades.slice(0, 3).map((ku, i) => (
+                      <p key={i} className="text-[10px] text-purple-600/80">{ku.title}: {ku.original} → {ku.direction}</p>
                     ))}
                   </div>
                 )}
               </div>
 
-              {/* Full answer — collapsed by default (V3: from reference or generate on-demand) */}
-              {(round1Reference?.improved_speech || round1Diagnosis.reference_ready) && (
+              {/* Full answer — collapsed by default (V4: from reference or generate on-demand) */}
+              {(round1Reference?.improved_speech || round1Diagnosis.recommended_structure) && (
                 <div className="pt-2 border-t border-purple-100">
                   {retryRefMode === "full" && round1Reference?.improved_speech ? (
                     <div>
@@ -1049,53 +1014,33 @@ export default function ChineseSpeakingSession() {
       {/* ── V2 RESULT ── */}
       {step === "result" && round1Diagnosis && (
         <div className="space-y-4">
-          {/* Score card */}
+          {/* Score card (V4) */}
           <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-ink">你的第一次表达</p>
-                <p className="text-[11px] text-ink-lighter">{round1Diagnosis.overall_judgment}</p>
+                <p className="text-[11px] text-ink-lighter">{round1Diagnosis.overall.summary}</p>
               </div>
               <div className="h-14 w-14 rounded-full bg-sage-light flex items-center justify-center">
-                <span className="text-xl font-bold text-sage-deep">{round1Diagnosis.overall_score}</span>
+                <span className="text-xl font-bold text-sage-deep">{round1Diagnosis.overall.score}</span>
               </div>
             </div>
 
             <div className="space-y-3 pt-2 border-t border-border/50">
-              {Object.entries(round1Diagnosis.scores).map(([key, dim]) => (
-                <V2DimensionBar
-                  key={key}
-                  label={V2_DIMENSION_LABELS[key] || key}
-                  data={dim as V2DimensionScore}
-                />
+              {round1Diagnosis.dimensions.map((dim) => (
+                <V4DimensionBar key={dim.key} data={dim} />
               ))}
             </div>
           </div>
 
-          {/* Stance */}
-          {round1Diagnosis.stance && (
-            <div className="bg-card rounded-2xl border border-border p-4 space-y-1">
-              <p className="text-sm font-medium text-ink">立场分析</p>
-              <p className="text-xs text-ink-light">{round1Diagnosis.stance.summary}</p>
-              <span className={cn(
-                "text-[10px] px-1.5 py-0.5 rounded-full inline-block",
-                round1Diagnosis.stance.clarity === "clear" ? "bg-emerald-100 text-emerald-700"
-                  : round1Diagnosis.stance.clarity === "partial" ? "bg-amber-100 text-amber-700"
-                  : "bg-accent-rose/10 text-accent-rose",
-              )}>
-                {round1Diagnosis.stance.clarity === "clear" ? "立场明确" : round1Diagnosis.stance.clarity === "partial" ? "立场部分明确" : "立场尚不明确"}
-              </span>
-            </div>
-          )}
-
-          {/* Three key issues */}
-          {round1Diagnosis.three_key_issues && round1Diagnosis.three_key_issues.length > 0 && (
+          {/* Top issues (V4) */}
+          {round1Diagnosis.top_issues && round1Diagnosis.top_issues.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Target size={16} className="text-accent-rose" />
-                <p className="text-sm font-medium text-ink">三个关键问题</p>
+                <p className="text-sm font-medium text-ink">关键问题</p>
               </div>
-              {round1Diagnosis.three_key_issues.map((issue, i) => (
+              {round1Diagnosis.top_issues.map((issue, i) => (
                 <div key={i} className="bg-accent-rose/[0.03] border border-accent-rose/10 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center gap-2">
                     <span className={cn(
@@ -1112,68 +1057,31 @@ export default function ChineseSpeakingSession() {
                     <p className="text-[11px] text-ink-lighter italic">&ldquo;{issue.evidence_quote}&rdquo;</p>
                   )}
                   <p className="text-[11px] text-ink-lighter">{issue.why_it_matters}</p>
-                  <p className="text-[11px] text-sage-deep">{issue.how_to_fix}</p>
+                  <p className="text-[11px] text-sage-deep">{issue.action}</p>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Thinking upgrade */}
-          {round1Diagnosis.thinking_upgrade && (
+          {/* Thinking or Deepening (V4) */}
+          {round1Diagnosis.thinking_or_deepening && round1Diagnosis.thinking_or_deepening.items.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Lightbulb size={16} className="text-purple-600" />
-                <p className="text-sm font-medium text-ink">思辨升级</p>
+                <p className="text-sm font-medium text-ink">{round1Diagnosis.thinking_or_deepening.title}</p>
               </div>
-              {round1Diagnosis.thinking_upgrade.core_tension && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">核心矛盾：</span>
-                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.core_tension}</span>
+              {round1Diagnosis.thinking_or_deepening.items.map((item, i) => (
+                <div key={i} className="bg-purple-50/50 rounded-lg p-2.5 space-y-1">
+                  <p className="text-[11px] font-medium text-purple-700">{item.lens}</p>
+                  <p className="text-[11px] text-ink-light">{item.insight}</p>
+                  <p className="text-[10px] text-purple-500">{item.application}</p>
                 </div>
-              )}
-              {round1Diagnosis.thinking_upgrade.definition && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">概念澄清：</span>
-                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.definition}</span>
-                </div>
-              )}
-              {round1Diagnosis.thinking_upgrade.conditions && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">条件：</span>
-                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.conditions}</span>
-                </div>
-              )}
-              {round1Diagnosis.thinking_upgrade.tradeoff && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">权衡：</span>
-                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.tradeoff}</span>
-                </div>
-              )}
-              {round1Diagnosis.thinking_upgrade.counterpoint && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">反面情况：</span>
-                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.counterpoint}</span>
-                </div>
-              )}
-              {round1Diagnosis.thinking_upgrade.boundary && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">边界：</span>
-                  <span className="text-xs text-ink">{round1Diagnosis.thinking_upgrade.boundary}</span>
-                </div>
-              )}
-              {round1Diagnosis.thinking_upgrade.real_detail_slots && round1Diagnosis.thinking_upgrade.real_detail_slots.length > 0 && (
-                <div>
-                  <span className="text-[10px] text-ink-lighter">可补充的真实细节：</span>
-                  {round1Diagnosis.thinking_upgrade.real_detail_slots.map((slot, i) => (
-                    <span key={i} className="text-[10px] text-ink-light block ml-2">• {slot}</span>
-                  ))}
-                </div>
-              )}
+              ))}
             </div>
           )}
 
-          {/* Framework */}
-          {round1Diagnosis.primary_framework && (
+          {/* Recommended structure (V4) */}
+          {round1Diagnosis.recommended_structure && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Lightbulb size={16} className="text-purple-600" />
@@ -1182,18 +1090,18 @@ export default function ChineseSpeakingSession() {
               <div className="inline-flex px-2.5 py-1 bg-purple-100 rounded-full">
                 <span className="text-xs font-medium text-purple-700">{frameworkLabel}</span>
               </div>
-              <p className="text-xs text-ink-lighter">{round1Diagnosis.primary_framework.reason}</p>
-              {round1Diagnosis.primary_framework.depth_lenses.length > 0 && (
+              <p className="text-xs text-ink-lighter">{round1Diagnosis.recommended_structure.reason}</p>
+              {round1Diagnosis.recommended_structure.steps.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {round1Diagnosis.primary_framework.depth_lenses.map((lens) => (
-                    <span key={lens} className="text-[10px] bg-purple-50 text-purple-600 rounded-full px-2 py-0.5">{lens}</span>
+                  {round1Diagnosis.recommended_structure.steps.map((step) => (
+                    <span key={step} className="text-[10px] bg-purple-50 text-purple-600 rounded-full px-2 py-0.5">{step}</span>
                   ))}
                 </div>
               )}
             </div>
           )}
 
-          {/* Answer outline — V2 format (content + seconds) */}
+          {/* Answer outline — V4 format */}
           {round1Diagnosis.answer_outline && round1Diagnosis.answer_outline.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
               <p className="text-sm font-medium text-ink">答案骨架</p>
@@ -1205,8 +1113,8 @@ export default function ChineseSpeakingSession() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-ink">{s.label}</p>
-                      <p className="text-[11px] text-ink-lighter">{s.content}</p>
-                      <p className="text-[10px] text-ink-lighter/70">约 {s.seconds} 秒</p>
+                      <p className="text-[11px] text-ink-lighter">{s.guidance}</p>
+                      <p className="text-[10px] text-ink-lighter/70">约 {s.target_seconds} 秒</p>
                     </div>
                   </div>
                 ))}
@@ -1276,8 +1184,8 @@ export default function ChineseSpeakingSession() {
             )}
           </div>
 
-          {/* Key improvements — V3: from diagnosis.top-level, or reference.key_upgrades if loaded */}
-          {((round1Diagnosis.key_improvements && round1Diagnosis.key_improvements.length > 0) ||
+          {/* Key upgrades — V4: from diagnosis.key_upgrades, or reference.key_upgrades if loaded */}
+          {((round1Diagnosis.key_upgrades && round1Diagnosis.key_upgrades.length > 0) ||
             (round1Reference?.key_upgrades && round1Reference.key_upgrades.length > 0)) && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <p className="text-sm font-medium text-ink">关键提升点</p>
@@ -1288,24 +1196,25 @@ export default function ChineseSpeakingSession() {
                       <div className="space-y-0.5">
                         <p className="text-xs font-medium text-ink">{ku.title}</p>
                         <p className="text-[10px] text-ink-lighter">
-                          <span className="text-accent-rose/70">原：「{ku.before}」</span>
+                          <span className="text-accent-rose/70">原：「{ku.original}」</span>
                           {" → "}
-                          <span className="text-emerald-600/70">改：「{ku.after}」</span>
+                          <span className="text-emerald-600/70">改：「{ku.direction}」</span>
                         </p>
                         <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
                       </div>
                     </div>
                   ))
-                : round1Diagnosis.key_improvements.map((ki, i) => (
+                : round1Diagnosis.key_upgrades.map((ku, i) => (
                     <div key={i} className="flex gap-2">
                       <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
                       <div className="space-y-0.5">
-                        <p className="text-xs font-medium text-ink">{ki.area}</p>
+                        <p className="text-xs font-medium text-ink">{ku.title}</p>
                         <p className="text-[10px] text-ink-lighter">
-                          <span className="text-accent-rose/70">原：「{ki.before}」</span>
+                          <span className="text-accent-rose/70">原：「{ku.original}」</span>
                           {" → "}
-                          <span className="text-emerald-600/70">改：「{ki.after}」</span>
+                          <span className="text-emerald-600/70">改：「{ku.direction}」</span>
                         </p>
+                        <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
                       </div>
                     </div>
                   ))}
@@ -1332,18 +1241,24 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* Integrity check result */}
-          {round1Diagnosis.integrity_check && (
+          {/* Fact consistency (V4) */}
+          {round1Diagnosis.fact_consistency && (
             <div className={cn(
               "rounded-xl p-3 text-xs",
-              round1Diagnosis.integrity_check.fabricated_person_or_event
-                ? "bg-accent-rose/5 border border-accent-rose/10 text-accent-rose"
+              round1Diagnosis.fact_consistency.status === "needs_confirmation"
+                ? "bg-amber-50 border border-amber-100 text-amber-700"
+                : round1Diagnosis.fact_consistency.status === "not_applicable"
+                ? "bg-ink/5 border border-border text-ink-light"
                 : "bg-emerald-50/50 border border-emerald-100 text-emerald-700",
             )}>
-              {round1Diagnosis.integrity_check.fabricated_person_or_event
-                ? <span className="flex items-center gap-1.5"><AlertTriangle size={12} /> 检测到可能虚构的内容</span>
-                : <span className="flex items-center gap-1.5"><CheckCircle2 size={12} /> 真实性检查通过 — 未编造经历</span>
-              }
+              <span className="flex items-center gap-1.5">
+                {round1Diagnosis.fact_consistency.status === "needs_confirmation"
+                  ? <><AlertTriangle size={12} /> {round1Diagnosis.fact_consistency.message}</>
+                  : round1Diagnosis.fact_consistency.status === "not_applicable"
+                  ? <><CheckCircle2 size={12} /> {round1Diagnosis.fact_consistency.message}</>
+                  : <><CheckCircle2 size={12} /> {round1Diagnosis.fact_consistency.message || "事实一致性保护 — AI未新增关键事实"}</>
+                }
+              </span>
             </div>
           )}
 
@@ -1371,17 +1286,17 @@ export default function ChineseSpeakingSession() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-white/60 rounded-xl p-3 text-center">
                   <p className="text-[10px] text-ink-lighter mb-1">你的第一次表达</p>
-                  <p className="text-xl font-bold text-ink">{round1Diagnosis.overall_score}</p>
+                  <p className="text-xl font-bold text-ink">{round1Diagnosis.overall.score}</p>
                 </div>
                 <div className="bg-white/60 rounded-xl p-3 text-center">
                   <p className="text-[10px] text-ink-lighter mb-1">你的第二次表达</p>
                   <p className={cn(
                     "text-xl font-bold",
-                    round2Diagnosis.overall_score > round1Diagnosis.overall_score ? "text-emerald-600"
-                      : round2Diagnosis.overall_score < round1Diagnosis.overall_score ? "text-accent-rose"
+                    round2Diagnosis.overall.score > round1Diagnosis.overall.score ? "text-emerald-600"
+                      : round2Diagnosis.overall.score < round1Diagnosis.overall.score ? "text-accent-rose"
                       : "text-sage-deep",
                   )}>
-                    {round2Diagnosis.overall_score}
+                    {round2Diagnosis.overall.score}
                   </p>
                 </div>
               </div>
@@ -1464,19 +1379,18 @@ export default function ChineseSpeakingSession() {
               </div>
             )}
 
-            {/* Fallback: simple dimension comparison if AI comparison failed */}
+            {/* Fallback: simple dimension comparison if AI comparison failed (V4) */}
             {!comparison && round1Diagnosis && round2Diagnosis && (
               <div className="space-y-1.5">
-                {Object.entries(round1Diagnosis.scores).map(([key, d1Data]) => {
-                  const d1 = d1Data as V2DimensionScore;
-                  const d2 = (round2Diagnosis.scores as unknown as Record<string, V2DimensionScore>)[key];
+                {round1Diagnosis.dimensions.map((d1) => {
+                  const d2 = round2Diagnosis.dimensions.find((d) => d.key === d1.key);
                   const delta = d2 ? d2.score - d1.score : 0;
                   return (
-                    <div key={key} className="flex items-center gap-2">
-                      <span className="text-[10px] text-ink-lighter w-20 shrink-0">{V2_DIMENSION_LABELS[key] || key}</span>
+                    <div key={d1.key} className="flex items-center gap-2">
+                      <span className="text-[10px] text-ink-lighter w-20 shrink-0">{d1.label}</span>
                       <span className="text-[10px] font-mono w-5 text-right">{d1.score}</span>
                       <div className="flex-1 h-1 bg-ink/8 rounded-full overflow-hidden">
-                        <div className="h-full bg-sage-deep/40 rounded-full" style={{ width: `${(d1.score / d1.max) * 100}%` }} />
+                        <div className="h-full bg-sage-deep/40 rounded-full" style={{ width: `${(d1.score / d1.max_score) * 100}%` }} />
                       </div>
                       {d2 && (
                         <>
