@@ -20,6 +20,7 @@ import {
   compareChineseRounds,
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
+  IMPROVEMENT_QUALITY_LABELS,
   type ChineseTopicType,
   type V4Diagnosis,
   type V4Reference,
@@ -27,6 +28,7 @@ import {
   type V4KeyUpgrade,
   type V2Comparison,
   type DeliveryMetrics,
+  type ImprovementQuality,
 } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Constants ──
@@ -98,28 +100,56 @@ function PrepCountdown({ seconds, onSkip }: { seconds: number; onSkip: () => voi
 function RecordingTimer({ elapsed, limit, onStop }: { elapsed: number; limit: number; onStop: () => void }) {
   const remaining = Math.max(0, limit - elapsed);
   const pct = (elapsed / limit) * 100;
+  const warningAt = limit - 15;
+  const hardStopAt = limit + 15;
+  const isWarning = elapsed >= warningAt && elapsed < limit;
+  const isTargetReached = elapsed >= limit && elapsed < hardStopAt;
+  const isHardStop = elapsed >= hardStopAt;
 
   useEffect(() => {
-    if (elapsed >= limit) onStop();
-  }, [elapsed, limit, onStop]);
+    if (isHardStop) onStop();
+  }, [isHardStop, onStop]);
 
   return (
     <div className="flex flex-col items-center justify-center py-8 space-y-6">
+      {/* Status messages */}
+      {isHardStop ? (
+        <p className="text-sm font-medium text-accent-rose">时间到，正在自动停止...</p>
+      ) : isTargetReached ? (
+        <p className="text-sm font-medium text-amber-600">目标时间到，请完成最后一句</p>
+      ) : isWarning ? (
+        <p className="text-sm font-medium text-amber-500">准备收束</p>
+      ) : (
+        <p className="text-sm text-ink-lighter">正在录音</p>
+      )}
+
       <div className="relative h-40 w-40">
         <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" className="text-ink/8" strokeWidth="3" />
           <circle
             cx="50" cy="50" r="44" fill="none" stroke="currentColor"
-            className={cn("text-accent-rose transition-colors", remaining <= 10 && "text-accent-rose animate-pulse")}
-            strokeWidth="3" strokeDasharray={`${pct * 2.76} 276`}
+            className={cn(
+              "transition-colors",
+              isHardStop ? "text-accent-rose animate-pulse" :
+              isTargetReached ? "text-amber-500" :
+              isWarning ? "text-amber-400" :
+              "text-accent-rose",
+            )}
+            strokeWidth="3" strokeDasharray={`${Math.min(pct * 2.76, 100 * 2.76)} 276`}
             strokeLinecap="round"
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={cn("text-3xl font-bold tabular-nums", remaining <= 10 ? "text-accent-rose" : "text-ink")}>
-            {remaining}
+          <span className={cn(
+            "text-3xl font-bold tabular-nums",
+            isHardStop ? "text-accent-rose" :
+            isTargetReached ? "text-amber-600" :
+            isWarning ? "text-amber-500" :
+            "text-ink",
+          )}>
+            {elapsed}
           </span>
-          <span className="text-xs text-ink-lighter">秒</span>
+          <span className="text-xs text-ink-lighter">秒 / 目标 {limit}s</span>
         </div>
       </div>
     </div>
@@ -463,7 +493,9 @@ export default function ChineseSpeakingSession() {
     if (!round1AttemptId) return;
     setAiError(null);
     stoppingRef.current = false;
-    setRound2FullReferenceViewed(round1FullReferenceViewed);
+    // Read reference_viewed_before_retry from DB (survives page refresh)
+    const r1Attempt = session?.attempts?.find((a) => a.id === round1AttemptId);
+    setRound2FullReferenceViewed(r1Attempt?.reference_viewed_before_retry ?? round1FullReferenceViewed);
 
     recorder.reset();
     asrRef.current?.reset();
@@ -618,6 +650,8 @@ export default function ChineseSpeakingSession() {
       round2EditedTranscript,
       r1Scores as unknown as Record<string, unknown> | null,
       r2Scores as unknown as Record<string, unknown> | null,
+      round1DeliveryMetrics as unknown as Record<string, unknown> | null,
+      d.delivery_metrics as unknown as Record<string, unknown> | null,
       round2FullReferenceViewed,
     );
 
@@ -1227,7 +1261,7 @@ export default function ChineseSpeakingSession() {
               <p className="text-sm font-medium text-ink mb-2">口语呈现</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                 <span className="text-ink-lighter">语速</span><span className="text-ink text-right">{round1DeliveryMetrics.pace_wpm} 字/分钟</span>
-                <span className="text-ink-lighter">停顿次数</span><span className="text-ink text-right">{round1DeliveryMetrics.pause_count}</span>
+                <span className="text-ink-lighter">停顿次数</span><span className="text-ink text-right">{round1DeliveryMetrics.pause_count != null ? round1DeliveryMetrics.pause_count : "暂未测量"}</span>
                 <span className="text-ink-lighter">口头禅</span><span className="text-ink text-right">{round1DeliveryMetrics.filler_word_count} 次</span>
                 <span className="text-ink-lighter">字数</span><span className="text-ink text-right">{round1DeliveryMetrics.word_count} 字</span>
               </div>
@@ -1305,6 +1339,23 @@ export default function ChineseSpeakingSession() {
             {/* AI comparison with evidence — V2 */}
             {comparison && (
               <div className="space-y-3">
+                {/* Improvement quality badge */}
+                {comparison.improvement_quality && (
+                  <div className={cn(
+                    "rounded-lg p-2.5 text-xs",
+                    comparison.improvement_quality === "internalized" ? "bg-emerald-50 border border-emerald-100 text-emerald-700" :
+                    comparison.improvement_quality === "content_better_delivery_worse" ? "bg-amber-50 border border-amber-100 text-amber-700" :
+                    comparison.improvement_quality === "reference_imitation_possible" ? "bg-purple-50 border border-purple-100 text-purple-700" :
+                    "bg-ink/5 border border-border text-ink-light",
+                  )}>
+                    <p className="font-medium">
+                      {IMPROVEMENT_QUALITY_LABELS[comparison.improvement_quality as ImprovementQuality] || comparison.improvement_quality}
+                    </p>
+                    {comparison.improvement_analysis && (
+                      <p className="mt-0.5 opacity-80">{comparison.improvement_analysis}</p>
+                    )}
+                  </div>
+                )}
                 {/* Dimension changes with explanations */}
                 {comparison.dimension_changes.length > 0 && (
                   <div className="space-y-2">

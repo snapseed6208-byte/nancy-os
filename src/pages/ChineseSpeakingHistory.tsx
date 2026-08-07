@@ -108,9 +108,13 @@ export default function ChineseSpeakingHistory() {
             const round2 = s.attempts?.find((a) => a.attempt_round === 2);
             const hasRetry = !!round2;
             const r1Scores = round1?.scores as Record<string, unknown> | null;
-            const score = typeof r1Scores?.overall_score === "number"
-              ? r1Scores.overall_score as number
-              : r1Scores?.total as number | undefined;
+            const r1Diagnosis = round1?.diagnosis as Record<string, unknown> | null;
+            const score =
+              typeof r1Scores?.overall_score === "number" ? r1Scores.overall_score as number
+              : typeof r1Scores?.total === "number" ? r1Scores.total as number
+              : typeof (r1Diagnosis?.overall as Record<string, unknown> | null)?.score === "number"
+                ? (r1Diagnosis!.overall as Record<string, unknown>).score as number
+              : undefined;
 
             return (
               <button

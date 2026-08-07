@@ -190,14 +190,30 @@ const COMPARISON_SYSTEM_PROMPT = `你是一名中文表达训练复盘教练。
 每个分数变化必须给出证据。
 不得只输出"进步明显""结构更清晰"。
 
-如果用户查看过完整参考答案，必须在结果中注明：
-"本轮在查看完整参考答案后完成，分数提升可能同时包含模仿因素。"
+## improvement_quality 分类规则
+
+你必须输出 improvement_quality 字段，按以下规则判断：
+
+- "internalized" — 内容分和口语呈现分都提升或持平，用户真正内化了改进
+- "content_better_delivery_worse" — 内容质量提升但口语呈现下降（特别是语速明显加快、口头禅增多），用户为了塞入更多内容牺牲了表达质量
+- "delivery_better_content_flat" — 口语呈现改善但内容分数没有明显提升
+- "reference_imitation_possible" — 用户查看了完整参考答案后，总分大幅提升，可能包含模仿因素
+- "mixed" — 部分维度提升、部分下降，没有一致方向
+- "no_clear_improvement" — 两次表达差异很小，没有明确进步或退步
+
+特别注意：如果 content 分数 ↑ 但 chars_per_minute 大幅 ↑，必须判断为 content_better_delivery_worse，并在 analysis 中建议删减次要内容而非继续加速。
+
+如果用户查看过完整参考答案，且在 improvement_quality 中判断可能包含模仿因素时，必须使用 reference_imitation_possible。
+
+## 输出格式
 
 只输出合法JSON，不得使用Markdown代码围栏。
 
 {
+  "improvement_quality": "internalized|content_better_delivery_worse|delivery_better_content_flat|reference_imitation_possible|mixed|no_clear_improvement",
+  "improvement_analysis": "对improvement_quality的1-2句解释",
   "dimension_changes": [
-    { "dimension": "内容深度与思辨", "round1_score": 10, "round2_score": 15, "delta": 5, "round1_evidence": "第一次原句", "round2_evidence": "第二次原句", "explanation": "为什么提升" }
+    { "dimension": "维度名称", "round1_score": 10, "round2_score": 15, "delta": 5, "round1_evidence": "第一次原句", "round2_evidence": "第二次原句", "explanation": "为什么提升" }
   ],
   "progress_points": [
     { "area": "进步领域", "detail": "具体表现" }
@@ -483,6 +499,8 @@ serve(async (req: Request) => {
         const round2Transcript = (body.round2_transcript as string) || "";
         const round1Scores = body.round1_scores as Record<string, unknown> | null;
         const round2Scores = body.round2_scores as Record<string, unknown> | null;
+        const round1Delivery = body.round1_delivery as Record<string, unknown> | null;
+        const round2Delivery = body.round2_delivery as Record<string, unknown> | null;
         const fullReferenceViewed = (body.full_reference_viewed as boolean) || false;
 
         if (!round1Transcript || !round2Transcript) {
@@ -497,8 +515,13 @@ serve(async (req: Request) => {
           `## 第二次表达转录`, round2Transcript, ``,
           `## 第一次评分`, round1Scores ? JSON.stringify(round1Scores) : "无", ``,
           `## 第二次评分`, round2Scores ? JSON.stringify(round2Scores) : "无", ``,
+          `## 第一次口语指标`, round1Delivery ? JSON.stringify(round1Delivery) : "无", ``,
+          `## 第二次口语指标`, round2Delivery ? JSON.stringify(round2Delivery) : "无", ``,
           `## 参考信息`,
           `用户查看了完整参考答案：${fullReferenceViewed ? "是" : "否"}`,
+          ``,
+          `请特别注意：如果第二轮内容分数上升但语速(chars_per_minute)明显加快或口头禅增多，`,
+          `必须将improvement_quality判断为content_better_delivery_worse。`,
         ].join("\n");
 
         const compareMessages: DeepSeekMessage[] = [

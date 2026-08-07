@@ -319,7 +319,26 @@ export interface ReferenceDependency {
   interpretation: string;
 }
 
+export type ImprovementQuality =
+  | "internalized"
+  | "content_better_delivery_worse"
+  | "delivery_better_content_flat"
+  | "reference_imitation_possible"
+  | "mixed"
+  | "no_clear_improvement";
+
+export const IMPROVEMENT_QUALITY_LABELS: Record<ImprovementQuality, string> = {
+  internalized: "真正内化",
+  content_better_delivery_worse: "内容提升但表达牺牲",
+  delivery_better_content_flat: "表达改善但内容持平",
+  reference_imitation_possible: "可能包含参考模仿",
+  mixed: "部分进步",
+  no_clear_improvement: "无明显提升",
+};
+
 export interface V2Comparison {
+  improvement_quality?: ImprovementQuality;
+  improvement_analysis?: string;
   dimension_changes: DimensionChange[];
   progress_points: ProgressPoint[];
   remaining_issues: RemainingIssue[];
@@ -468,38 +487,66 @@ export function useChineseSpeakingSession(id: string) {
 async function fetchChineseSpeakingStats() {
   const { data: sessions, error: sessionsError } = await supabase
     .from("chinese_speaking_sessions")
-    .select("id")
+    .select("id, topic_type")
     .is("deleted_at", null);
 
   if (sessionsError) throw sessionsError;
 
   const { data: attempts, error: attemptsError } = await supabase
     .from("chinese_speaking_attempts")
-    .select("scores, attempt_round, is_retry")
+    .select("session_id, scores, diagnosis, attempt_round, is_retry")
     .is("deleted_at", null);
 
   if (attemptsError) throw attemptsError;
 
-  const completedAttempts = attempts?.filter((a) => {
+  function getAttemptScore(a: { scores: unknown; diagnosis: unknown }): number | null {
     const s = a.scores as Record<string, unknown> | null;
-    // Support both V1 (total) and V2 (overall_score stored in diagnosis)
-    return s?.total != null;
-  }) || [];
+    // V1: scores.total
+    if (typeof s?.total === "number") return s.total as number;
+    // V2: scores.overall_score
+    if (typeof s?.overall_score === "number") return s.overall_score as number;
+    // V4: diagnosis.overall.score
+    const diag = a.diagnosis as Record<string, unknown> | null;
+    const overall = diag?.overall as Record<string, unknown> | null;
+    if (typeof overall?.score === "number") return overall.score as number;
+    return null;
+  }
+
+  const r1Attempts = attempts?.filter((a) => a.attempt_round === 1 && !a.is_retry) || [];
+  const scoredAttempts = r1Attempts.filter((a) => getAttemptScore(a) != null);
   const retries = attempts?.filter((a) => a.is_retry === true) || [];
+
+  // Per-type averages (V4 uses different rubrics per type)
+  const typeScores: Record<string, { total: number; count: number }> = {};
+  for (const a of scoredAttempts) {
+    const session = sessions?.find((s) => s.id === ((a as Record<string, unknown>).session_id as string));
+    const tt = (session?.topic_type as string) || "unknown";
+    if (!typeScores[tt]) typeScores[tt] = { total: 0, count: 0 };
+    const score = getAttemptScore(a);
+    if (score != null) {
+      typeScores[tt].total += score;
+      typeScores[tt].count += 1;
+    }
+  }
+
+  const perTypeAvg: Record<string, number> = {};
+  for (const [tt, v] of Object.entries(typeScores)) {
+    if (v.count > 0) perTypeAvg[tt] = Math.round(v.total / v.count);
+  }
 
   return {
     total_sessions: sessions?.length || 0,
-    total_completed: completedAttempts.length,
+    total_completed: scoredAttempts.length,
     total_retries: retries.length,
     avg_score:
-      completedAttempts.length > 0
+      scoredAttempts.length > 0
         ? Math.round(
-            completedAttempts.reduce((sum, a) => {
-              const s = a.scores as Record<string, unknown>;
-              return sum + (typeof s?.total === "number" ? s.total : 0);
-            }, 0) / completedAttempts.length
+            scoredAttempts.reduce((sum, a) => {
+              return sum + (getAttemptScore(a) || 0);
+            }, 0) / scoredAttempts.length
           )
         : null,
+    per_type_avg: perTypeAvg,
   };
 }
 
@@ -736,6 +783,8 @@ export async function compareChineseRounds(
   round2Transcript: string,
   round1Scores: Record<string, unknown> | null,
   round2Scores: Record<string, unknown> | null,
+  round1Delivery: Record<string, unknown> | null,
+  round2Delivery: Record<string, unknown> | null,
   fullReferenceViewed: boolean,
 ): Promise<{ success: true; data: V2Comparison } | { success: false; error: string }> {
   return invokeAI<V2Comparison>("chinese-expression-agent", {
@@ -745,6 +794,8 @@ export async function compareChineseRounds(
     round2_transcript: round2Transcript,
     round1_scores: round1Scores,
     round2_scores: round2Scores,
+    round1_delivery: round1Delivery,
+    round2_delivery: round2Delivery,
     full_reference_viewed: fullReferenceViewed,
   }, {
     timeout: 90_000,

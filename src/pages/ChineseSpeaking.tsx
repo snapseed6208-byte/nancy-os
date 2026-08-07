@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, Mic, Clock, Lightbulb, BookOpen, Briefcase,
@@ -7,6 +7,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChineseSpeakingStats, useCreateChineseSpeakingSession, generateChineseTopics, TOPIC_TYPE_LABELS, type ChineseTopicType, type GeneratedTopic } from "@/lib/hooks/useChineseSpeaking";
+
+const TIME_OPTIONS = [60, 90, 120] as const;
+
+const DEFAULT_TIME_LIMITS: Record<ChineseTopicType, number> = {
+  opinion: 60,
+  experience: 90,
+  concept: 90,
+  reflection: 90,
+  interview: 90,
+  story: 120,
+};
 
 const TOPIC_CARDS: { type: ChineseTopicType; icon: typeof MessageSquare; description: string }[] = [
   { type: "opinion", icon: MessageSquare, description: "对热点话题表达你的观点和立场" },
@@ -25,9 +36,18 @@ export default function ChineseSpeaking() {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customTopic, setCustomTopic] = useState("");
   const [selectedType, setSelectedType] = useState<ChineseTopicType>("opinion");
+  const [timeLimit, setTimeLimit] = useState<number>(DEFAULT_TIME_LIMITS.opinion);
   const [aiTopics, setAiTopics] = useState<GeneratedTopic[]>([]);
   const [generatingTopics, setGeneratingTopics] = useState(false);
   const [topicError, setTopicError] = useState<string | null>(null);
+
+  // Update time limit when type changes
+  const handleSelectType = (type: ChineseTopicType) => {
+    setSelectedType(type);
+    setAiTopics([]);
+    setTopicError(null);
+    setTimeLimit(DEFAULT_TIME_LIMITS[type]);
+  };
 
   const handleGenerateTopics = async () => {
     setGeneratingTopics(true);
@@ -49,7 +69,7 @@ export default function ChineseSpeaking() {
         topic_type: topicType || selectedType,
         prompt,
         mode: "one_minute_topic",
-        time_limit_seconds: 60,
+        time_limit_seconds: timeLimit,
       });
       navigate(`/chinese/session/${session.id}`);
     } catch {
@@ -76,7 +96,7 @@ export default function ChineseSpeaking() {
             <p className="text-lg font-semibold text-ink">
               {stats.avg_score != null ? `${stats.avg_score}分` : "-"}
             </p>
-            <p className="text-[10px] text-ink-lighter">平均分</p>
+            <p className="text-[10px] text-ink-lighter">综合均分</p>
           </div>
           <div className="bg-card rounded-xl border border-border p-3 text-center">
             <p className="text-lg font-semibold text-ink">{stats.total_retries}</p>
@@ -84,6 +104,49 @@ export default function ChineseSpeaking() {
           </div>
         </div>
       )}
+
+      {/* Per-type averages */}
+      {stats?.per_type_avg && Object.keys(stats.per_type_avg).length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(stats.per_type_avg).map(([tt, avg]) => (
+            <span key={tt} className="text-[10px] bg-ink/5 text-ink-light rounded-full px-2 py-0.5">
+              {TOPIC_TYPE_LABELS[tt as ChineseTopicType] || tt}均分 {avg}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Time selector */}
+      <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="h-7 w-7 rounded-lg bg-ink/5 flex items-center justify-center">
+            <Clock size={14} className="text-ink-light" />
+          </div>
+          <span className="text-sm font-medium text-ink">训练时长</span>
+          <span className="text-[10px] text-ink-lighter ml-auto">
+            {selectedType && TOPIC_TYPE_LABELS[selectedType]}推荐 {DEFAULT_TIME_LIMITS[selectedType]} 秒
+          </span>
+        </div>
+        <div className="flex gap-2">
+          {TIME_OPTIONS.map((sec) => (
+            <button
+              key={sec}
+              onClick={() => setTimeLimit(sec)}
+              className={cn(
+                "flex-1 rounded-xl py-2 text-sm font-medium transition-colors",
+                timeLimit === sec
+                  ? "bg-sage-light text-sage-deep"
+                  : "bg-ink/5 text-ink-light hover:bg-ink/10",
+              )}
+            >
+              {sec}秒
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-ink-lighter/70">
+          时间到后不会立即切断，有15秒缓冲完成最后一句
+        </p>
+      </div>
 
       {/* Topic type cards */}
       <div>
@@ -95,7 +158,7 @@ export default function ChineseSpeaking() {
             return (
               <button
                 key={card.type}
-                onClick={() => { setSelectedType(card.type); setAiTopics([]); setTopicError(null); }}
+                onClick={() => handleSelectType(card.type)}
                 className={cn(
                   "rounded-xl border p-3 text-left transition-all",
                   isSelected
