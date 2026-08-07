@@ -9,12 +9,15 @@ import {
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
   isV4Diagnosis,
+  hasContentDeepening,
   type ChineseTopicType,
   type ChineseFramework,
   type ChineseSpeakingAttempt,
   type V4Diagnosis,
   type V4DimensionScore,
   type DeliveryMetrics,
+  type ContentDeepening,
+  type ContentDeepeningMissingElement,
 } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Shared dimension bar ──
@@ -128,6 +131,76 @@ function ThinkingDeepeningV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
           <p className="text-[10px] text-purple-500">{item.application}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ContentDeepeningV4({ diagnosis }: { diagnosis: Record<string, unknown> }) {
+  if (!hasContentDeepening(diagnosis)) return null;
+  const cd = diagnosis.content_deepening as ContentDeepening;
+  return (
+    <div className="pt-2 border-t border-border/50 space-y-2">
+      <div className="flex items-center gap-2">
+        <Target size={14} className="text-blue-600" />
+        <p className="text-xs font-medium text-ink">内容深度提升</p>
+      </div>
+
+      <p className="text-xs text-ink-lighter">{cd.overall_problem}</p>
+
+      {cd.information_density && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-ink-lighter">信息密度</span>
+          <span className={cn(
+            "text-[10px] font-medium rounded-full px-2 py-0.5",
+            cd.information_density.level === "high" && "bg-emerald-100 text-emerald-700",
+            cd.information_density.level === "medium" && "bg-amber-100 text-amber-700",
+            cd.information_density.level === "low" && "bg-accent-rose/10 text-accent-rose",
+          )}>
+            {cd.information_density.level === "high" ? "高" : cd.information_density.level === "medium" ? "中" : "低"}
+          </span>
+        </div>
+      )}
+
+      {cd.missing_elements?.filter((el: ContentDeepeningMissingElement) => !el.present).length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium text-ink">缺少的内容</p>
+          {cd.missing_elements
+            .filter((el: ContentDeepeningMissingElement) => !el.present)
+            .map((el: ContentDeepeningMissingElement) => (
+              <div key={el.key} className="bg-amber-50/50 rounded-lg p-2 space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium text-amber-700">{el.label}</span>
+                  <span className="text-[9px] text-amber-500">— {el.why_it_matters}</span>
+                </div>
+                <p className="text-[10px] text-ink-lighter">{el.what_can_improve}</p>
+                <p className="text-[10px] text-blue-600">{el.guiding_question}</p>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {cd.abstraction_analysis && (
+        <div className="bg-blue-50/30 rounded-lg p-2 space-y-0.5">
+          <p className="text-[11px] font-medium text-blue-700">表达层次</p>
+          <p className="text-[10px] text-ink-lighter">{cd.abstraction_analysis.current_level}</p>
+          <p className="text-[10px] text-blue-600">{cd.abstraction_analysis.upgrade_direction}</p>
+        </div>
+      )}
+
+      {cd.expansion_path?.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] font-medium text-ink">展开路径</p>
+          {cd.expansion_path.map((step) => (
+            <div key={step.step} className="flex gap-2">
+              <span className="text-[10px] font-bold text-blue-600 shrink-0">{step.step}.</span>
+              <div>
+                <p className="text-[10px] font-medium text-ink">{step.focus}</p>
+                <p className="text-[10px] text-blue-600">{step.question}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -353,6 +426,7 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
           <DiagnosisV4 diagnosis={v4Diag} />
           <StructureV4 diagnosis={v4Diag} />
           {v4Diag.thinking_or_deepening?.items?.length > 0 && <ThinkingDeepeningV4 diagnosis={v4Diag} />}
+          <ContentDeepeningV4 diagnosis={attempt.diagnosis as Record<string, unknown>} />
           <KeyUpgradesV4 diagnosis={v4Diag} />
           <FactConsistencyV4 diagnosis={v4Diag} />
         </>

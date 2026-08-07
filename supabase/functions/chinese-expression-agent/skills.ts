@@ -224,7 +224,62 @@ AI不仅检查"说得够不够多"，还要检查"有没有说太多"。
 不要一次给用户十几个改进建议。
 
 ━━━━━━━━━━━━━━━━━━━━
-十、只输出合法JSON
+十、内容深度教练（新增）
+━━━━━━━━━━━━━━━━━━━━
+
+除了评分和诊断，你必须分析用户回答的内容深度。
+
+内容深度 ≠ 结构好不好、逻辑清不清晰。
+内容深度 = 回答中有多少"有信息量"的内容。
+
+一个有深度的回答通常包含多种信息类型：
+- 观点/立场（我怎样看）
+- 原因/因果（为什么这样看）
+- 证据/例子（凭什么相信）
+- 经历/场景（真实发生过什么）
+- 数据/结果（效果如何）
+- 反方/边界（什么条件下不同）
+- 情绪/变化（感受发生了什么改变）
+
+浅层回答的特征：
+- 只有观点没有原因
+- 只有结论没有过程
+- 只有概括没有场景
+- 只有表态没有证据
+- 只有"应该怎样"没有"为什么应该"
+
+━━━━━━━━━━━━━━━━━━━━
+十一、内容深化的三个原则
+━━━━━━━━━━━━━━━━━━━━
+
+原则一：不是给答案，而是给路径。
+不要说"你应该加一个例子"，而要说"缺少能够证明观点的具体案例。建议加入一次你实际经历过的事件，并说明这个事件如何改变了你的判断。"
+
+原则二：每一个缺失元素必须附带三个信息：
+- why_it_matters：为什么这个元素对当前题型重要
+- what_can_improve：什么类型的内容可以填补这个缺失
+- guiding_question：一个引导用户自己思考的具体问题
+
+原则三：深度要求因题型而异。
+观点题要的是证据和思辨。
+经历题要的是场景和选择。
+概念题要的是边界和判断标准。
+故事题要的是人物和冲突。
+不要用同一个标准要求所有题型。
+
+━━━━━━━━━━━━━━━━━━━━
+十二、内容增强版参考答案原则
+━━━━━━━━━━━━━━━━━━━━
+
+生成 final_improved_speech 时：
+- 80% 保留用户的原始观点、真实经历、表达风格
+- 20% 增强：补充缺失的证据类型、强化因果链、增加具体细节
+- 禁止生成通用励志演讲
+- 禁止把用户变成另一个人
+- 禁止编造用户没有提供的经历
+
+━━━━━━━━━━━━━━━━━━━━
+十三、只输出合法JSON
 ━━━━━━━━━━━━━━━━━━━━
 
 不得使用Markdown代码围栏。
@@ -531,6 +586,138 @@ const SKILL_PROMPTS: Record<ChineseTopicType, string> = {
 };
 
 // ═══════════════════════════════════════════
+// CONTENT_DEEPENING_RULES_BY_SKILL (Phase 1)
+//
+// Each skill type has unique depth dimensions.
+// AI must use these, not a universal rule.
+// For every missing element, provide:
+//   why_it_matters, what_can_improve, guiding_question
+// ═══════════════════════════════════════════
+
+export interface ContentDeepeningDimension {
+  key: string;
+  label: string;
+  check_prompt: string;
+}
+
+export interface ContentDeepeningRules {
+  topicType: ChineseTopicType;
+  dimensions: ContentDeepeningDimension[];
+  /** What "depth" means for this skill — used by AI to calibrate analysis */
+  depth_definition: string;
+  /** Common shallow patterns for this skill */
+  shallow_patterns: string[];
+}
+
+export const CONTENT_DEEPENING_RULES_BY_SKILL: Record<ChineseTopicType, ContentDeepeningRules> = {
+  opinion: {
+    topicType: "opinion",
+    depth_definition: "观点不是表态，而是让听众理解你为什么这样看、在什么条件下成立、有什么边界。深度来自论证链的完整性和证据的具体性。",
+    dimensions: [
+      { key: "evidence", label: "具体证据", check_prompt: "用户是否只有观点没有证据？证据是否具体（非概括性描述）？" },
+      { key: "counter_argument", label: "反方视角", check_prompt: "是否存在合理的反方观点？用户是否考虑了反对意见？" },
+      { key: "boundary", label: "边界条件", check_prompt: "用户的观点在什么条件下成立？有没有例外情况？" },
+      { key: "tradeoff", label: "权衡分析", check_prompt: "是否存在不同价值之间的冲突？用户是否考虑了取舍？" },
+    ],
+    shallow_patterns: [
+      "只表态不解释原因",
+      "用个人偏好代替普遍论证",
+      "把所有情况都当成绝对真理",
+      "只讲自己相信什么，不讲为什么别人也应该相信",
+    ],
+  },
+  experience: {
+    topicType: "experience",
+    depth_definition: "经历不是事件摘要，而是让听众看见场景、理解选择、感受变化。深度来自具体细节和个人能动性。",
+    dimensions: [
+      { key: "scene", label: "具体场景", check_prompt: "用户是否描述了具体的时间、地点、环境？听众能否'看见'事情发生？" },
+      { key: "conflict", label: "冲突与张力", check_prompt: "是否存在困难、犹豫或对立？用户面临什么真正的选择？" },
+      { key: "action", label: "个人行动", check_prompt: "用户本人做了什么？是否突出'我'的主动性而非'我们'？" },
+      { key: "result", label: "结果与影响", check_prompt: "行动带来了什么结果？结果是否具体而非笼统？" },
+      { key: "reflection", label: "反思与意义", check_prompt: "用户从经历中获得了什么认知？反思是否来自经历本身？" },
+    ],
+    shallow_patterns: [
+      "只讲大概发生了什么，没有具体场景",
+      "用'我们'掩盖个人行动",
+      "没有犹豫或选择过程",
+      "反思笼统（'挺有意义的''感触很深'）",
+    ],
+  },
+  concept: {
+    topicType: "concept",
+    depth_definition: "概念解释不是背诵定义，而是让一个不了解的人听完后能够自己判断新案例。深度来自定义的准确性、边界的清晰性和机制的理解。",
+    dimensions: [
+      { key: "concept_boundary", label: "概念边界", check_prompt: "用户是否区分了此概念与相近概念？是否说明了什么不算这个概念？" },
+      { key: "criteria", label: "判断标准", check_prompt: "用户是否给出了判断'属于/不属于'的操作性标准？" },
+      { key: "examples", label: "典型案例", check_prompt: "用户是否提供了准确符合定义的例子？例子是否不仅生动而且正确？" },
+      { key: "non_examples", label: "非例/边界案例", check_prompt: "用户是否提供了容易混淆但实际不属于的例子？是否说明了边界？" },
+    ],
+    shallow_patterns: [
+      "用例子代替定义",
+      "定义循环（用概念本身解释概念）",
+      "混淆相关概念（如沉没成本vs机会成本）",
+      "只讲'是什么'不讲'为什么'和'怎么判断'",
+    ],
+  },
+  reflection: {
+    topicType: "reflection",
+    depth_definition: "感悟不是复述内容+说'很有感触'，而是展示材料中的什么触动了你、你如何理解它、它如何改变了你的认知。深度来自个人加工和真实连接。",
+    dimensions: [
+      { key: "trigger", label: "具体触发点", check_prompt: "用户是否指出了材料中的具体片段/台词/场景作为触发点？" },
+      { key: "personal_connection", label: "个人连接", check_prompt: "用户是否将材料与自己的经历或认知建立了具体连接？" },
+      { key: "interpretation_depth", label: "解读深度", check_prompt: "用户的解读是否超越了表面理解？是否有独立的分析和判断？" },
+      { key: "real_life_application", label: "现实应用", check_prompt: "这个感悟如何改变了用户的认知或行为？有没有具体的改变？" },
+    ],
+    shallow_patterns: [
+      "纯复述材料内容，无个人加工",
+      "只说'很有感触''很感动'不解释为什么",
+      "把作者观点当成自己的感悟",
+      "感悟与材料脱节，变成独立观点作文",
+    ],
+  },
+  interview: {
+    topicType: "interview",
+    depth_definition: "面试回答不是自夸，而是用可信证据让面试官相信你能胜任。深度来自证据的具体性、个人贡献的明确性和岗位匹配的逻辑性。",
+    dimensions: [
+      { key: "evidence_credibility", label: "证据可信度", check_prompt: "用户是否提供了可验证的具体案例？是否只有形容词没有行为？" },
+      { key: "personal_contribution", label: "个人贡献", check_prompt: "用户是否明确了'我做了什么'而非'团队做了什么'？" },
+      { key: "results_quantification", label: "结果量化", check_prompt: "用户是否量化了结果？是否有具体数字或可观察的变化？" },
+      { key: "job_fit_connection", label: "岗位关联", check_prompt: "用户是否解释了能力如何迁移到目标岗位？关联是否具体而非笼统？" },
+    ],
+    shallow_patterns: [
+      "全是形容词无证据（'我很努力''我学习能力强'）",
+      "功劳归团队，个人贡献模糊",
+      "只说结果不说自己具体做了什么",
+      "没有解释为什么这些经验与目标岗位相关",
+    ],
+  },
+  story: {
+    topicType: "story",
+    depth_definition: "故事不是解释一段经历，而是让听众跟随人物经历冲突、做出选择、发生变化。深度来自人物的真实性和情感的可感知性。",
+    dimensions: [
+      { key: "character", label: "人物塑造", check_prompt: "人物是否可感知？听众是否能感受到人物的性格、动机或状态？" },
+      { key: "emotion", label: "情绪变化", check_prompt: "情绪是否有变化轨迹？变化是否可信而非突兀？" },
+      { key: "conflict", label: "核心冲突", check_prompt: "真正的冲突是什么？冲突双方是否都有一定合理性？" },
+      { key: "turning_point", label: "转折点", check_prompt: "是否存在一个决定故事方向的关键选择或瞬间？这个选择是否有分量？" },
+    ],
+    shallow_patterns: [
+      "一直在解释背景，迟迟不进入叙事",
+      "没有具体人物，只有模糊的'我'",
+      "冲突单薄（只有外部困难，没有内心挣扎）",
+      "结尾突然开始说教（'这个故事告诉我们……'）",
+    ],
+  },
+};
+
+/**
+ * Get content deepening rules for a skill type.
+ * Returns only the rules for the given type — never all 6.
+ */
+export function getContentDeepeningRules(topicType: string): ContentDeepeningRules {
+  return CONTENT_DEEPENING_RULES_BY_SKILL[topicType as ChineseTopicType] || CONTENT_DEEPENING_RULES_BY_SKILL.opinion;
+}
+
+// ═══════════════════════════════════════════
 // Skill Selector — loads exactly ONE skill
 // ═══════════════════════════════════════════
 
@@ -547,6 +734,12 @@ export function getOutputSchema(topicType: string): string {
   const meta = SKILL_META[topicType as ChineseTopicType] || SKILL_META.opinion;
   const dimsJson = meta.dimensions.map((d) =>
     `    { "key": "${d.key}", "label": "${d.label}", "score": 0, "max_score": ${d.max_score}, "diagnosis": "具体判断，引用用户原句", "evidence_quote": "用户原句" }`
+  ).join(",\n");
+
+  // Generate content deepening dimensions for this skill type
+  const deepeningRules = getContentDeepeningRules(topicType);
+  const deepeningDimsJson = deepeningRules.dimensions.map((d) =>
+    `        { "key": "${d.key}", "label": "${d.label}", "present": true|false, "why_it_matters": "为什么这个元素对${deepeningRules.topicType}题型重要", "what_can_improve": "什么类型的内容可以填补这个缺失", "guiding_question": "一个引导用户自己思考的具体问题" }`
   ).join(",\n");
 
   return `
@@ -627,7 +820,30 @@ ${dimsJson}
 
   "retry_focus": [
     "下一次重新表达最应该关注的1-3个要点"
-  ]
+  ],
+
+  "content_deepening": {
+    "overall_problem": "一句话总结用户回答在内容深度上的核心问题。不要重复结构或逻辑问题。只关注内容本身是否有足够的信息量。",
+    "information_density": {
+      "level": "low|medium|high",
+      "explanation": "为什么判断为这个密度级别。说明回答中有哪些类型的信息、缺少哪些。"
+    },
+    "missing_elements": [
+${deepeningDimsJson}
+    ],
+    "abstraction_analysis": {
+      "current_level": "概念层（只有抽象观点）|混合层（有观点有少量具体内容）|具体层（有丰富的具体内容）",
+      "problem": "当前抽象层级的问题。例如：停留在概念层，没有具体落地；或过于琐碎，缺少提炼。",
+      "upgrade_direction": "建议如何调整抽象层级。例如：从'阅读提升认知'下沉到'一次阅读改变选择的经历'。"
+    },
+    "expansion_path": [
+      {
+        "step": 1,
+        "focus": "这一步扩展什么信息类型（如：具体案例、因果解释、场景细节、反方观点）",
+        "question": "一个引导用户自己补充内容的具体问题。问题要能直接引出缺失的内容类型。"
+      }
+    ]
+  }
 }`;
 }
 
@@ -635,8 +851,38 @@ ${dimsJson}
 // Prompt Builders
 // ═══════════════════════════════════════════
 
+/** Build the content deepening rules prompt for a specific skill type */
+function buildContentDeepeningPrompt(topicType: string): string {
+  const rules = getContentDeepeningRules(topicType);
+  const dimsText = rules.dimensions.map((d) =>
+    `- ${d.label}（${d.key}）：${d.check_prompt}`
+  ).join("\n");
+
+  return `
+━━━━━━━━━━━━━━━━━━━━
+当前题型的内容深度标准
+━━━━━━━━━━━━━━━━━━━━
+
+题型：${rules.topicType}
+
+深度的定义：
+${rules.depth_definition}
+
+内容深度维度（必须逐一检查）：
+${dimsText}
+
+常见的浅层表达模式（如果用户命中以下模式，必须在 missing_elements 中指出）：
+${rules.shallow_patterns.map((p) => `- ${p}`).join("\n")}
+
+在 content_deepening 分析中：
+1. 对每个维度判断 present: true 或 false
+2. 对于 present: false 的维度，必须填写 why_it_matters、what_can_improve、guiding_question
+3. guiding_question 必须是一个具体的问题，能够引导用户自己补充缺失的内容
+4. 不要用通用模板套用所有题型——每个题型的深度标准不同`;
+}
+
 export function buildDiagnosisSystemPrompt(topicType: string): string {
-  return COMMON_COACH_RULES + "\n" + getChineseSpeakingSkill(topicType) + "\n" + getOutputSchema(topicType);
+  return COMMON_COACH_RULES + "\n" + getChineseSpeakingSkill(topicType) + "\n" + buildContentDeepeningPrompt(topicType) + "\n" + getOutputSchema(topicType);
 }
 
 export function buildDiagnosisUserMessage(params: {

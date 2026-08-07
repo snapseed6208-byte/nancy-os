@@ -28,6 +28,9 @@ import {
   type V4KeyUpgrade,
   type V2Comparison,
   type DeliveryMetrics,
+  type ContentDeepening,
+  type ContentDeepeningMissingElement,
+  hasContentDeepening,
   type ImprovementQuality,
 } from "@/lib/hooks/useChineseSpeaking";
 
@@ -1113,6 +1116,92 @@ export default function ChineseSpeakingSession() {
               ))}
             </div>
           )}
+
+          {/* Content Deepening (V4.1 Phase 1) */}
+          {(() => {
+            const cd = ((round1Diagnosis as unknown) as Record<string, unknown>).content_deepening as ContentDeepening | undefined;
+            if (!cd?.overall_problem) return null;
+            return (
+              <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Target size={16} className="text-blue-600" />
+                  <p className="text-sm font-medium text-ink">内容深度提升</p>
+                </div>
+
+                {/* Overall problem */}
+                <p className="text-xs text-ink-lighter">{cd.overall_problem}</p>
+
+                {/* Information density */}
+                {cd.information_density && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-ink-lighter">信息密度</span>
+                    <span className={cn(
+                      "text-[10px] font-medium rounded-full px-2 py-0.5",
+                      cd.information_density.level === "high" && "bg-emerald-100 text-emerald-700",
+                      cd.information_density.level === "medium" && "bg-amber-100 text-amber-700",
+                      cd.information_density.level === "low" && "bg-accent-rose/10 text-accent-rose",
+                    )}>
+                      {cd.information_density.level === "high" ? "高" : cd.information_density.level === "medium" ? "中" : "低"}
+                    </span>
+                    <span className="text-[10px] text-ink-lighter/70">{cd.information_density.explanation}</span>
+                  </div>
+                )}
+
+                {/* Missing elements */}
+                {cd.missing_elements && cd.missing_elements.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-ink">缺少的内容</p>
+                    {cd.missing_elements
+                      .filter((el: ContentDeepeningMissingElement) => !el.present)
+                      .map((el: ContentDeepeningMissingElement) => (
+                        <div key={el.key} className="bg-amber-50/50 rounded-lg p-2.5 space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium text-amber-700">{el.label}</span>
+                            <span className="text-[9px] text-amber-500">— {el.why_it_matters}</span>
+                          </div>
+                          <p className="text-[10px] text-ink-lighter">{el.what_can_improve}</p>
+                          <p className="text-[10px] text-blue-600 italic">💡 {el.guiding_question}</p>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                {/* Abstraction analysis */}
+                {cd.abstraction_analysis && (
+                  <div className="bg-blue-50/30 rounded-lg p-2.5 space-y-1">
+                    <p className="text-[11px] font-medium text-blue-700">表达层次分析</p>
+                    <p className="text-[10px] text-ink-lighter">
+                      <span className="text-ink-light font-medium">当前层级：</span>
+                      {cd.abstraction_analysis.current_level}
+                    </p>
+                    <p className="text-[10px] text-ink-lighter">
+                      <span className="text-ink-light font-medium">问题：</span>
+                      {cd.abstraction_analysis.problem}
+                    </p>
+                    <p className="text-[10px] text-blue-600">{cd.abstraction_analysis.upgrade_direction}</p>
+                  </div>
+                )}
+
+                {/* Expansion path */}
+                {cd.expansion_path && cd.expansion_path.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-ink">下一次可以这样展开</p>
+                    {cd.expansion_path.map((step) => (
+                      <div key={step.step} className="flex gap-2">
+                        <div className="h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                          <span className="text-[10px] font-bold text-blue-600">{step.step}</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-[11px] font-medium text-ink">{step.focus}</p>
+                          <p className="text-[10px] text-blue-600 italic">"{step.question}"</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Recommended structure (V4) */}
           {round1Diagnosis.recommended_structure && (

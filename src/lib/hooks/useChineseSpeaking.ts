@@ -220,6 +220,42 @@ export interface V4Diagnosis {
   retry_focus: string[];
 }
 
+// ── V4.1 Content Deepening types (Phase 1) ──
+
+export interface ContentDeepeningMissingElement {
+  key: string;
+  label: string;
+  present: boolean;
+  why_it_matters: string;
+  what_can_improve: string;
+  guiding_question: string;
+}
+
+export interface InformationDensity {
+  level: "low" | "medium" | "high";
+  explanation: string;
+}
+
+export interface AbstractionAnalysis {
+  current_level: string;
+  problem: string;
+  upgrade_direction: string;
+}
+
+export interface ExpansionPathStep {
+  step: number;
+  focus: string;
+  question: string;
+}
+
+export interface ContentDeepening {
+  overall_problem: string;
+  information_density: InformationDensity;
+  missing_elements: ContentDeepeningMissingElement[];
+  abstraction_analysis: AbstractionAnalysis;
+  expansion_path: ExpansionPathStep[];
+}
+
 /** Union type for diagnosis: V4 if skill_version starts with "chinese-v4", else V3 */
 export type DiagnosisResult = V4Diagnosis | V3Diagnosis;
 
@@ -227,6 +263,13 @@ export function isV4Diagnosis(d: unknown): d is V4Diagnosis {
   if (!d || typeof d !== "object") return false;
   const obj = d as Record<string, unknown>;
   return typeof obj.skill_version === "string" && (obj.skill_version as string).startsWith("chinese-v4");
+}
+
+/** Check if a V4 diagnosis has content_deepening (Phase 1+) */
+export function hasContentDeepening(diagnosis: Record<string, unknown> | null): diagnosis is Record<string, unknown> & { content_deepening: ContentDeepening } {
+  if (!diagnosis) return false;
+  const cd = diagnosis.content_deepening as Record<string, unknown> | undefined;
+  return !!cd && typeof cd.overall_problem === "string";
 }
 
 // ── V2 Rewrite types (kept for backward compat; V3 uses V3Reference) ──

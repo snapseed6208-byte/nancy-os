@@ -1,0 +1,988 @@
+[
+  {
+    "id": "opinion_shallow",
+    "success": true,
+    "elapsed": 24339,
+    "content_deepening": {
+      "overall_problem": "回答停留在概念层，只有观点和概括性理由，缺乏具体证据和边界思考，信息密度低。",
+      "information_density": {
+        "level": "low",
+        "explanation": "回答包含观点（AI不会取代创造力）、理由（情感和直觉）和结论（不可替代），但缺少证据、反方视角、边界条件和权衡分析。"
+      },
+      "missing_elements": [
+        {
+          "key": "evidence",
+          "label": "具体证据",
+          "present": false,
+          "why_it_matters": "观点题需要证据支撑，否则听众只能听到态度，无法被说服。",
+          "what_can_improve": "加入一个具体案例，如AI生成诗歌但缺乏情感共鸣，或人类艺术家在创作中融入个人经历的例子。",
+          "guiding_question": "你是否有过AI创作或人类创作的经历，能说明情感在创造力中的作用？"
+        },
+        {
+          "key": "counter_argument",
+          "label": "反方视角",
+          "present": false,
+          "why_it_matters": "考虑反方观点能让论证更全面，避免被轻易反驳。",
+          "what_can_improve": "承认AI在模仿风格、生成内容方面的能力，然后指出其局限。",
+          "guiding_question": "AI在哪些方面已经表现出创造力？你如何回应这些例子？"
+        },
+        {
+          "key": "boundary",
+          "label": "边界条件",
+          "present": false,
+          "why_it_matters": "明确观点成立的条件，避免绝对化。",
+          "what_can_improve": "说明在哪些情况下AI可能接近创造力，但强调原创性和情感体验不可替代。",
+          "guiding_question": "你的观点在什么情况下可能不成立？例如，AI在特定领域是否可能超越人类？"
+        },
+        {
+          "key": "tradeoff",
+          "label": "权衡分析",
+          "present": false,
+          "why_it_matters": "权衡分析能展示不同价值之间的冲突，增加深度。",
+          "what_can_improve": "讨论效率与原创性之间的权衡，例如AI提高创作效率但可能降低独特性。",
+          "guiding_question": "如果AI能提高创作效率，但可能减少人类独特的情感表达，你如何权衡？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层（只有抽象观点）",
+        "problem": "回答停留在概念层，没有具体内容落地，听众难以产生共鸣。",
+        "upgrade_direction": "从“创造力来自内心”下沉到具体场景，如一次AI创作与人类创作的对比经历。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体案例",
+          "question": "你是否有过AI生成内容（如诗歌、音乐）的经历？当时感受如何？"
+        },
+        {
+          "step": 2,
+          "focus": "因果解释",
+          "question": "为什么情感和直觉是创造力的核心？能举一个例子说明吗？"
+        },
+        {
+          "step": 3,
+          "focus": "反方观点",
+          "question": "AI在哪些领域已经表现出创造力？你如何回应这些例子？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在概念层，只有观点和概括性理由，缺乏具体证据和边界思考，信息密度低。..."
+        },
+        {
+          "check": "missing_elements includes evidence (无具体证据)",
+          "passed": true,
+          "detail": "CORRECT: evidence flagged as missing, question: \"你是否有过AI创作或人类创作的经历，能说明情感在创造力中的作用？...\""
+        },
+        {
+          "check": "missing_elements does NOT include scene/conflict (story template misuse)",
+          "passed": true,
+          "detail": "OK: scene/conflict correctly not flagged"
+        },
+        {
+          "check": "guiding_question is specific (not generic '多练习')",
+          "passed": true,
+          "detail": "Missing elements: evidence: \"你是否有过AI创作或人类创作的经历，能说明情感在创造力中的作用？...\" | counter_argument: \"AI在哪些方面已经表现出创造力？你如何回应这些例子？...\" | boundary: \"你的观点在什么情况下可能不成立？例如，AI在特定领域是否可能超越人类？...\" | tradeoff: \"如果AI能提高创作效率，但可能减少人类独特的情感表达，你如何权衡？...\""
+        },
+        {
+          "check": "abstraction_analysis current_level is concept-level",
+          "passed": true,
+          "detail": "current_level: \"概念层（只有抽象观点）\""
+        }
+      ],
+      "summary": "ALL PASSED (5/5)"
+    }
+  },
+  {
+    "id": "opinion_better",
+    "success": true,
+    "elapsed": 26257,
+    "content_deepening": {
+      "overall_problem": "你的回答有观点、有理由、有例子，但内容深度主要停留在“个人经验”层面，缺少对边界条件和反方视角的探讨，使得论证链不够完整。",
+      "information_density": {
+        "level": "medium",
+        "explanation": "回答包含观点、因果解释、个人例子，信息类型较丰富，但缺少反方视角和边界条件，深度有限。"
+      },
+      "missing_elements": [
+        {
+          "key": "evidence",
+          "label": "具体证据",
+          "present": true,
+          "why_it_matters": "观点题需要具体证据支撑，你的例子证明了效率提升，但对“判断力”的支撑不足。",
+          "what_can_improve": "补充一个具体场景，说明AI在判断上的局限，例如“我曾让AI生成多个方案，但无法判断哪个更符合客户品牌调性”。",
+          "guiding_question": "你有没有一次经历，AI提供了方案但你无法依赖它做最终决定？当时发生了什么？"
+        },
+        {
+          "key": "counter_argument",
+          "label": "反方视角",
+          "present": false,
+          "why_it_matters": "考虑反方观点能让你的立场更立体，避免显得绝对化。",
+          "what_can_improve": "承认AI在特定领域（如风格模仿）可能表现出创造力，但强调其缺乏“意图性”和“情感共鸣”。",
+          "guiding_question": "如果有人说“AI已经能创作音乐和绘画”，你会如何回应？"
+        },
+        {
+          "key": "boundary",
+          "label": "边界条件",
+          "present": false,
+          "why_it_matters": "明确观点在什么条件下成立，能增强说服力，避免被质疑“AI未来可能做到”。",
+          "what_can_improve": "说明当审美标准高度数据化时，AI可能接近人类判断，但在品牌调性等主观领域仍有差距。",
+          "guiding_question": "在什么具体情况下，AI可能会影响审美判断？你的观点是否有例外？"
+        },
+        {
+          "key": "tradeoff",
+          "label": "权衡分析",
+          "present": false,
+          "why_it_matters": "观点题中权衡分析能展示你考虑了不同价值之间的冲突，例如效率与质量的取舍。",
+          "what_can_improve": "讨论AI提升效率的同时，可能带来的风险，如过度依赖导致创造力退化。",
+          "guiding_question": "AI提升效率的同时，有没有可能带来什么负面影响？你如何看待这种取舍？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "混合层（有观点有少量具体内容）",
+        "problem": "你有一个具体例子，但例子主要停留在“效率提升”层面，没有深入到“判断力”的具体场景，导致抽象层级不够平衡。",
+        "upgrade_direction": "从“AI降低门槛”下沉到“一次具体的设计决策中，AI如何无法替代我的判断”，让例子更直接支持核心论点。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体案例",
+          "question": "你有没有一次经历，AI提供了多个方案，但你无法依赖它做最终决定？当时发生了什么？"
+        },
+        {
+          "step": 2,
+          "focus": "反方观点",
+          "question": "如果有人说“AI已经能创作音乐和绘画”，你会如何回应？"
+        },
+        {
+          "step": 3,
+          "focus": "边界条件",
+          "question": "在什么具体情况下，AI可能会影响审美判断？你的观点是否有例外？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 你的回答有观点、有理由、有例子，但内容深度主要停留在“个人经验”层面，缺少对边界条件和反方视角的探讨，使得论证链不够完整..."
+        },
+        {
+          "check": "information_density level is medium or high",
+          "passed": true,
+          "detail": "level=medium, explanation: 回答包含观点、因果解释、个人例子，信息类型较丰富，但缺少反方视角和边界条件，深度有限。..."
+        },
+        {
+          "check": "missing_elements has fewer false entries than shallow case",
+          "passed": true,
+          "detail": "validated cross-case"
+        }
+      ],
+      "summary": "ALL PASSED (3/3)"
+    }
+  },
+  {
+    "id": "exp_shallow",
+    "success": true,
+    "elapsed": 24638,
+    "content_deepening": {
+      "overall_problem": "回答停留在概念层，只有'紧张→练习→不紧张'的概括，缺少具体场景、冲突、行动细节和来自经历本身的反思。",
+      "information_density": {
+        "level": "low",
+        "explanation": "回答中只有观点（'坚持练习就能克服恐惧'）和结果（'现在可以在几百人面前演讲'），缺少原因、证据、场景、冲突和情绪变化的具体描述。"
+      },
+      "missing_elements": [
+        {
+          "key": "scene",
+          "label": "具体场景",
+          "present": false,
+          "why_it_matters": "经历题需要让听众'看见'事情发生，没有场景描述，听众无法代入。",
+          "what_can_improve": "描述第一次上台时的具体环境、身体反应、心理活动。",
+          "guiding_question": "你第一次上台紧张时，是在什么场合？当时你身体有什么感觉？台下的人是什么反应？"
+        },
+        {
+          "key": "conflict",
+          "label": "冲突与张力",
+          "present": false,
+          "why_it_matters": "没有冲突和犹豫，故事就没有张力，听众无法理解你克服恐惧的难度。",
+          "what_can_improve": "说明你当时面临的困难（比如：怕丢脸、怕失败）以及你内心的挣扎。",
+          "guiding_question": "在决定参加演讲俱乐部之前，你内心最大的障碍是什么？你犹豫了多久？"
+        },
+        {
+          "key": "action",
+          "label": "个人行动",
+          "present": false,
+          "why_it_matters": "经历题要突出'我做了什么'，而不是'我们'或笼统的'练习'。",
+          "what_can_improve": "具体描述你练习的过程，比如第一次上台前做了什么准备、练习了多少次、有没有请人帮忙。",
+          "guiding_question": "在俱乐部练习时，你具体做了哪些事？第一次上台前你准备了多久？"
+        },
+        {
+          "key": "result",
+          "label": "结果与影响",
+          "present": true,
+          "why_it_matters": "结果需要具体，才能让听众感受到你的成长。",
+          "what_can_improve": "描述现在在几百人面前演讲时的具体感受，和以前有什么不同。",
+          "guiding_question": "现在在几百人面前演讲时，你还会紧张吗？如果会，和以前有什么不同？"
+        },
+        {
+          "key": "reflection",
+          "label": "反思与意义",
+          "present": true,
+          "why_it_matters": "反思要来自经历本身，而不是通用道理。",
+          "what_can_improve": "加入一个具体瞬间，比如某次演讲后你突然觉得'原来我可以'。",
+          "guiding_question": "在克服恐惧的过程中，有没有一个瞬间让你突然觉得自己变了？那个瞬间发生了什么？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层",
+        "problem": "回答只有抽象观点（'坚持练习就能克服恐惧'），没有具体内容支撑，听众无法感受到真实经历。",
+        "upgrade_direction": "从'坚持练习'下沉到'一次具体的练习经历'，比如第一次在俱乐部上台时的手抖、忘词，以及后来如何调整。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体场景",
+          "question": "你第一次上台紧张时，是在什么场合？当时你身体有什么感觉？台下的人是什么反应？"
+        },
+        {
+          "step": 2,
+          "focus": "冲突与选择",
+          "question": "在决定参加演讲俱乐部之前，你内心最大的障碍是什么？你犹豫了多久？"
+        },
+        {
+          "step": 3,
+          "focus": "个人行动",
+          "question": "在俱乐部练习时，你具体做了哪些事？第一次上台前你准备了多久？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在概念层，只有'紧张→练习→不紧张'的概括，缺少具体场景、冲突、行动细节和来自经历本身的反思。..."
+        },
+        {
+          "check": "missing_elements includes scene (无具体场景)",
+          "passed": true,
+          "detail": "CORRECT: scene flagged as missing, question: \"你第一次上台紧张时，是在什么场合？当时你身体有什么感觉？台下的人是什么反应？...\""
+        },
+        {
+          "check": "missing_elements includes conflict (无内心冲突/犹豫)",
+          "passed": true,
+          "detail": "CORRECT: conflict flagged as missing, question: \"在决定参加演讲俱乐部之前，你内心最大的障碍是什么？你犹豫了多久？...\""
+        },
+        {
+          "check": "missing_elements does NOT include counter_argument (opinion template misuse)",
+          "passed": true,
+          "detail": "OK: counter_argument correctly not flagged"
+        },
+        {
+          "check": "guiding_question asks about specific moment/scene",
+          "passed": true,
+          "detail": "Missing elements: scene: \"你第一次上台紧张时，是在什么场合？当时你身体有什么感觉？台下的人是什么反应？...\" | conflict: \"在决定参加演讲俱乐部之前，你内心最大的障碍是什么？你犹豫了多久？...\" | action: \"在俱乐部练习时，你具体做了哪些事？第一次上台前你准备了多久？...\""
+        }
+      ],
+      "summary": "ALL PASSED (5/5)"
+    }
+  },
+  {
+    "id": "exp_better",
+    "success": true,
+    "elapsed": 30788,
+    "content_deepening": {
+      "overall_problem": "你的回答已经具备完整的故事骨架和真实的情绪变化，但内容深度停留在'事件摘要'层面——听众能知道发生了什么，但无法'看见'场景、'感受'挣扎。",
+      "information_density": {
+        "level": "medium",
+        "explanation": "回答包含了观点（恐惧不会因逃避消失）、原因（老板的话）、经历（年会演讲）、结果（同事认可）、反思（接受紧张）。但缺少场景细节、内心挣扎过程、以及'有人点头'这个关键瞬间的具体描写。"
+      },
+      "missing_elements": [
+        {
+          "key": "scene",
+          "label": "具体场景",
+          "present": false,
+          "why_it_matters": "经历题的第一要务是让听众身临其境。没有环境细节，听众只能'知道'你在紧张，无法'感受'你的紧张。",
+          "what_can_improve": "补充1-2个环境或身体细节：会场灯光、你坐在哪里、周围的声音、你穿什么、身体的具体反应。",
+          "guiding_question": "那个年会现场是什么样的？灯光、声音、你坐在哪里、周围的人在做什么？"
+        },
+        {
+          "key": "conflict",
+          "label": "冲突与张力",
+          "present": true,
+          "why_it_matters": "你明确描述了'要不算了'的逃避念头，这是冲突的核心。",
+          "what_can_improve": "冲突已经存在，但可以更具体：你当时具体在害怕什么？是怕忘词、怕被嘲笑、还是怕丢脸？",
+          "guiding_question": "你当时具体在害怕什么？是怕忘词、怕被嘲笑、还是怕在八百人面前丢脸？"
+        },
+        {
+          "key": "action",
+          "label": "个人行动",
+          "present": true,
+          "why_it_matters": "你明确说了'硬着头皮上去了'，这是个人行动的核心。",
+          "what_can_improve": "行动链完整，但'硬着头皮'这个决定本身缺少过程。你当时是怎么说服自己的？加一句内心独白。",
+          "guiding_question": "从'要不算了'到'硬着头皮上去'，你内心经历了什么？是什么让你迈出了那一步？"
+        },
+        {
+          "key": "result",
+          "label": "结果与影响",
+          "present": true,
+          "why_it_matters": "你提到了'有人点头'和同事的反馈，这是结果的具体体现。",
+          "what_can_improve": "结果已经具体，但'有人点头'这个瞬间可以更生动：那个人是谁？你看到之后心里什么感觉？",
+          "guiding_question": "那个点头的人是谁？你看到之后心里具体是什么感觉？"
+        },
+        {
+          "key": "reflection",
+          "label": "反思与意义",
+          "present": true,
+          "why_it_matters": "你的反思'接受紧张是自己的一部分'来自经历本身，不空泛。",
+          "what_can_improve": "反思已经很好，但可以再往前推一步：这个认知转变的起点是什么？是同事那句话，还是你在台上发现'紧张并不影响我讲好'？",
+          "guiding_question": "这个认知转变的起点是什么？是同事那句话，还是你在台上发现'紧张并不影响我讲好'？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "混合层（有观点有少量具体内容）",
+        "problem": "你有具体细节（手心出汗、稿子捏湿、声音发抖），但这些细节是'点状'的，没有连成'画面'。听众能感受到你的紧张，但看不到那个会场、那个卫生间、那个舞台。",
+        "upgrade_direction": "从'我知道我很紧张'下沉到'让听众看见我紧张的那个场景'。补充环境细节和内心独白，让故事从'事件摘要'变成'可感知的经历'。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "场景细节",
+          "question": "那个年会现场是什么样的？灯光、声音、你坐在哪里、周围的人在做什么？"
+        },
+        {
+          "step": 2,
+          "focus": "内心挣扎过程",
+          "question": "从'要不算了'到'硬着头皮上去'，你内心经历了什么？是什么让你迈出了那一步？"
+        },
+        {
+          "step": 3,
+          "focus": "关键瞬间的具体化",
+          "question": "那个点头的人是谁？你看到之后心里具体是什么感觉？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 你的回答已经具备完整的故事骨架和真实的情绪变化，但内容深度停留在'事件摘要'层面——听众能知道发生了什么，但无法'看见'..."
+        },
+        {
+          "check": "information_density level is medium or high",
+          "passed": true,
+          "detail": "level=medium, explanation: 回答包含了观点（恐惧不会因逃避消失）、原因（老板的话）、经历（年会演讲）、结果（同事认可）、反思（接受紧张）。但缺少场景..."
+        },
+        {
+          "check": "missing_elements has fewer false entries than shallow case",
+          "passed": true,
+          "detail": "validated cross-case"
+        }
+      ],
+      "summary": "ALL PASSED (3/3)"
+    }
+  },
+  {
+    "id": "concept_shallow",
+    "success": true,
+    "elapsed": 23581,
+    "content_deepening": {
+      "overall_problem": "回答停留在'定义+例子'的浅层，缺少边界、机制和判断标准，信息密度低。",
+      "information_density": {
+        "level": "low",
+        "explanation": "回答只包含定义和例子两种信息类型，缺少因果解释、边界条件、判断标准。"
+      },
+      "missing_elements": [
+        {
+          "key": "concept_boundary",
+          "label": "概念边界",
+          "present": false,
+          "why_it_matters": "概念解释必须让听众知道什么不算这个概念，否则容易混淆。",
+          "what_can_improve": "补充一个反例或边界案例，比如'如果你饿了一天，第一个包子的满足感可能更大'，说明条件变化的影响。",
+          "guiding_question": "你能想到一个'满足感下降'但不算边际效用递减的例子吗？比如因为心情不好而不是因为消费量增加。"
+        },
+        {
+          "key": "criteria",
+          "label": "判断标准",
+          "present": false,
+          "why_it_matters": "听众需要可操作的标准来判断新案例，否则只能记住例子。",
+          "what_can_improve": "总结判断标准：'连续消费同一商品？每一单位带来的额外满足是否在减少？'",
+          "guiding_question": "如果给你一个新案例，比如'喝奶茶越喝越不想喝'，你会怎么判断它是不是边际效用递减？"
+        },
+        {
+          "key": "examples",
+          "label": "典型案例",
+          "present": true,
+          "why_it_matters": "例子是概念解释的支撑，但需要准确且能说明定义。",
+          "what_can_improve": "现有例子生动，但可以更精确地说明'边际'，比如'第一个包子带来的额外满足是10，第二个是5，第三个是0'。",
+          "guiding_question": "你的包子例子中，'边际'体现在哪里？你能用数字或更具体的描述来展示每一单位的额外满足吗？"
+        },
+        {
+          "key": "non_examples",
+          "label": "非例/边界案例",
+          "present": false,
+          "why_it_matters": "非例能帮助听众区分概念，避免过度泛化。",
+          "what_can_improve": "举一个容易混淆但实际不属于的例子，比如'因为心情不好而觉得包子不好吃'，说明这不是边际效用递减。",
+          "guiding_question": "你能想到一个'满足感下降'但原因不是消费量增加的情况吗？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层（只有抽象观点）",
+        "problem": "回答停留在'定义+例子'，没有具体落地到机制或应用。",
+        "upgrade_direction": "从'满足感下降'下沉到'为什么下降'，再上升到'如何判断'。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "因果解释",
+          "question": "为什么每多消费一个单位，满足感会下降？你能想到生理或心理上的原因吗？"
+        },
+        {
+          "step": 2,
+          "focus": "边界案例",
+          "question": "什么情况下边际效用可能不递减？比如成瘾品或收藏品，你能举一个例子吗？"
+        },
+        {
+          "step": 3,
+          "focus": "判断标准",
+          "question": "如果给你一个新案例，你会用什么标准来判断它是不是边际效用递减？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在'定义+例子'的浅层，缺少边界、机制和判断标准，信息密度低。..."
+        },
+        {
+          "check": "missing_elements includes concept_boundary (未区分相近概念)",
+          "passed": true,
+          "detail": "CORRECT: concept_boundary flagged as missing, question: \"你能想到一个'满足感下降'但不算边际效用递减的例子吗？比如因为心情不好而不是因为消费量增加。...\""
+        },
+        {
+          "check": "missing_elements includes criteria (无判断标准)",
+          "passed": true,
+          "detail": "CORRECT: criteria flagged as missing, question: \"如果给你一个新案例，比如'喝奶茶越喝越不想喝'，你会怎么判断它是不是边际效用递减？...\""
+        },
+        {
+          "check": "missing_elements does NOT include scene/conflict (experience template misuse)",
+          "passed": true,
+          "detail": "OK: scene/conflict correctly not flagged"
+        },
+        {
+          "check": "missing_elements does NOT include counter_argument (opinion template misuse)",
+          "passed": true,
+          "detail": "OK: counter_argument correctly not flagged"
+        },
+        {
+          "check": "guiding_question addresses definition accuracy or boundary",
+          "passed": true,
+          "detail": "Missing elements: concept_boundary: \"你能想到一个'满足感下降'但不算边际效用递减的例子吗？比如因为心情不好而不是因为...\" | criteria: \"如果给你一个新案例，比如'喝奶茶越喝越不想喝'，你会怎么判断它是不是边际效用递减...\" | non_examples: \"你能想到一个'满足感下降'但原因不是消费量增加的情况吗？...\""
+        }
+      ],
+      "summary": "ALL PASSED (6/6)"
+    }
+  },
+  {
+    "id": "concept_better",
+    "success": true,
+    "elapsed": 24860,
+    "content_deepening": {
+      "overall_problem": "回答停留在'定义+边界'的概念层，缺少机制解释和完整例子，听众无法直观感受递减过程。",
+      "information_density": {
+        "level": "medium",
+        "explanation": "回答包含定义、边界条件、概念区分和理论背景，信息类型较丰富。但缺少'为什么'的因果解释和完整的例子演示，信息密度未达到高分标准。"
+      },
+      "missing_elements": [
+        {
+          "key": "concept_boundary",
+          "label": "概念边界",
+          "present": true,
+          "why_it_matters": "概念边界是概念题的核心维度，区分相近概念能帮助听众避免混淆。",
+          "what_can_improve": "当前边界说明充分，无需补充。",
+          "guiding_question": ""
+        },
+        {
+          "key": "criteria",
+          "label": "判断标准",
+          "present": false,
+          "why_it_matters": "听众需要一套可操作的判断标准，才能在实际中判断一个新案例是否属于边际效用递减。",
+          "what_can_improve": "把边界条件转化为判断问题，例如：'消费的是同一种商品吗？是连续消费吗？每一新增单位的满足感在下降吗？'",
+          "guiding_question": "如果朋友问你'我喝第二杯奶茶比第一杯更快乐，这算不算边际效用递减的反例？'你会怎么判断？"
+        },
+        {
+          "key": "examples",
+          "label": "典型案例",
+          "present": false,
+          "why_it_matters": "一个完整的例子能让听众直观感受递减过程，是概念落地的最佳方式。",
+          "what_can_improve": "用一个连续消费的例子（如吃包子）完整演示从'很满足'到'不想吃'的过程。",
+          "guiding_question": "你上一次连续吃同一种食物吃到不想吃是什么时候？从第一个到最后一个，你的满足感是怎么变化的？"
+        },
+        {
+          "key": "non_examples",
+          "label": "非例/边界案例",
+          "present": true,
+          "why_it_matters": "非例能帮助听众理解'什么不算'，避免概念泛化。",
+          "what_can_improve": "当前已提到'间隔消费不算'，但可以再补充一个更贴近生活的非例。",
+          "guiding_question": ""
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层（只有抽象观点）",
+        "problem": "回答停留在概念层，有定义、有边界、有理论背景，但缺少具体落地。听众听到的是'规律'，不是'体验'。",
+        "upgrade_direction": "从'边际效用递减是一个规律'下沉到'我吃第四个包子时的真实感受'，让听众通过具体体验理解抽象规律。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "机制解释（因果链）",
+          "question": "为什么随着消费量增加，每一新增单位的满足感会下降？背后的生理或心理原因是什么？"
+        },
+        {
+          "step": 2,
+          "focus": "完整例子（场景细节）",
+          "question": "你能不能用'吃包子'的例子，完整描述从第一个到第四个包子的感受变化？"
+        },
+        {
+          "step": 3,
+          "focus": "判断标准（操作性）",
+          "question": "如果朋友说'我喝第二杯奶茶比第一杯更快乐'，你会怎么判断这算不算边际效用递减？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在'定义+边界'的概念层，缺少机制解释和完整例子，听众无法直观感受递减过程。..."
+        },
+        {
+          "check": "information_density level is medium or high",
+          "passed": true,
+          "detail": "level=medium, explanation: 回答包含定义、边界条件、概念区分和理论背景，信息类型较丰富。但缺少'为什么'的因果解释和完整的例子演示，信息密度未达到高..."
+        },
+        {
+          "check": "missing_elements has fewer false entries (most elements present)",
+          "passed": true,
+          "detail": "check not implemented"
+        }
+      ],
+      "summary": "ALL PASSED (3/3)"
+    }
+  },
+  {
+    "id": "refl_shallow",
+    "success": true,
+    "elapsed": 31169,
+    "content_deepening": {
+      "overall_problem": "回答停留在'复述情节+通用感慨'层面，有情感表态但缺少触发点、个人解读和现实落地，信息密度低。",
+      "information_density": {
+        "level": "low",
+        "explanation": "回答包含的信息类型只有：观点（'要活下去'）和概括性情节复述（'家人一个个离开'）。缺少具体场景、因果解释、个人经历和认知变化。88字中大部分是通用表述，没有一条信息是'只有你才能说出来的'。"
+      },
+      "missing_elements": [
+        {
+          "key": "trigger",
+          "label": "具体触发点",
+          "present": false,
+          "why_it_matters": "reflection题型的起点是'什么触动了你'。没有具体片段，听众无法确认你的触动是真实的还是套话。",
+          "what_can_improve": "回忆一个具体的场景、动作或台词，比如福贵埋葬亲人时的某个细节，或他对着老牛说话的画面。",
+          "guiding_question": "《活着》里有没有一个具体的画面或一句话，让你当时停下来、愣住或者心里被揪了一下？那个画面是什么？"
+        },
+        {
+          "key": "personal_connection",
+          "label": "个人连接",
+          "present": false,
+          "why_it_matters": "感悟题要求'材料对你意味着什么'。没有个人连接，你的感悟就只是对书的评价，而不是你的感悟。",
+          "what_can_improve": "联系一个自己的经历或认知变化——读完这本书后，你在某个真实情境中的想法或做法和以前不一样了。",
+          "guiding_question": "读完这本书后，你在哪个真实的瞬间发现自己和以前不一样了？哪怕是很小的一件事。"
+        },
+        {
+          "key": "interpretation_depth",
+          "label": "解读深度",
+          "present": false,
+          "why_it_matters": "'要活下去'是任何苦难叙事都能得出的结论，不是你对《活着》的独特解读。没有独立分析，感悟就没有个人色彩。",
+          "what_can_improve": "追问福贵活下去的机制——他为什么还在活着？他的'活着'和你理解的'坚强'有什么不同？",
+          "guiding_question": "福贵经历了这么多失去，他为什么还在活着？他的'活着'和你平时理解的'坚强'有什么不一样？"
+        },
+        {
+          "key": "real_life_application",
+          "label": "现实应用",
+          "present": false,
+          "why_it_matters": "'珍惜现在的生活'是抽象口号，没有具体指向。听众无法知道这本书对你产生了什么实际影响。",
+          "what_can_improve": "用一个具体的行动或改变来说明'珍惜'对你意味着什么——比如对家人态度的变化、面对困难时的心态调整。",
+          "guiding_question": "'珍惜现在的生活'对你具体意味着什么？有没有一件你因为读了这本书而做了或没做的事？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层（只有抽象观点）",
+        "problem": "整个回答停留在'苦难→坚强→珍惜'的概念链条上，没有任何具体内容落地。听众听到的是正确的道理，但不是你的经历。",
+        "upgrade_direction": "从'福贵很惨'下沉到'福贵埋葬有庆时的某个动作'；从'珍惜生活'下沉到'读完书后我给家人打了一个电话'。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体场景细节",
+          "question": "福贵失去家人时，有没有一个具体的动作、表情或场景让你印象特别深？那个场景里发生了什么？"
+        },
+        {
+          "step": 2,
+          "focus": "因果解释",
+          "question": "你为什么觉得福贵'坚强'？是他的哪个行为让你得出这个判断？这个行为和'坚强'有什么关联？"
+        },
+        {
+          "step": 3,
+          "focus": "个人经历",
+          "question": "你有没有经历过类似'失去'或'艰难'的时刻？当时你是怎么过来的？和福贵的方式有什么相同或不同？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在'复述情节+通用感慨'层面，有情感表态但缺少触发点、个人解读和现实落地，信息密度低。..."
+        },
+        {
+          "check": "missing_elements includes trigger (无具体触发点)",
+          "passed": true,
+          "detail": "CORRECT: trigger flagged as missing, question: \"《活着》里有没有一个具体的画面或一句话，让你当时停下来、愣住或者心里被揪了一下？那个画面是什么？...\""
+        },
+        {
+          "check": "missing_elements includes personal_connection (无个人连接)",
+          "passed": true,
+          "detail": "CORRECT: personal_connection flagged as missing, question: \"读完这本书后，你在哪个真实的瞬间发现自己和以前不一样了？哪怕是很小的一件事。...\""
+        },
+        {
+          "check": "missing_elements does NOT include counter_argument (opinion template misuse)",
+          "passed": true,
+          "detail": "OK: counter_argument correctly not flagged"
+        },
+        {
+          "check": "guiding_question references specific scene/quote from material",
+          "passed": true,
+          "detail": "Missing elements: trigger: \"《活着》里有没有一个具体的画面或一句话，让你当时停下来、愣住或者心里被揪了一下？...\" | personal_connection: \"读完这本书后，你在哪个真实的瞬间发现自己和以前不一样了？哪怕是很小的一件事。...\" | interpretation_depth: \"福贵经历了这么多失去，他为什么还在活着？他的'活着'和你平时理解的'坚强'有什么...\" | real_life_application: \"'珍惜现在的生活'对你具体意味着什么？有没有一件你因为读了这本书而做了或没做的事...\""
+        }
+      ],
+      "summary": "ALL PASSED (5/5)"
+    }
+  },
+  {
+    "id": "intv_shallow",
+    "success": true,
+    "elapsed": 21794,
+    "content_deepening": {
+      "overall_problem": "回答停留在概念层，只有概括性描述，没有具体案例、个人贡献、量化结果和岗位关联，信息密度低。",
+      "information_density": {
+        "level": "low",
+        "explanation": "回答中只有观点（'我主导过'）和概括（'做了很多努力'），缺少证据、例子、数据和因果解释。"
+      },
+      "missing_elements": [
+        {
+          "key": "evidence_credibility",
+          "label": "证据可信度",
+          "present": false,
+          "why_it_matters": "面试官需要从具体行为中判断你的能力，没有案例就无法证明。",
+          "what_can_improve": "加入一个具体的项目案例，描述背景、行动和结果。",
+          "guiding_question": "这个项目具体是什么？你采取了哪些具体行动？"
+        },
+        {
+          "key": "personal_contribution",
+          "label": "个人贡献",
+          "present": false,
+          "why_it_matters": "面试官要评估你的个人能力，如果功劳归团队，无法判断你的角色。",
+          "what_can_improve": "明确区分'我'和'团队'，说明你具体负责了什么。",
+          "guiding_question": "在这个项目中，你个人做了哪些决策或执行了哪些关键任务？"
+        },
+        {
+          "key": "results_quantification",
+          "label": "结果量化",
+          "present": false,
+          "why_it_matters": "没有数字的结果无法让面试官评估项目规模和你的贡献。",
+          "what_can_improve": "给出具体数字，如用户增长率、时间范围、对比数据。",
+          "guiding_question": "用户增长了多少？增长率是多少？在什么时间范围内？"
+        },
+        {
+          "key": "job_fit_connection",
+          "label": "岗位关联",
+          "present": false,
+          "why_it_matters": "面试官需要看到你的经验如何迁移到目标岗位，否则无法判断匹配度。",
+          "what_can_improve": "研究目标岗位的职责，找出1-2个与项目经验直接相关的能力点。",
+          "guiding_question": "目标岗位需要哪些核心能力？你的项目经验如何证明你具备这些能力？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层（只有抽象观点）",
+        "problem": "回答停留在概念层，没有具体落地，面试官无法感知你的实际能力。",
+        "upgrade_direction": "从'用户增长了很多'下沉到'三个月内用户从X增长到Y，增长率Z%，我通过A和B实现了这个结果'。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体案例",
+          "question": "这个项目具体是什么？目标是什么？你负责了哪个部分？"
+        },
+        {
+          "step": 2,
+          "focus": "因果解释",
+          "question": "你采取了哪些具体行动？这些行动为什么有效？"
+        },
+        {
+          "step": 3,
+          "focus": "量化结果",
+          "question": "结果如何量化？比如用户增长了多少、增长率是多少、时间范围是多久？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在概念层，只有概括性描述，没有具体案例、个人贡献、量化结果和岗位关联，信息密度低。..."
+        },
+        {
+          "check": "missing_elements includes evidence_credibility (无具体数据)",
+          "passed": true,
+          "detail": "CORRECT: evidence_credibility flagged as missing, question: \"这个项目具体是什么？你采取了哪些具体行动？...\""
+        },
+        {
+          "check": "missing_elements includes personal_contribution (个人贡献模糊)",
+          "passed": true,
+          "detail": "CORRECT: personal_contribution flagged as missing, question: \"在这个项目中，你个人做了哪些决策或执行了哪些关键任务？...\""
+        },
+        {
+          "check": "missing_elements includes results_quantification (无量化结果)",
+          "passed": true,
+          "detail": "CORRECT: results_quantification flagged as missing, question: \"用户增长了多少？增长率是多少？在什么时间范围内？...\""
+        },
+        {
+          "check": "missing_elements does NOT include scene (experience template misuse)",
+          "passed": true,
+          "detail": "OK: scene correctly not flagged"
+        },
+        {
+          "check": "guiding_question asks about specific action or number",
+          "passed": true,
+          "detail": "Missing elements: evidence_credibility: \"这个项目具体是什么？你采取了哪些具体行动？...\" | personal_contribution: \"在这个项目中，你个人做了哪些决策或执行了哪些关键任务？...\" | results_quantification: \"用户增长了多少？增长率是多少？在什么时间范围内？...\" | job_fit_connection: \"目标岗位需要哪些核心能力？你的项目经验如何证明你具备这些能力？...\""
+        }
+      ],
+      "summary": "ALL PASSED (6/6)"
+    }
+  },
+  {
+    "id": "story_shallow",
+    "success": true,
+    "elapsed": 32323,
+    "content_deepening": {
+      "overall_problem": "回答停留在'经历汇报'层面，有完整的事件链条，但缺少故事的核心要素：人物、场景、转折点。听众只能知道发生了什么，无法感受到人物的挣扎和变化。",
+      "information_density": {
+        "level": "low",
+        "explanation": "回答包含的信息类型只有：观点（'很庆幸'）、原因（'因为当时我有稳定的工作'）、结果（'这个决定改变了我的职业轨迹'）。缺少：具体场景、人物细节、情绪变化过程、转折点的具体事件。"
+      },
+      "missing_elements": [
+        {
+          "key": "character",
+          "label": "人物塑造",
+          "present": false,
+          "why_it_matters": "故事需要让听众感受到'谁'在经历这件事。目前'我'只是一个模糊的叙述者，没有性格、没有状态、没有可感知的存在感。",
+          "what_can_improve": "描述接电话时自己的状态（比如'那天我正加班到晚上九点，整个人累得不想说话'），让听众感受到'我'是一个具体的人。",
+          "guiding_question": "那通电话打来的时候，你正在做什么？你当时的状态是什么样的？"
+        },
+        {
+          "key": "emotion",
+          "label": "情绪变化",
+          "present": false,
+          "why_it_matters": "故事的核心是情绪的变化轨迹。目前只有'犹豫'和'庆幸'两个端点，中间没有过程，听众无法跟随你的情绪起伏。",
+          "what_can_improve": "描述从犹豫到决定之间发生了什么。是某个瞬间的顿悟？还是和某个人聊过之后的想法转变？把这个过程展开。",
+          "guiding_question": "从'犹豫'到'决定'，中间发生了什么？有没有一个具体的瞬间让你觉得'我不能再这样下去了'？"
+        },
+        {
+          "key": "conflict",
+          "label": "核心冲突",
+          "present": false,
+          "why_it_matters": "冲突是故事的引擎。目前'稳定工作 vs 创业机会'只是一个抽象的对立，没有具体化。听众不知道你放弃了什么，也不知道你追求什么。",
+          "what_can_improve": "具体化冲突双方：'稳定的工作'具体给你带来了什么（安全感？家人的认可？）；'创业机会'具体吸引你什么（自由？挑战？）。让两边都有分量。",
+          "guiding_question": "那份稳定的工作具体给了你什么？那个创业机会具体吸引你什么？两边各自让你舍不得和放不下的东西是什么？"
+        },
+        {
+          "key": "turning_point",
+          "label": "转折点",
+          "present": false,
+          "why_it_matters": "转折点是故事中最有分量的瞬间，是听众最期待的部分。目前'想了想'一笔带过，让整个决定显得轻率，也让故事失去了核心。",
+          "what_can_improve": "找到一个具体的瞬间或事件作为转折点。可以是某个人的一句话、某个失眠的夜晚、或者某个突然的顿悟。把这个瞬间放大。",
+          "guiding_question": "你还记得那个让你下定决心的具体瞬间吗？当时发生了什么？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "概念层（只有抽象观点）",
+        "problem": "整个回答停留在概念层：'接到电话'、'犹豫'、'决定'、'庆幸'都是抽象概括，没有下沉到具体的场景、动作和对话。",
+        "upgrade_direction": "从'我接到一个电话'下沉到'那天下午，我正坐在工位上改一份报告，手机震动的时候，我看到屏幕上那个三年没联系的名字'。从'我很犹豫'下沉到'挂了电话之后，我盯着电脑屏幕发了十分钟的呆，脑子里全是两个声音在打架'。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体场景：接电话的那一刻",
+          "question": "那通电话打来的时候，你在哪里？在做什么？周围有什么声音或气味？"
+        },
+        {
+          "step": 2,
+          "focus": "冲突具体化：稳定工作 vs 创业机会",
+          "question": "那份稳定的工作具体给了你什么？那个创业机会具体吸引你什么？"
+        },
+        {
+          "step": 3,
+          "focus": "转折点：决定性的瞬间",
+          "question": "从犹豫到决定，中间发生了什么？有没有一个具体的瞬间让你觉得'就是它了'？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 回答停留在'经历汇报'层面，有完整的事件链条，但缺少故事的核心要素：人物、场景、转折点。听众只能知道发生了什么，无法感受..."
+        },
+        {
+          "check": "missing_elements includes character (人物不立体)",
+          "passed": true,
+          "detail": "CORRECT: character flagged as missing, question: \"那通电话打来的时候，你正在做什么？你当时的状态是什么样的？...\""
+        },
+        {
+          "check": "missing_elements includes emotion (无情绪变化)",
+          "passed": true,
+          "detail": "CORRECT: emotion flagged as missing, question: \"从'犹豫'到'决定'，中间发生了什么？有没有一个具体的瞬间让你觉得'我不能再这样下去了'？...\""
+        },
+        {
+          "check": "missing_elements includes turning_point (无具体转折点)",
+          "passed": true,
+          "detail": "CORRECT: turning_point flagged as missing, question: \"你还记得那个让你下定决心的具体瞬间吗？当时发生了什么？...\""
+        },
+        {
+          "check": "missing_elements does NOT include evidence (interview template misuse)",
+          "passed": true,
+          "detail": "OK: evidence correctly not flagged"
+        },
+        {
+          "check": "missing_elements does NOT include counter_argument (opinion template misuse)",
+          "passed": true,
+          "detail": "OK: counter_argument correctly not flagged"
+        },
+        {
+          "check": "guiding_question asks about specific moment or feeling",
+          "passed": true,
+          "detail": "Missing elements: character: \"那通电话打来的时候，你正在做什么？你当时的状态是什么样的？...\" | emotion: \"从'犹豫'到'决定'，中间发生了什么？有没有一个具体的瞬间让你觉得'我不能再这样...\" | conflict: \"那份稳定的工作具体给了你什么？那个创业机会具体吸引你什么？两边各自让你舍不得和放...\" | turning_point: \"你还记得那个让你下定决心的具体瞬间吗？当时发生了什么？...\""
+        }
+      ],
+      "summary": "ALL PASSED (7/7)"
+    }
+  },
+  {
+    "id": "story_better",
+    "success": true,
+    "elapsed": 24827,
+    "content_deepening": {
+      "overall_problem": "故事有真实的情感和清晰的回环，但人物塑造和冲突张力不足，导致深度受限。",
+      "information_density": {
+        "level": "medium",
+        "explanation": "回答包含观点（'改天可能不会来'）、因果（为什么开始打电话）、经历（洗碗接电话、葬礼）、结果（行为改变），但缺少具体场景和人物细节，信息密度中等。"
+      },
+      "missing_elements": [
+        {
+          "key": "character",
+          "label": "人物塑造",
+          "present": false,
+          "why_it_matters": "故事的核心是人物，如果老张只是一个模糊的'退学室友'，听众无法产生情感连接，你的遗憾和改变也就缺乏分量。",
+          "what_can_improve": "增加一个老张的具体细节，比如他退学前的一个场景、他的一句话或一个动作，让听众能'看见'他。",
+          "guiding_question": "老张退学那天，他是什么表情？说了什么话？我有没有送他？"
+        },
+        {
+          "key": "emotion",
+          "label": "情绪变化",
+          "present": false,
+          "why_it_matters": "情绪从'没反应过来'到'明白'之间缺少中间层次，变化不够细腻。",
+          "what_can_improve": "在得知死讯后，增加一句你当时的内心感受或一个具体反应。",
+          "guiding_question": "听到'老张走了'的那一刻，你脑子里闪过的第一个画面是什么？"
+        },
+        {
+          "key": "conflict",
+          "label": "核心冲突",
+          "present": true,
+          "why_it_matters": "冲突是'改天聚'的承诺与死亡之间的落差，有力量，但冲突双方（你和老张）的合理性没有充分展开。",
+          "what_can_improve": "补充你们说'改天聚'时的具体场景，让听众感受到当时的轻松。",
+          "guiding_question": "你们说'改天聚'的时候，是在什么场合？你们在做什么？"
+        },
+        {
+          "key": "turning_point",
+          "label": "转折点",
+          "present": true,
+          "why_it_matters": "转折点是那通电话，它改变了你的行为。但转折点的分量可以更重。",
+          "what_can_improve": "增加一个你打电话给朋友的具体场景，展示转折后的变化。",
+          "guiding_question": "那通电话之后，你第一个打电话给谁？你开口说了什么？"
+        }
+      ],
+      "abstraction_analysis": {
+        "current_level": "混合层",
+        "problem": "有具体场景（洗碗、碗掉进水池），但人物和冲突停留在概括层（'做小生意、结婚生女'）。",
+        "upgrade_direction": "从'老张退学'下沉到'老张退学那天的具体场景'，从'开始打电话'下沉到'第一次打电话的具体经历'。"
+      },
+      "expansion_path": [
+        {
+          "step": 1,
+          "focus": "具体案例：老张退学时的场景",
+          "question": "老张退学那天，你和他之间发生了什么？他说了什么？你做了什么？"
+        },
+        {
+          "step": 2,
+          "focus": "场景细节：葬礼上的所见",
+          "question": "在葬礼上，你看到了什么？老张的女儿长什么样？你有没有和她说话？"
+        },
+        {
+          "step": 3,
+          "focus": "因果解释：打电话时的感受",
+          "question": "你给朋友打电话时，听到对方声音的那一刻，你心里是什么感觉？"
+        }
+      ]
+    },
+    "checkResults": {
+      "allPassed": true,
+      "results": [
+        {
+          "check": "content_deepening exists",
+          "passed": true,
+          "detail": "overall_problem: 故事有真实的情感和清晰的回环，但人物塑造和冲突张力不足，导致深度受限。..."
+        },
+        {
+          "check": "information_density level is medium or high",
+          "passed": true,
+          "detail": "level=medium, explanation: 回答包含观点（'改天可能不会来'）、因果（为什么开始打电话）、经历（洗碗接电话、葬礼）、结果（行为改变），但缺少具体场景..."
+        },
+        {
+          "check": "missing_elements has fewer false entries (most elements present)",
+          "passed": true,
+          "detail": "check not implemented"
+        }
+      ],
+      "summary": "ALL PASSED (3/3)"
+    }
+  }
+]
