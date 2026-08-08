@@ -36,6 +36,8 @@ import ChineseSpeakingSession from "@/pages/ChineseSpeakingSession";
 import ChineseSpeakingHistory from "@/pages/ChineseSpeakingHistory";
 import ChineseSpeakingDetail from "@/pages/ChineseSpeakingDetail";
 import ChineseMaterialNew from "@/pages/ChineseMaterialNew";
+import ExpressionAssetLibrary from "@/pages/ExpressionAssetLibrary";
+import ExpressionAssetDetail from "@/pages/ExpressionAssetDetail";
 import { Loader2 } from "lucide-react";
 
 function AppRoutes() {
@@ -88,6 +90,8 @@ function AppRoutes() {
         <Route path="/chinese/session/:id" component={ChineseSpeakingSession} />
         <Route path="/chinese/history" component={ChineseSpeakingHistory} />
         <Route path="/chinese/detail/:id" component={ChineseSpeakingDetail} />
+        <Route path="/chinese/assets" component={ExpressionAssetLibrary} />
+        <Route path="/chinese/assets/:id" component={ExpressionAssetDetail} />
         <Route path="/settings" component={Settings} />
         <Route path="/settings/ai-health" component={AIHealth} />
       </Switch>

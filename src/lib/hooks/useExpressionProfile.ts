@@ -7,7 +7,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
-import { isV4Diagnosis, type V4Diagnosis, type V4TopIssue, type KnowledgeTransfer } from "@/lib/hooks/useChineseSpeaking";
+import { isV4Diagnosis, fetchAssetStats, type V4Diagnosis, type V4TopIssue, type KnowledgeTransfer } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Profile DB row ──
 
@@ -42,6 +42,7 @@ export interface ExpressionProfile {
   improvement_history: ImprovementEntry[];
   raw_signal_snapshot: Record<string, unknown>;
   knowledge_transfer_profile: KnowledgeTransferProfile | null;
+  asset_stats: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -504,6 +505,14 @@ export function useUpdateExpressionProfile() {
         signals: input.signals,
       });
 
+      // Snapshot asset stats for profile integration
+      let assetStats = {};
+      try {
+        assetStats = await fetchAssetStats();
+      } catch {
+        // Non-critical — profile update proceeds without asset stats
+      }
+
       const { data, error } = await supabase
         .from("expression_profiles")
         .upsert(
@@ -514,6 +523,7 @@ export function useUpdateExpressionProfile() {
             patterns: merged.patterns,
             improvement_history: merged.improvement_history,
             knowledge_transfer_profile: merged.knowledge_transfer_profile ?? {},
+            asset_stats: assetStats,
             raw_signal_snapshot: {
               last_signal: input.signals,
               merged_at: new Date().toISOString(),

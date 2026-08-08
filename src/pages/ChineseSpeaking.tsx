@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import {
   ArrowLeft, Mic, Clock, Lightbulb, BookOpen, Briefcase,
   Heart, Footprints, MessageSquare, Sparkles, Edit3,
-  Loader2, AlertTriangle, BarChart3, ChevronRight,
+  Loader2, AlertTriangle, BarChart3, ChevronRight, Library,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChineseSpeakingStats, useCreateChineseSpeakingSession, generateChineseTopics, TOPIC_TYPE_LABELS, type ChineseTopicType, type GeneratedTopic } from "@/lib/hooks/useChineseSpeaking";
@@ -355,6 +355,21 @@ export default function ChineseSpeaking() {
           </button>
         )}
       </div>
+
+      {/* Asset library link */}
+      <button
+        onClick={() => navigate("/chinese/assets")}
+        className="w-full bg-card rounded-2xl border-2 border-dashed border-amber-300/60 p-4 flex items-center gap-3 hover:border-amber-400/80 hover:bg-amber-50/30 transition-all group"
+      >
+        <div className="h-10 w-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 group-hover:bg-amber-200 transition-colors">
+          <Library size={18} className="text-amber-600" />
+        </div>
+        <div className="text-left flex-1">
+          <p className="text-sm font-semibold text-ink">表达资产库</p>
+          <p className="text-[11px] text-ink-lighter leading-tight">查看和管理你的个人故事、观点、金句等表达资产</p>
+        </div>
+        <ChevronRight size={16} className="text-ink-lighter shrink-0" />
+      </button>
 
       {/* History link */}
       {stats && stats.total_sessions > 0 && (

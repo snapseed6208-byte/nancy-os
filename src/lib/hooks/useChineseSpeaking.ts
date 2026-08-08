@@ -415,8 +415,15 @@ export interface ExpressionAsset {
   fact_status: "user_confirmed" | "user_edited" | "ai_suggested";
   tags: string[];
   status: "active" | "archived" | "deleted";
+  quality_score: AssetQualityScore;
   created_at: string;
   updated_at: string;
+}
+
+export interface AssetQualityScore {
+  completeness: number;
+  authenticity: number;
+  reusability: number;
 }
 
 export interface KeyArgument {
@@ -1169,6 +1176,122 @@ export async function saveMaterialCard(resourceId: string, materialCard: Materia
 // Phase 4: Expression Asset hooks
 // ═══════════════════════════════════════════
 
+/** Compute asset quality score from existing data (no AI call) */
+export function computeAssetQualityScore(
+  assetType: AssetType,
+  assetData: AssetData,
+  confidence: string,
+  tags: string[],
+): AssetQualityScore {
+  // Completeness: what fraction of required fields are non-empty
+  const requiredFields: Record<AssetType, string[]> = {
+    personal_story: ["background", "challenge", "action", "result", "reflection"],
+    experience_case: ["situation", "task", "action", "result", "learning"],
+    viewpoint: ["topic", "my_position", "reasoning", "example"],
+    quality_expression: ["original_question", "my_original_answer", "optimized_answer", "why_good"],
+    quote: ["quote", "source_context", "my_understanding", "application_scene"],
+  };
+  const fields = requiredFields[assetType] || [];
+  const filled = fields.filter((f) => {
+    const val = (assetData as unknown as Record<string, unknown>)[f];
+    return typeof val === "string" && val.length > 0;
+  }).length;
+  const completeness = fields.length > 0 ? Math.round((filled / fields.length) * 100) : 0;
+
+  // Authenticity: based on confidence + evidence presence
+  const authenticity = confidence === "high" ? 90 : 70;
+
+  // Reusability: based on tags richness + completeness
+  const tagScore = Math.min(tags.length * 20, 60);
+  const reusability = Math.round(tagScore + (completeness > 60 ? 30 : completeness > 30 ? 15 : 0));
+
+  return { completeness, authenticity, reusability };
+}
+
+/** Search expression assets by keyword, type, scenario */
+export function useSearchExpressionAssets(filters: {
+  keyword?: string;
+  assetType?: AssetType;
+  scenario?: string;
+  tags?: string[];
+}) {
+  return useQuery({
+    queryKey: ["expression_assets", "search", filters],
+    queryFn: async (): Promise<ExpressionAsset[]> => {
+      const userId = await getUserId();
+      let query = supabase
+        .from("expression_assets")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+
+      if (filters.assetType) query = query.eq("asset_type", filters.assetType);
+      if (filters.keyword) {
+        query = query.or(`title.ilike.%${filters.keyword}%,extracted_from_transcript.ilike.%${filters.keyword}%`);
+      }
+      if (filters.tags && filters.tags.length > 0) {
+        query = query.contains("tags", filters.tags);
+      }
+      // scenario → tag mapping (client-side filter after fetch)
+      const { data, error } = await query;
+      if (error) throw error;
+
+      let results = (data || []) as ExpressionAsset[];
+      if (filters.scenario) {
+        const scenarioTagMap: Record<string, string[]> = {
+          "面试": ["面试", "STAR", "自我介绍", "行为面试"],
+          "商务沟通": ["商务", "沟通", "谈判", "BD"],
+          "演讲表达": ["演讲", "表达", "Presentation"],
+          "日常观点": ["观点", "洞察", "思考"],
+        };
+        const targetTags = scenarioTagMap[filters.scenario] || [filters.scenario];
+        results = results.filter((a) => a.tags.some((t) => targetTags.includes(t)));
+      }
+      return results;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Fetch asset stats summary for profile integration */
+export async function fetchAssetStats(): Promise<{
+  total: number;
+  by_type: Record<AssetType, number>;
+  recently_added: Array<{ id: string; title: string; type: AssetType }>;
+  top_tags: string[];
+}> {
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from("expression_assets")
+    .select("id, asset_type, title, tags")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  const assets = (data || []) as ExpressionAsset[];
+
+  const by_type: Record<string, number> = {};
+  const tagCounts: Record<string, number> = {};
+  for (const a of assets) {
+    by_type[a.asset_type] = (by_type[a.asset_type] || 0) + 1;
+    for (const t of a.tags) {
+      tagCounts[t] = (tagCounts[t] || 0) + 1;
+    }
+  }
+
+  return {
+    total: assets.length,
+    by_type: by_type as Record<AssetType, number>,
+    recently_added: assets.slice(0, 5).map((a) => ({ id: a.id, title: a.title, type: a.asset_type })),
+    top_tags: Object.entries(tagCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 8)
+      .map(([tag]) => tag),
+  };
+}
+
 /** Fetch all active expression assets for the current user */
 export function useExpressionAssets(assetType?: AssetType) {
   return useQuery({
@@ -1200,6 +1323,12 @@ export function useSaveExpressionAsset() {
       source_session_id: string;
     }): Promise<ExpressionAsset> => {
       const userId = await getUserId();
+      const qualityScore = computeAssetQualityScore(
+        candidate.type,
+        candidate.asset_data,
+        candidate.confidence,
+        candidate.tags,
+      );
       const { data, error } = await supabase
         .from("expression_assets")
         .insert({
@@ -1214,6 +1343,7 @@ export function useSaveExpressionAsset() {
           confidence: candidate.confidence,
           fact_status: "user_confirmed",
           tags: candidate.tags,
+          quality_score: qualityScore,
         })
         .select()
         .single();
@@ -1253,9 +1383,31 @@ export function useUpdateExpressionAsset() {
       id: string;
       updates: Partial<Pick<ExpressionAsset, "title" | "tags" | "asset_data" | "status">>;
     }): Promise<void> => {
+      const updatePayload: Record<string, unknown> = { ...updates, fact_status: "user_edited" };
+
+      // Recompute quality_score if content fields changed
+      if (updates.asset_data || updates.tags) {
+        const { data: current } = await supabase
+          .from("expression_assets")
+          .select("asset_type, confidence, asset_data, tags")
+          .eq("id", id)
+          .single();
+        if (current) {
+          const newData = updates.asset_data || (current.asset_data as AssetData);
+          const newTags = updates.tags || (current.tags as string[]);
+          const qualityScore = computeAssetQualityScore(
+            current.asset_type as AssetType,
+            newData as AssetData,
+            current.confidence as string,
+            newTags,
+          );
+          updatePayload.quality_score = qualityScore;
+        }
+      }
+
       const { error } = await supabase
         .from("expression_assets")
-        .update({ ...updates, fact_status: "user_edited" })
+        .update(updatePayload)
         .eq("id", id);
       if (error) throw error;
     },
