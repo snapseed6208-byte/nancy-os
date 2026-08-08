@@ -43,8 +43,6 @@ export interface UserProfileRow {
   industry?: string;
   bio?: string;
   birth_date?: string;
-  occupation?: string;
-  interests?: string[];
   phone?: string;
   social_links?: Record<string, unknown>;
   preferences?: Record<string, unknown>;
