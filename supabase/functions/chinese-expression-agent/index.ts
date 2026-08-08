@@ -251,6 +251,17 @@ const COMPARISON_SYSTEM_PROMPT = `你是一名中文表达训练复盘教练。
   "reference_dependency": {
     "full_reference_viewed": false,
     "interpretation": "本轮主要依靠答案骨架完成"
+  },
+
+  "knowledge_transfer_growth": {
+    "overall_delta": 0,
+    "stage_deltas": [
+      { "stage": "knowledge_understanding", "delta": 0, "interpretation": "解释变化原因" },
+      { "stage": "knowledge_processing", "delta": 0, "interpretation": "解释变化原因" },
+      { "stage": "personal_connection", "delta": 0, "interpretation": "解释变化原因" },
+      { "stage": "expression_transfer", "delta": 0, "interpretation": "解释变化原因" }
+    ],
+    "growth_summary": "1-2句话总结知识转化能力的变化。例如：'重新表达后知识转化总分从65提升到78。最大的进步在个人连接维度（+15），因为第二次表达中用户加入了具体的亲身经历。知识理解维度变化最小（+2），这在预期范围内——短时间内对材料的理解不会发生根本改变。'"
   }
 }`;
 
@@ -520,7 +531,7 @@ serve(async (req: Request) => {
       }
 
       // ═══════════════════════════════════════
-      // V2 Compare Rounds (unchanged)
+      // Phase 3.2: Compare Rounds — with Knowledge Transfer Growth
       // ═══════════════════════════════════════
       case "compare_rounds": {
         const topic = (body.topic as string) || "";
@@ -531,12 +542,16 @@ serve(async (req: Request) => {
         const round1Delivery = body.round1_delivery as Record<string, unknown> | null;
         const round2Delivery = body.round2_delivery as Record<string, unknown> | null;
         const fullReferenceViewed = (body.full_reference_viewed as boolean) || false;
+        const round1KT = body.round1_knowledge_transfer as Record<string, unknown> | null;
+        const round2KT = body.round2_knowledge_transfer as Record<string, unknown> | null;
 
         if (!round1Transcript || !round2Transcript) {
           return jsonResponse(req, {
             success: false, stage: "payload", error: "缺少两轮转录文本", requestId,
           }, 400);
         }
+
+        const hasKT = round1KT && round2KT;
 
         const compareUserMessage = [
           `## 题目`, topic, ``,
@@ -549,6 +564,7 @@ serve(async (req: Request) => {
           `## 参考信息`,
           `用户查看了完整参考答案：${fullReferenceViewed ? "是" : "否"}`,
           ``,
+          hasKT ? `## 第一次知识转化\n${JSON.stringify(round1KT)}\n\n## 第二次知识转化\n${JSON.stringify(round2KT)}\n\n请同时输出 knowledge_transfer_growth 字段，分析两轮之间的知识转化能力变化。` : ``,
           `请特别注意：如果第二轮内容分数上升但语速(chars_per_minute)明显加快或口头禅增多，`,
           `必须将improvement_quality判断为content_better_delivery_worse。`,
         ].join("\n");
@@ -558,12 +574,12 @@ serve(async (req: Request) => {
           { role: "user", content: compareUserMessage },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} stage=compare_rounds_start`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=compare_rounds_start hasKT=${hasKT}`);
         const result = await aiRuntime<Record<string, unknown>>(compareMessages, {
           agentName: "chinese-expression-agent",
-          maxTokens: 2048,
+          maxTokens: 3072,
           temperature: 0.3,
-          timeout: 60_000,
+          timeout: 90_000,
         });
 
         if (!result.success) {

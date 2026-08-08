@@ -887,34 +887,147 @@ export function buildDiagnosisSystemPrompt(topicType: string, hasMaterial = fals
 
   return base + "\n" + `
 ━━━━━━━━━━━━━━━━━━━━
-十四、材料理解评估（本请求包含材料上下文）
+十四、材料理解与知识转化评估（本请求包含材料上下文）
 ━━━━━━━━━━━━━━━━━━━━
 
-本次表达基于用户提供的材料。除了常规表达诊断，还必须评估用户对材料的理解质量。
+本次表达基于用户提供的材料。除了常规表达诊断，你必须同时输出以下三个额外字段。
 
-在输出 JSON 中增加 material_understanding 字段：
+━━━━━━━━━━━━━━━━━━━━
+14.1 material_understanding_v2 — 材料理解评估
+━━━━━━━━━━━━━━━━━━━━
 
-"material_understanding": {
-  "accuracy_score": 0-100,
-  "core_understanding": "用户是否准确抓住了材料的核心观点？是否混淆了作者观点与自己的观点？",
-  "understood_correctly": ["用户理解正确的具体点——引用材料原文+用户的正确表述"],
-  "misunderstanding": "用户是否有理解偏差？是否忽略了重要限定条件？如果没有明显误解则为空字符串",
-  "missing_material_points": ["材料中的重要观点或信息，用户在表达中完全遗漏的"],
-  "personal_connection": "用户是否将材料内容与个人经验或已有知识建立了连接？连接的质量如何？",
-  "transfer_quality": "用户将材料信息转化为个人表达的质量：是机械复述还是真正内化后用自己的话表达？"
+评估用户对材料的理解质量。注意：不要把"不认同材料"判断成理解错误。必须区分"理解错误"和"观点不同"。
+
+"material_understanding_v2": {
+  "understanding_score": 0-100,
+  "core_grasp": {
+    "score": 0-100,
+    "analysis": "用户是否准确抓住了材料的核心观点？注意区分：用户理解了但不同意 vs 用户误解了作者的意思。如果用户用自己的话准确转述了作者立场（即使他不同意），这依然是高分的核心理解。"
+  },
+  "material_fidelity": {
+    "score": 0-100,
+    "analysis": "用户的表达在多大程度上忠于原文？是否遗漏了关键概念？是否添加了原文没有的内容？是否混淆了作者观点和自己观点？"
+  },
+  "key_concept_usage": {
+    "score": 0-100,
+    "analysis": "用户是否主动调用材料中的核心概念和术语？是用自己的话解释这些概念还是简单地重复材料中的句子？"
+  },
+  "material_connection": {
+    "score": 0-100,
+    "analysis": "用户是否将材料与个人经验或现实场景建立了连接？连接的质量如何（是表面的'很有感触'还是具体地说明了'这个观点如何解释了我的某次经历'）？"
+  },
+  "missing_material_elements": [
+    {
+      "missing": "用户遗漏的具体概念或要点",
+      "importance": "high|medium|low",
+      "suggestion": "建议如何在表达中纳入这个要素"
+    }
+  ]
 }
 
-## 材料理解评估原则
+评分注意：understanding_score 是四个子维度的综合判断，不是平均值。核心理解（core_grasp）权重最高。
+missing_material_elements 只列出用户确实遗漏的重要元素，宁缺毋滥。
 
-1. 区分"忠实复述"和"真正理解"：用户可能逐字复述材料但不理解其含义。
-2. 区分"作者观点"和"用户观点"：用户是否清楚地区分了这两者。
-3. 连接质量 > 连接数量：一个深刻的个人连接比三个表面的提及更有价值。
-4. 遗漏不等于不理解：用户可能因为时间限制选择性地省略了某些内容。
-5. accuracy_score 评分指南：
-  - 90-100：准确理解核心观点，能用自己的话重新表达，有个人连接
-  - 70-89：基本理解核心观点，有一些细节偏差或缺少个人加工
-  - 50-69：部分理解，有重要的遗漏或偏差
-  - <50：严重误解材料核心观点，或基本没有理解`;
+━━━━━━━━━━━━━━━━━━━━
+14.2 knowledge_transfer — 知识转化能力评估
+━━━━━━━━━━━━━━━━━━━━
+
+评估用户是否将输入的知识转化为自己的表达能力。这不是评估"复述能力"，而是评估"知识内化能力"。
+
+知识转化的四个阶段（按顺序，后者依赖前者）：
+1. knowledge_understanding — 知识理解：是否读懂材料
+2. knowledge_processing — 知识加工：是否能用自己的话重组知识
+3. personal_connection — 个人连接：是否能联系个人经历
+4. expression_transfer — 表达转化：是否能形成可应用的个人方法论
+
+"knowledge_transfer": {
+  "overall_score": 0-100,
+  "level": "understand_only|connected|personalized|applied",
+  "coach_summary": "1-2句话总结用户的知识转化水平。指出优势和短板。例如：'你已经准确理解材料核心观点（优势），但目前主要停留在转述阶段，缺少个人经验的参与（短板）。下一步需要联系自己的亲身经历来验证或挑战作者的观点。'",
+
+  "path": [
+    {
+      "stage": "knowledge_understanding",
+      "label": "知识理解",
+      "score": 0-100,
+      "analysis": "1句话具体分析，必须引用用户原句作为证据",
+      "evidence": "用户原句"
+    },
+    {
+      "stage": "knowledge_processing",
+      "label": "知识加工",
+      "score": 0-100,
+      "analysis": "用户是否用自己的话重新组织了知识？还是基本复述材料中的句子？",
+      "evidence": "用户原句"
+    },
+    {
+      "stage": "personal_connection",
+      "label": "个人连接",
+      "score": 0-100,
+      "analysis": "用户是否联系了个人经历？连接是具体的还是笼统的？",
+      "evidence": "用户原句"
+    },
+    {
+      "stage": "expression_transfer",
+      "label": "表达转化",
+      "score": 0-100,
+      "analysis": "用户是否形成了可迁移的个人观点或方法论？还是一分钟结束后听众只记得作者的观点？",
+      "evidence": "用户原句"
+    }
+  ],
+
+  "level_definition": {
+    "understand_only": "四个阶段的得分集中在 knowledge_understanding，其他三个阶段均低于 60。用户知道作者说什么，但没有自己的东西。表达基本是对原文的转述。",
+    "connected": "knowledge_understanding ≥ 70，personal_connection 在 50-75 之间。用户能够联系现实场景，但个人经验参与不足。有连接的意图但缺乏具体性。",
+    "personalized": "四个阶段均在 75+，且 expression_transfer ≥ 70。用户能够结合个人经历形成独立观点。听众能够感受到用户的立场不仅源于材料，更源于自己的思考。",
+    "applied": "四个阶段均 ≥ 80。用户不仅理解材料、有自己的观点，还能将其转化为可操作的方法论或行动指南。听众可以从中获得可直接应用的建议。"
+  }
+}
+
+overall_score 计算逻辑：四个阶段的加权平均。knowledge_understanding 和 personal_connection 各占 25%，knowledge_processing 占 20%，expression_transfer 占 30%（表达转化是最终目标，权重最高）。
+
+coach_summary 要求：必须包含三要素——① 当前最大优势 ② 当前最大短板 ③ 具体可行的下一步建议。
+
+━━━━━━━━━━━━━━━━━━━━
+14.3 knowledge_expression_gap — 知识-表达断层分析
+━━━━━━━━━━━━━━━━━━━━
+
+判断用户当前的核心问题来自哪里：材料理解不足？语言表达不足？还是知识转化断层？
+
+"knowledge_expression_gap": {
+  "gap_type": "understanding_gap|expression_gap|transfer_gap|none",
+
+  "analysis": "综合分析用户的三组数据：
+    ① Material Understanding V2 的各维度得分
+    ② Expression 各维度得分（来自主诊断的 dimensions）
+    ③ Knowledge Transfer 的四个阶段得分
+    基于这三组数据的对比，诊断用户当前最核心的问题在哪里。
+    例如：'你的材料理解得分很高（core_grasp=90），表达维度也在正常范围（平均75），但知识转化得分偏低（overall=60）。这不是表达问题，而是知识内化问题——你能读懂也能说清楚，但说的还是作者的东西，不是你的东西。'",
+
+  "next_action": "基于 gap_type 给出具体行动建议。
+    understanding_gap → 建议重新阅读材料，聚焦于某个特定概念或段落；
+    expression_gap → 建议用更简单的语言重新表达核心观点，或使用 PREP/金字塔结构；
+    transfer_gap → 建议加入个人经历、提出自己的不同意见、或说明这个观点将如何改变你的行为；
+    none → 建议继续深化，尝试向不同听众解释同一个概念。"
+}
+
+gap_type 判断规则（按优先级）：
+1. 先看 Material Understanding：如果 core_grasp < 65 或 material_fidelity < 60 → understanding_gap
+2. 再看 Expression：如果 dimensions 平均分 < 60 → expression_gap
+3. 再看 Knowledge Transfer：如果 overall_score < 65 或 personal_connection < 55 → transfer_gap
+4. 三者均正常 → none
+
+如果同时满足多个条件，选择最根本的那个（优先级：understanding_gap > expression_gap > transfer_gap > none）。原因：不理解材料的情况下，表达和转化无从谈起。
+
+━━━━━━━━━━━━━━━━━━━━
+输出要求（关键）
+━━━━━━━━━━━━━━━━━━━━
+
+上述三个字段（material_understanding_v2、knowledge_transfer、knowledge_expression_gap）必须出现在最终 JSON 输出的顶层，与主诊断字段并列。
+
+不得省略、不得合并、不得以散文替代结构化 JSON。
+
+如果用户表达中没有明显的知识转化问题，依然要正常输出这些字段——分数可以正常甚至高分，但字段结构不能省略。`;
 }
 
 export function buildDiagnosisUserMessage(params: {

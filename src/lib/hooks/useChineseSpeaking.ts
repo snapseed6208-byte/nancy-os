@@ -218,11 +218,16 @@ export interface V4Diagnosis {
   fact_consistency: V4FactConsistency;
   delivery_feedback: V4DeliveryFeedback;
   retry_focus: string[];
+  /** @deprecated Use material_understanding_v2 instead */
   material_understanding?: MaterialUnderstanding;
+  material_understanding_v2?: MaterialUnderstandingV2;
+  knowledge_transfer?: KnowledgeTransfer;
+  knowledge_expression_gap?: KnowledgeExpressionGap;
 }
 
 // ── Phase 3.1 Material Card types ──
 
+/** @deprecated Use MaterialUnderstandingV2 instead. Kept for backward compat with V1 sessions. */
 export interface MaterialUnderstanding {
   accuracy_score: number;
   core_understanding: string;
@@ -231,6 +236,56 @@ export interface MaterialUnderstanding {
   missing_material_points: string[];
   personal_connection: string;
   transfer_quality: string;
+}
+
+// ── Phase 3.2: Material Understanding V2 + Knowledge Transfer ──
+
+export interface MaterialUnderstandingV2 {
+  understanding_score: number;
+  core_grasp: { score: number; analysis: string };
+  material_fidelity: { score: number; analysis: string };
+  key_concept_usage: { score: number; analysis: string };
+  material_connection: { score: number; analysis: string };
+  missing_material_elements: Array<{
+    missing: string;
+    importance: "high" | "medium" | "low";
+    suggestion: string;
+  }>;
+}
+
+export interface KnowledgeTransferStage {
+  stage: "knowledge_understanding" | "knowledge_processing" | "personal_connection" | "expression_transfer";
+  label: string;
+  score: number;
+  analysis: string;
+  evidence: string;
+}
+
+export type KnowledgeTransferLevel = "understand_only" | "connected" | "personalized" | "applied";
+
+export interface KnowledgeTransfer {
+  overall_score: number;
+  level: KnowledgeTransferLevel;
+  coach_summary: string;
+  path: KnowledgeTransferStage[];
+  level_definition: Record<KnowledgeTransferLevel, string>;
+  growth?: KnowledgeTransferGrowth;
+}
+
+export interface KnowledgeTransferGrowth {
+  overall_delta: number;
+  stage_deltas: Array<{
+    stage: string;
+    delta: number;
+    interpretation: string;
+  }>;
+  growth_summary: string;
+}
+
+export interface KnowledgeExpressionGap {
+  gap_type: "understanding_gap" | "expression_gap" | "transfer_gap" | "none";
+  analysis: string;
+  next_action: string;
 }
 
 export interface KeyArgument {
@@ -449,6 +504,7 @@ export interface V2Comparison {
   progress_points: ProgressPoint[];
   remaining_issues: RemainingIssue[];
   reference_dependency: ReferenceDependency;
+  knowledge_transfer_growth?: KnowledgeTransferGrowth;
 }
 
 // ── V3 Analysis result (diagnosis only, no full speech) ──
@@ -900,6 +956,8 @@ export async function compareChineseRounds(
   round1Delivery: Record<string, unknown> | null,
   round2Delivery: Record<string, unknown> | null,
   fullReferenceViewed: boolean,
+  round1KnowledgeTransfer?: Record<string, unknown> | null,
+  round2KnowledgeTransfer?: Record<string, unknown> | null,
 ): Promise<{ success: true; data: V2Comparison } | { success: false; error: string }> {
   return invokeAI<V2Comparison>("chinese-expression-agent", {
     action: "compare_rounds",
@@ -911,8 +969,10 @@ export async function compareChineseRounds(
     round1_delivery: round1Delivery,
     round2_delivery: round2Delivery,
     full_reference_viewed: fullReferenceViewed,
+    round1_knowledge_transfer: round1KnowledgeTransfer ?? null,
+    round2_knowledge_transfer: round2KnowledgeTransfer ?? null,
   }, {
-    timeout: 90_000,
+    timeout: 120_000,
     retries: 1,
   });
 }

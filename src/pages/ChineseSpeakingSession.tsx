@@ -33,6 +33,10 @@ import {
   type ContentDeepeningMissingElement,
   hasContentDeepening,
   type ImprovementQuality,
+  type MaterialUnderstandingV2,
+  type KnowledgeTransfer,
+  type KnowledgeTransferStage,
+  type KnowledgeExpressionGap,
 } from "@/lib/hooks/useChineseSpeaking";
 import { useUpdateExpressionProfile, type ProfileSignalInput } from "@/lib/hooks/useExpressionProfile";
 
@@ -476,6 +480,7 @@ export default function ChineseSpeakingSession() {
         attempt_round: 1,
         is_retry: false,
         diagnosis: d.diagnosis,
+        knowledge_transfer: d.diagnosis.knowledge_transfer ?? null,
       },
     }).catch(() => { /* fire-and-forget */ });
   }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, r1SttProvider, r1SttMode, r1TranscriptSource, r1SttSuccess, createAttempt, updateAttempt, updateProfile]);
@@ -715,6 +720,8 @@ export default function ChineseSpeakingSession() {
       round1DeliveryMetrics as unknown as Record<string, unknown> | null,
       d.delivery_metrics as unknown as Record<string, unknown> | null,
       round2FullReferenceViewed,
+      round1Diagnosis?.knowledge_transfer as unknown as Record<string, unknown> | null,
+      d.diagnosis?.knowledge_transfer as unknown as Record<string, unknown> | null,
     );
 
     if (compResult.success) {
@@ -734,6 +741,8 @@ export default function ChineseSpeakingSession() {
         diagnosis: d.diagnosis,
         round1_score: round1Diagnosis?.overall?.score,
         round2_score: d.diagnosis.overall?.score,
+        knowledge_transfer: d.diagnosis.knowledge_transfer ?? null,
+        round1_knowledge_transfer: round1Diagnosis?.knowledge_transfer ?? null,
       },
     }).catch(() => { /* fire-and-forget */ });
   }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, editedTranscript, r2SttProvider, r2SttMode, r2TranscriptSource, r2SttSuccess, createAttempt, updateAttempt, updateProfile, round1AttemptId, round1Diagnosis, round2FullReferenceViewed]);
@@ -1275,6 +1284,177 @@ export default function ChineseSpeakingSession() {
             );
           })()}
 
+          {/* Material Understanding V2 (Phase 3.2) */}
+          {(() => {
+            const mu = round1Diagnosis.material_understanding_v2;
+            if (!mu) return null;
+            return (
+              <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Target size={16} className="text-indigo-600" />
+                  <p className="text-sm font-medium text-ink">材料理解评估</p>
+                  <span className={cn(
+                    "text-[10px] font-medium rounded-full px-2 py-0.5",
+                    mu.understanding_score >= 80 ? "bg-emerald-100 text-emerald-700" :
+                    mu.understanding_score >= 60 ? "bg-amber-100 text-amber-700" :
+                    "bg-accent-rose/10 text-accent-rose",
+                  )}>
+                    {mu.understanding_score}分
+                  </span>
+                </div>
+
+                {/* 4 sub-dimensions */}
+                <div className="space-y-2">
+                  {([
+                    { key: "core_grasp", label: "核心把握", data: mu.core_grasp },
+                    { key: "material_fidelity", label: "信息还原度", data: mu.material_fidelity },
+                    { key: "key_concept_usage", label: "关键概念运用", data: mu.key_concept_usage },
+                    { key: "material_connection", label: "材料关联度", data: mu.material_connection },
+                  ] as const).map(({ key, label, data }) => {
+                    const pct = (data.score / 100) * 100;
+                    return (
+                      <div key={key} className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-ink-light">{label}</span>
+                          <span className="text-[10px] font-mono text-ink-lighter">{data.score}/100</span>
+                        </div>
+                        <div className="h-1 bg-ink/8 rounded-full overflow-hidden">
+                          <div className={cn(
+                            "h-full rounded-full",
+                            data.score >= 80 ? "bg-emerald-400" : data.score >= 60 ? "bg-amber-400" : "bg-accent-rose/60",
+                          )} style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-[10px] text-ink-lighter/80">{data.analysis}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Missing material elements */}
+                {mu.missing_material_elements && mu.missing_material_elements.length > 0 && (
+                  <div className="pt-2 border-t border-border/50 space-y-1.5">
+                    <p className="text-[11px] font-medium text-ink">遗漏的材料要点</p>
+                    {mu.missing_material_elements.map((el, i) => (
+                      <div key={i} className="bg-amber-50/50 rounded-lg p-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-medium text-amber-700">{el.missing}</span>
+                          <span className={cn(
+                            "text-[9px] rounded-full px-1.5 py-0.5",
+                            el.importance === "high" ? "bg-accent-rose/10 text-accent-rose" :
+                            el.importance === "medium" ? "bg-amber-100 text-amber-600" :
+                            "bg-ink/5 text-ink-lighter",
+                          )}>
+                            {el.importance === "high" ? "重要" : el.importance === "medium" ? "中等" : "次要"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-ink-lighter mt-0.5">{el.suggestion}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Knowledge Transfer (Phase 3.2) */}
+          {(() => {
+            const kt = round1Diagnosis.knowledge_transfer;
+            if (!kt) return null;
+            const levelLabels: Record<string, string> = {
+              understand_only: "仅理解",
+              connected: "已关联",
+              personalized: "已内化",
+              applied: "可迁移",
+            };
+            return (
+              <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lightbulb size={16} className="text-emerald-600" />
+                  <p className="text-sm font-medium text-ink">知识转化分析</p>
+                  <span className={cn(
+                    "text-[10px] font-medium rounded-full px-2 py-0.5",
+                    kt.level === "applied" ? "bg-emerald-100 text-emerald-700" :
+                    kt.level === "personalized" ? "bg-blue-100 text-blue-700" :
+                    kt.level === "connected" ? "bg-purple-100 text-purple-700" :
+                    "bg-amber-100 text-amber-700",
+                  )}>
+                    {levelLabels[kt.level] || kt.level}
+                  </span>
+                  <span className="text-[10px] font-mono text-ink-lighter ml-auto">{kt.overall_score}分</span>
+                </div>
+
+                <p className="text-xs text-ink-lighter">{kt.coach_summary}</p>
+
+                {/* 4-stage path */}
+                <div className="space-y-2 pt-2 border-t border-border/50">
+                  <p className="text-[11px] font-medium text-ink">知识转化路径</p>
+                  {kt.path.map((stage: KnowledgeTransferStage, i: number) => {
+                    const pct = (stage.score / 100) * 100;
+                    return (
+                      <div key={stage.stage} className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <div className="h-5 w-5 rounded-full bg-ink/5 flex items-center justify-center shrink-0">
+                            <span className="text-[10px] font-bold text-ink-light">{i + 1}</span>
+                          </div>
+                          <span className="text-[11px] font-medium text-ink">{stage.label}</span>
+                          <span className="text-[10px] font-mono text-ink-lighter ml-auto">{stage.score}/100</span>
+                        </div>
+                        <div className="h-1.5 bg-ink/8 rounded-full overflow-hidden ml-7">
+                          <div className={cn(
+                            "h-full rounded-full transition-all duration-500",
+                            pct >= 80 ? "bg-emerald-400" : pct >= 60 ? "bg-sage-deep/60" : pct >= 40 ? "bg-amber-400" : "bg-accent-rose/60",
+                          )} style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-[10px] text-ink-lighter/80 ml-7">{stage.analysis}</p>
+                        {stage.evidence && (
+                          <p className="text-[9px] text-ink-lighter/60 italic ml-7">&ldquo;{stage.evidence}&rdquo;</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Knowledge-Expression Gap (Phase 3.2) */}
+          {(() => {
+            const gap = round1Diagnosis.knowledge_expression_gap;
+            if (!gap) return null;
+            const gapLabels: Record<string, string> = {
+              understanding_gap: "理解断层",
+              expression_gap: "表达断层",
+              transfer_gap: "转化断层",
+              none: "无明显断层",
+            };
+            return (
+              <div className={cn(
+                "rounded-xl border p-3 space-y-1.5",
+                gap.gap_type === "none" ? "bg-emerald-50/50 border-emerald-100" :
+                gap.gap_type === "understanding_gap" ? "bg-accent-rose/5 border-accent-rose/10" :
+                "bg-amber-50/50 border-amber-100",
+              )}>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={14} className={cn(
+                    gap.gap_type === "none" ? "text-emerald-500" :
+                    gap.gap_type === "understanding_gap" ? "text-accent-rose" :
+                    "text-amber-500",
+                  )} />
+                  <span className={cn(
+                    "text-xs font-medium",
+                    gap.gap_type === "none" ? "text-emerald-700" :
+                    gap.gap_type === "understanding_gap" ? "text-accent-rose" :
+                    "text-amber-700",
+                  )}>
+                    {gapLabels[gap.gap_type] || gap.gap_type}
+                  </span>
+                </div>
+                <p className="text-[11px] text-ink-lighter">{gap.analysis}</p>
+                <p className="text-[11px] text-sage-deep font-medium">{gap.next_action}</p>
+              </div>
+            );
+          })()}
+
           {/* Recommended structure (V4) */}
           {round1Diagnosis.recommended_structure && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
@@ -1586,6 +1766,51 @@ export default function ChineseSpeakingSession() {
                 {comparison.reference_dependency && (
                   <div className="bg-purple-50/50 rounded-lg p-2 text-[10px] text-purple-700">
                     {comparison.reference_dependency.interpretation}
+                  </div>
+                )}
+
+                {/* Knowledge Transfer Growth (Phase 3.2) */}
+                {comparison.knowledge_transfer_growth && (
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <div className="flex items-center gap-2">
+                      <Lightbulb size={14} className="text-emerald-600" />
+                      <p className="text-xs font-medium text-ink">知识转化成长</p>
+                      <span className={cn(
+                        "text-[10px] font-medium rounded-full px-1.5 py-0.5",
+                        comparison.knowledge_transfer_growth.overall_delta > 5 ? "bg-emerald-100 text-emerald-700" :
+                        comparison.knowledge_transfer_growth.overall_delta > 0 ? "bg-blue-100 text-blue-700" :
+                        "bg-ink/5 text-ink-light",
+                      )}>
+                        {comparison.knowledge_transfer_growth.overall_delta > 0 ? `+${comparison.knowledge_transfer_growth.overall_delta}` : comparison.knowledge_transfer_growth.overall_delta}
+                      </span>
+                    </div>
+
+                    {/* Stage deltas */}
+                    {comparison.knowledge_transfer_growth.stage_deltas.length > 0 && (
+                      <div className="space-y-1">
+                        {comparison.knowledge_transfer_growth.stage_deltas.map((sd) => (
+                          <div key={sd.stage} className="flex items-center gap-2">
+                            <span className="text-[10px] text-ink-lighter w-24 shrink-0">
+                              {sd.stage === "knowledge_understanding" ? "知识理解" :
+                               sd.stage === "knowledge_processing" ? "知识加工" :
+                               sd.stage === "personal_connection" ? "个人连接" :
+                               sd.stage === "expression_transfer" ? "表达转化" : sd.stage}
+                            </span>
+                            <span className={cn(
+                              "text-[10px] font-medium",
+                              sd.delta > 0 ? "text-emerald-600" : sd.delta < 0 ? "text-accent-rose" : "text-ink-lighter",
+                            )}>
+                              {sd.delta > 0 ? `+${sd.delta}` : sd.delta}
+                            </span>
+                            <span className="text-[9px] text-ink-lighter/70">{sd.interpretation}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <p className="text-[10px] text-ink-lighter leading-relaxed">
+                      {comparison.knowledge_transfer_growth.growth_summary}
+                    </p>
                   </div>
                 )}
               </div>
