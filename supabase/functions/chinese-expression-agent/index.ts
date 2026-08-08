@@ -620,7 +620,8 @@ serve(async (req: Request) => {
       }
 
       // ═══════════════════════════════════════
-      // V2 Extract Material — expression-training-focused analysis
+      // Phase 3.1: Extract Material — Material Card generation
+      // Output: material_card stored in resources.ai_analysis
       // ═══════════════════════════════════════
       case "extract_material": {
         const sourceText = (body.source_text as string) || "";
@@ -639,42 +640,98 @@ serve(async (req: Request) => {
         const messages: DeepSeekMessage[] = [
           {
             role: "system",
-            content: `你是一名中文表达训练教练，不是摘要工具。
+            content: `你是一名中文表达训练教练。
 
-你的任务是阅读用户提供的材料，从中提取对"口语表达训练"有价值的内容。
+你的任务不是总结文章，而是帮助用户把输入材料转化为"可表达的知识"。
 
-不要做通用摘要。你提取的每一个要点，都必须能够转化为一个具体的表达练习。
+━━━━━━━━━━━━━━━━━━━━
+核心原则
+━━━━━━━━━━━━━━━━━━━━
 
-## 分析框架
+1. 你不是内容摘要助手。你是一对一表达教练。
+2. 你的每一个输出都必须服务于：用户站在台上，用一分钟时间，向别人清晰表达自己对这份材料的理解。
+3. 不要泛泛总结。不要罗列信息。不要生成百科介绍。
+4. 你提取的内容必须能支撑用户完成"观点表达""概念解释""经历讲述"或"故事表达"。
 
-1. **核心观点**：材料最想传达的1-2个核心论点。这必须是材料作者的真实立场，不是你的理解。
+━━━━━━━━━━━━━━━━━━━━
+输出结构：Material Card
+━━━━━━━━━━━━━━━━━━━━
 
-2. **关键要点**：支持核心观点的关键论据或信息点（3-5个）。每个要点应该是一句完整的话，可以独立用于表达训练。
-
-3. **重要案例**：材料中具体、可用于复述的案例、场景或数据。这些是表达训练中最有价值的素材。
-
-4. **争议点**：材料中可能引发不同看法的地方。这些适合用于观点表达训练，让用户形成自己的立场。
-
-5. **表达角度**：从哪些角度可以展开口语表达。例如：
-  - 你是否同意作者的观点？为什么？
-  - 你是否有类似的经历？
-  - 这个概念如何应用于你的生活或工作？
-  - 作者的观点在什么条件下成立？有没有反例？
-
-## 输入材料类型
-${sourceTypeLabel}
-
-## 输出格式
-只输出合法JSON，不得使用Markdown代码围栏。
+你必须输出以下 JSON 结构：
 
 {
-  "title": "材料标题",
-  "core_argument": "核心观点（1-2句话，准确反映材料立场）",
-  "key_points": ["关键点1", "关键点2", "关键点3"],
-  "important_examples": ["可用于复述的案例或场景"],
-  "controversial_points": ["可讨论的争议点，若材料无明显争议点则为空数组"],
-  "expression_angles": ["表达角度1", "表达角度2", "表达角度3"]
-}`,
+  "material_card": {
+    "title": "材料标题",
+    "source_type": "${sourceTypeLabel}",
+    "source_summary": "2-3句话概述。不要复述目录。要回答：这份材料到底在讨论什么问题？为什么值得关注？",
+
+    "core_argument": "这个材料最核心想表达什么？用1-2句话准确反映材料作者的立场。不是你的理解，是作者的真实立场。",
+
+    "key_arguments": [
+      {
+        "point": "核心论点（一句话）",
+        "explanation": "这个论点为什么成立？材料中提供了什么理由？",
+        "example": "材料中用来支撑这个论点的具体案例或场景"
+      }
+    ],
+
+    "key_examples": [
+      {
+        "case": "案例或场景的简要描述",
+        "meaning": "这个案例说明了什么问题？为什么它值得记住？",
+        "can_use_in_expression": "例如：用于回答'如何面对他人评价'或'什么是真正的自由'"
+      }
+    ],
+
+    "expression_angles": [
+      {
+        "angle": "表达角度名称（如：成年人如何摆脱他人评价？）",
+        "recommended_skill": "opinion|experience|concept|reflection|story",
+        "possible_question": "可以用于一分钟训练的完整问题（不超过40字）"
+      }
+    ],
+
+    "recommended_skill": "opinion|experience|concept|reflection|story|application",
+    "training_reason": "为什么推荐这个技能？例如：这份材料最有价值的部分是它的核心论点，适合让用户形成自己的立场并练习论证能力。"
+  }
+}
+
+━━━━━━━━━━━━━━━━━━━━
+数量约束
+━━━━━━━━━━━━━━━━━━━━
+
+- key_arguments：3-5条（每条的 explanation 和 example 必须具体，不能泛泛而谈）
+- key_examples：1-3个（宁缺毋滥。如果材料中的案例不够鲜明，可以减少数量但提高质量）
+- expression_angles：3-5个（每个角度必须指向不同的表达技能。覆盖至少3种不同的 recommended_skill）
+- recommended_skill：从以下6种中选择：opinion（观点表达）、experience（经历讲述）、concept（概念解释）、reflection（感悟分享）、story（故事表达）、application（应用连接）
+
+━━━━━━━━━━━━━━━━━━━━
+表达角度生成原则
+━━━━━━━━━━━━━━━━━━━━
+
+每个表达角度必须满足：
+1. 有不同的 recommended_skill（不要5个角度都是 opinion）
+2. possible_question 是完整的一分钟表达题目（不是话题标签）
+3. angle 是一句话的描述，让用户一眼能看出"这个方向我要说什么"
+
+角度多样性检查清单：
+- 是否有一个纯观点表达的角度？（你同意/不同意作者？）
+- 是否有一个概念解释的角度？（材料中的某个概念如何通俗解释？）
+- 是否有一个个人连接的角度？（你是否有类似的经历？）
+- 是否有一个应用实践的角度？（这个观点如何改变你的行为？）
+- 是否有一个批判思辨的角度？（作者的观点在什么条件下不成立？）
+
+━━━━━━━━━━━━━━━━━━━━
+禁止事项
+━━━━━━━━━━━━━━━━━━━━
+
+禁止：
+- 把材料总结成百科条目
+- key_arguments 只有 bullet list 没有 explanation 和 example
+- expression_angles 全部指向同一种技能
+- key_examples 泛泛而谈（如"书中举了很多例子"）
+- recommended_skill 与 expression_angles 的分布不一致
+- 输出 Markdown 代码围栏或非 JSON 内容`,
           },
           { role: "user", content: `## 材料类型：${sourceTypeLabel}\n\n## 材料内容\n\n${truncatedText}` },
         ];
@@ -682,7 +739,7 @@ ${sourceTypeLabel}
         console.log(`[chinese-expression-agent] ${requestId} stage=extract_material_start sourceType=${sourceType} textLen=${truncatedText.length}`);
         const result = await aiRuntime<Record<string, unknown>>(messages, {
           agentName: "chinese-expression-agent",
-          maxTokens: 2048,
+          maxTokens: 3072,
           temperature: 0.3,
           timeout: 120_000,
         });
@@ -701,23 +758,38 @@ ${sourceTypeLabel}
       }
 
       // ═══════════════════════════════════════
-      // Generate Material Questions — training questions from analyzed material
+      // Phase 3.1: Generate Material Questions — from Material Card
+      // Supports optional angle selection for targeted question generation
       // ═══════════════════════════════════════
       case "generate_material_questions": {
-        const materialAnalysis = body.material_analysis as Record<string, unknown> | null;
+        const materialCardInput = body.material_card as Record<string, unknown> | null;
 
-        if (!materialAnalysis) {
+        if (!materialCardInput) {
           return jsonResponse(req, {
-            success: false, stage: "payload", error: "缺少材料分析结果", requestId,
+            success: false, stage: "payload", error: "缺少 Material Card", requestId,
           }, 400);
         }
+
+        const selectedAngle = materialCardInput.selected_angle as Record<string, unknown> | undefined;
+        const materialCard = materialCardInput.material_card as Record<string, unknown>;
+
+        const angleContext = selectedAngle
+          ? `\n\n## 用户选择的表达角度\n角度：${selectedAngle.angle || ""}\n推荐技能：${selectedAngle.recommended_skill || ""}\n角度对应的问题：${selectedAngle.possible_question || ""}\n\n请围绕用户选择的这个角度生成问题。问题应该与这个角度的技能类型（${selectedAngle.recommended_skill || "opinion"}）高度相关。`
+          : "";
 
         const messages: DeepSeekMessage[] = [
           {
             role: "system",
             content: `你是一名中文表达训练教练。
 
-根据已分析的材料内容，生成3个适合一分钟口语表达的训练问题。
+根据 Material Card 的内容，生成3个适合一分钟口语表达的训练问题。
+
+## Material Card 包含的信息
+- core_argument：材料核心观点
+- key_arguments：核心论点（含解释和案例）
+- key_examples：可用于表达的关键案例
+- expression_angles：AI推荐的表达角度（每个角度有推荐的技能类型）
+- recommended_skill：AI推荐的最佳训练技能
 
 ## 问题类型
 - **opinion（观点表达）**：对材料中的观点表达自己的立场，适合训练论证和思辨能力
@@ -727,8 +799,9 @@ ${sourceTypeLabel}
 ## 要求
 - 每个问题必须与材料内容直接相关，不能脱离材料
 - 问题开放，有表达空间，不是简单的"是/否"问题
-- 3个问题应该覆盖不同类型，至少有1个opinion类型
-- 根据问题性质推荐合适的表达技能
+- 3个问题应该覆盖至少2种不同的技能类型
+- 如果用户选择了表达角度，问题应围绕该角度和对应的技能类型生成
+- 如果没有选择角度，优先使用 recommended_skill 类型
 
 ## 表达技能映射
 - 观点表达 → recommended_skill: "opinion"
@@ -736,6 +809,7 @@ ${sourceTypeLabel}
 - 概念解释 → recommended_skill: "concept"
 - 感悟分享 → recommended_skill: "reflection"
 - 故事表达 → recommended_skill: "story"
+- 应用连接 → recommended_skill: "application"
 
 ## 输出格式
 只输出合法JSON，不得使用Markdown代码围栏。
@@ -745,18 +819,18 @@ ${sourceTypeLabel}
     {
       "question": "问题文本（一句话，不超过40字）",
       "question_type": "opinion|explanation|application",
-      "recommended_skill": "opinion|experience|concept|reflection|story"
+      "recommended_skill": "opinion|experience|concept|reflection|story|application"
     }
   ]
 }`,
           },
           {
             role: "user",
-            content: `## 材料分析结果\n\n${JSON.stringify(materialAnalysis, null, 2)}\n\n请基于以上材料分析，生成3个表达训练问题。`,
+            content: `## Material Card\n\n${JSON.stringify(materialCard, null, 2)}${angleContext}\n\n请基于以上 Material Card，生成3个表达训练问题。`,
           },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} stage=generate_material_questions_start`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=generate_material_questions_start hasAngle=${!!selectedAngle}`);
         const result = await aiRuntime<{ questions: Array<{ question: string; question_type: string; recommended_skill: string }> }>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,

@@ -57,6 +57,7 @@ export type ResourceRow = {
   ai_applicable_scenarios: string[] | null;
   ai_related_knowledge: string[] | null;
   ai_source_extracted_at: string | null;
+  ai_analysis: Record<string, unknown> | null;
   source_url: string | null;
   content_type: string | null;
   parse_status: string | null;

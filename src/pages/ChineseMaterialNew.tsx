@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowLeft, FileText, Video, BookOpen, Loader2, AlertTriangle,
-  Sparkles, ChevronRight, Target, Lightbulb, Send,
+  Sparkles, ChevronRight, Target, Lightbulb, Send, Compass,
+  Bookmark, Layers, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCreateResource } from "@/lib/hooks/useResources";
@@ -10,15 +11,19 @@ import {
   useCreateChineseSpeakingSession,
   extractMaterial,
   generateMaterialQuestions,
+  saveMaterialCard,
   TOPIC_TYPE_LABELS,
   type ChineseTopicType,
-  type MaterialAnalysis,
+  type MaterialCard,
+  type KeyArgument,
+  type KeyExample,
+  type ExpressionAngle,
   type GeneratedMaterialQuestion,
 } from "@/lib/hooks/useChineseSpeaking";
 
 type SourceType = "article" | "video_reflection" | "book_note";
 
-type Step = "input" | "analyzing" | "questions" | "starting";
+type Step = "input" | "analyzing" | "card" | "questions" | "starting";
 
 const SOURCE_TABS: { key: SourceType; label: string; icon: typeof FileText; description: string }[] = [
   { key: "article", label: "粘贴文章", icon: FileText, description: "粘贴一篇文章，AI帮你提炼表达素材" },
@@ -55,8 +60,11 @@ export default function ChineseMaterialNew() {
   const [bookChapter, setBookChapter] = useState("");
   const [bookNotes, setBookNotes] = useState("");
 
-  // Analysis results
-  const [materialAnalysis, setMaterialAnalysis] = useState<MaterialAnalysis | null>(null);
+  // Material Card (Phase 3.1)
+  const [materialCard, setMaterialCard] = useState<MaterialCard | null>(null);
+  const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
+  const [showFullArguments, setShowFullArguments] = useState(false);
+  const [showFullExamples, setShowFullExamples] = useState(false);
   const [questions, setQuestions] = useState<GeneratedMaterialQuestion[]>([]);
 
   const charLimit = 8000;
@@ -121,27 +129,42 @@ export default function ChineseMaterialNew() {
       return;
     }
 
-    // Step 2: Extract material analysis
+    // Step 2: Generate Material Card (single AI call)
     const extractResult = await extractMaterial(contentText, sourceType);
     if (!extractResult.success) {
       setError(extractResult.error);
       setStep("input");
       return;
     }
-    setMaterialAnalysis(extractResult.data);
+    const card = extractResult.data.material_card;
+    setMaterialCard(card);
 
-    // Step 3: Generate questions
-    const questionResult = await generateMaterialQuestions(extractResult.data);
-    if (!questionResult.success) {
-      setError(questionResult.error);
-      setStep("input");
-      return;
+    // Step 3: Persist Material Card to resources.ai_analysis
+    try {
+      await saveMaterialCard(resourceId, card);
+    } catch {
+      // Non-fatal: card is still in state, user can proceed
     }
-    setQuestions(questionResult.data.questions);
-    setStep("questions");
 
     // Cache resourceId for session creation
     (window as unknown as Record<string, unknown>)._materialResourceId = resourceId;
+
+    setStep("card");
+  }
+
+  async function handleGenerateQuestions(angleIndex: number | null) {
+    if (!materialCard) return;
+    setError(null);
+    setStep("analyzing");
+
+    const result = await generateMaterialQuestions(materialCard, angleIndex ?? undefined);
+    if (!result.success) {
+      setError(result.error);
+      setStep("card");
+      return;
+    }
+    setQuestions(result.data.questions);
+    setStep("questions");
   }
 
   async function handleStartSession(question: GeneratedMaterialQuestion) {
@@ -317,44 +340,77 @@ export default function ChineseMaterialNew() {
         </div>
       )}
 
-      {/* Material analysis + questions */}
-      {step === "questions" && materialAnalysis && (
+      {/* Phase 3.1: Material Card — cognitive buffer layer */}
+      {step === "card" && materialCard && (
         <>
-          {/* Material analysis card */}
-          <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Lightbulb size={16} className="text-sage-deep" />
-              <span className="text-sm font-medium text-ink">材料分析</span>
+          {/* Card header */}
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="bg-sage-light/20 px-4 py-3 flex items-center gap-2">
+              <Bookmark size={16} className="text-sage-deep" />
+              <span className="text-sm font-semibold text-ink">我理解这份材料</span>
+              <span className="text-[10px] text-ink-lighter ml-auto">{materialCard.source_type}</span>
             </div>
 
-            <div className="space-y-2">
+            <div className="p-4 space-y-4">
+              {/* Title + Summary */}
               <div>
-                <p className="text-[10px] text-ink-lighter uppercase tracking-wide">核心观点</p>
-                <p className="text-sm text-ink leading-relaxed">{materialAnalysis.core_argument}</p>
+                <h2 className="text-base font-semibold text-ink">{materialCard.title}</h2>
+                <p className="text-xs text-ink-light mt-1 leading-relaxed">{materialCard.source_summary}</p>
               </div>
 
-              {materialAnalysis.key_points.length > 0 && (
+              {/* Core Argument */}
+              <div className="bg-ink/3 rounded-xl p-3">
+                <p className="text-[10px] text-ink-lighter uppercase tracking-wide mb-1">核心观点</p>
+                <p className="text-sm text-ink leading-relaxed">{materialCard.core_argument}</p>
+              </div>
+
+              {/* Key Arguments */}
+              {materialCard.key_arguments.length > 0 && (
                 <div>
-                  <p className="text-[10px] text-ink-lighter uppercase tracking-wide">关键要点</p>
-                  <ul className="space-y-1">
-                    {materialAnalysis.key_points.map((p, i) => (
-                      <li key={i} className="text-xs text-ink-light flex gap-2">
-                        <span className="text-sage-deep shrink-0 mt-0.5">•</span>
-                        {p}
-                      </li>
+                  <button
+                    onClick={() => setShowFullArguments(!showFullArguments)}
+                    className="flex items-center gap-1.5 text-[10px] text-ink-lighter uppercase tracking-wide mb-2"
+                  >
+                    <Layers size={12} />
+                    核心论点 ({materialCard.key_arguments.length})
+                    {showFullArguments ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+                  <div className={cn("space-y-2", !showFullArguments && "line-clamp-2")}>
+                    {materialCard.key_arguments.map((arg, i) => (
+                      <div key={i} className="bg-card border border-border rounded-xl p-3">
+                        <p className="text-sm font-medium text-ink">{arg.point}</p>
+                        <p className="text-xs text-ink-light mt-1">{arg.explanation}</p>
+                        {arg.example && (
+                          <p className="text-[11px] text-sage-deep mt-1.5 bg-sage-light/20 rounded-lg px-2 py-1">
+                            例：{arg.example}
+                          </p>
+                        )}
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
 
-              {materialAnalysis.expression_angles.length > 0 && (
+              {/* Key Examples */}
+              {materialCard.key_examples.length > 0 && (
                 <div>
-                  <p className="text-[10px] text-ink-lighter uppercase tracking-wide">表达角度</p>
-                  <div className="flex flex-wrap gap-1">
-                    {materialAnalysis.expression_angles.map((a, i) => (
-                      <span key={i} className="text-[10px] bg-sage-light/30 text-sage-deep rounded-full px-2 py-0.5">
-                        {a}
-                      </span>
+                  <button
+                    onClick={() => setShowFullExamples(!showFullExamples)}
+                    className="flex items-center gap-1.5 text-[10px] text-ink-lighter uppercase tracking-wide mb-2"
+                  >
+                    <Bookmark size={12} />
+                    关键案例 ({materialCard.key_examples.length})
+                    {showFullExamples ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+                  <div className={cn("space-y-2", !showFullExamples && "line-clamp-1")}>
+                    {materialCard.key_examples.map((ex, i) => (
+                      <div key={i} className="bg-card border border-border rounded-xl p-3">
+                        <p className="text-sm font-medium text-ink">{ex.case}</p>
+                        <p className="text-xs text-ink-light mt-1">{ex.meaning}</p>
+                        <p className="text-[11px] text-purple-600 mt-1.5 bg-purple-50 rounded-lg px-2 py-1">
+                          可用于：{ex.can_use_in_expression}
+                        </p>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -362,7 +418,74 @@ export default function ChineseMaterialNew() {
             </div>
           </div>
 
-          {/* Questions */}
+          {/* Expression Angles — user selects one */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Compass size={16} className="text-sage-deep" />
+              <span className="text-sm font-medium text-ink">选择表达方向</span>
+              <span className="text-[10px] text-ink-lighter ml-auto">选一个方向开始训练</span>
+            </div>
+            <div className="space-y-2">
+              {materialCard.expression_angles.map((angle, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setSelectedAngleIndex(i);
+                    handleGenerateQuestions(i);
+                  }}
+                  className={cn(
+                    "w-full bg-card rounded-xl border p-4 text-left transition-all hover:border-sage-light/50",
+                    selectedAngleIndex === i
+                      ? "border-sage-deep/50 bg-sage-light/10 ring-1 ring-sage-deep/20"
+                      : "border-border",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-ink">{angle.angle}</p>
+                      <p className="text-xs text-ink-lighter">{angle.possible_question}</p>
+                    </div>
+                    <span className="text-[10px] bg-sage-light/30 text-sage-deep rounded-full px-2 py-0.5 shrink-0">
+                      {TOPIC_TYPE_LABELS[angle.recommended_skill] || angle.recommended_skill}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Recommended skill badge */}
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center gap-3">
+            <Target size={16} className="text-purple-600 shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-purple-700">
+                推荐：{TOPIC_TYPE_LABELS[materialCard.recommended_skill] || materialCard.recommended_skill}
+              </p>
+              <p className="text-[11px] text-purple-600/70">{materialCard.training_reason}</p>
+            </div>
+          </div>
+
+          {/* Quick start: skip angle selection, use recommended */}
+          <button
+            onClick={() => handleGenerateQuestions(null)}
+            className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+          >
+            <Sparkles size={14} />
+            直接开始训练（使用推荐方向）
+          </button>
+
+          <button
+            onClick={() => { setStep("input"); setError(null); }}
+            className="w-full text-center text-sm text-ink-light py-2"
+          >
+            重新输入材料
+          </button>
+        </>
+      )}
+
+      {/* Questions — generated after angle selection */}
+      {step === "questions" && (
+        <>
           <div>
             <p className="text-sm font-medium text-ink mb-3">选择训练问题</p>
             <div className="space-y-2">
@@ -394,8 +517,15 @@ export default function ChineseMaterialNew() {
           </div>
 
           <button
-            onClick={() => { setStep("input"); setError(null); }}
+            onClick={() => { setStep("card"); setError(null); }}
             className="w-full text-center text-sm text-ink-light py-2"
+          >
+            返回选择其他方向
+          </button>
+
+          <button
+            onClick={() => { setStep("input"); setError(null); }}
+            className="w-full text-center text-sm text-ink-lighter py-1"
           >
             重新输入材料
           </button>

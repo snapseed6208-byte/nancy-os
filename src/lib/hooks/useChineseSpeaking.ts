@@ -221,7 +221,7 @@ export interface V4Diagnosis {
   material_understanding?: MaterialUnderstanding;
 }
 
-// ── Phase 3 Material Training types ──
+// ── Phase 3.1 Material Card types ──
 
 export interface MaterialUnderstanding {
   accuracy_score: number;
@@ -233,12 +233,41 @@ export interface MaterialUnderstanding {
   transfer_quality: string;
 }
 
-export interface GeneratedMaterialQuestion {
-  question: string;
-  question_type: "opinion" | "explanation" | "application";
-  recommended_skill: ChineseTopicType;
+export interface KeyArgument {
+  point: string;
+  explanation: string;
+  example: string;
 }
 
+export interface KeyExample {
+  case: string;
+  meaning: string;
+  can_use_in_expression: string;
+}
+
+export interface ExpressionAngle {
+  angle: string;
+  recommended_skill: ChineseTopicType;
+  possible_question: string;
+}
+
+export interface MaterialCard {
+  title: string;
+  source_type: string;
+  source_summary: string;
+  core_argument: string;
+  key_arguments: KeyArgument[];
+  key_examples: KeyExample[];
+  expression_angles: ExpressionAngle[];
+  recommended_skill: ChineseTopicType;
+  training_reason: string;
+}
+
+export interface ExtractMaterialResult {
+  material_card: MaterialCard;
+}
+
+/** @deprecated Use MaterialCard instead. Kept for backward compat with V2 sessions. */
 export interface MaterialAnalysis {
   title: string;
   core_argument: string;
@@ -246,6 +275,12 @@ export interface MaterialAnalysis {
   important_examples: string[];
   controversial_points: string[];
   expression_angles: string[];
+}
+
+export interface GeneratedMaterialQuestion {
+  question: string;
+  question_type: "opinion" | "explanation" | "application";
+  recommended_skill: ChineseTopicType;
 }
 
 // ── V4.1 Content Deepening types (Phase 1) ──
@@ -896,14 +931,14 @@ export async function generateChineseTopics(
   });
 }
 
-// ── Phase 3: Material Training AI wrappers ──
+// ── Phase 3.1: Material Training AI wrappers ──
 
-/** Analyze material text to extract expression-relevant insights */
+/** Generate a Material Card from source text. Single AI call — no chaining. */
 export async function extractMaterial(
   sourceText: string,
   sourceType: "article" | "video_reflection" | "book_note" = "article",
-): Promise<{ success: true; data: MaterialAnalysis } | { success: false; error: string }> {
-  return invokeAI<MaterialAnalysis>("chinese-expression-agent", {
+): Promise<{ success: true; data: ExtractMaterialResult } | { success: false; error: string }> {
+  return invokeAI<ExtractMaterialResult>("chinese-expression-agent", {
     action: "extract_material",
     source_text: sourceText.slice(0, 8000),
     source_type: sourceType,
@@ -913,15 +948,28 @@ export async function extractMaterial(
   });
 }
 
-/** Generate expression training questions from analyzed material */
+/** Generate expression training questions from a material card, optionally scoped to a specific angle. */
 export async function generateMaterialQuestions(
-  materialAnalysis: MaterialAnalysis,
+  materialCard: MaterialCard,
+  selectedAngleIndex?: number,
 ): Promise<{ success: true; data: { questions: GeneratedMaterialQuestion[] } } | { success: false; error: string }> {
+  const context = selectedAngleIndex != null
+    ? { selected_angle: materialCard.expression_angles[selectedAngleIndex], material_card: materialCard }
+    : { material_card: materialCard };
   return invokeAI<{ questions: GeneratedMaterialQuestion[] }>("chinese-expression-agent", {
     action: "generate_material_questions",
-    material_analysis: materialAnalysis,
+    material_card: context,
   }, {
     timeout: 90_000,
     retries: 1,
   });
+}
+
+/** Save a MaterialCard to resources.ai_analysis */
+export async function saveMaterialCard(resourceId: string, materialCard: MaterialCard): Promise<void> {
+  const { error } = await supabase
+    .from("resources")
+    .update({ ai_analysis: { material_card: materialCard } })
+    .eq("id", resourceId);
+  if (error) throw error;
 }
