@@ -1,16 +1,19 @@
 // ============================================
-// Nancy OS — Daily Brief Agent Edge Function v2
+// Nancy OS — Daily Brief Agent Edge Function v3
 // Reads yesterday's data + confirmed memories
 // Generates AI-powered daily dashboard brief
-// v2: Structured memory context for behavioral personalization
+// v3: Migrated to nancy-context unified layer
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
 import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+import {
+  authenticateRequest,
+  getCorsHeaders,
+  jsonResponse,
+  getConfirmedMemories,
+  buildMemoryProfile,
+} from "../_shared/nancy-context.ts";
 
 const ALLOWED_ORIGINS = [
   "https://nancy-os.pages.dev",
@@ -18,16 +21,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:4173",
   "http://127.0.0.1:5173",
 ];
-
-function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-}
 
 const SYSTEM_PROMPT = `你是一个个人成长 AI 助手（Nancy OS Daily Brief Agent）。你的用户是一位正在自我提升的年轻人。
 
@@ -71,68 +64,35 @@ const SYSTEM_PROMPT = `你是一个个人成长 AI 助手（Nancy OS Daily Brief
 
 // ── Helpers ──
 
-function jsonResponse(req: Request, data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
+function errorResponse(
+  error: string,
+  detail: string | undefined,
+  status: number,
+  corsHeaders: Record<string, string>,
+) {
+  return new Response(JSON.stringify({ error, detail }), {
     status,
-    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-// ── Memory → Preference Profile ──
-
-function buildPreferenceProfile(memories: Array<Record<string, unknown>>): string {
-  if (memories.length === 0) return "";
-
-  const byType = new Map<string, string[]>();
-  for (const m of memories) {
-    const type = (m.memory_type as string) || "general";
-    const content = (m.content as string) || "";
-    if (!byType.has(type)) byType.set(type, []);
-    byType.get(type)!.push(content);
-  }
-
-  const lines: string[] = ["## 用户长期偏好画像"];
-
-  const typeLabels: Record<string, string> = {
-    preference: "偏好与倾向", personality: "性格特点", habit: "行为习惯",
-    insight: "深层洞察", skill: "技能特长",
-  };
-
-  for (const [type, contents] of byType) {
-    lines.push(`\n### ${typeLabels[type] || type}`);
-    for (const c of contents.slice(0, 5)) {
-      lines.push(`- ${c}`);
-    }
-  }
-
-  lines.push("\n在生成简报时请参考以上画像：");
-  lines.push("- 建议应匹配用户的偏好和行为模式");
-  lines.push("- 鼓励语应体现用户的性格特点");
-  lines.push("- 警告应对照用户的历史习惯来检测偏离");
-
-  return lines.join("\n");
 }
 
 // ── Main ──
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: getCorsHeaders(req) });
+    return new Response(null, { headers: getCorsHeaders(req, ALLOWED_ORIGINS) });
   }
 
   const startTime = Date.now();
+  const corsHeaders = getCorsHeaders(req, ALLOWED_ORIGINS);
 
   try {
-    // 1 ─ Authenticate
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse(req,{ error: "未登录" }, 401);
-
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return jsonResponse(req,{ error: "登录已过期" }, 401);
-    const userId = user.id;
+    // 1 ─ Authenticate (nancy-context)
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return jsonResponse({ error: "未登录" }, corsHeaders, 401);
+    }
+    const { supabase, userId } = auth;
 
     // 2 ─ Determine yesterday's date
     const today = new Date();
@@ -149,10 +109,14 @@ serve(async (req: Request) => {
       .single();
 
     if (existingBrief) {
-      return jsonResponse(req,{ error: "already_exists", message: "今天的简报已生成" }, 409);
+      return jsonResponse(
+        { error: "already_exists", message: "今天的简报已生成" },
+        corsHeaders,
+        409,
+      );
     }
 
-    // 4 ─ Query yesterday's data + confirmed memories in parallel
+    // 4 ─ Query yesterday's data + confirmed memories in parallel (nancy-context for memories)
     const [
       { data: journalEntries },
       { data: moodRecords },
@@ -160,7 +124,7 @@ serve(async (req: Request) => {
       { data: habitRecords },
       { data: speakingSessions },
       { data: expressionReviews },
-      { data: confirmedMemories },
+      confirmedMemories,
     ] = await Promise.all([
       supabase.from("journal_entries")
         .select("id,title,content,mood,energy_level,top_three,todos")
@@ -194,13 +158,8 @@ serve(async (req: Request) => {
         .gte("reviewed_at", yesterday)
         .lte("reviewed_at", `${yesterday}T23:59:59`)
         .limit(20),
-      supabase.from("ai_memories")
-        .select("id,memory_type,content,confidence,status,reinforcement_count,evidence")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .eq("status", "confirmed")
-        .order("last_reinforced_at", { ascending: false })
-        .limit(20),
+      // nancy-context: unified memory fetch
+      getConfirmedMemories(supabase, userId, { limit: 20 }),
     ]);
 
     // 5 ─ Build data context and check minimal threshold
@@ -213,7 +172,6 @@ serve(async (req: Request) => {
       (expressionReviews?.length || 0);
 
     if (dataPointCount === 0) {
-      // Log even the zero-data case for auditability
       await supabase.from("agent_logs").insert({
         user_id: userId,
         agent_type: "coach",
@@ -224,7 +182,7 @@ serve(async (req: Request) => {
         tokens_used: 0,
       });
 
-      return jsonResponse(req,{
+      return jsonResponse({
         period: yesterday,
         yesterday_summary: "昨天没有记录任何数据。",
         today_focus: "从今天开始记录吧！",
@@ -236,12 +194,12 @@ serve(async (req: Request) => {
         memory_refs: [],
         tokens_used: 0,
         data_points: 0,
-      });
+      }, corsHeaders);
     }
 
-    // 6 ─ Build preference profile from confirmed memories
-    const memories = (confirmedMemories || []) as Array<Record<string, unknown>>;
-    const preferenceProfile = buildPreferenceProfile(memories);
+    // 6 ─ Build preference profile from confirmed memories (nancy-context)
+    const memories = confirmedMemories;
+    const preferenceProfile = buildMemoryProfile(memories, "preference");
 
     // 7 ─ Call DeepSeek with structured memory context
     const userData = JSON.stringify({
@@ -273,10 +231,7 @@ serve(async (req: Request) => {
 
     const aiResult = await callDeepSeek(messages, { temperature: 0.5, maxTokens: 2048 });
     if (!aiResult.success) {
-      return new Response(JSON.stringify({ error: aiResult.error, detail: aiResult.detail }), {
-        status: aiResult.status || 502,
-        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+      return errorResponse(aiResult.error, aiResult.detail, aiResult.status || 502, corsHeaders);
     }
     const rawContent: string = aiResult.data as string;
     const tokensUsed: number = aiResult.usage?.totalTokens || 0;
@@ -286,15 +241,15 @@ serve(async (req: Request) => {
     try {
       analysis = parseAIJson<Record<string, unknown>>(rawContent);
     } catch {
-      return jsonResponse(req,{
+      return jsonResponse({
         error: "parse_error",
         raw: rawContent.slice(0, 500),
         message: "AI 返回格式异常，请重试",
-      }, 500);
+      }, corsHeaders, 500);
     }
 
     // 9 ─ Write daily brief
-    const memoryIds = memories.map((m) => m.id as string);
+    const memoryIds = memories.map((m) => m.id);
 
     const { data: brief } = await supabase
       .from("ai_daily_briefs")
@@ -337,7 +292,7 @@ serve(async (req: Request) => {
 
     // 11 ─ Return
     const duration = Date.now() - startTime;
-    return jsonResponse(req,{
+    return jsonResponse({
       id: brief?.id,
       date: realToday,
       period: yesterday,
@@ -346,11 +301,11 @@ serve(async (req: Request) => {
       tokens_used: tokensUsed,
       duration_ms: duration,
       data_points: dataPointCount,
-    });
+    }, corsHeaders);
 
   } catch (err) {
-    return jsonResponse(req,{
+    return jsonResponse({
       error: err instanceof Error ? err.message : "服务器内部错误",
-    }, 500);
+    }, corsHeaders, 500);
   }
 });

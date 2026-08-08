@@ -8,6 +8,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
+import { authenticateRequest, getConfirmedMemories } from "../_shared/nancy-context.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -108,31 +109,21 @@ serve(async (req: Request) => {
       return jsonResponse(req,{ error: "messages array is required" }, 400);
     }
 
-    // ── Auth (always required) ──
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse(req,{ error: "需要登录" }, 401);
-
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return jsonResponse(req,{ error: "登录已过期" }, 401);
-    const userId = user.id;
+    // ── Auth (nancy-context) ──
+    const auth = await authenticateRequest(req);
+    if (!auth) return jsonResponse(req, { error: "需要登录" }, 401);
+    const { supabase, userId } = auth;
 
     // Fetch learning context in parallel
     const [
-      { data: confirmedMemories },
+      confirmedMemories,
       { data: expressionReviews },
       { data: speakingSessions },
     ] = await Promise.all([
-      supabase.from("ai_memories")
-        .select("id,memory_type,content,confidence")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .eq("status", "confirmed")
-        .in("memory_type", ["preference", "personality", "habit", "insight", "skill"])
-        .order("last_reinforced_at", { ascending: false })
-        .limit(15),
+      getConfirmedMemories(supabase, userId, {
+        limit: 15,
+        memoryTypes: ["preference", "personality", "habit", "insight", "skill"],
+      }),
       supabase.from("expression_reviews")
         .select("id,result")
         .eq("user_id", userId)
@@ -165,7 +156,7 @@ serve(async (req: Request) => {
     const recentScenarios = [...new Set(sessions.slice(0, 5).map((s) => s.scenario))];
 
     const learningContext = buildLearningContext(
-      (confirmedMemories || []) as Array<Record<string, unknown>>,
+      confirmedMemories,
       { totalReviewed, correctRate, problemAreas },
       { totalSessions, avgDuration, recentScenarios },
     );

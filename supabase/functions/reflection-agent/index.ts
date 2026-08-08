@@ -6,11 +6,14 @@
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
 import { callDeepSeek, parseAIJson } from "../_shared/ai.ts";
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+import {
+  authenticateRequest,
+  getCorsHeaders,
+  jsonResponse,
+  getConfirmedMemories,
+  buildMemoryProfile,
+} from "../_shared/nancy-context.ts";
 
 const ALLOWED_ORIGINS = [
   "https://nancy-os.pages.dev",
@@ -18,16 +21,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:4173",
   "http://127.0.0.1:5173",
 ];
-
-function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin") || "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-}
 
 const SYSTEM_PROMPT = `你是一个个人成长 AI 助手（Nancy OS Reflection Agent）。你的用户是一位正在自我提升的年轻人。
 
@@ -74,13 +67,6 @@ const SYSTEM_PROMPT = `你是一个个人成长 AI 助手（Nancy OS Reflection 
 
 // ── Helpers ──
 
-function jsonResponse(req: Request, data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-  });
-}
-
 /** Determine memory status based on confidence + reinforcement count */
 function computeStatus(
   confidence: number,
@@ -108,22 +94,17 @@ function contentKey(content: string): string {
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: getCorsHeaders(req) });
+    return new Response(null, { headers: getCorsHeaders(req, ALLOWED_ORIGINS) });
   }
 
   const startTime = Date.now();
 
   try {
-    // 1 ─ Authenticate
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return jsonResponse(req,{ error: "未登录" }, 401);
-
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return jsonResponse(req,{ error: "登录已过期" }, 401);
-    const userId = user.id;
+    // 1 ─ Authenticate (nancy-context)
+    const corsHeaders = getCorsHeaders(req, ALLOWED_ORIGINS);
+    const auth = await authenticateRequest(req);
+    if (!auth) return jsonResponse({ error: "未登录" }, corsHeaders, 401);
+    const { supabase, userId } = auth;
 
     // 2 ─ Query last 7 days of data
     const today = new Date().toISOString().split("T")[0];
@@ -138,7 +119,7 @@ serve(async (req: Request) => {
       { data: events },
       { data: tasks },
       { data: habitRecords },
-      { data: existingConfirmedMemories },
+      confirmedMemories,
     ] = await Promise.all([
       supabase.from("journal_entries")
         .select("id,date,title,content,mood,energy_level,weather,location,top_three,todos")
@@ -170,13 +151,7 @@ serve(async (req: Request) => {
         .eq("user_id", userId)
         .gte("date", sevenDaysAgo).lte("date", today)
         .order("date", { ascending: false }),
-      supabase.from("ai_memories")
-        .select("id,memory_type,content,confidence,status")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .eq("status", "confirmed")
-        .order("last_reinforced_at", { ascending: false })
-        .limit(20),
+      getConfirmedMemories(supabase, userId, { limit: 20 }),
     ]);
 
     // dataPointCount now includes ALL data sources
@@ -189,24 +164,15 @@ serve(async (req: Request) => {
       (habitRecords?.length || 0);
 
     if (dataPointCount < 2) {
-      return jsonResponse(req,{
+      return jsonResponse({
         error: "insufficient_data",
         message: "过去7天数据不足（至少需要2条记录），多记录一些再来吧。",
         data_points: dataPointCount,
-      });
+      }, corsHeaders);
     }
 
-    // 3 ─ Build existing memory context for cross-reference
-    const existingMemoriesList = (existingConfirmedMemories || []) as Array<Record<string, unknown>>;
-    let existingMemoryContext = "";
-    if (existingMemoriesList.length > 0) {
-      const lines = ["## 已有长期记忆（Confirmed Memories）—— 仅供参考，避免重复提取"];
-      lines.push("以下模式已被确认，如果7天数据只是印证它们，请不要重复提取为 extracted_memories，而是在 behavior_patterns 中说明强化。");
-      for (const m of existingMemoriesList.slice(0, 15)) {
-        lines.push(`- [${m.memory_type}] ${m.content} (置信度: ${m.confidence})`);
-      }
-      existingMemoryContext = lines.join("\n");
-    }
+    // 3 ─ Build existing memory context for cross-reference (nancy-context)
+    const existingMemoryContext = buildMemoryProfile(confirmedMemories, "minimal");
 
     // 4 ─ Call DeepSeek with existing memory context
     const userData = JSON.stringify({
@@ -232,7 +198,7 @@ serve(async (req: Request) => {
     const aiResult = await callDeepSeek(messages, { temperature: 0.5, maxTokens: 4096 });
 
     if (!aiResult.success) {
-      return jsonResponse(req, { error: aiResult.error, detail: aiResult.detail }, aiResult.status || 502);
+      return jsonResponse({ error: aiResult.error, detail: aiResult.detail }, corsHeaders, aiResult.status || 502);
     }
 
     const tokensUsed: number = aiResult.usage?.totalTokens || 0;
@@ -242,11 +208,11 @@ serve(async (req: Request) => {
     try {
       analysis = parseAIJson<Record<string, unknown>>(aiResult.data);
     } catch {
-      return jsonResponse(req, {
+      return jsonResponse({
         error: "parse_error",
         raw: (aiResult.data as string).slice(0, 500),
         message: "AI 返回格式异常，请重试",
-      }, 500);
+      }, corsHeaders, 500);
     }
 
     // 6 ─ Build evidence lookup from source_ids
@@ -400,7 +366,7 @@ serve(async (req: Request) => {
       agent_type: "reflection",
       action: "weekly_reflection",
       input_data: {
-        memory_context_count: existingMemoriesList.length,
+        memory_context_count: confirmedMemories.length,
         memory_context_injected: !!existingMemoryContext,
         journal_count: journalEntries?.length || 0,
         mood_count: moodRecords?.length || 0,
@@ -424,7 +390,7 @@ serve(async (req: Request) => {
 
     // 11 ─ Return
     const duration = Date.now() - startTime;
-    return jsonResponse(req,{
+    return jsonResponse({
       ...analysis,
       extracted_memories: memoryResults,
       tokens_used: tokensUsed,
@@ -432,11 +398,11 @@ serve(async (req: Request) => {
       insight_id: insight?.id,
       duration_ms: duration,
       data_points: dataPointCount,
-    });
+    }, corsHeaders);
 
   } catch (err) {
-    return jsonResponse(req,{
+    return jsonResponse({
       error: err instanceof Error ? err.message : "服务器内部错误",
-    }, 500);
+    }, corsHeaders, 500);
   }
 });

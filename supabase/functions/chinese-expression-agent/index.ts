@@ -19,6 +19,12 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
 import type { DeepSeekMessage } from "../_shared/ai.ts";
 import {
+  authenticateRequest,
+  getUserContext,
+  getExpressionAssetSummary,
+  buildExpressionPersonalizationContext,
+} from "../_shared/nancy-context.ts";
+import {
   buildDiagnosisSystemPrompt,
   buildDiagnosisUserMessage,
   verifyAllSkills,
@@ -332,19 +338,9 @@ serve(async (req: Request) => {
   console.log(`[chinese-expression-agent] ${requestId} start action=${action || "(empty)"}`);
 
   // ── Auth (non-fatal) ──
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  let userId = "";
-
-  try {
-    const authHeader = req.headers.get("Authorization") || "";
-    if (authHeader.startsWith("Bearer ")) {
-      const token = authHeader.slice(7);
-      const { data } = await supabase.auth.getUser(token);
-      userId = data.user?.id || "";
-    }
-  } catch (authErr) {
-    console.error(`[chinese-expression-agent] ${requestId} auth error (non-fatal):`, (authErr as Error).message);
-  }
+  const auth = await authenticateRequest(req);
+  const supabase = auth?.supabase || createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const userId = auth?.userId || "";
 
   try {
 
@@ -370,6 +366,31 @@ serve(async (req: Request) => {
 
         const deliveryMetrics = computeDeliveryMetrics(transcript, durationSeconds, targetDurationSeconds);
 
+        // ── Fetch personalization context (non-fatal) ──
+        let personalizationContext = "";
+        if (userId) {
+          try {
+            const ctx = await getUserContext(supabase, userId, {
+              profile: true,
+              expressionProfile: true,
+              memories: true,
+              memoryOptions: { limit: 10, memoryTypes: ["preference", "habit", "insight", "skill"] },
+            });
+            const assetSummary = await getExpressionAssetSummary(supabase, userId);
+            personalizationContext = buildExpressionPersonalizationContext(
+              ctx.profile,
+              ctx.expressionProfile,
+              assetSummary,
+              ctx.confirmedMemories,
+            );
+            if (personalizationContext) {
+              console.log(`[chinese-expression-agent] ${requestId} personalization context built (${personalizationContext.length} chars)`);
+            }
+          } catch (ctxErr) {
+            console.error(`[chinese-expression-agent] ${requestId} personalization context error (non-fatal):`, (ctxErr as Error).message);
+          }
+        }
+
         // Build prompt via skills.ts: COMMON + ONE skill + output schema
         const systemPrompt = buildDiagnosisSystemPrompt(topicType, !!materialContext);
         const userMessage = buildDiagnosisUserMessage({
@@ -387,8 +408,11 @@ serve(async (req: Request) => {
 
         const diagnosisMessages: DeepSeekMessage[] = [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
         ];
+        if (personalizationContext) {
+          diagnosisMessages.push({ role: "system", content: personalizationContext });
+        }
+        diagnosisMessages.push({ role: "user", content: userMessage });
 
         const result = await aiRuntime<Record<string, unknown>>(diagnosisMessages, {
           agentName: "chinese-expression-agent",
@@ -423,7 +447,7 @@ serve(async (req: Request) => {
               user_id: userId,
               agent_type: "chinese_expression",
               action: "analyze_expression",
-              input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound, has_material: !!materialContext },
+              input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound, has_material: !!materialContext, personalization_injected: !!personalizationContext },
               output_data: {
                 overall_score: overall?.score,
                 recommended_structure: (diagnosis.recommended_structure as Record<string, unknown>)?.name,
