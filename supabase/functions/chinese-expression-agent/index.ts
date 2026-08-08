@@ -415,7 +415,6 @@ serve(async (req: Request) => {
               console.log(`[chinese-expression-agent] ${requestId} matched ${recommendedAssets.length} assets for topic="${topic.slice(0, 30)}"`);
               trackAssetUsage(supabase, userId, "chinese_expression", matches);
             }
-            }
           } catch (assetErr) {
             console.error(`[chinese-expression-agent] ${requestId} asset matching error (non-fatal):`, (assetErr as Error).message);
           }
