@@ -33,6 +33,7 @@ import {
   hasContentDeepening,
   type ImprovementQuality,
 } from "@/lib/hooks/useChineseSpeaking";
+import { useUpdateExpressionProfile, type ProfileSignalInput } from "@/lib/hooks/useExpressionProfile";
 
 // ── Constants ──
 const MIN_TRANSCRIPT_LENGTH = 5;
@@ -207,6 +208,7 @@ export default function ChineseSpeakingSession() {
   const createAttempt = useCreateChineseSpeakingAttempt();
   const updateAttempt = useUpdateChineseSpeakingAttempt();
   const markReferenceViewed = useMarkReferenceViewed();
+  const updateProfile = useUpdateExpressionProfile();
 
   const recorder = useAudioRecorder();
 
@@ -441,7 +443,18 @@ export default function ChineseSpeakingSession() {
 
     setAnalyzing(false);
     setStep("result");
-  }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, r1SttProvider, r1SttMode, r1TranscriptSource, r1SttSuccess, createAttempt, updateAttempt]);
+
+    // Update expression profile (Round 1)
+    updateProfile.mutateAsync({
+      signals: {
+        session_id: sessionId,
+        topic_type: (session?.topic_type || "opinion") as string,
+        attempt_round: 1,
+        is_retry: false,
+        diagnosis: d.diagnosis,
+      },
+    }).catch(() => { /* fire-and-forget */ });
+  }, [session, sessionId, recorder.blob, recorder.duration, editedTranscript, r1SttProvider, r1SttMode, r1TranscriptSource, r1SttSuccess, createAttempt, updateAttempt, updateProfile]);
 
   // ── Generate Reference (V3 — on-demand full speech) ──
 
@@ -664,7 +677,20 @@ export default function ChineseSpeakingSession() {
 
     setAnalyzing(false);
     setStep("comparing");
-  }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, editedTranscript, r2SttProvider, r2SttMode, r2TranscriptSource, r2SttSuccess, createAttempt, updateAttempt, round1AttemptId, round1Diagnosis, round2FullReferenceViewed]);
+
+    // Update expression profile (Round 2 retry)
+    updateProfile.mutateAsync({
+      signals: {
+        session_id: sessionId,
+        topic_type: (session?.topic_type || "opinion") as string,
+        attempt_round: 2,
+        is_retry: true,
+        diagnosis: d.diagnosis,
+        round1_score: round1Diagnosis?.overall?.score,
+        round2_score: d.diagnosis.overall?.score,
+      },
+    }).catch(() => { /* fire-and-forget */ });
+  }, [session, sessionId, recorder.blob, recorder.duration, round2EditedTranscript, editedTranscript, r2SttProvider, r2SttMode, r2TranscriptSource, r2SttSuccess, createAttempt, updateAttempt, updateProfile, round1AttemptId, round1Diagnosis, round2FullReferenceViewed]);
 
   // ── Helpers ──
 

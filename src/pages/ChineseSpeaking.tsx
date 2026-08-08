@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChineseSpeakingStats, useCreateChineseSpeakingSession, generateChineseTopics, TOPIC_TYPE_LABELS, type ChineseTopicType, type GeneratedTopic } from "@/lib/hooks/useChineseSpeaking";
+import { useExpressionProfile, getTrainingFocus, FOCUS_AREA_LABELS } from "@/lib/hooks/useExpressionProfile";
 
 const TIME_OPTIONS = [60, 90, 120] as const;
 
@@ -31,6 +32,7 @@ const TOPIC_CARDS: { type: ChineseTopicType; icon: typeof MessageSquare; descrip
 export default function ChineseSpeaking() {
   const [, navigate] = useLocation();
   const { data: stats } = useChineseSpeakingStats();
+  const { data: profile } = useExpressionProfile();
   const createSession = useCreateChineseSpeakingSession();
 
   const [showCustomInput, setShowCustomInput] = useState(false);
@@ -115,6 +117,62 @@ export default function ChineseSpeaking() {
           ))}
         </div>
       )}
+
+      {/* Expression growth profile */}
+      {(() => {
+        const focuses = getTrainingFocus(profile);
+        if (focuses.length === 0 && !profile?.patterns?.score_trend?.length) return null;
+        return (
+          <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-sage-light flex items-center justify-center">
+                <Sparkles size={14} className="text-sage-deep" />
+              </div>
+              <span className="text-sm font-medium text-ink">表达成长</span>
+              {profile?.patterns?.avg_score ? (
+                <span className="text-[10px] text-ink-lighter ml-auto">
+                  近20次均分 {profile.patterns.avg_score}
+                </span>
+              ) : null}
+            </div>
+
+            {/* Training focus areas */}
+            {focuses.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] text-ink-lighter">当前训练重点</p>
+                {focuses.map((f) => (
+                  <div key={f.area} className="rounded-xl bg-ink/3 p-3 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-ink">{f.label}</span>
+                      <span className="text-[10px] text-ink-lighter">出现 {f.count} 次</span>
+                    </div>
+                    <p className="text-[11px] text-ink-light leading-relaxed">{f.advice}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Score trend mini-indicator */}
+            {profile?.patterns?.score_trend && profile.patterns.score_trend.length >= 3 && (
+              <div className="flex items-center gap-2 text-[10px] text-ink-lighter">
+                <BarChart3 size={12} />
+                <span>近 {profile.patterns.score_trend.length} 次趋势：</span>
+                <div className="flex gap-0.5 items-end h-4">
+                  {profile.patterns.score_trend.slice(-10).map((p, i) => (
+                    <div
+                      key={i}
+                      className="w-1.5 rounded-t-sm bg-sage-deep/60"
+                      style={{ height: `${Math.max(4, (p.score / 100) * 16)}px` }}
+                      title={`${p.score}分 - ${p.topic_type}`}
+                    />
+                  ))}
+                </div>
+                <span>{profile.patterns.score_trend[profile.patterns.score_trend.length - 1]?.score ?? "-"}分</span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Time selector */}
       <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
