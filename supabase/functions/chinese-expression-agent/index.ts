@@ -183,7 +183,7 @@ const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达编辑。
     { "type": "definition | condition | tradeoff | counterpoint | boundary | causality", "used_in_sentence": "答案中对应的内容", "purpose": "这一层思考解决了什么问题" }
   ],
   "key_upgrades": [
-    { "title": "升级点", "before": "用户原表达", "after": "优化思路", "reason": "为什么更好" }
+    { "category": "升级类别", "original_expression": "用户原始表达中的原句，必须逐字引用transcript", "problem_analysis": "为什么这个表达不足", "optimized_expression": "优化后的自然表达", "upgrade_reason": "这个修改如何提升表达质量" }
   ],
   "deepening_suggestions": [
     "进一步深化思考的建议"

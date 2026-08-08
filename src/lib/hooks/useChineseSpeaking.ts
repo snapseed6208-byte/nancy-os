@@ -173,11 +173,44 @@ export interface V4OutlineStep {
   target_seconds: number;
 }
 
+// ── V4.2 Unified Key Upgrade (new schema) ──
+
 export interface V4KeyUpgrade {
-  title: string;
-  original: string;
-  direction: string;
-  reason: string;
+  category: string;
+  original_expression: string;
+  problem_analysis: string;
+  optimized_expression: string;
+  upgrade_reason: string;
+  /** @deprecated V4.0-V4.1 compat — mapped to original_expression */
+  title?: string;
+  /** @deprecated V4.0-V4.1 compat — mapped to original_expression */
+  original?: string;
+  /** @deprecated V4.0-V4.1 compat — mapped to optimized_expression */
+  direction?: string;
+  /** @deprecated V4.0-V4.1 compat — mapped to upgrade_reason */
+  reason?: string;
+}
+
+/** Normalize a key upgrade object from any version to the V4.2 unified schema. */
+export function normalizeKeyUpgrade(raw: Record<string, unknown>): V4KeyUpgrade {
+  const isV42 = typeof raw.original_expression === "string" && raw.original_expression.length > 0;
+  if (isV42) {
+    return {
+      category: (raw.category as string) || "表达",
+      original_expression: raw.original_expression as string,
+      problem_analysis: (raw.problem_analysis as string) || "",
+      optimized_expression: raw.optimized_expression as string,
+      upgrade_reason: (raw.upgrade_reason as string) || (raw.reason as string) || "",
+    };
+  }
+  // V4.0/V4.1 compat: original → original_expression, direction → optimized_expression
+  return {
+    category: (raw.category as string) || (raw.title as string) || "表达",
+    original_expression: (raw.original as string) || (raw.before as string) || "",
+    problem_analysis: (raw.problem_analysis as string) || "",
+    optimized_expression: (raw.direction as string) || (raw.after as string) || "",
+    upgrade_reason: (raw.upgrade_reason as string) || (raw.reason as string) || "",
+  };
 }
 
 export interface V4ThinkingOrDeepeningItem {

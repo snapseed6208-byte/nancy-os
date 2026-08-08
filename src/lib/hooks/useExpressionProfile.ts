@@ -462,9 +462,11 @@ export function mergeProfileSignals(input: MergeProfileInput): {
 // ── Query ──
 
 async function fetchExpressionProfile(): Promise<ExpressionProfile | null> {
+  const userId = await getUserId();
   const { data, error } = await supabase
     .from("expression_profiles")
     .select("*")
+    .eq("user_id", userId)
     .single();
 
   if (error && error.code !== "PGRST116") throw error;
@@ -486,18 +488,21 @@ export function useUpdateExpressionProfile() {
 
   return useMutation({
     mutationFn: async (input: { signals: ProfileSignalInput }) => {
-      // Fetch current profile
-      const { data: current } = await supabase
+      const userId = await getUserId();
+
+      // Fetch current profile (scoped to user)
+      const { data: current, error: fetchError } = await supabase
         .from("expression_profiles")
         .select("*")
+        .eq("user_id", userId)
         .single();
+
+      if (fetchError && fetchError.code !== "PGRST116") throw fetchError;
 
       const merged = mergeProfileSignals({
         existing: current as ExpressionProfile | null,
         signals: input.signals,
       });
-
-      const userId = await getUserId();
 
       const { data, error } = await supabase
         .from("expression_profiles")
@@ -508,7 +513,7 @@ export function useUpdateExpressionProfile() {
             weaknesses: merged.weaknesses,
             patterns: merged.patterns,
             improvement_history: merged.improvement_history,
-            knowledge_transfer_profile: merged.knowledge_transfer_profile,
+            knowledge_transfer_profile: merged.knowledge_transfer_profile ?? {},
             raw_signal_snapshot: {
               last_signal: input.signals,
               merged_at: new Date().toISOString(),

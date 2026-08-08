@@ -22,6 +22,7 @@ import {
   TOPIC_TYPE_LABELS,
   FRAMEWORK_LABELS,
   IMPROVEMENT_QUALITY_LABELS,
+  normalizeKeyUpgrade,
   type ChineseTopicType,
   type V4Diagnosis,
   type V4Reference,
@@ -898,13 +899,16 @@ export default function ChineseSpeakingSession() {
                   </div>
                 )}
 
-                {/* Key upgrades from diagnosis (V4: key_upgrades) */}
+                {/* Key upgrades from diagnosis (V4.2: key_upgrades) */}
                 {round1Diagnosis.key_upgrades && round1Diagnosis.key_upgrades.length > 0 && (
                   <div className="space-y-0.5">
                     <p className="text-[10px] text-purple-500 font-medium">关键提升点</p>
-                    {round1Diagnosis.key_upgrades.slice(0, 3).map((ku, i) => (
-                      <p key={i} className="text-[10px] text-purple-600/80">{ku.title}: {ku.original} → {ku.direction}</p>
-                    ))}
+                    {round1Diagnosis.key_upgrades.slice(0, 3).map((raw, i) => {
+                      const ku = normalizeKeyUpgrade(raw as unknown as Record<string, unknown>);
+                      return (
+                        <p key={i} className="text-[10px] text-purple-600/80">{ku.category}: {ku.original_expression} → {ku.optimized_expression}</p>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1559,37 +1563,28 @@ export default function ChineseSpeakingSession() {
             )}
           </div>
 
-          {/* Key upgrades — V4: from diagnosis.key_upgrades, or reference.key_upgrades if loaded */}
+          {/* Key upgrades — V4.2: from diagnosis.key_upgrades, or reference.key_upgrades if loaded */}
           {((round1Diagnosis.key_upgrades && round1Diagnosis.key_upgrades.length > 0) ||
             (round1Reference?.key_upgrades && round1Reference.key_upgrades.length > 0)) && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <p className="text-sm font-medium text-ink">关键提升点</p>
-              {round1Reference?.key_upgrades
-                ? round1Reference.key_upgrades.map((ku, i) => (
+              {(round1Reference?.key_upgrades
+                ? round1Reference.key_upgrades.map((raw) => normalizeKeyUpgrade(raw as unknown as Record<string, unknown>))
+                : round1Diagnosis.key_upgrades.map((raw) => normalizeKeyUpgrade(raw as unknown as Record<string, unknown>))
+              ).filter((ku) => ku.original_expression.length > 0 && ku.optimized_expression.length > 0).map((ku, i) => (
                     <div key={i} className="flex gap-2">
                       <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
                       <div className="space-y-0.5">
-                        <p className="text-xs font-medium text-ink">{ku.title}</p>
+                        <p className="text-xs font-medium text-ink">{ku.category}</p>
                         <p className="text-[10px] text-ink-lighter">
-                          <span className="text-accent-rose/70">原：「{ku.original}」</span>
+                          <span className="text-accent-rose/70">原：「{ku.original_expression}」</span>
                           {" → "}
-                          <span className="text-emerald-600/70">改：「{ku.direction}」</span>
+                          <span className="text-emerald-600/70">改：「{ku.optimized_expression}」</span>
                         </p>
-                        <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
-                      </div>
-                    </div>
-                  ))
-                : round1Diagnosis.key_upgrades.map((ku, i) => (
-                    <div key={i} className="flex gap-2">
-                      <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-medium text-ink">{ku.title}</p>
-                        <p className="text-[10px] text-ink-lighter">
-                          <span className="text-accent-rose/70">原：「{ku.original}」</span>
-                          {" → "}
-                          <span className="text-emerald-600/70">改：「{ku.direction}」</span>
-                        </p>
-                        <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
+                        {ku.problem_analysis && (
+                          <p className="text-[10px] text-amber-600/80">{ku.problem_analysis}</p>
+                        )}
+                        <p className="text-[10px] text-ink-lighter/70">{ku.upgrade_reason}</p>
                       </div>
                     </div>
                   ))}

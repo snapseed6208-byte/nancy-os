@@ -787,10 +787,11 @@ ${dimsJson}
 
   "key_upgrades": [
     {
-      "title": "升级点标题",
-      "original": "用户当前表达",
-      "direction": "建议优化方向",
-      "reason": "为什么这样更好"
+      "category": "升级类别，如：结构、论据、深度、表达",
+      "original_expression": "用户原始表达中的原句，必须逐字引用transcript，不允许编造",
+      "problem_analysis": "为什么这个表达存在不足",
+      "optimized_expression": "优化后的自然中文表达",
+      "upgrade_reason": "这个修改如何提升整体表达质量"
     }
   ],
 

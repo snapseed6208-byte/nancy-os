@@ -10,6 +10,7 @@ import {
   FRAMEWORK_LABELS,
   isV4Diagnosis,
   hasContentDeepening,
+  normalizeKeyUpgrade,
   type ChineseTopicType,
   type ChineseFramework,
   type ChineseSpeakingAttempt,
@@ -229,20 +230,27 @@ function FactConsistencyV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
 
 function KeyUpgradesV4({ diagnosis }: { diagnosis: V4Diagnosis }) {
   if (!diagnosis.key_upgrades?.length) return null;
+  const upgrades = diagnosis.key_upgrades
+    .map((raw) => normalizeKeyUpgrade(raw as unknown as Record<string, unknown>))
+    .filter((ku) => ku.original_expression.length > 0 && ku.optimized_expression.length > 0);
+  if (upgrades.length === 0) return null;
   return (
     <div className="pt-2 border-t border-border/50 space-y-2">
       <p className="text-xs font-medium text-ink">关键提升点</p>
-      {diagnosis.key_upgrades.map((ku, i) => (
+      {upgrades.map((ku, i) => (
         <div key={i} className="flex gap-2">
           <span className="text-xs text-sage-deep font-bold shrink-0">{i + 1}.</span>
           <div className="space-y-0.5">
-            <p className="text-xs font-medium text-ink">{ku.title}</p>
+            <p className="text-xs font-medium text-ink">{ku.category}</p>
             <p className="text-[10px] text-ink-lighter">
-              <span className="text-accent-rose/70">原：「{ku.original}」</span>
+              <span className="text-accent-rose/70">原：「{ku.original_expression}」</span>
               {" → "}
-              <span className="text-emerald-600/70">改：「{ku.direction}」</span>
+              <span className="text-emerald-600/70">改：「{ku.optimized_expression}」</span>
             </p>
-            <p className="text-[10px] text-ink-lighter/70">{ku.reason}</p>
+            {ku.problem_analysis && (
+              <p className="text-[10px] text-amber-600/80">{ku.problem_analysis}</p>
+            )}
+            <p className="text-[10px] text-ink-lighter/70">{ku.upgrade_reason}</p>
           </div>
         </div>
       ))}
