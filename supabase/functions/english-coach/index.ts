@@ -8,7 +8,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
-import { authenticateRequest, getConfirmedMemories, getExpressionAssets, matchExpressionAssets, trackAssetUsage } from "../_shared/nancy-context.ts";
+import { authenticateRequest, getConfirmedMemories, getExpressionAssets, matchExpressionAssets, trackAssetUsage, getNancyPersonalProfile, buildNancyPersonalProfileContext } from "../_shared/nancy-context.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -161,6 +161,15 @@ serve(async (req: Request) => {
       { totalSessions, avgDuration, recentScenarios },
     );
 
+    // ── Nancy personal profile (non-fatal) ──
+    let nancyProfileContext = "";
+    try {
+      const nancyProfile = await getNancyPersonalProfile(supabase, userId);
+      nancyProfileContext = buildNancyPersonalProfileContext(nancyProfile);
+    } catch (profileErr) {
+      console.error("[english-coach] Nancy profile error (non-fatal):", (profileErr as Error).message);
+    }
+
     // ── Personal story context (non-fatal) ──
     // Detect if conversation involves interview / storytelling / self-intro
     // where the user's real expression assets provide better context than AI fiction.
@@ -213,6 +222,11 @@ serve(async (req: Request) => {
     // Inject personal story context as a high-priority system message
     if (personalStoryContext) {
       finalMessages.unshift({ role: "system", content: personalStoryContext });
+    }
+
+    // Inject Nancy personal profile as the highest-priority system message
+    if (nancyProfileContext) {
+      finalMessages.unshift({ role: "system", content: nancyProfileContext });
     }
 
     // ── AI Runtime: chat agent (raw text, no JSON parse) ──

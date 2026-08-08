@@ -1068,3 +1068,340 @@ export function buildProfileSummary(profile: UserProfileRow | null): string {
 
   return `## 用户档案\n${parts.map((p) => `- ${p}`).join("\n")}`;
 }
+
+// ── 11. Nancy Personal Intelligence Profile ──
+
+/**
+ * Unified personal profile aggregating all four data sources:
+ * profiles + expression_profiles + expression_assets + ai_memories
+ *
+ * Designed as the single entry point for AI agents to understand
+ * WHO Nancy is — identity, direction, strengths, style, and goals.
+ *
+ * No new tables. No writes. Graceful degradation for new users.
+ */
+export interface NancyPersonalProfile {
+  /** Basic identity — who Nancy is */
+  identity: {
+    display_name: string;
+    life_theme: string;
+    bio_summary: string;
+    career_field: string;
+    industry: string;
+    current_milestone: string;
+  };
+
+  /** Career direction inferred from profile + memories */
+  career_direction: string;
+
+  /** Current active goals inferred from milestone + preferences + memories */
+  current_goals: string[];
+
+  /** Aggregated strengths from expression_profiles + skill memories + asset skills */
+  strengths: string[];
+
+  /** Aggregated weaknesses from expression_profiles */
+  weaknesses: string[];
+
+  /** Top expression assets by quality (compact — just title + type + quality) */
+  valuable_assets: Array<{
+    title: string;
+    asset_type: string;
+    quality_score: number;
+  }>;
+
+  /** Learning patterns from expression_profiles + habit memories */
+  learning_patterns: string[];
+
+  /** Communication style derived from personality/preference memories + expression patterns */
+  communication_style: string;
+
+  /** Whether any real data was found (false = pure defaults = new user) */
+  has_real_data: boolean;
+}
+
+/**
+ * Aggregate all four data sources into a unified Nancy personal profile.
+ *
+ * Data sources:
+ * 1. profiles → identity, career_direction, current_goals
+ * 2. expression_profiles → strengths, weaknesses, learning_patterns
+ * 3. expression_assets → valuable_assets, strengths (from key_skills)
+ * 4. ai_memories → communication_style, career_direction, current_goals, learning_patterns
+ *
+ * Graceful: works with zero data (new users). Returns has_real_data: false in that case.
+ */
+export async function getNancyPersonalProfile(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<NancyPersonalProfile> {
+  // Fetch all 4 sources in parallel
+  const [
+    profileResult,
+    exprProfileResult,
+    assetsResult,
+    memoriesResult,
+  ] = await Promise.allSettled([
+    supabase.from("profiles").select("*").eq("id", userId).limit(1).single(),
+    supabase.from("expression_profiles").select("*").eq("user_id", userId).limit(1).single(),
+    supabase.from("expression_assets")
+      .select("id,title,asset_type,tags,quality_score,asset_data")
+      .eq("user_id", userId).eq("status", "active")
+      .order("created_at", { ascending: false }).limit(20),
+    supabase.from("ai_memories")
+      .select("memory_type,content,confidence,status")
+      .eq("user_id", userId).eq("is_active", true)
+      .in("status", ["confirmed", "probable"])
+      .order("confidence", { ascending: false }).limit(30),
+  ]);
+
+  const profile = profileResult.status === "fulfilled" ? (profileResult.value.data as UserProfileRow | null) : null;
+  const exprProfile = exprProfileResult.status === "fulfilled" ? (exprProfileResult.value.data as ExpressionProfileRow | null) : null;
+  const assets = assetsResult.status === "fulfilled" ? ((assetsResult.value.data || []) as Array<Record<string, unknown>>) : [];
+  const memories = memoriesResult.status === "fulfilled" ? ((memoriesResult.value.data || []) as Array<Record<string, unknown>>) : [];
+
+  const hasRealData = !!(profile || exprProfile || assets.length > 0 || memories.length > 0);
+
+  // ── 1. Identity ──
+  const identity = {
+    display_name: profile?.display_name || "",
+    life_theme: profile?.life_theme || "",
+    bio_summary: profile?.bio || "",
+    career_field: profile?.career_field || "",
+    industry: profile?.industry || "",
+    current_milestone: profile?.current_milestone || "",
+  };
+
+  // ── 2. Career direction ──
+  const careerMemories = memories
+    .filter((m) => m.memory_type === "insight" || m.memory_type === "skill")
+    .filter((m) => /职业|工作|行业|career|方向|发展|专业/.test(String(m.content)))
+    .map((m) => String(m.content));
+  const careerParts: string[] = [];
+  if (identity.career_field) careerParts.push(identity.career_field);
+  if (identity.industry) careerParts.push(`(${identity.industry}行业)`);
+  if (careerMemories.length > 0) careerParts.push(careerMemories[0]);
+  const career_direction = careerParts.length > 0
+    ? careerParts.join(" ")
+    : "尚未明确职业方向";
+
+  // ── 3. Current goals ──
+  const goals: string[] = [];
+  if (identity.current_milestone) goals.push(identity.current_milestone);
+  if (identity.life_theme) goals.push(`生活主题：${identity.life_theme}`);
+  const goalMemories = memories
+    .filter((m) => /目标|计划|想|希望|goal|milestone|aspire/i.test(String(m.content)))
+    .slice(0, 3)
+    .map((m) => String(m.content));
+  goals.push(...goalMemories);
+  if (profile?.preferences && typeof profile.preferences === "object") {
+    const prefs = profile.preferences as Record<string, unknown>;
+    if (prefs.focus_area) goals.push(`专注领域：${prefs.focus_area}`);
+    if (prefs.learning_goal) goals.push(`学习目标：${prefs.learning_goal}`);
+  }
+
+  // ── 4. Strengths ──
+  const strengths: string[] = [];
+  if (exprProfile?.strengths && typeof exprProfile.strengths === "object") {
+    const s = exprProfile.strengths as Record<string, unknown>;
+    for (const [dim, val] of Object.entries(s)) {
+      const score = typeof val === "number" ? val : 0;
+      if (score >= 70) strengths.push(`${dim}（${score}分）`);
+    }
+  }
+  // Add skill-type memories with high confidence
+  const skillStrengths = memories
+    .filter((m) => m.memory_type === "skill" && (m.confidence as number) >= 0.7)
+    .map((m) => String(m.content));
+  strengths.push(...skillStrengths.slice(0, 5));
+  // Add top skills from assets
+  const assetSkills = new Map<string, number>();
+  for (const a of assets) {
+    const tags = (a.tags || []) as string[];
+    for (const t of tags) {
+      if (t.length > 1) assetSkills.set(t, (assetSkills.get(t) || 0) + 1);
+    }
+  }
+  const topAssetSkills = [...assetSkills.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([skill, count]) => `${skill}（${count}条素材）`);
+  strengths.push(...topAssetSkills);
+
+  // ── 5. Weaknesses ──
+  const weaknesses: string[] = [];
+  if (exprProfile?.weaknesses && typeof exprProfile.weaknesses === "object") {
+    const w = exprProfile.weaknesses as Record<string, unknown>;
+    for (const [dim, val] of Object.entries(w)) {
+      const score = typeof val === "number" ? val : 0;
+      const label = score < 50 ? `${dim}（${score}分 — 薄弱）` : `${dim}（${score}分 — 待提升）`;
+      weaknesses.push(label);
+    }
+  }
+
+  // ── 6. Valuable assets ──
+  const valuable_assets = assets
+    .map((a) => {
+      const qs = (a.quality_score || {}) as Record<string, number>;
+      const reusability = qs.reusability || 0;
+      return {
+        title: String(a.title || ""),
+        asset_type: String(a.asset_type || ""),
+        quality_score: reusability,
+      };
+    })
+    .filter((a) => a.title)
+    .sort((a, b) => b.quality_score - a.quality_score)
+    .slice(0, 8);
+
+  // ── 7. Learning patterns ──
+  const learning_patterns: string[] = [];
+  if (exprProfile?.patterns && typeof exprProfile.patterns === "object") {
+    const p = exprProfile.patterns as Record<string, unknown>;
+    if (p.preferred_types) {
+      const pt = p.preferred_types as Record<string, number>;
+      const top = Object.entries(pt).sort(([, a], [, b]) => b - a).slice(0, 3);
+      learning_patterns.push(`偏好表达类型：${top.map(([t, c]) => `${t}(${c}次)`).join("、")}`);
+    }
+    if (typeof p.total_sessions === "number") {
+      learning_patterns.push(`累计训练${p.total_sessions}次`);
+    }
+    if (typeof p.avg_score === "number") {
+      learning_patterns.push(`平均得分${p.avg_score}分`);
+    }
+  }
+  const habitPatterns = memories
+    .filter((m) => m.memory_type === "habit")
+    .slice(0, 3)
+    .map((m) => String(m.content));
+  learning_patterns.push(...habitPatterns);
+
+  // ── 8. Communication style ──
+  const personalityMemories = memories
+    .filter((m) => m.memory_type === "personality")
+    .slice(0, 5)
+    .map((m) => String(m.content));
+  const preferenceMemories = memories
+    .filter((m) => m.memory_type === "preference")
+    .filter((m) => /沟通|表达|交流|说话|写作|演讲|communication|speaking/i.test(String(m.content)))
+    .slice(0, 3)
+    .map((m) => String(m.content));
+  const styleClues: string[] = [...personalityMemories, ...preferenceMemories];
+  const communication_style = styleClues.length > 0
+    ? styleClues.join("；")
+    : "尚未建立沟通风格画像";
+
+  return {
+    identity,
+    career_direction,
+    current_goals: goals.length > 0 ? goals : ["尚未明确当前目标"],
+    strengths: strengths.length > 0 ? strengths : ["尚未积累足够的优势数据"],
+    weaknesses: weaknesses.length > 0 ? weaknesses : ["尚未识别明确的薄弱领域"],
+    valuable_assets,
+    learning_patterns: learning_patterns.length > 0 ? learning_patterns : ["尚未形成明确的学习模式"],
+    communication_style,
+    has_real_data: hasRealData && (memories.length > 0 || assets.length > 0 || !!exprProfile),
+  };
+}
+
+/**
+ * Build a compact AI system prompt from a NancyPersonalProfile.
+ *
+ * Designed to be injected as a high-priority system message so the AI
+ * understands WHO it's helping — not just the task at hand.
+ *
+ * Compact: ~300-500 chars of text, suitable for token budgets.
+ */
+export function buildNancyPersonalProfileContext(profile: NancyPersonalProfile): string {
+  if (!profile.has_real_data) {
+    return `## 用户画像（新用户 — 数据不足）
+
+这是一位新用户，尚未积累足够的个人数据。请：
+- 基于通用建议给出指导，同时鼓励用户多使用产品来积累个人画像
+- 不要编造用户的个人信息、经历或偏好
+- 在适当的时候，可以提问来了解用户（如："你平时更喜欢结构化表达还是自由发挥？"）`;
+  }
+
+  const lines: string[] = [];
+  lines.push("## Nancy 个人智能画像（统一上下文）");
+  lines.push("以下是你正在帮助的用户画像。所有建议和反馈必须基于这些真实信息，不得编造。");
+  lines.push("");
+
+  // Identity block
+  const id = profile.identity;
+  if (id.display_name || id.life_theme) {
+    lines.push("### 身份画像");
+    if (id.display_name) lines.push(`- 名称：${id.display_name}`);
+    if (id.life_theme) lines.push(`- 生活主题：${id.life_theme}`);
+    if (id.career_field) lines.push(`- 职业领域：${id.career_field}`);
+    if (id.industry) lines.push(`- 行业：${id.industry}`);
+    if (id.current_milestone) lines.push(`- 当前阶段：${id.current_milestone}`);
+    if (id.bio_summary) lines.push(`- 简介：${id.bio_summary.slice(0, 150)}`);
+    lines.push("");
+  }
+
+  // Career + goals
+  if (profile.career_direction !== "尚未明确职业方向" || profile.current_goals[0] !== "尚未明确当前目标") {
+    lines.push("### 职业方向与目标");
+    if (profile.career_direction !== "尚未明确职业方向") {
+      lines.push(`- 职业方向：${profile.career_direction}`);
+    }
+    for (const g of profile.current_goals.slice(0, 5)) {
+      lines.push(`- 目标：${g}`);
+    }
+    lines.push("");
+  }
+
+  // Strengths
+  if (profile.strengths[0] !== "尚未积累足够的优势数据") {
+    lines.push("### 优势与特长");
+    for (const s of profile.strengths.slice(0, 8)) {
+      lines.push(`- ${s}`);
+    }
+    lines.push("");
+  }
+
+  // Weaknesses
+  if (profile.weaknesses[0] !== "尚未识别明确的薄弱领域") {
+    lines.push("### 薄弱领域（需关注）");
+    for (const w of profile.weaknesses.slice(0, 5)) {
+      lines.push(`- ${w}`);
+    }
+    lines.push("");
+  }
+
+  // Valuable assets
+  if (profile.valuable_assets.length > 0) {
+    lines.push("### 核心表达资产（禁止编造经历，只能使用以下真实资产）");
+    for (const a of profile.valuable_assets.slice(0, 5)) {
+      lines.push(`- [${a.asset_type}] ${a.title}（可复用性：${a.quality_score}）`);
+    }
+    lines.push("");
+  }
+
+  // Communication style
+  if (profile.communication_style !== "尚未建立沟通风格画像") {
+    lines.push("### 沟通风格");
+    lines.push(`- ${profile.communication_style}`);
+    lines.push("");
+  }
+
+  // Learning patterns
+  if (profile.learning_patterns[0] !== "尚未形成明确的学习模式") {
+    lines.push("### 学习模式");
+    for (const p of profile.learning_patterns.slice(0, 5)) {
+      lines.push(`- ${p}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("━━━━━━━━━━━━━━━━━━━━");
+  lines.push("使用规则：");
+  lines.push("- 以上所有信息均来自用户真实数据，请在回答中自然地融入（不要逐条复述）");
+  lines.push("- 禁止编造用户的经历、技能或偏好。如不确定，就如实说");
+  lines.push("- 当用户的行为与画像出现明显矛盾时，以当前行为为准，画像可能过时");
+  lines.push("- 如果用户提到画像中未覆盖的新信息，可以在回答中顺势提问以丰富画像");
+
+  return lines.join("\n");
+}

@@ -26,6 +26,8 @@ import {
   matchExpressionAssets,
   trackAssetUsage,
   buildExpressionPersonalizationContext,
+  getNancyPersonalProfile,
+  buildNancyPersonalProfileContext,
 } from "../_shared/nancy-context.ts";
 import {
   buildDiagnosisSystemPrompt,
@@ -394,6 +396,20 @@ serve(async (req: Request) => {
           }
         }
 
+        // ── Fetch Nancy personal profile (non-fatal) ──
+        let nancyProfileContext = "";
+        if (userId) {
+          try {
+            const nancyProfile = await getNancyPersonalProfile(supabase, userId);
+            nancyProfileContext = buildNancyPersonalProfileContext(nancyProfile);
+            if (nancyProfileContext) {
+              console.log(`[chinese-expression-agent] ${requestId} Nancy profile context built (${nancyProfileContext.length} chars, hasData=${nancyProfile.has_real_data})`);
+            }
+          } catch (profileErr) {
+            console.error(`[chinese-expression-agent] ${requestId} Nancy profile error (non-fatal):`, (profileErr as Error).message);
+          }
+        }
+
         // ── Match expression assets (non-fatal) ──
         let recommendedAssets: Array<Record<string, unknown>> = [];
         if (userId) {
@@ -438,6 +454,9 @@ serve(async (req: Request) => {
         const diagnosisMessages: DeepSeekMessage[] = [
           { role: "system", content: systemPrompt },
         ];
+        if (nancyProfileContext) {
+          diagnosisMessages.push({ role: "system", content: nancyProfileContext });
+        }
         if (personalizationContext) {
           diagnosisMessages.push({ role: "system", content: personalizationContext });
         }

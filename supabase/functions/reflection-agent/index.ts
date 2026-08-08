@@ -16,6 +16,8 @@ import {
   matchExpressionAssets,
   trackAssetUsage,
   buildMemoryProfile,
+  getNancyPersonalProfile,
+  buildNancyPersonalProfileContext,
 } from "../_shared/nancy-context.ts";
 
 const ALLOWED_ORIGINS = [
@@ -209,6 +211,18 @@ serve(async (req: Request) => {
       console.error("[reflection-agent] historical asset correlation error (non-fatal):", (assetErr as Error).message);
     }
 
+    // ── Nancy personal profile (non-fatal) ──
+    let nancyProfileContext = "";
+    try {
+      const nancyProfile = await getNancyPersonalProfile(supabase, userId);
+      nancyProfileContext = buildNancyPersonalProfileContext(nancyProfile);
+      if (nancyProfileContext) {
+        console.log(`[reflection-agent] Nancy profile context built (${nancyProfileContext.length} chars, hasData=${nancyProfile.has_real_data})`);
+      }
+    } catch (profileErr) {
+      console.error("[reflection-agent] Nancy profile error (non-fatal):", (profileErr as Error).message);
+    }
+
     // 4 ─ Call DeepSeek with existing memory context
     const userData = JSON.stringify({
       period: `${sevenDaysAgo} 至 ${today}`,
@@ -223,6 +237,10 @@ serve(async (req: Request) => {
     const messages: Array<{ role: string; content: string }> = [
       { role: "system", content: SYSTEM_PROMPT },
     ];
+
+    if (nancyProfileContext) {
+      messages.push({ role: "system", content: nancyProfileContext });
+    }
 
     if (existingMemoryContext) {
       messages.push({ role: "system", content: existingMemoryContext });
