@@ -26,8 +26,8 @@ import {
   matchExpressionAssets,
   trackAssetUsage,
   buildExpressionPersonalizationContext,
-  getNancyPersonalProfile,
-  buildNancyPersonalProfileContext,
+  getNancyPersonalProfileWithGrowth,
+  buildNancyPersonalProfileContextWithGrowth,
 } from "../_shared/nancy-context.ts";
 import {
   buildDiagnosisSystemPrompt,
@@ -400,10 +400,10 @@ serve(async (req: Request) => {
         let nancyProfileContext = "";
         if (userId) {
           try {
-            const nancyProfile = await getNancyPersonalProfile(supabase, userId);
-            nancyProfileContext = buildNancyPersonalProfileContext(nancyProfile);
+            const nancyProfile = await getNancyPersonalProfileWithGrowth(supabase, userId);
+            nancyProfileContext = buildNancyPersonalProfileContextWithGrowth(nancyProfile);
             if (nancyProfileContext) {
-              console.log(`[chinese-expression-agent] ${requestId} Nancy profile context built (${nancyProfileContext.length} chars, hasData=${nancyProfile.has_real_data})`);
+              console.log(`[chinese-expression-agent] ${requestId} Nancy profile context built (${nancyProfileContext.length} chars, hasData=${nancyProfile.has_real_data}, growth=${nancyProfile.growth_summary ? "yes" : "no"})`);
             }
           } catch (profileErr) {
             console.error(`[chinese-expression-agent] ${requestId} Nancy profile error (non-fatal):`, (profileErr as Error).message);

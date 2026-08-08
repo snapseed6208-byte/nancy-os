@@ -16,8 +16,8 @@ import {
   matchExpressionAssets,
   trackAssetUsage,
   buildMemoryProfile,
-  getNancyPersonalProfile,
-  buildNancyPersonalProfileContext,
+  getNancyPersonalProfileWithGrowth,
+  buildNancyPersonalProfileContextWithGrowth,
 } from "../_shared/nancy-context.ts";
 
 const ALLOWED_ORIGINS = [
@@ -214,10 +214,10 @@ serve(async (req: Request) => {
     // ── Nancy personal profile (non-fatal) ──
     let nancyProfileContext = "";
     try {
-      const nancyProfile = await getNancyPersonalProfile(supabase, userId);
-      nancyProfileContext = buildNancyPersonalProfileContext(nancyProfile);
+      const nancyProfile = await getNancyPersonalProfileWithGrowth(supabase, userId);
+      nancyProfileContext = buildNancyPersonalProfileContextWithGrowth(nancyProfile);
       if (nancyProfileContext) {
-        console.log(`[reflection-agent] Nancy profile context built (${nancyProfileContext.length} chars, hasData=${nancyProfile.has_real_data})`);
+        console.log(`[reflection-agent] Nancy profile context built (${nancyProfileContext.length} chars, hasData=${nancyProfile.has_real_data}, growth=${nancyProfile.growth_summary ? "yes" : "no"})`);
       }
     } catch (profileErr) {
       console.error("[reflection-agent] Nancy profile error (non-fatal):", (profileErr as Error).message);

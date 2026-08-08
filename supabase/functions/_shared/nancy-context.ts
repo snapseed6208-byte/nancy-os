@@ -1405,3 +1405,372 @@ export function buildNancyPersonalProfileContext(profile: NancyPersonalProfile):
 
   return lines.join("\n");
 }
+
+// ── 12. Growth Tracking Layer ──
+
+export interface DimensionTrend {
+  /** Dimension name (e.g., "relevance", "fluency", "structure") */
+  dimension: string;
+  /** Earliest observed score */
+  start_score: number;
+  /** Most recent score */
+  end_score: number;
+  /** Change magnitude (+ is improvement, - is decline) */
+  delta: number;
+  /** Number of data points contributing to this trend */
+  sample_count: number;
+}
+
+export interface GrowthSnapshot {
+  /** ISO date when this snapshot was computed */
+  date: string;
+  /** Per-dimension trends over the observation period */
+  dimension_trends: DimensionTrend[];
+  /** New patterns detected (from recent memories or profile changes) */
+  new_patterns: string[];
+  /** Important training events that may explain score changes */
+  important_events: string[];
+  /** Overall growth verdict */
+  overall_direction: "improving" | "stable" | "exploring" | "insufficient_data";
+}
+
+export interface GrowthSummary {
+  /** Natural language: what improved recently */
+  recent_progress: string;
+  /** Natural language: what to focus on now */
+  current_focus: string;
+  /** Natural language: long-term observable pattern */
+  long_term_pattern: string;
+  /** Most improved dimensions (top 2) */
+  top_improvements: string[];
+  /** Recent milestones achieved */
+  recent_milestones: string[];
+  /** Training activity level */
+  training_rhythm: string;
+}
+
+const DIMENSION_LABELS_ZH: Record<string, string> = {
+  relevance: "切题性",
+  structure: "结构组织",
+  evidence: "论据支撑",
+  boundary: "边界意识",
+  fluency: "流畅度",
+  depth: "思想深度",
+  logic: "逻辑性",
+  creativity: "创意性",
+  vocabulary: "词汇丰富度",
+  grammar: "语法准确性",
+  naturalness: "表达自然度",
+  communication: "沟通能力",
+  confidence: "自信度",
+};
+
+/**
+ * Compute a growth snapshot from time-series training data.
+ *
+ * Data sources:
+ * - Chinese speaking attempts (last 60 days) → per-dimension score trends
+ * - expression_profiles.improvement_history → known before/after events
+ * - ai_memories (recently reinforced) → new skill/insight patterns
+ *
+ * No new tables. Pure computation from existing data.
+ */
+export async function getGrowthSnapshot(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: { lookbackDays?: number },
+): Promise<GrowthSnapshot | null> {
+  const lookbackDays = options?.lookbackDays || 60;
+  const sinceDate = new Date();
+  sinceDate.setDate(sinceDate.getDate() - lookbackDays);
+  const sinceISO = sinceDate.toISOString();
+
+  const [
+    chineseAttemptsResult,
+    exprProfileResult,
+    recentMemoriesResult,
+  ] = await Promise.allSettled([
+    supabase.from("chinese_speaking_attempts")
+      .select("scores,diagnosis,attempt_round,created_at")
+      .eq("user_id", userId)
+      .gte("created_at", sinceISO)
+      .order("created_at", { ascending: true })
+      .limit(100),
+    supabase.from("expression_profiles")
+      .select("improvement_history,patterns,strengths,weaknesses,knowledge_transfer_profile")
+      .eq("user_id", userId)
+      .limit(1)
+      .single(),
+    supabase.from("ai_memories")
+      .select("memory_type,content,confidence,status,last_reinforced_at,reinforcement_count")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .in("status", ["confirmed", "probable"])
+      .gte("last_reinforced_at", sinceISO)
+      .order("last_reinforced_at", { ascending: false })
+      .limit(20),
+  ]);
+
+  const attempts = chineseAttemptsResult.status === "fulfilled"
+    ? ((chineseAttemptsResult.value.data || []) as Array<Record<string, unknown>>)
+    : [];
+  const exprProfile = exprProfileResult.status === "fulfilled"
+    ? (exprProfileResult.value.data as ExpressionProfileRow | null)
+    : null;
+  const recentMemories = recentMemoriesResult.status === "fulfilled"
+    ? ((recentMemoriesResult.value.data || []) as Array<Record<string, unknown>>)
+    : [];
+
+  if (attempts.length === 0 && !exprProfile && recentMemories.length === 0) {
+    return null;
+  }
+
+  // ── Compute dimension trends from Chinese attempts ──
+  const dimScores = new Map<string, number[]>();
+
+  for (const attempt of attempts) {
+    const scores = attempt.scores as Record<string, number> | undefined;
+    if (scores && typeof scores === "object") {
+      for (const [dim, score] of Object.entries(scores)) {
+        if (typeof score === "number") {
+          if (!dimScores.has(dim)) dimScores.set(dim, []);
+          dimScores.get(dim)!.push(score);
+        }
+      }
+    }
+  }
+
+  const dimension_trends: DimensionTrend[] = [];
+  for (const [dim, scores] of dimScores) {
+    if (scores.length >= 2) {
+      const start = Math.round(scores[0]);
+      const end = Math.round(scores[scores.length - 1]);
+      dimension_trends.push({
+        dimension: dim,
+        start_score: start,
+        end_score: end,
+        delta: end - start,
+        sample_count: scores.length,
+      });
+    }
+  }
+
+  dimension_trends.sort((a, b) => b.delta - a.delta);
+
+  // ── New patterns from recent memories ──
+  const new_patterns: string[] = [];
+  const newSkills = recentMemories.filter((m) =>
+    m.memory_type === "skill" && (m.reinforcement_count as number) >= 2,
+  );
+  const newInsights = recentMemories.filter((m) =>
+    m.memory_type === "insight" && (m.confidence as number) >= 0.7,
+  );
+  for (const m of [...newSkills, ...newInsights].slice(0, 5)) {
+    new_patterns.push(String(m.content));
+  }
+
+  // ── Important events ──
+  const important_events: string[] = [];
+  const history = exprProfile?.improvement_history || [];
+  if (Array.isArray(history) && history.length > 0) {
+    for (const entry of history.slice(-3)) {
+      if (typeof entry === "object" && entry) {
+        const e = entry as Record<string, unknown>;
+        const area = e.area || "未知维度";
+        const before = e.before_score || 0;
+        const after = e.after_score || 0;
+        important_events.push(`${area}: ${before}→${after}（+${Number(after) - Number(before)}）`);
+      }
+    }
+  }
+
+  for (const trend of dimension_trends) {
+    if (trend.delta >= 10) {
+      const label = DIMENSION_LABELS_ZH[trend.dimension] || trend.dimension;
+      important_events.push(`${label}显著提升：${trend.start_score}→${trend.end_score}（+${trend.delta}）`);
+    }
+  }
+
+  // ── Overall direction ──
+  let overall_direction: GrowthSnapshot["overall_direction"] = "insufficient_data";
+  if (dimension_trends.length > 0) {
+    const avgDelta = dimension_trends.reduce((sum, t) => sum + t.delta, 0) / dimension_trends.length;
+    if (avgDelta >= 5) overall_direction = "improving";
+    else if (avgDelta >= -3) overall_direction = "stable";
+    else overall_direction = "exploring";
+  } else if (recentMemories.length > 0) {
+    overall_direction = "exploring";
+  }
+
+  return {
+    date: new Date().toISOString().split("T")[0],
+    dimension_trends,
+    new_patterns,
+    important_events: [...new Set(important_events)].slice(0, 8),
+    overall_direction,
+  };
+}
+
+/**
+ * Build a human-readable growth summary from a GrowthSnapshot.
+ *
+ * Produces compact natural-language strings designed for AI system prompts.
+ * Total output: ~200-400 chars.
+ */
+export function buildGrowthSummary(snapshot: GrowthSnapshot | null): GrowthSummary {
+  const empty: GrowthSummary = {
+    recent_progress: "尚未积累足够的训练数据来生成成长趋势",
+    current_focus: "鼓励用户持续进行表达训练以建立数据基线",
+    long_term_pattern: "数据不足，尚无法识别长期模式",
+    top_improvements: [],
+    recent_milestones: [],
+    training_rhythm: "暂无训练记录",
+  };
+
+  if (!snapshot || snapshot.dimension_trends.length === 0) return empty;
+
+  const trends = snapshot.dimension_trends;
+
+  // ── Recent progress ──
+  const improved = trends.filter((t) => t.delta >= 5).slice(0, 3);
+  if (improved.length > 0) {
+    const parts = improved.map((t) => {
+      const label = DIMENSION_LABELS_ZH[t.dimension] || t.dimension;
+      return `${label}（${t.start_score}→${t.end_score}，+${t.delta}）`;
+    });
+    empty.recent_progress = `最近在${parts.join("、")}方面有明显提升`;
+  } else if (snapshot.overall_direction === "stable") {
+    empty.recent_progress = "各项能力保持稳定，未见显著波动";
+  } else {
+    empty.recent_progress = "处于探索阶段，各项能力正在建立基线";
+  }
+
+  // ── Current focus ──
+  const declining = trends.filter((t) => t.delta < 0).slice(0, 2);
+  const weakest = [...trends].sort((a, b) => a.end_score - b.end_score).slice(0, 2);
+  if (declining.length > 0) {
+    const parts = declining.map((t) => DIMENSION_LABELS_ZH[t.dimension] || t.dimension);
+    empty.current_focus = `需要重点关注${parts.join("、")}的提升`;
+  } else if (weakest.length > 0 && weakest[0].end_score < 65) {
+    const parts = weakest.map((t) => DIMENSION_LABELS_ZH[t.dimension] || t.dimension);
+    empty.current_focus = `薄弱领域：${parts.join("、")}仍需要持续练习`;
+  } else {
+    empty.current_focus = "各项能力均衡发展，可选择性挑战更高难度话题";
+  }
+
+  // ── Long-term pattern ──
+  const sampleTotal = trends.reduce((sum, t) => sum + t.sample_count, 0);
+  const avgDelta = Math.round(trends.reduce((sum, t) => sum + t.delta, 0) / trends.length);
+  if (avgDelta >= 5) {
+    empty.long_term_pattern = `整体呈上升趋势（平均每维度+${avgDelta}分），共${sampleTotal}个训练样本`;
+  } else if (avgDelta >= 0) {
+    empty.long_term_pattern = `整体保持稳定（平均变化${avgDelta >= 0 ? "+" : ""}${avgDelta}分），共${sampleTotal}个训练样本`;
+  } else {
+    empty.long_term_pattern = `近期有轻微下降趋势（平均${avgDelta}分），建议增加训练频率`;
+  }
+
+  // ── Top improvements ──
+  empty.top_improvements = improved.slice(0, 2).map((t) => {
+    const label = DIMENSION_LABELS_ZH[t.dimension] || t.dimension;
+    return `${label}: ${t.start_score}→${t.end_score}`;
+  });
+
+  // ── Recent milestones ──
+  for (const event of snapshot.important_events.slice(0, 3)) {
+    empty.recent_milestones.push(event);
+  }
+
+  // ── Training rhythm ──
+  if (sampleTotal >= 10) {
+    empty.training_rhythm = `过去60天训练频率较高（${sampleTotal}条评分记录），成长轨迹清晰`;
+  } else if (sampleTotal >= 4) {
+    empty.training_rhythm = `过去60天有${sampleTotal}条训练记录，保持了一定的练习节奏`;
+  } else {
+    empty.training_rhythm = `过去60天仅${sampleTotal}条训练记录，建议增加训练频率以获得更清晰的成长轨迹`;
+  }
+
+  return empty;
+}
+
+// ── 13. Upgraded NancyPersonalProfile with Growth ──
+
+export interface NancyPersonalProfileWithGrowth extends NancyPersonalProfile {
+  growth_summary: GrowthSummary | null;
+  growth_snapshot: GrowthSnapshot | null;
+}
+
+/**
+ * Enhanced getNancyPersonalProfile with growth tracking.
+ *
+ * Additionally:
+ * - Fetches Chinese speaking attempts for score trends
+ * - Computes growth snapshot and summary
+ */
+export async function getNancyPersonalProfileWithGrowth(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<NancyPersonalProfileWithGrowth> {
+  const [baseProfile, growthSnapshot] = await Promise.all([
+    getNancyPersonalProfile(supabase, userId),
+    getGrowthSnapshot(supabase, userId),
+  ]);
+
+  const growth_summary = growthSnapshot
+    ? buildGrowthSummary(growthSnapshot)
+    : buildGrowthSummary(null);
+
+  return {
+    ...baseProfile,
+    growth_summary,
+    growth_snapshot: growthSnapshot,
+  };
+}
+
+/**
+ * Build AI system prompt from a profile WITH growth context.
+ */
+export function buildNancyPersonalProfileContextWithGrowth(
+  profile: NancyPersonalProfileWithGrowth,
+): string {
+  const base = buildNancyPersonalProfileContext(profile);
+
+  const gs = profile.growth_summary;
+  if (!gs || !profile.growth_snapshot || profile.growth_snapshot.overall_direction === "insufficient_data") {
+    return base;
+  }
+
+  const growthLines: string[] = [];
+  growthLines.push("");
+  growthLines.push("### 近期成长动态");
+  const dirLabel = profile.growth_snapshot.overall_direction === "improving"
+    ? "正在提升"
+    : profile.growth_snapshot.overall_direction === "stable"
+    ? "保持稳定"
+    : "探索中";
+  growthLines.push(`- 趋势方向：${dirLabel}`);
+  if (gs.recent_progress && !gs.recent_progress.includes("尚未积累")) {
+    growthLines.push(`- 近期进步：${gs.recent_progress}`);
+  }
+  if (gs.current_focus && !gs.current_focus.includes("尚未积累")) {
+    growthLines.push(`- 当前重点：${gs.current_focus}`);
+  }
+  if (gs.long_term_pattern && !gs.long_term_pattern.includes("数据不足")) {
+    growthLines.push(`- 长期趋势：${gs.long_term_pattern}`);
+  }
+  if (gs.training_rhythm && !gs.training_rhythm.includes("暂无")) {
+    growthLines.push(`- 训练节奏：${gs.training_rhythm}`);
+  }
+  if (gs.recent_milestones.length > 0) {
+    growthLines.push(`- 近期里程碑：${gs.recent_milestones.slice(0, 3).join("；")}`);
+  }
+  growthLines.push("→ 请在反馈中关联以上成长趋势：肯定进步，指出仍待提升的方向。");
+
+  // Insert growth section before the final rules block
+  const rulesMarker = "━━━━━━━━━━━━━━━━━━━━";
+  const idx = base.indexOf(rulesMarker);
+  if (idx > 0) {
+    return base.slice(0, idx) + growthLines.join("\n") + "\n" + base.slice(idx);
+  }
+
+  return base + "\n" + growthLines.join("\n");
+}

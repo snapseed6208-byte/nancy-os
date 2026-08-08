@@ -8,7 +8,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
-import { authenticateRequest, getConfirmedMemories, getExpressionAssets, matchExpressionAssets, trackAssetUsage, getNancyPersonalProfile, buildNancyPersonalProfileContext } from "../_shared/nancy-context.ts";
+import { authenticateRequest, getConfirmedMemories, getExpressionAssets, matchExpressionAssets, trackAssetUsage, getNancyPersonalProfileWithGrowth, buildNancyPersonalProfileContextWithGrowth } from "../_shared/nancy-context.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -164,8 +164,8 @@ serve(async (req: Request) => {
     // ── Nancy personal profile (non-fatal) ──
     let nancyProfileContext = "";
     try {
-      const nancyProfile = await getNancyPersonalProfile(supabase, userId);
-      nancyProfileContext = buildNancyPersonalProfileContext(nancyProfile);
+      const nancyProfile = await getNancyPersonalProfileWithGrowth(supabase, userId);
+      nancyProfileContext = buildNancyPersonalProfileContextWithGrowth(nancyProfile);
     } catch (profileErr) {
       console.error("[english-coach] Nancy profile error (non-fatal):", (profileErr as Error).message);
     }
