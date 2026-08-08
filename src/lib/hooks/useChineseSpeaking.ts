@@ -220,6 +220,34 @@ export interface V4Diagnosis {
   retry_focus: string[];
 }
 
+// ── Phase 3 Material Training types ──
+
+export interface MaterialUnderstanding {
+  accuracy_score: number;
+  core_understanding: string;
+  understood_correctly: string[];
+  misunderstanding: string;
+  missing_material_points: string[];
+  personal_connection: string;
+  transfer_quality: string;
+}
+
+export interface GeneratedMaterialQuestion {
+  question: string;
+  question_type: "opinion" | "explanation" | "application";
+  recommended_skill: ChineseTopicType;
+}
+
+export interface MaterialAnalysis {
+  title: string;
+  core_argument: string;
+  key_points: string[];
+  important_examples: string[];
+  controversial_points: string[];
+  expression_angles: string[];
+  possible_questions: GeneratedMaterialQuestion[];
+}
+
 // ── V4.1 Content Deepening types (Phase 1) ──
 
 export interface ContentDeepeningMissingElement {
@@ -438,6 +466,7 @@ export interface ChineseSpeakingSession {
   source_url: string | null;
   recommended_framework: ChineseFramework | null;
   time_limit_seconds: number;
+  material_resource_id: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -468,6 +497,7 @@ export interface ChineseSpeakingAttempt {
   reference_viewed_before_retry: boolean;
   ai_model: string | null;
   ai_prompt_version: string | null;
+  material_understanding: MaterialUnderstanding | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -615,6 +645,7 @@ export function useCreateChineseSpeakingSession() {
       source_title?: string;
       source_text?: string;
       source_url?: string;
+      material_resource_id?: string;
     }) => {
       const userId = await getUserId();
       const { data, error } = await supabase
@@ -856,6 +887,36 @@ export async function generateChineseTopics(
     count,
   }, {
     timeout: 60_000,
+    retries: 1,
+  });
+}
+
+// ── Phase 3: Material Training AI wrappers ──
+
+/** Analyze material text to extract expression-relevant insights */
+export async function extractMaterial(
+  sourceText: string,
+  sourceType: "article" | "video_reflection" | "book_note" = "article",
+): Promise<{ success: true; data: MaterialAnalysis } | { success: false; error: string }> {
+  return invokeAI<MaterialAnalysis>("chinese-expression-agent", {
+    action: "extract_material",
+    source_text: sourceText.slice(0, 8000),
+    source_type: sourceType,
+  }, {
+    timeout: 120_000,
+    retries: 1,
+  });
+}
+
+/** Generate expression training questions from analyzed material */
+export async function generateMaterialQuestions(
+  materialAnalysis: MaterialAnalysis,
+): Promise<{ success: true; data: { questions: GeneratedMaterialQuestion[] } } | { success: false; error: string }> {
+  return invokeAI<{ questions: GeneratedMaterialQuestion[] }>("chinese-expression-agent", {
+    action: "generate_material_questions",
+    material_analysis: materialAnalysis,
+  }, {
+    timeout: 90_000,
     retries: 1,
   });
 }
