@@ -3,56 +3,18 @@ import { useLocation } from "wouter";
 import {
   ArrowLeft, Brain, CheckCircle2, Zap, TrendingUp,
   Eye, Edit3, Lightbulb, AlertTriangle, Tag, BookOpen,
+  MessageSquare,
 } from "lucide-react";
-import { useDueExpressions, useSubmitReview } from "@/lib/hooks/useEnglish";
+import { useDailyReviewQueue, useSubmitReview } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
-import type { ReviewMode } from "@/lib/types";
-
-// ── SM-2 Algorithm ──
-
-const MIN_EF = 1.3;
-
-function sm2(
-  quality: number, // 0=Again, 1=Hard, 2=Good, 3=Easy
-  currentInterval: number,
-  currentEF: number,
-  currentReps: number,
-): { newInterval: number; newEF: number; newReps: number } {
-  let newEF = currentEF + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02));
-  if (newEF < MIN_EF) newEF = MIN_EF;
-
-  if (quality < 3) {
-    // quality 0, 1, 2: all reset repetitions (only Easy/3 counts as success)
-    if (quality === 0) {
-      return { newInterval: 1, newEF, newReps: 0 };
-    }
-    // Hard (1) or Good (2): short interval, reps reset
-    const factor = quality === 1 ? 1.2 : 1.5;
-    return { newInterval: Math.max(1, Math.round(currentInterval * factor)), newEF, newReps: 0 };
-  }
-
-  // quality 3 (Easy): success — increment reps
-  const newReps = currentReps + 1;
-  if (currentInterval === 0) {
-    return { newInterval: 4, newEF, newReps };
-  }
-  const interval = Math.round(currentInterval * newEF * 1.3);
-  return { newInterval: Math.min(interval, 365), newEF, newReps };
-}
-
-function addDays(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-}
-
-function estimateInterval(nextReviewDate: string | null): number {
-  if (!nextReviewDate) return 0;
-  const now = new Date();
-  const next = new Date(nextReviewDate);
-  const diff = Math.ceil((next.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(0, diff);
-}
+import {
+  scheduleExpressionReview,
+  daysUntilDue,
+  getStageCueType,
+  type ReviewRating,
+  type ReviewMode,
+  type ExpressionStage,
+} from "@/lib/srs/expressionSrs";
 
 // ── Helpers ──
 
@@ -75,25 +37,28 @@ const MODE_LABELS: Record<ReviewMode, string> = {
   active_recall: "主动回忆",
   recognition: "识别模式",
   cloze: "填空模式",
+  production: "造句模式",
 };
 
 const MODE_DESCS: Record<ReviewMode, string> = {
   active_recall: "看中文说出英文",
   recognition: "看英文选中文",
   cloze: "例句填空中练习",
+  production: "用自己的话造句表达",
 };
 
 const MODE_ICONS: Record<ReviewMode, React.ComponentType<{ size?: number; className?: string }>> = {
   active_recall: Brain,
   recognition: Eye,
   cloze: Edit3,
+  production: MessageSquare,
 };
 
 // ── Page ──
 
 export default function EnglishReview() {
   const [, navigate] = useLocation();
-  const { data: dueExpressions, isLoading } = useDueExpressions();
+  const { data: queueData, isLoading } = useDailyReviewQueue();
   const submitReview = useSubmitReview();
 
   const [mode, setMode] = useState<ReviewMode | null>(null);
@@ -113,11 +78,16 @@ export default function EnglishReview() {
   const [recogSelected, setRecogSelected] = useState<number | null>(null);
   const [recogCorrect, setRecogCorrect] = useState<number>(-1);
 
+  // Production-specific state
+  const [productionInput, setProductionInput] = useState("");
+  const [productionSubmitted, setProductionSubmitted] = useState(false);
+
   const queue = reviewQueue;
-  const totalCards = dueExpressions?.length || 0;
+  const totalCards = queueData?.totalDue || 0;
+  const todayRemaining = queueData?.todayRemaining || 0;
 
   const startSession = useCallback((reviewMode: ReviewMode) => {
-    const cards = [...(dueExpressions || [])] as Record<string, unknown>[];
+    const cards = shuffle([...(queueData?.cards || [])]) as Record<string, unknown>[];
     setMode(reviewMode);
     setReviewQueue(cards);
     setCurrentIndex(0);
@@ -127,9 +97,11 @@ export default function EnglishReview() {
     setDone(false);
     setRecogSelected(null);
     setRecogCorrect(-1);
+    setProductionInput("");
+    setProductionSubmitted(false);
     sessionStartRef.current = Date.now();
     setStarted(true);
-  }, [dueExpressions]);
+  }, [queueData]);
 
   const generateRecogOptions = useCallback((correctChinese: string, allExprs: Record<string, unknown>[]) => {
     const others = allExprs
@@ -152,72 +124,66 @@ export default function EnglishReview() {
     }
   }, [mode, started, done, currentIndex, queue, generateRecogOptions]);
 
-  // ── Shared submitRating: SM-2 calc + DB update + queue management ──
+  // ── Shared submitRating: SRS V2 calc + DB update + queue management ──
 
   const submitRating = useCallback(
-    async (quality: number, label: string) => {
+    async (rating: ReviewRating, productionSuccess?: boolean) => {
       const expr = queue[currentIndex] as Record<string, unknown> | undefined;
       if (!expr) return;
 
-      const currentInterval = (expr.review_count as number) === 0
-        ? 0
-        : estimateInterval(expr.next_review_date as string | null);
-      const currentEF = (expr.ease_factor as number) || 2.5;
-      const currentReps = (expr.repetitions as number) || 0;
-      const currentStreak = (expr.streak as number) || 0;
-
-      const { newInterval, newEF, newReps } = sm2(quality, currentInterval, currentEF, currentReps);
-      const nextReviewDate = addDays(newInterval);
-      const newStatus = newReps >= 5 ? "mastered" : newInterval >= 21 ? "review" : "learning";
-      const reviewCount = ((expr.review_count as number) || 0) + 1;
-      const newStreak = quality >= 3 ? currentStreak + 1 : 0;
-
-      setSession((prev) => [
-        ...prev,
-        { expressionId: expr.id as string, english: expr.english as string, result: label, oldInterval: currentInterval, newInterval },
-      ]);
+      const oldInterval = (expr.interval_days as number) || 0;
+      const label = rating;
 
       try {
-        await submitReview.mutateAsync({
+        const schedule = await submitReview.mutateAsync({
           expressionId: expr.id as string,
-          result: label,
-          previousInterval: currentInterval,
-          newInterval,
-          nextReviewDate,
-          newStatus,
-          masteryLevel: Math.min(newReps, 5),
-          streak: newStreak,
-          reviewCount,
-          easeFactor: newEF,
-          repetitions: newReps,
+          rating,
+          reviewMode: mode ?? undefined,
+          productionSuccess,
         });
+
+        setSession((prev) => [
+          ...prev,
+          {
+            expressionId: expr.id as string,
+            english: expr.english as string,
+            result: label,
+            oldInterval,
+            newInterval: schedule.interval_days,
+          },
+        ]);
+
+        // Re-queue on Again only (max 3 re-queues per card to prevent infinite loop)
+        if (rating === "again") {
+          const requeueCount = (expr._requeueCount as number) || 0;
+          if (requeueCount < 3) {
+            setReviewQueue((prev) => {
+              const next = [...prev];
+              next.splice(Math.min(currentIndex + 3, next.length), 0, { ...expr, _requeueCount: requeueCount + 1 });
+              return next;
+            });
+          }
+        }
       } catch {
         // continue even if one fails
       }
-
-      // Re-queue on Again (quality 0) only
-      if (quality === 0) {
-        setReviewQueue((prev) => {
-          const next = [...prev];
-          next.splice(Math.min(currentIndex + 3, next.length), 0, expr);
-          return next;
-        });
-      }
     },
-    [queue, currentIndex, submitReview],
+    [queue, currentIndex, submitReview, mode],
   );
 
   // ── Advance to next card ──
 
   const advanceCard = useCallback(
-    (quality: number) => {
-      const addedCards = quality === 0 ? 1 : 0;
+    (isAgain: boolean) => {
+      const addedCards = isAgain ? 1 : 0;
       const nextIdx = currentIndex + 1;
       if (nextIdx >= queue.length + addedCards) {
         setDone(true);
       } else {
         setCurrentIndex(nextIdx);
         setRevealed(false);
+        setProductionInput("");
+        setProductionSubmitted(false);
       }
     },
     [queue.length, currentIndex],
@@ -226,17 +192,17 @@ export default function EnglishReview() {
   // ── Active recall / Cloze: 4-button rating ──
 
   const handleRate = useCallback(
-    async (quality: number, label: string) => {
+    async (rating: ReviewRating) => {
       if (isRating) return;
       setIsRating(true);
-      await submitRating(quality, label);
-      advanceCard(quality);
+      await submitRating(rating);
+      advanceCard(rating === "again");
       setIsRating(false);
     },
     [submitRating, advanceCard, isRating],
   );
 
-  // ── Recognition: correct/wrong → quality 3/0, delayed advance ──
+  // ── Recognition: correct/wrong → easy/again, delayed advance ──
 
   const handleRecogSelect = useCallback(
     async (idx: number) => {
@@ -251,15 +217,14 @@ export default function EnglishReview() {
       setRecogSelected(idx);
       setRecogCorrect(correctIdx);
 
-      const quality = isCorrect ? 3 : 0;
-      const label = isCorrect ? "easy" : "again";
+      const rating: ReviewRating = isCorrect ? "easy" : "again";
 
-      // Rate immediately (DB update, queue, session)
-      await submitRating(quality, label);
+      // Rate immediately
+      await submitRating(rating);
 
       // Delay visual advancement for feedback
       setTimeout(() => {
-        advanceCard(quality);
+        advanceCard(!isCorrect);
         setRecogSelected(null);
         setRecogCorrect(-1);
       }, 800);
@@ -269,7 +234,7 @@ export default function EnglishReview() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    if (!started || done || mode === "recognition") return;
+    if (!started || done || mode === "recognition" || mode === "production") return;
     const handler = (e: KeyboardEvent) => {
       if (isRating) return;
       if (!revealed) {
@@ -279,10 +244,10 @@ export default function EnglishReview() {
         }
         return;
       }
-      if (e.key === "1") handleRate(0, "again");
-      else if (e.key === "2") handleRate(1, "hard");
-      else if (e.key === "3") handleRate(2, "good");
-      else if (e.key === "4") handleRate(3, "easy");
+      if (e.key === "1") handleRate("again");
+      else if (e.key === "2") handleRate("hard");
+      else if (e.key === "3") handleRate("good");
+      else if (e.key === "4") handleRate("easy");
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -291,6 +256,9 @@ export default function EnglishReview() {
   // ── Mode Selection ──
 
   if (!started && !done) {
+    const queueCards = queueData?.cards || [];
+    const dailyQueueSize = queueCards.length;
+
     return (
       <div className="space-y-6">
         <header className="flex items-center gap-3">
@@ -326,14 +294,17 @@ export default function EnglishReview() {
             <div className="bg-card rounded-2xl border border-sage-light/50 p-6 text-center space-y-4">
               <Brain size={36} className="text-sage-deep mx-auto" />
               <div>
-                <p className="text-3xl font-bold text-ink">{totalCards}</p>
-                <p className="text-sm text-ink-light mt-1">条表达等待复习</p>
+                <p className="text-3xl font-bold text-ink">{dailyQueueSize}</p>
+                <p className="text-sm text-ink-light mt-1">今日复习 ({totalCards} 条待复习)</p>
+                {queueData?.isOverloaded && (
+                  <p className="text-xs text-accent-rose mt-1">积压较多，建议坚持每日打卡</p>
+                )}
               </div>
             </div>
 
             <div className="space-y-3">
               <p className="text-xs font-medium text-ink-light">选择复习模式</p>
-              {(["active_recall", "recognition", "cloze"] as ReviewMode[]).map((m) => {
+              {(["active_recall", "recognition", "cloze", "production"] as ReviewMode[]).map((m) => {
                 const Icon = MODE_ICONS[m];
                 return (
                   <button
@@ -349,7 +320,7 @@ export default function EnglishReview() {
                       <p className="text-xs text-ink-lighter mt-0.5">{MODE_DESCS[m]}</p>
                     </div>
                     <div className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-2 py-0.5 shrink-0">
-                      {totalCards} 张
+                      {dailyQueueSize} 张
                     </div>
                   </button>
                 );
@@ -358,13 +329,13 @@ export default function EnglishReview() {
 
             <div className="space-y-2">
               <p className="text-xs text-ink-lighter">预览待复习表达</p>
-              {queue.slice(0, 5).map((expr) => (
+              {queueCards.slice(0, 5).map((expr) => (
                 <div key={expr.id as string} className="bg-card rounded-xl border border-border px-4 py-2.5 text-sm text-ink">
                   {(expr.english as string).slice(0, 60)}{((expr.english as string)?.length ?? 0) > 60 ? "..." : ""}
                 </div>
               ))}
-              {queue.length > 5 && (
-                <p className="text-xs text-ink-lighter text-center">...还有 {queue.length - 5} 条</p>
+              {queueCards.length > 5 && (
+                <p className="text-xs text-ink-lighter text-center">...还有 {queueCards.length - 5} 条</p>
               )}
             </div>
           </>
@@ -593,10 +564,10 @@ export default function EnglishReview() {
               {/* Rating buttons */}
               {revealed && (
                 <div className="grid grid-cols-4 gap-2">
-                  <RatingBtn color="accent-rose" label="Again" desc="忘了" keyLabel="1" onClick={() => handleRate(0, "again")} />
-                  <RatingBtn color="amber" label="Hard" desc="困难" keyLabel="2" onClick={() => handleRate(1, "hard")} />
-                  <RatingBtn color="blue" label="Good" desc="记得" keyLabel="3" onClick={() => handleRate(2, "good")} />
-                  <RatingBtn color="sage" label="Easy" desc="简单" keyLabel="4" onClick={() => handleRate(3, "easy")} />
+                  <RatingBtn color="accent-rose" label="Again" desc="忘了" keyLabel="1" onClick={() => handleRate("again")} />
+                  <RatingBtn color="amber" label="Hard" desc="困难" keyLabel="2" onClick={() => handleRate("hard")} />
+                  <RatingBtn color="blue" label="Good" desc="记得" keyLabel="3" onClick={() => handleRate("good")} />
+                  <RatingBtn color="sage" label="Easy" desc="简单" keyLabel="4" onClick={() => handleRate("easy")} />
                 </div>
               )}
             </>
@@ -750,13 +721,62 @@ export default function EnglishReview() {
               {/* Rating buttons */}
               {revealed && (
                 <div className="grid grid-cols-4 gap-2">
-                  <RatingBtn color="accent-rose" label="Again" desc="忘了" keyLabel="1" onClick={() => handleRate(0, "again")} />
-                  <RatingBtn color="amber" label="Hard" desc="困难" keyLabel="2" onClick={() => handleRate(1, "hard")} />
-                  <RatingBtn color="blue" label="Good" desc="记得" keyLabel="3" onClick={() => handleRate(2, "good")} />
-                  <RatingBtn color="sage" label="Easy" desc="简单" keyLabel="4" onClick={() => handleRate(3, "easy")} />
+                  <RatingBtn color="accent-rose" label="Again" desc="忘了" keyLabel="1" onClick={() => handleRate("again")} />
+                  <RatingBtn color="amber" label="Hard" desc="困难" keyLabel="2" onClick={() => handleRate("hard")} />
+                  <RatingBtn color="blue" label="Good" desc="记得" keyLabel="3" onClick={() => handleRate("good")} />
+                  <RatingBtn color="sage" label="Easy" desc="简单" keyLabel="4" onClick={() => handleRate("easy")} />
                 </div>
               )}
             </>
+          )}
+
+          {/* ── Production Card ── */}
+          {mode === "production" && (
+            <div className="space-y-3">
+              <div className="bg-card rounded-2xl border border-border p-6 min-h-[120px] flex flex-col justify-center">
+                <p className="text-xl font-bold text-ink text-center">
+                  {getExprField(currentExpr, "chinese")}
+                </p>
+                {getExprField(currentExpr, "scene") && (
+                  <p className="text-xs text-ink-lighter text-center mt-2">
+                    场景: {getExprField(currentExpr, "scene")}
+                  </p>
+                )}
+                <p className="text-[10px] text-ink-lighter text-center mt-2">
+                  用这个表达造一个你自己的句子
+                </p>
+              </div>
+
+              <textarea
+                className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm text-ink placeholder:text-ink-lighter outline-none focus:border-sage-light resize-none"
+                rows={3}
+                placeholder="输入你造的句子..."
+                value={productionInput}
+                onChange={(e) => setProductionInput(e.target.value)}
+              />
+
+              {!productionSubmitted ? (
+                <button
+                  onClick={() => setProductionSubmitted(true)}
+                  disabled={!productionInput.trim()}
+                  className="w-full bg-sage-light text-sage-deep rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  提交造句
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="bg-ink/5 rounded-xl p-3">
+                    <p className="text-xs text-ink-lighter mb-1">参考答案:</p>
+                    <p className="text-sm font-medium text-sage-deep">{getExprField(currentExpr, "english")}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <RatingBtn color="accent-rose" label="Again" desc="完全不对" keyLabel="" onClick={() => { submitRating("again", false); advanceCard(true); }} />
+                    <RatingBtn color="amber" label="Good" desc="意思对" keyLabel="" onClick={() => { submitRating("good", true); advanceCard(false); }} />
+                    <RatingBtn color="sage" label="Easy" desc="很自然" keyLabel="" onClick={() => { submitRating("easy", true); advanceCard(false); }} />
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -3,6 +3,14 @@ import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
+import {
+  scheduleExpressionReview,
+  isDue,
+  isMastered,
+  type ReviewRating,
+  type ReviewMode,
+  type ExpressionSrsFields,
+} from "@/lib/srs/expressionSrs";
 
 // ── Helpers ──
 
@@ -23,14 +31,24 @@ export type ExpressionFilters = {
   search?: string;
   topic?: string;
   category_id?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 async function fetchExpressions(filters: ExpressionFilters) {
+  const userId = await getUserId();
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 50;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   let query = supabase
     .from("expressions")
-    .select("*")
+    .select("*", { count: "exact" })
+    .eq("user_id", userId)
     .eq("archived", false)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(from, to);
 
   if (filters.type) query = query.eq("type", filters.type);
   if (filters.status) query = query.eq("status", filters.status);
@@ -39,9 +57,9 @@ async function fetchExpressions(filters: ExpressionFilters) {
   if (filters.category_id) query = query.eq("category_id", filters.category_id);
   if (filters.search) query = query.or(`english.ilike.%${filters.search}%,chinese.ilike.%${filters.search}%`);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data;
+  return { data, count: count ?? 0 };
 }
 
 export function useExpressions(filters: ExpressionFilters = {}) {
@@ -52,7 +70,13 @@ export function useExpressions(filters: ExpressionFilters = {}) {
 }
 
 async function fetchExpression(id: string) {
-  const { data, error } = await supabase.from("expressions").select("*").eq("id", id).single();
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from("expressions")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .single();
   if (error) throw error;
   return data;
 }
@@ -146,7 +170,10 @@ export function useCreateExpression() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["expressions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
   });
 }
 
@@ -156,7 +183,7 @@ export function useUpdateExpression() {
     mutationFn: async ({ id, ...input }: Record<string, unknown>) => {
       const { data, error } = await supabase
         .from("expressions")
-        .update({ ...input, updated_at: nowISO() })
+        .update({ ...input })
         .eq("id", id)
         .select()
         .single();
@@ -166,6 +193,66 @@ export function useUpdateExpression() {
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["expressions"] });
       qc.invalidateQueries({ queryKey: ["expression", (variables as Record<string, unknown>).id] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
+  });
+}
+
+export function useArchiveExpression() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("expressions")
+        .update({ archived: true, updated_at: nowISO() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["expression", id] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
+  });
+}
+
+export function useRestoreExpression() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("expressions")
+        .update({ archived: false, updated_at: nowISO() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["expression", id] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
+  });
+}
+
+export function useBatchUpdateExpressions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      ids,
+      updates,
+    }: {
+      ids: string[];
+      updates: Record<string, unknown>;
+    }) => {
+      const { error } = await supabase
+        .from("expressions")
+        .update({ ...updates, updated_at: nowISO() })
+        .in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
 }
@@ -180,6 +267,7 @@ export function useDeleteExpression() {
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["expressions"] });
       qc.invalidateQueries({ queryKey: ["expression", id] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
 }
@@ -187,13 +275,16 @@ export function useDeleteExpression() {
 // ── SRS Review ──
 
 async function fetchDueExpressions() {
+  const userId = await getUserId();
   const { data, error } = await supabase
     .from("expressions")
     .select("*")
+    .eq("user_id", userId)
     .eq("archived", false)
+    .neq("status", "mastered")
     .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
     .order("next_review_date", { ascending: true, nullsFirst: true })
-    .limit(50);
+    .limit(200);
 
   if (error) throw error;
   return data;
@@ -206,48 +297,137 @@ export function useDueExpressions() {
   });
 }
 
+// ── Daily Review Queue ──
+
+const DEFAULT_DAILY_TARGET = 15;
+const MAX_DAILY_CARDS = 50;
+
+export type DailyReviewQueue = {
+  cards: Record<string, unknown>[];
+  totalDue: number;
+  todayTarget: number;
+  todayRemaining: number;
+  isOverloaded: boolean;
+};
+
+async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
+  const userId = await getUserId();
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Count how many reviews done today
+  const { count: todayDone, error: countErr } = await supabase
+    .from("expression_reviews")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("reviewed_at", `${todayStr}T00:00:00Z`)
+    .lte("reviewed_at", `${todayStr}T23:59:59Z`);
+
+  if (countErr) throw countErr;
+
+  const todayRemaining = Math.max(0, DEFAULT_DAILY_TARGET - (todayDone ?? 0));
+
+  // Get all due cards (non-mastered, non-archived)
+  const { data: allDue, error: dueErr } = await supabase
+    .from("expressions")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .neq("status", "mastered")
+    .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
+    .order("next_review_date", { ascending: true, nullsFirst: true });
+
+  if (dueErr) throw dueErr;
+
+  const totalDue = allDue?.length ?? 0;
+  const isOverloaded = totalDue > MAX_DAILY_CARDS;
+
+  // Fetch the cards: up to todayRemaining, capped at MAX_DAILY_CARDS
+  const limit = Math.min(todayRemaining, MAX_DAILY_CARDS);
+  const { data: cards, error: cardsErr } = await supabase
+    .from("expressions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .neq("status", "mastered")
+    .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
+    .order("next_review_date", { ascending: true, nullsFirst: true })
+    .limit(limit);
+
+  if (cardsErr) throw cardsErr;
+
+  return {
+    cards: cards || [],
+    totalDue,
+    todayTarget: DEFAULT_DAILY_TARGET,
+    todayRemaining,
+    isOverloaded,
+  };
+}
+
+export function useDailyReviewQueue() {
+  return useQuery({
+    queryKey: ["expressions", "daily_queue"],
+    queryFn: fetchDailyReviewQueue,
+    staleTime: 30_000,
+  });
+}
+
 export function useSubmitReview() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({
       expressionId,
-      result,
-      previousInterval,
-      newInterval,
-      nextReviewDate,
-      newStatus,
-      masteryLevel,
-      streak,
-      reviewCount,
-      easeFactor,
-      repetitions,
+      rating,
+      reviewMode,
+      productionSuccess,
     }: {
       expressionId: string;
-      result: string;
-      previousInterval: number;
-      newInterval: number;
-      nextReviewDate: string;
-      newStatus: ExpressionStatus;
-      masteryLevel: number;
-      streak: number;
-      reviewCount: number;
-      easeFactor: number;
-      repetitions: number;
+      rating: ReviewRating;
+      reviewMode?: ReviewMode;
+      productionSuccess?: boolean;
     }) => {
       const now = nowISO();
+
+      // Fetch current SRS state
+      const { data: expr, error: fetchErr } = await supabase
+        .from("expressions")
+        .select("ease_factor, repetitions, interval_days, lapse_count, production_count, next_review_date, status")
+        .eq("id", expressionId)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
+      const current: ExpressionSrsFields = {
+        ease_factor: (expr as Record<string, unknown>).ease_factor as number ?? 2.5,
+        repetitions: (expr as Record<string, unknown>).repetitions as number ?? 0,
+        interval_days: (expr as Record<string, unknown>).interval_days as number ?? 0,
+        lapse_count: (expr as Record<string, unknown>).lapse_count as number ?? 0,
+        production_count: (expr as Record<string, unknown>).production_count as number ?? 0,
+        status: (expr as Record<string, unknown>).status as string ?? "learning",
+        next_review_date: (expr as Record<string, unknown>).next_review_date as string | null,
+      };
+
+      const schedule = scheduleExpressionReview(rating, current);
+
+      const newProductionCount = productionSuccess
+        ? current.production_count + 1
+        : current.production_count;
+
       const { error: exprError } = await supabase
         .from("expressions")
         .update({
-          next_review_date: nextReviewDate,
-          status: newStatus,
-          mastery_level: masteryLevel,
-          streak,
-          review_count: reviewCount,
-          last_review_result: result,
-          ease_factor: easeFactor,
-          repetitions,
+          next_review_date: schedule.next_review_date,
+          status: schedule.status,
+          mastery_level: Math.min(schedule.repetitions, 5).toString(),
+          streak: rating === "again" ? 0 : ((expr as Record<string, unknown>).streak as number || 0) + 1,
+          review_count: ((expr as Record<string, unknown>).review_count as number || 0) + 1,
+          last_review_result: rating,
+          ease_factor: schedule.ease_factor,
+          repetitions: schedule.repetitions,
+          interval_days: schedule.interval_days,
+          lapse_count: schedule.lapse_count,
+          production_count: newProductionCount,
           last_reviewed_at: now,
-          updated_at: now,
         })
         .eq("id", expressionId);
 
@@ -256,17 +436,22 @@ export function useSubmitReview() {
       const userId = await getUserId();
       const { error: revError } = await supabase.from("expression_reviews").insert({
         expression_id: expressionId,
-        result,
-        previous_interval: previousInterval,
-        new_interval: newInterval,
+        result: rating,
+        previous_interval: current.interval_days,
+        new_interval: schedule.interval_days,
         reviewed_at: now,
         user_id: userId,
+        review_mode: reviewMode || null,
+        production_success: productionSuccess ?? null,
       });
 
       if (revError) throw revError;
+
+      return schedule;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
 }
@@ -460,27 +645,33 @@ export async function uploadAudio(sessionId: string, blob: Blob): Promise<string
 // ── Dashboard Stats ──
 
 async function fetchEnglishStats() {
+  const userId = await getUserId();
   const now = nowISO();
   const todayStr = today();
 
   const [totalRes, dueRes, masteredRes, sessionsRes, recentReviewsRes] = await Promise.all([
-    supabase.from("expressions").select("id", { count: "exact", head: true }).eq("archived", false),
+    supabase.from("expressions").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("archived", false),
     supabase
       .from("expressions")
       .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
       .eq("archived", false)
+      .neq("status", "mastered")
       .or(`next_review_date.is.null,next_review_date.lte.${now}`),
     supabase
       .from("expressions")
       .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
       .eq("archived", false)
       .eq("status", "mastered"),
     supabase
       .from("speaking_sessions")
-      .select("id", { count: "exact", head: true }),
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
     supabase
       .from("expression_reviews")
       .select("id, result")
+      .eq("user_id", userId)
       .gte("reviewed_at", `${todayStr}T00:00:00Z`)
       .lte("reviewed_at", `${todayStr}T23:59:59Z`),
   ]);
@@ -489,6 +680,30 @@ async function fetchEnglishStats() {
   const todayReviewed = todayReviews.length;
   const todayGood = todayReviews.filter((r: { result: string }) => r.result === "good" || r.result === "easy").length;
 
+  // Also count streak — days with at least 1 review in the past 30 days
+  const { data: recentDays } = await supabase
+    .from("expression_reviews")
+    .select("reviewed_at")
+    .eq("user_id", userId)
+    .gte("reviewed_at", new Date(Date.now() - 30 * 86400000).toISOString())
+    .order("reviewed_at", { ascending: false });
+
+  const reviewDays = new Set((recentDays || []).map((r: { reviewed_at: string }) => r.reviewed_at.split("T")[0]));
+  const currentStreak = (() => {
+    let streak = 0;
+    const d = new Date(todayStr + "T00:00:00");
+    while (true) {
+      const ds = d.toISOString().split("T")[0];
+      if (reviewDays.has(ds)) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    return streak;
+  })();
+
   return {
     total: totalRes.count ?? 0,
     due: dueRes.count ?? 0,
@@ -496,6 +711,7 @@ async function fetchEnglishStats() {
     totalSessions: sessionsRes.count ?? 0,
     todayReviewed,
     todayGood,
+    reviewStreak: currentStreak,
   };
 }
 
@@ -1096,12 +1312,14 @@ export type SpeakingQuestionHistoryEntry = {
 };
 
 async function fetchSpeakingQuestionHistory(days: number): Promise<SpeakingQuestionHistoryEntry[]> {
+  const userId = await getUserId();
   const since = new Date();
   since.setDate(since.getDate() - days);
 
   const { data, error } = await supabase
     .from("speaking_question_history")
     .select("*")
+    .eq("user_id", userId)
     .gte("practiced_at", since.toISOString())
     .order("practiced_at", { ascending: false });
 

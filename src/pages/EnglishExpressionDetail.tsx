@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, Trash2 } from "lucide-react";
-import { useExpression, useCreateExpression, useUpdateExpression, useDeleteExpression, useExpressionCategories } from "@/lib/hooks/useEnglish";
+import { ArrowLeft, Archive, Trash2 } from "lucide-react";
+import { useExpression, useCreateExpression, useUpdateExpression, useArchiveExpression, useDeleteExpression, useExpressionCategories } from "@/lib/hooks/useEnglish";
 import { EXPRESSION_TYPES } from "@/lib/types";
 
 const SCENES = [
@@ -18,6 +18,7 @@ export default function EnglishExpressionDetail() {
   const { data: existing, isLoading } = useExpression(isNew ? undefined : id);
   const createExpr = useCreateExpression();
   const updateExpr = useUpdateExpression();
+  const archiveExpr = useArchiveExpression();
   const deleteExpr = useDeleteExpression();
   const { data: categories } = useExpressionCategories();
 
@@ -72,9 +73,16 @@ export default function EnglishExpressionDetail() {
     navigate("/english/expressions");
   };
 
+  const handleArchive = async () => {
+    if (!id || isNew) return;
+    if (!confirm("归档这条表达？归档后可在表达库中恢复。")) return;
+    await archiveExpr.mutateAsync(id);
+    navigate("/english/expressions");
+  };
+
   const handleDelete = async () => {
     if (!id || isNew) return;
-    if (!confirm("确定删除这条表达？")) return;
+    if (!confirm("确定永久删除这条表达？此操作不可恢复。")) return;
     await deleteExpr.mutateAsync(id);
     navigate("/english/expressions");
   };
@@ -103,12 +111,22 @@ export default function EnglishExpressionDetail() {
           </h1>
         </div>
         {!isNew && (
-          <button
-            onClick={handleDelete}
-            className="ml-auto h-8 w-8 rounded-lg bg-accent-rose/10 flex items-center justify-center shrink-0"
-          >
-            <Trash2 size={14} className="text-accent-rose" />
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={handleArchive}
+              className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0 hover:bg-ink/10"
+              title="归档"
+            >
+              <Archive size={14} className="text-ink-light" />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="h-8 w-8 rounded-lg bg-accent-rose/10 flex items-center justify-center shrink-0"
+              title="永久删除"
+            >
+              <Trash2 size={14} className="text-accent-rose" />
+            </button>
+          </div>
         )}
       </header>
 
