@@ -9,12 +9,12 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { useProfile } from "@/lib/hooks/useProfile";
 
 export default function Settings() {
   const [, navigate] = useLocation();
   const { signOut } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const { profile, loading, updateProfile, isUpdating } = useProfile();
   const [saved, setSaved] = useState(false);
 
   const [email, setEmail] = useState("");
@@ -23,30 +23,43 @@ export default function Settings() {
   const [language, setLanguage] = useState("zh");
   const [aiModel, setAiModel] = useState("deepseek");
 
+  // Email + ai_model come from auth (not in profiles table)
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         setEmail(user.email || "");
-        setDisplayName((user.user_metadata?.display_name as string) || "");
-        setTimezone((user.user_metadata?.timezone as string) || Intl.DateTimeFormat().resolvedOptions().timeZone);
-        setLanguage((user.user_metadata?.language as string) || "zh");
         setAiModel((user.user_metadata?.ai_model as string) || "deepseek");
       }
-      setLoading(false);
     });
   }, []);
 
+  // Profile fields initialized from profiles table (source of truth)
+  useEffect(() => {
+    if (profile) {
+      setDisplayName(profile.display_name || "");
+      setTimezone(profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+      setLanguage(profile.language_preference || "zh");
+    }
+  }, [profile]);
+
   const handleSave = async () => {
-    setSaving(true);
     setSaved(false);
-    const { error } = await supabase.auth.updateUser({
-      data: { display_name: displayName, timezone, language, ai_model: aiModel },
-    });
-    if (!error) {
+    try {
+      // 1. Write to profiles table (source of truth)
+      await updateProfile({
+        display_name: displayName,
+        timezone,
+        language_preference: language,
+      });
+      // 2. Sync ai_model to auth metadata (not stored in profiles)
+      await supabase.auth.updateUser({
+        data: { display_name: displayName, timezone, language, ai_model: aiModel },
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // error state handled by mutation
     }
-    setSaving(false);
   };
 
   if (loading) {
@@ -130,7 +143,7 @@ export default function Settings() {
           </p>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={isUpdating}
             className={cn(
               "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all",
               saved
@@ -138,12 +151,12 @@ export default function Settings() {
                 : "bg-sage-light text-sage-deep hover:bg-sage-light/80",
             )}
           >
-            {saving ? (
+            {isUpdating ? (
               <Loader2 size={14} className="animate-spin" />
             ) : saved ? (
               <CheckCircle2 size={14} />
             ) : null}
-            {saving ? "保存中..." : saved ? "已保存" : "保存"}
+            {isUpdating ? "保存中..." : saved ? "已保存" : "保存"}
           </button>
         </div>
       </section>

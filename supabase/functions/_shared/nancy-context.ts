@@ -43,6 +43,8 @@ export interface UserProfileRow {
   industry?: string;
   bio?: string;
   birth_date?: string;
+  occupation?: string;
+  interests?: string[];
   phone?: string;
   social_links?: Record<string, unknown>;
   preferences?: Record<string, unknown>;
@@ -429,11 +431,11 @@ export function buildLearningContext(
 // ── 6. Profile Readers ──
 
 /**
- * Read user profile from the `profiles` table.
+ * Read user profile from the `profiles` table (source of truth).
  *
- * NOTE: Currently zero Edge Functions read this table.
- * Settings.tsx writes to auth.users.user_metadata instead.
- * This function adds the capability to read the DB profiles table.
+ * Used by chinese-expression-agent via getUserContext() for personalization.
+ * Settings.tsx writes to profiles via useProfile hook, with auth metadata sync
+ * for backward compatibility.
  */
 export async function getUserProfile(
   supabase: SupabaseClient,
