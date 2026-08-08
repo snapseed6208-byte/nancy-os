@@ -6,6 +6,7 @@ import {
   Eye, EyeOff, Target, BarChart3, Volume2, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 import { useAudioRecorder } from "@/lib/hooks/useAudioRecorder";
 import { createChineseSpeechProvider } from "@/lib/speech/chineseSpeechService";
 import type { SpeechProvider } from "@/lib/speech/types";
@@ -408,6 +409,28 @@ export default function ChineseSpeakingSession() {
 
     // V4 AI Analysis — skill-specific diagnosis (no full speech)
     const timeLimit = session.time_limit_seconds || 60;
+
+    // Build material context when session is linked to a resource (Phase 3: Material Training)
+    let materialContext: Record<string, unknown> | undefined;
+    if (session.material_resource_id) {
+      try {
+        const { data: resource } = await supabase
+          .from("resources")
+          .select("title, raw_content, resource_type")
+          .eq("id", session.material_resource_id)
+          .single();
+        if (resource) {
+          materialContext = {
+            title: resource.title,
+            source_type: resource.resource_type,
+            raw_content_preview: (resource.raw_content || "").slice(0, 1000),
+          };
+        }
+      } catch {
+        // Non-fatal: proceed without material context
+      }
+    }
+
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
@@ -415,6 +438,7 @@ export default function ChineseSpeakingSession() {
       1,
       recorder.duration || 60,
       timeLimit,
+      materialContext,
     );
 
     if (!result.success) {
@@ -622,13 +646,35 @@ export default function ChineseSpeakingSession() {
       return;
     }
 
-    // V3 AI Analysis Round 2 — diagnosis only
+    // V3 AI Analysis Round 2 — diagnosis only (with material context if applicable)
+    let materialContextR2: Record<string, unknown> | undefined;
+    if (session.material_resource_id) {
+      try {
+        const { data: resource } = await supabase
+          .from("resources")
+          .select("title, raw_content, resource_type")
+          .eq("id", session.material_resource_id)
+          .single();
+        if (resource) {
+          materialContextR2 = {
+            title: resource.title,
+            source_type: resource.resource_type,
+            raw_content_preview: (resource.raw_content || "").slice(0, 1000),
+          };
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+
     const result = await analyzeChineseExpression(
       session.topic,
       session.topic_type as ChineseTopicType | null,
       round2EditedTranscript,
       2,
       recorder.duration || 60,
+      session.time_limit_seconds || 60,
+      materialContextR2,
     );
 
     if (!result.success) {

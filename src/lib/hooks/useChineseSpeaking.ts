@@ -218,6 +218,7 @@ export interface V4Diagnosis {
   fact_consistency: V4FactConsistency;
   delivery_feedback: V4DeliveryFeedback;
   retry_focus: string[];
+  material_understanding?: MaterialUnderstanding;
 }
 
 // ── Phase 3 Material Training types ──
@@ -245,7 +246,6 @@ export interface MaterialAnalysis {
   important_examples: string[];
   controversial_points: string[];
   expression_angles: string[];
-  possible_questions: GeneratedMaterialQuestion[];
 }
 
 // ── V4.1 Content Deepening types (Phase 1) ──
@@ -818,8 +818,9 @@ export async function analyzeChineseExpression(
   attemptRound: number,
   durationSeconds = 60,
   targetDurationSeconds = 60,
+  materialContext?: Record<string, unknown>,
 ): Promise<{ success: true; data: ChineseAnalysisResultV4 } | { success: false; error: string }> {
-  return invokeAI<ChineseAnalysisResultV4>("chinese-expression-agent", {
+  const payload: Record<string, unknown> = {
     action: "analyze_expression",
     topic,
     topic_type: topicType,
@@ -827,7 +828,11 @@ export async function analyzeChineseExpression(
     attempt_round: attemptRound,
     duration_seconds: durationSeconds,
     target_duration_seconds: targetDurationSeconds,
-  }, {
+  };
+  if (materialContext) {
+    payload.material_context = materialContext;
+  }
+  return invokeAI<ChineseAnalysisResultV4>("chinese-expression-agent", payload, {
     timeout: 180_000,
     retries: 1,
   });

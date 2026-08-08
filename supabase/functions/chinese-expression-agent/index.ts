@@ -2,11 +2,12 @@
 // Nancy OS — Chinese Expression Training Agent V4
 //
 // Architecture:
-//   analyze_expression  — single AI call: diagnosis only (NO full speech)
-//   generate_reference  — on-demand: full improved speech (user explicitly requests)
-//   compare_rounds      — evidence-based Round 1 vs Round 2 comparison
-//   generate_topics     — generate 3 candidate topics
-//   extract_material    — extract key points from source text
+//   analyze_expression    — single AI call: diagnosis + optional material_understanding
+//   generate_reference    — on-demand: full improved speech (user explicitly requests)
+//   compare_rounds        — evidence-based Round 1 vs Round 2 comparison
+//   generate_topics       — generate 3 candidate topics
+//   extract_material      — V2: expression-focused material analysis
+//   generate_material_questions — generate training questions from material
 //
 // V4 Skill architecture (skills.ts):
 //   COMMON_COACH_RULES + ONE Skill (loaded by topic_type, never all 6)
@@ -348,6 +349,7 @@ serve(async (req: Request) => {
         const attemptRound = (body.attempt_round as number) || 1;
         const durationSeconds = (body.duration_seconds as number) || 60;
         const targetDurationSeconds = (body.target_duration_seconds as number) || 60;
+        const materialContext = body.material_context as Record<string, unknown> | undefined;
 
         if (!topic || !transcript) {
           return jsonResponse(req, {
@@ -358,18 +360,19 @@ serve(async (req: Request) => {
         const deliveryMetrics = computeDeliveryMetrics(transcript, durationSeconds, targetDurationSeconds);
 
         // Build prompt via skills.ts: COMMON + ONE skill + output schema
-        const systemPrompt = buildDiagnosisSystemPrompt(topicType);
+        const systemPrompt = buildDiagnosisSystemPrompt(topicType, !!materialContext);
         const userMessage = buildDiagnosisUserMessage({
           topic,
           topicType,
           transcript,
           attemptRound,
           deliveryMetrics,
+          materialContext,
         });
 
         const promptLen = systemPrompt.length;
         const msgLen = userMessage.length;
-        console.log(`[chinese-expression-agent] ${requestId} stage=diagnosis_start topicType=${topicType} promptLen=${promptLen} msgLen=${msgLen} totalChars=${promptLen + msgLen}`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=diagnosis_start topicType=${topicType} hasMaterial=${!!materialContext} promptLen=${promptLen} msgLen=${msgLen} totalChars=${promptLen + msgLen}`);
 
         const diagnosisMessages: DeepSeekMessage[] = [
           { role: "system", content: systemPrompt },
@@ -402,14 +405,14 @@ serve(async (req: Request) => {
         }
 
         // ── Agent log ──
-        const aiPromptVersion = `chinese-v4/${topicType}@1`;
+        const aiPromptVersion = `chinese-v4/${topicType}@2`;
         if (userId) {
           try {
             await supabase.from("agent_logs").insert({
               user_id: userId,
               agent_type: "chinese_expression",
               action: "analyze_expression",
-              input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound },
+              input_data: { topic, topic_type: topicType, transcript_length: transcript.length, attempt_round: attemptRound, has_material: !!materialContext },
               output_data: {
                 overall_score: overall?.score,
                 recommended_structure: (diagnosis.recommended_structure as Record<string, unknown>)?.name,
@@ -617,10 +620,11 @@ serve(async (req: Request) => {
       }
 
       // ═══════════════════════════════════════
-      // Extract Material (unchanged)
+      // V2 Extract Material — expression-training-focused analysis
       // ═══════════════════════════════════════
       case "extract_material": {
         const sourceText = (body.source_text as string) || "";
+        const sourceType = (body.source_type as string) || "article";
 
         if (!sourceText) {
           return jsonResponse(req, {
@@ -628,35 +632,64 @@ serve(async (req: Request) => {
           }, 400);
         }
 
-        const truncatedText = sourceText.length > 6000 ? sourceText.slice(0, 6000) + "\n\n[文本已截断...]" : sourceText;
+        const truncatedText = sourceText.length > 8000 ? sourceText.slice(0, 8000) + "\n\n[文本已截断...]" : sourceText;
+
+        const sourceTypeLabel = sourceType === "video_reflection" ? "视频感悟" : sourceType === "book_note" ? "读书笔记" : "文章";
 
         const messages: DeepSeekMessage[] = [
           {
             role: "system",
-            content: `你是一位内容提炼专家。阅读用户提供的材料，提炼核心观点，并生成一个适合一分钟口头复述的任务。
+            content: `你是一名中文表达训练教练，不是摘要工具。
+
+你的任务是阅读用户提供的材料，从中提取对"口语表达训练"有价值的内容。
+
+不要做通用摘要。你提取的每一个要点，都必须能够转化为一个具体的表达练习。
+
+## 分析框架
+
+1. **核心观点**：材料最想传达的1-2个核心论点。这必须是材料作者的真实立场，不是你的理解。
+
+2. **关键要点**：支持核心观点的关键论据或信息点（3-5个）。每个要点应该是一句完整的话，可以独立用于表达训练。
+
+3. **重要案例**：材料中具体、可用于复述的案例、场景或数据。这些是表达训练中最有价值的素材。
+
+4. **争议点**：材料中可能引发不同看法的地方。这些适合用于观点表达训练，让用户形成自己的立场。
+
+5. **表达角度**：从哪些角度可以展开口语表达。例如：
+  - 你是否同意作者的观点？为什么？
+  - 你是否有类似的经历？
+  - 这个概念如何应用于你的生活或工作？
+  - 作者的观点在什么条件下成立？有没有反例？
+
+## 输入材料类型
+${sourceTypeLabel}
 
 ## 输出格式
+只输出合法JSON，不得使用Markdown代码围栏。
+
 {
-  "summary": "材料概要（2-3句话）",
+  "title": "材料标题",
+  "core_argument": "核心观点（1-2句话，准确反映材料立场）",
   "key_points": ["关键点1", "关键点2", "关键点3"],
-  "retelling_prompt": "一分钟复述题目",
-  "retelling_angle": "建议的复述角度"
+  "important_examples": ["可用于复述的案例或场景"],
+  "controversial_points": ["可讨论的争议点，若材料无明显争议点则为空数组"],
+  "expression_angles": ["表达角度1", "表达角度2", "表达角度3"]
 }`,
           },
-          { role: "user", content: truncatedText },
+          { role: "user", content: `## 材料类型：${sourceTypeLabel}\n\n## 材料内容\n\n${truncatedText}` },
         ];
 
-        console.log(`[chinese-expression-agent] ${requestId} stage=extract_material_start`);
+        console.log(`[chinese-expression-agent] ${requestId} stage=extract_material_start sourceType=${sourceType} textLen=${truncatedText.length}`);
         const result = await aiRuntime<Record<string, unknown>>(messages, {
           agentName: "chinese-expression-agent",
           maxTokens: 2048,
           temperature: 0.3,
-          timeout: 90_000,
+          timeout: 120_000,
         });
 
         if (!result.success) {
           const httpStatus = result.stage === "deepseek" ? 502 : 500;
-          console.error(`[chinese-expression-agent] ${requestId} extract_material failed`);
+          console.error(`[chinese-expression-agent] ${requestId} extract_material failed stage=${result.stage}`);
           return jsonResponse(req, {
             success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
           }, httpStatus);
@@ -664,6 +697,83 @@ serve(async (req: Request) => {
 
         const elapsedMs = Date.now() - t0;
         console.log(`[chinese-expression-agent] ${requestId} done action=extract_material elapsedMs=${elapsedMs}`);
+        return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
+      }
+
+      // ═══════════════════════════════════════
+      // Generate Material Questions — training questions from analyzed material
+      // ═══════════════════════════════════════
+      case "generate_material_questions": {
+        const materialAnalysis = body.material_analysis as Record<string, unknown> | null;
+
+        if (!materialAnalysis) {
+          return jsonResponse(req, {
+            success: false, stage: "payload", error: "缺少材料分析结果", requestId,
+          }, 400);
+        }
+
+        const messages: DeepSeekMessage[] = [
+          {
+            role: "system",
+            content: `你是一名中文表达训练教练。
+
+根据已分析的材料内容，生成3个适合一分钟口语表达的训练问题。
+
+## 问题类型
+- **opinion（观点表达）**：对材料中的观点表达自己的立场，适合训练论证和思辨能力
+- **explanation（概念解释）**：解释材料中的某个概念或原理，适合训练定义的准确性和通俗表达
+- **application（应用连接）**：将材料中的观点或概念应用到自己的生活或工作中，适合训练知识迁移能力
+
+## 要求
+- 每个问题必须与材料内容直接相关，不能脱离材料
+- 问题开放，有表达空间，不是简单的"是/否"问题
+- 3个问题应该覆盖不同类型，至少有1个opinion类型
+- 根据问题性质推荐合适的表达技能
+
+## 表达技能映射
+- 观点表达 → recommended_skill: "opinion"
+- 经历讲述 → recommended_skill: "experience"
+- 概念解释 → recommended_skill: "concept"
+- 感悟分享 → recommended_skill: "reflection"
+- 故事表达 → recommended_skill: "story"
+
+## 输出格式
+只输出合法JSON，不得使用Markdown代码围栏。
+
+{
+  "questions": [
+    {
+      "question": "问题文本（一句话，不超过40字）",
+      "question_type": "opinion|explanation|application",
+      "recommended_skill": "opinion|experience|concept|reflection|story"
+    }
+  ]
+}`,
+          },
+          {
+            role: "user",
+            content: `## 材料分析结果\n\n${JSON.stringify(materialAnalysis, null, 2)}\n\n请基于以上材料分析，生成3个表达训练问题。`,
+          },
+        ];
+
+        console.log(`[chinese-expression-agent] ${requestId} stage=generate_material_questions_start`);
+        const result = await aiRuntime<{ questions: Array<{ question: string; question_type: string; recommended_skill: string }> }>(messages, {
+          agentName: "chinese-expression-agent",
+          maxTokens: 2048,
+          temperature: 0.7,
+          timeout: 90_000,
+        });
+
+        if (!result.success) {
+          const httpStatus = result.stage === "deepseek" ? 502 : 500;
+          console.error(`[chinese-expression-agent] ${requestId} generate_material_questions failed stage=${result.stage}`);
+          return jsonResponse(req, {
+            success: false, stage: result.stage, error: result.error, detail: result.detail, requestId,
+          }, httpStatus);
+        }
+
+        const elapsedMs = Date.now() - t0;
+        console.log(`[chinese-expression-agent] ${requestId} done action=generate_material_questions elapsedMs=${elapsedMs}`);
         return jsonResponse(req, { success: true, data: result.data, requestId, elapsedMs });
       }
 

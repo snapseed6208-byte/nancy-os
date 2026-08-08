@@ -174,6 +174,21 @@ export default function ChineseSpeaking() {
         );
       })()}
 
+      {/* Material Training entry */}
+      <button
+        onClick={() => navigate("/chinese/material/new")}
+        className="w-full bg-card rounded-2xl border-2 border-dashed border-purple-300/60 p-4 flex items-center gap-3 hover:border-purple-400/80 hover:bg-purple-50/30 transition-all group"
+      >
+        <div className="h-10 w-10 rounded-xl bg-purple-100 flex items-center justify-center shrink-0 group-hover:bg-purple-200 transition-colors">
+          <BookOpen size={18} className="text-purple-600" />
+        </div>
+        <div className="text-left flex-1">
+          <p className="text-sm font-semibold text-ink">材料训练</p>
+          <p className="text-[11px] text-ink-lighter leading-tight">输入文章/笔记/感悟，AI帮你理解材料并生成表达训练</p>
+        </div>
+        <ChevronRight size={16} className="text-ink-lighter shrink-0" />
+      </button>
+
       {/* Time selector */}
       <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
         <div className="flex items-center gap-2">

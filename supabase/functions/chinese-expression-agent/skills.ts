@@ -881,8 +881,40 @@ ${rules.shallow_patterns.map((p) => `- ${p}`).join("\n")}
 4. 不要用通用模板套用所有题型——每个题型的深度标准不同`;
 }
 
-export function buildDiagnosisSystemPrompt(topicType: string): string {
-  return COMMON_COACH_RULES + "\n" + getChineseSpeakingSkill(topicType) + "\n" + buildContentDeepeningPrompt(topicType) + "\n" + getOutputSchema(topicType);
+export function buildDiagnosisSystemPrompt(topicType: string, hasMaterial = false): string {
+  const base = COMMON_COACH_RULES + "\n" + getChineseSpeakingSkill(topicType) + "\n" + buildContentDeepeningPrompt(topicType) + "\n" + getOutputSchema(topicType);
+  if (!hasMaterial) return base;
+
+  return base + "\n" + `
+━━━━━━━━━━━━━━━━━━━━
+十四、材料理解评估（本请求包含材料上下文）
+━━━━━━━━━━━━━━━━━━━━
+
+本次表达基于用户提供的材料。除了常规表达诊断，还必须评估用户对材料的理解质量。
+
+在输出 JSON 中增加 material_understanding 字段：
+
+"material_understanding": {
+  "accuracy_score": 0-100,
+  "core_understanding": "用户是否准确抓住了材料的核心观点？是否混淆了作者观点与自己的观点？",
+  "understood_correctly": ["用户理解正确的具体点——引用材料原文+用户的正确表述"],
+  "misunderstanding": "用户是否有理解偏差？是否忽略了重要限定条件？如果没有明显误解则为空字符串",
+  "missing_material_points": ["材料中的重要观点或信息，用户在表达中完全遗漏的"],
+  "personal_connection": "用户是否将材料内容与个人经验或已有知识建立了连接？连接的质量如何？",
+  "transfer_quality": "用户将材料信息转化为个人表达的质量：是机械复述还是真正内化后用自己的话表达？"
+}
+
+## 材料理解评估原则
+
+1. 区分"忠实复述"和"真正理解"：用户可能逐字复述材料但不理解其含义。
+2. 区分"作者观点"和"用户观点"：用户是否清楚地区分了这两者。
+3. 连接质量 > 连接数量：一个深刻的个人连接比三个表面的提及更有价值。
+4. 遗漏不等于不理解：用户可能因为时间限制选择性地省略了某些内容。
+5. accuracy_score 评分指南：
+  - 90-100：准确理解核心观点，能用自己的话重新表达，有个人连接
+  - 70-89：基本理解核心观点，有一些细节偏差或缺少个人加工
+  - 50-69：部分理解，有重要的遗漏或偏差
+  - <50：严重误解材料核心观点，或基本没有理解`;
 }
 
 export function buildDiagnosisUserMessage(params: {
@@ -891,31 +923,51 @@ export function buildDiagnosisUserMessage(params: {
   transcript: string;
   attemptRound: number;
   deliveryMetrics: Record<string, unknown>;
+  materialContext?: Record<string, unknown>;
 }): string {
   const dm = params.deliveryMetrics;
   const fillerBreakdown = dm.filler_breakdown
     ? (dm.filler_breakdown as Record<string, number>)
     : {};
 
-  return [
+  const lines = [
     `## 题目`,
     `题目：${params.topic}`,
     `类型：${params.topicType}`,
     `轮次：第${params.attemptRound}轮`,
-    ``,
-    `## 用户转录`,
-    params.transcript,
-    ``,
-    `## 口语指标（程序实测，AI不得重新计算）`,
-    `- 实际录音时长：${dm.duration_seconds ?? "?"}秒`,
-    `- 目标时长：${dm.target_duration_seconds ?? "?"}秒`,
-    `- 超时：${dm.overtime_seconds ?? 0}秒`,
-    `- 转录字符数（去标点）：${dm.transcript_chars ?? "?"}字`,
-    `- 语速：${dm.chars_per_minute ?? "?"}字/分钟`,
-    `- 口头禅总次数：${dm.filler_total ?? 0}`,
-    `- 口头禅明细：${Object.keys(fillerBreakdown).length > 0 ? JSON.stringify(fillerBreakdown) : "无"}`,
-    `- 停顿数据：暂未测量（不纳入分析）`,
-  ].join("\n");
+  ];
+
+  // Include material context when available (Phase 3: Material Training)
+  if (params.materialContext) {
+    const mc = params.materialContext;
+    lines.push(``);
+    lines.push(`## 材料上下文（本次表达基于以下材料）`);
+    if (mc.title) lines.push(`材料标题：${mc.title}`);
+    if (mc.core_argument) lines.push(`核心观点：${mc.core_argument}`);
+    if (mc.key_points && Array.isArray(mc.key_points) && mc.key_points.length > 0) {
+      lines.push(`关键要点：`);
+      (mc.key_points as string[]).forEach((p: string) => lines.push(`  - ${p}`));
+    }
+    if (mc.source_type) lines.push(`材料类型：${mc.source_type}`);
+    lines.push(``);
+    lines.push(`注意：评估时需要额外输出 material_understanding 字段，评估用户对上述材料的理解质量。`);
+  }
+
+  lines.push(``);
+  lines.push(`## 用户转录`);
+  lines.push(params.transcript);
+  lines.push(``);
+  lines.push(`## 口语指标（程序实测，AI不得重新计算）`);
+  lines.push(`- 实际录音时长：${dm.duration_seconds ?? "?"}秒`);
+  lines.push(`- 目标时长：${dm.target_duration_seconds ?? "?"}秒`);
+  lines.push(`- 超时：${dm.overtime_seconds ?? 0}秒`);
+  lines.push(`- 转录字符数（去标点）：${dm.transcript_chars ?? "?"}字`);
+  lines.push(`- 语速：${dm.chars_per_minute ?? "?"}字/分钟`);
+  lines.push(`- 口头禅总次数：${dm.filler_total ?? 0}`);
+  lines.push(`- 口头禅明细：${Object.keys(fillerBreakdown).length > 0 ? JSON.stringify(fillerBreakdown) : "无"}`);
+  lines.push(`- 停顿数据：暂未测量（不纳入分析）`);
+
+  return lines.join("\n");
 }
 
 // ═══════════════════════════════════════════
