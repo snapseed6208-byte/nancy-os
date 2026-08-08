@@ -4,6 +4,8 @@ import {
   Target, Lightbulb, RotateCcw, CheckCircle2, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 import {
   useChineseSpeakingSession,
   TOPIC_TYPE_LABELS,
@@ -11,6 +13,7 @@ import {
   isV4Diagnosis,
   hasContentDeepening,
   normalizeKeyUpgrade,
+  ASSET_TYPE_LABELS,
   type ChineseTopicType,
   type ChineseFramework,
   type ChineseSpeakingAttempt,
@@ -19,6 +22,7 @@ import {
   type DeliveryMetrics,
   type ContentDeepening,
   type ContentDeepeningMissingElement,
+  type ExpressionAsset,
 } from "@/lib/hooks/useChineseSpeaking";
 
 // ── Shared dimension bar ──
@@ -490,6 +494,62 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
   );
 }
 
+// ── Phase 4: Session Assets Section ──
+
+function SessionAssetsSection({ sessionId }: { sessionId: string }) {
+  const { data: assets } = useQuery({
+    queryKey: ["expression_assets", "session", sessionId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("expression_assets")
+        .select("*")
+        .eq("source_session_id", sessionId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []) as ExpressionAsset[];
+    },
+    staleTime: 60_000,
+  });
+
+  if (!assets?.length) return null;
+
+  return (
+    <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        <Sparkles size={16} className="text-amber-500" />
+        <p className="text-sm font-medium text-ink">已保存的表达资产</p>
+        <span className="text-[10px] text-ink-lighter/70">({assets.length})</span>
+      </div>
+      {assets.map((asset) => (
+        <div key={asset.id} className="flex items-start gap-2 py-1.5">
+          <span className={cn(
+            "text-[10px] font-medium rounded-full px-1.5 py-0.5 shrink-0 mt-0.5",
+            asset.asset_type === "personal_story" ? "bg-purple-100 text-purple-700" :
+            asset.asset_type === "experience_case" ? "bg-blue-100 text-blue-700" :
+            asset.asset_type === "viewpoint" ? "bg-amber-100 text-amber-700" :
+            asset.asset_type === "quality_expression" ? "bg-emerald-100 text-emerald-700" :
+            "bg-ink/10 text-ink",
+          )}>
+            {ASSET_TYPE_LABELS[asset.asset_type]}
+          </span>
+          <div>
+            <p className="text-xs font-medium text-ink">{asset.title}</p>
+            <p className="text-[10px] text-ink-lighter/70 line-clamp-1">&ldquo;{asset.evidence_quote}&rdquo;</p>
+            {asset.tags.length > 0 && (
+              <div className="flex flex-wrap gap-0.5 mt-0.5">
+                {asset.tags.map((tag: string) => (
+                  <span key={tag} className="text-[9px] bg-ink/5 text-ink-lighter rounded-full px-1.5 py-0.5">{tag}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ChineseSpeakingDetail() {
   const [, params] = useRoute("/chinese/detail/:id");
   const [, navigate] = useLocation();
@@ -670,6 +730,9 @@ export default function ChineseSpeakingDetail() {
           </div>
         );
       })()}
+
+      {/* Phase 4: Saved assets from this session */}
+      <SessionAssetsSection sessionId={sessionId} />
 
       {/* Re-practice CTA */}
       <button

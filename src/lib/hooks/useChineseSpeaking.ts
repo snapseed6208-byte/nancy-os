@@ -256,6 +256,8 @@ export interface V4Diagnosis {
   material_understanding_v2?: MaterialUnderstandingV2;
   knowledge_transfer?: KnowledgeTransfer;
   knowledge_expression_gap?: KnowledgeExpressionGap;
+  /** Phase 4: AI-suggested expression asset candidates */
+  expression_asset_candidates?: ExpressionAssetCandidate[];
 }
 
 // ── Phase 3.1 Material Card types ──
@@ -319,6 +321,102 @@ export interface KnowledgeExpressionGap {
   gap_type: "understanding_gap" | "expression_gap" | "transfer_gap" | "none";
   analysis: string;
   next_action: string;
+}
+
+// ═══════════════════════════════════════════
+// Phase 4: Expression Asset Library
+// ═══════════════════════════════════════════
+
+export type AssetType =
+  | "personal_story"
+  | "experience_case"
+  | "viewpoint"
+  | "quality_expression"
+  | "quote";
+
+export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+  personal_story: "个人故事",
+  experience_case: "经历案例",
+  viewpoint: "个人观点",
+  quality_expression: "优质表达",
+  quote: "金句洞察",
+};
+
+export interface PersonalStoryData {
+  background: string;
+  challenge: string;
+  action: string;
+  result: string;
+  reflection: string;
+}
+
+export interface ExperienceCaseData {
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  learning: string;
+}
+
+export interface ViewpointData {
+  topic: string;
+  my_position: string;
+  reasoning: string;
+  example: string;
+  boundary: string;
+  counter_argument: string;
+}
+
+export interface QualityExpressionData {
+  original_question: string;
+  my_original_answer: string;
+  optimized_answer: string;
+  why_good: string;
+  skill_tags: string[];
+}
+
+export interface QuoteData {
+  quote: string;
+  source_context: string;
+  my_understanding: string;
+  application_scene: string;
+}
+
+export type AssetData =
+  | PersonalStoryData
+  | ExperienceCaseData
+  | ViewpointData
+  | QualityExpressionData
+  | QuoteData;
+
+/** AI-generated candidate — written to attempts.asset_candidates */
+export interface ExpressionAssetCandidate {
+  type: AssetType;
+  title: string;
+  asset_data: AssetData;
+  tags: string[];
+  confidence: "high" | "medium";
+  evidence_quote: string;
+  extracted_from_transcript: string;
+}
+
+/** Persisted asset row from expression_assets table */
+export interface ExpressionAsset {
+  id: string;
+  user_id: string;
+  asset_type: AssetType;
+  title: string;
+  asset_data: AssetData;
+  source_attempt_id: string | null;
+  source_session_id: string | null;
+  extracted_from_transcript: string;
+  evidence_quote: string;
+  confidence: "high" | "medium";
+  fact_status: "user_confirmed" | "user_edited" | "ai_suggested";
+  tags: string[];
+  status: "active" | "archived" | "deleted";
+  created_at: string;
+  updated_at: string;
 }
 
 export interface KeyArgument {
@@ -1065,4 +1163,104 @@ export async function saveMaterialCard(resourceId: string, materialCard: Materia
     .update({ ai_analysis: { material_card: materialCard } })
     .eq("id", resourceId);
   if (error) throw error;
+}
+
+// ═══════════════════════════════════════════
+// Phase 4: Expression Asset hooks
+// ═══════════════════════════════════════════
+
+/** Fetch all active expression assets for the current user */
+export function useExpressionAssets(assetType?: AssetType) {
+  return useQuery({
+    queryKey: ["expression_assets", assetType],
+    queryFn: async (): Promise<ExpressionAsset[]> => {
+      const userId = await getUserId();
+      let query = supabase
+        .from("expression_assets")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+      if (assetType) query = query.eq("asset_type", assetType);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []) as ExpressionAsset[];
+    },
+    staleTime: 30_000,
+  });
+}
+
+/** Save a user-confirmed asset to expression_assets */
+export function useSaveExpressionAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (candidate: ExpressionAssetCandidate & {
+      source_attempt_id: string;
+      source_session_id: string;
+    }): Promise<ExpressionAsset> => {
+      const userId = await getUserId();
+      const { data, error } = await supabase
+        .from("expression_assets")
+        .insert({
+          user_id: userId,
+          asset_type: candidate.type,
+          title: candidate.title,
+          asset_data: candidate.asset_data,
+          source_attempt_id: candidate.source_attempt_id,
+          source_session_id: candidate.source_session_id,
+          extracted_from_transcript: candidate.extracted_from_transcript,
+          evidence_quote: candidate.evidence_quote,
+          confidence: candidate.confidence,
+          fact_status: "user_confirmed",
+          tags: candidate.tags,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as ExpressionAsset;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expression_assets"] });
+    },
+  });
+}
+
+/** Soft-delete an asset (set status = 'deleted') */
+export function useDeleteExpressionAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (assetId: string): Promise<void> => {
+      const { error } = await supabase
+        .from("expression_assets")
+        .update({ status: "deleted" })
+        .eq("id", assetId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expression_assets"] });
+    },
+  });
+}
+
+/** Update an existing asset (e.g., user edits title or tags) */
+export function useUpdateExpressionAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, updates }: {
+      id: string;
+      updates: Partial<Pick<ExpressionAsset, "title" | "tags" | "asset_data" | "status">>;
+    }): Promise<void> => {
+      const { error } = await supabase
+        .from("expression_assets")
+        .update({ ...updates, fact_status: "user_edited" })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["expression_assets"] });
+    },
+  });
 }

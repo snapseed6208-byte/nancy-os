@@ -23,6 +23,8 @@ import {
   FRAMEWORK_LABELS,
   IMPROVEMENT_QUALITY_LABELS,
   normalizeKeyUpgrade,
+  useSaveExpressionAsset,
+  ASSET_TYPE_LABELS,
   type ChineseTopicType,
   type V4Diagnosis,
   type V4Reference,
@@ -38,6 +40,7 @@ import {
   type KnowledgeTransfer,
   type KnowledgeTransferStage,
   type KnowledgeExpressionGap,
+  type ExpressionAssetCandidate,
 } from "@/lib/hooks/useChineseSpeaking";
 import { useUpdateExpressionProfile, type ProfileSignalInput } from "@/lib/hooks/useExpressionProfile";
 
@@ -215,6 +218,7 @@ export default function ChineseSpeakingSession() {
   const updateAttempt = useUpdateChineseSpeakingAttempt();
   const markReferenceViewed = useMarkReferenceViewed();
   const updateProfile = useUpdateExpressionProfile();
+  const saveAsset = useSaveExpressionAsset();
 
   const recorder = useAudioRecorder();
 
@@ -260,6 +264,11 @@ export default function ChineseSpeakingSession() {
 
   const [analyzing, setAnalyzing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Phase 4: Asset candidates
+  const [assetCandidates, setAssetCandidates] = useState<ExpressionAssetCandidate[]>([]);
+  const [confirmedAssets, setConfirmedAssets] = useState<Set<number>>(new Set());
+  const [rejectedAssets, setRejectedAssets] = useState<Set<number>>(new Set());
 
   // ASR provider ref
   const asrRef = useRef<SpeechProvider | null>(null);
@@ -457,6 +466,12 @@ export default function ChineseSpeakingSession() {
     setRound1Diagnosis(d.diagnosis);
     setRound1DeliveryMetrics(d.delivery_metrics);
 
+    // Extract Phase 4 asset candidates
+    const candidates = (d.diagnosis.expression_asset_candidates || []) as ExpressionAssetCandidate[];
+    setAssetCandidates(candidates);
+    setConfirmedAssets(new Set());
+    setRejectedAssets(new Set());
+
     // Update attempt with V4 diagnosis (no reference data yet — saved on-demand via generate_reference)
     await updateAttempt.mutateAsync({
       id: attemptId,
@@ -467,6 +482,7 @@ export default function ChineseSpeakingSession() {
         answer_outline: d.diagnosis.answer_outline as unknown as Record<string, unknown>[],
         delivery_metrics: d.delivery_metrics,
         ai_prompt_version: `chinese-v4/${session.topic_type || "opinion"}@1`,
+        asset_candidates: candidates.length > 0 ? candidates as unknown as Record<string, unknown>[] : undefined,
       },
     });
 
@@ -1629,6 +1645,112 @@ export default function ChineseSpeakingSession() {
                   : <><CheckCircle2 size={12} /> {round1Diagnosis.fact_consistency.message || "事实一致性保护 — AI未新增关键事实"}</>
                 }
               </span>
+            </div>
+          )}
+
+          {/* Phase 4: Expression Asset Candidates */}
+          {assetCandidates.length > 0 && (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-amber-500" />
+                <p className="text-sm font-medium text-ink">发现 {assetCandidates.length} 个可沉淀的表达资产</p>
+              </div>
+              <p className="text-[11px] text-ink-lighter">
+                AI 从本次表达中识别出以下可保存的个人资产。确认后存入你的长期表达库。
+              </p>
+
+              {assetCandidates.map((candidate, i) => {
+                const confirmed = confirmedAssets.has(i);
+                const rejected = rejectedAssets.has(i);
+                return (
+                  <div key={i} className={cn(
+                    "rounded-xl border p-3 space-y-2 transition-opacity",
+                    rejected ? "opacity-40 border-border bg-ink/5" :
+                    confirmed ? "border-emerald-200 bg-emerald-50/50" :
+                    "border-amber-200 bg-amber-50/30",
+                  )}>
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "text-[10px] font-medium rounded-full px-2 py-0.5",
+                        candidate.type === "personal_story" ? "bg-purple-100 text-purple-700" :
+                        candidate.type === "experience_case" ? "bg-blue-100 text-blue-700" :
+                        candidate.type === "viewpoint" ? "bg-amber-100 text-amber-700" :
+                        candidate.type === "quality_expression" ? "bg-emerald-100 text-emerald-700" :
+                        "bg-ink/10 text-ink",
+                      )}>
+                        {ASSET_TYPE_LABELS[candidate.type]}
+                      </span>
+                      <span className={cn(
+                        "text-[10px] font-medium rounded-full px-1.5 py-0.5",
+                        candidate.confidence === "high" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-600",
+                      )}>
+                        {candidate.confidence === "high" ? "高可信" : "中等可信"}
+                      </span>
+                    </div>
+
+                    <p className="text-sm font-medium text-ink">{candidate.title}</p>
+
+                    {/* Evidence quote */}
+                    <div className="bg-white/60 rounded-lg p-2">
+                      <p className="text-[10px] text-ink-lighter/70 mb-0.5">证据引用：</p>
+                      <p className="text-[11px] text-ink-lighter italic">&ldquo;{candidate.evidence_quote}&rdquo;</p>
+                    </div>
+
+                    {/* Tags */}
+                    {candidate.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {candidate.tags.map((tag) => (
+                          <span key={tag} className="text-[10px] bg-ink/5 text-ink-light rounded-full px-2 py-0.5">{tag}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    {!confirmed && !rejected && (
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={async () => {
+                            try {
+                              await saveAsset.mutateAsync({
+                                type: candidate.type,
+                                title: candidate.title,
+                                asset_data: candidate.asset_data,
+                                tags: candidate.tags,
+                                confidence: candidate.confidence,
+                                evidence_quote: candidate.evidence_quote,
+                                extracted_from_transcript: candidate.extracted_from_transcript,
+                                source_attempt_id: round1AttemptId!,
+                                source_session_id: sessionId,
+                              });
+                              setConfirmedAssets((prev) => new Set(prev).add(i));
+                            } catch {
+                              setAiError("保存资产失败，请重试");
+                            }
+                          }}
+                          disabled={saveAsset.isPending}
+                          className="flex-1 bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-medium flex items-center justify-center gap-1"
+                        >
+                          <CheckCircle2 size={12} />
+                          确认保存
+                        </button>
+                        <button
+                          onClick={() => setRejectedAssets((prev) => new Set(prev).add(i))}
+                          className="flex-1 border border-border rounded-lg py-1.5 text-xs text-ink-light"
+                        >
+                          拒绝
+                        </button>
+                      </div>
+                    )}
+
+                    {confirmed && (
+                      <p className="text-[11px] text-emerald-600 font-medium">已保存到表达资产库</p>
+                    )}
+                    {rejected && (
+                      <p className="text-[11px] text-ink-lighter">已拒绝</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

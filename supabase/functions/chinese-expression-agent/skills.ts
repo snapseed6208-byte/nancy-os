@@ -844,7 +844,21 @@ ${deepeningDimsJson}
         "question": "一个引导用户自己补充内容的具体问题。问题要能直接引出缺失的内容类型。"
       }
     ]
-  }
+  },
+
+  "expression_asset_candidates": [
+    {
+      "type": "personal_story|experience_case|viewpoint|quality_expression|quote",
+      "title": "AI建议的资产标题（用户可修改）",
+      "asset_data": {
+        "_comment": "根据type填写对应字段，缺失字段设为空字符串"
+      },
+      "tags": ["中文标签1", "中文标签2"],
+      "confidence": "high|medium",
+      "evidence_quote": "用户transcript中的原句，逐字引用",
+      "extracted_from_transcript": "包含证据的完整段落，必须能在transcript中找到原文"
+    }
+  ]
 }`;
 }
 
@@ -882,8 +896,45 @@ ${rules.shallow_patterns.map((p) => `- ${p}`).join("\n")}
 4. 不要用通用模板套用所有题型——每个题型的深度标准不同`;
 }
 
+// ── Phase 4: Expression Asset Extraction Rules ──
+
+const ASSET_EXTRACTION_RULES = `
+
+━━━━━━━━━━━━━━━━━━━━
+十五、表达资产抽取（Expression Asset Extraction）
+━━━━━━━━━━━━━━━━━━━━
+
+当用户的 transcript 中包含以下内容时，识别并生成 expression_asset_candidates：
+
+可识别的资产类型：
+1. personal_story — 用户讲述的个人经历（有时间、地点、人物、事件）
+2. experience_case — 可用于面试 STAR 回答的具体案例（有 situation/task/action/result）
+3. viewpoint — 用户对话题的明确立场和推理过程
+4. quality_expression — 结构优秀、论证完整的表达段落
+5. quote — 用户自己总结的金句或深刻洞察
+
+关键要求：
+- 每个候选必须逐字引用 transcript 中的原句作为 evidence_quote
+- extracted_from_transcript 必须能在 transcript 中找到对应原文
+- 禁止编造用户没有说过的经历或观点
+- 禁止修改用户的事实陈述
+- confidence: 信息完整、有具体细节 → "high"；信息模糊、缺少关键要素 → "medium"
+- 如果 transcript 中没有值得提取的资产，返回空数组 []
+- 最多返回 3 个候选，按 confidence 降序排列
+
+资产数据填充规则：
+- personal_story: background(故事背景), challenge(挑战), action(行动), result(结果), reflection(反思)
+- experience_case: situation, task, action, result, learning(可迁移经验)
+- viewpoint: topic(话题), my_position(我的立场), reasoning(推理), example(支撑案例), boundary(边界条件), counter_argument(反面观点)
+- quality_expression: original_question(原题), my_original_answer(原始回答), optimized_answer(优化回答), why_good(为什么好), skill_tags(技能标签)
+- quote: quote(金句原文), source_context(出处上下文), my_understanding(我的理解), application_scene(适用场景)
+
+注意：资产数据中缺失的字段（用户 transcript 中没有提到的）设置为空字符串 ""，不要编造填充。
+
+tags 应该是 2-4 个中文标签，描述资产的主题和能力维度。例如：["面试", "抗压能力", "海外业务", "AI项目"]`;
+
 export function buildDiagnosisSystemPrompt(topicType: string, hasMaterial = false): string {
-  const base = COMMON_COACH_RULES + "\n" + getChineseSpeakingSkill(topicType) + "\n" + buildContentDeepeningPrompt(topicType) + "\n" + getOutputSchema(topicType);
+  const base = COMMON_COACH_RULES + "\n" + getChineseSpeakingSkill(topicType) + "\n" + buildContentDeepeningPrompt(topicType) + "\n" + getOutputSchema(topicType) + "\n" + ASSET_EXTRACTION_RULES;
   if (!hasMaterial) return base;
 
   return base + "\n" + `
