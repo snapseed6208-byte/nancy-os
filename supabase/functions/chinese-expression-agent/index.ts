@@ -22,6 +22,9 @@ import {
   authenticateRequest,
   getUserContext,
   getExpressionAssetSummary,
+  getExpressionAssets,
+  matchExpressionAssets,
+  trackAssetUsage,
   buildExpressionPersonalizationContext,
 } from "../_shared/nancy-context.ts";
 import {
@@ -391,6 +394,33 @@ serve(async (req: Request) => {
           }
         }
 
+        // ── Match expression assets (non-fatal) ──
+        let recommendedAssets: Array<Record<string, unknown>> = [];
+        if (userId) {
+          try {
+            const assets = await getExpressionAssets(supabase, userId, { limit: 20 });
+            const matches = matchExpressionAssets(assets, {
+              topic,
+              scenario: topicType,
+            });
+            recommendedAssets = matches.map((m) => ({
+              asset_id: m.asset_id,
+              title: m.title,
+              asset_type: m.asset_type,
+              match_score: m.match_score,
+              why_use: m.reason,
+              how_to_apply: m.usage_suggestion,
+            }));
+            if (recommendedAssets.length > 0) {
+              console.log(`[chinese-expression-agent] ${requestId} matched ${recommendedAssets.length} assets for topic="${topic.slice(0, 30)}"`);
+              trackAssetUsage(supabase, userId, "chinese_expression", matches);
+            }
+            }
+          } catch (assetErr) {
+            console.error(`[chinese-expression-agent] ${requestId} asset matching error (non-fatal):`, (assetErr as Error).message);
+          }
+        }
+
         // Build prompt via skills.ts: COMMON + ONE skill + output schema
         const systemPrompt = buildDiagnosisSystemPrompt(topicType, !!materialContext);
         const userMessage = buildDiagnosisUserMessage({
@@ -466,7 +496,11 @@ serve(async (req: Request) => {
 
         return jsonResponse(req, {
           success: true,
-          data: { diagnosis, delivery_metrics: deliveryMetrics },
+          data: {
+            diagnosis,
+            delivery_metrics: deliveryMetrics,
+            recommended_assets: recommendedAssets.length > 0 ? recommendedAssets : undefined,
+          },
           requestId,
           elapsedMs,
         });

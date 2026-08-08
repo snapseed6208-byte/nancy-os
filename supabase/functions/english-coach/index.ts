@@ -8,7 +8,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
-import { authenticateRequest, getConfirmedMemories } from "../_shared/nancy-context.ts";
+import { authenticateRequest, getConfirmedMemories, getExpressionAssets, matchExpressionAssets, trackAssetUsage } from "../_shared/nancy-context.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -161,6 +161,41 @@ serve(async (req: Request) => {
       { totalSessions, avgDuration, recentScenarios },
     );
 
+    // ── Personal story context (non-fatal) ──
+    // Detect if conversation involves interview / storytelling / self-intro
+    // where the user's real expression assets provide better context than AI fiction.
+    const lastUserMsg = messages.filter((m) => m.role === "user").pop()?.content || "";
+    const isStoryScenario = /interview|challenge|tell me about|experience|自我介绍|经历|面试|speak about|describe a time/i.test(lastUserMsg)
+      || recentScenarios.some((s) => /interview|business|storytelling/i.test(s));
+
+    let personalStoryContext = "";
+    if (isStoryScenario) {
+      try {
+        const assets = await getExpressionAssets(supabase, userId, {
+          limit: 15,
+          types: ["personal_story", "experience_case"],
+        });
+        const matches = matchExpressionAssets(assets, {
+          question: lastUserMsg.slice(0, 200),
+          scenario: recentScenarios[0] || "",
+        });
+
+        if (matches.length > 0) {
+          const lines = ["\n## 用户真实经历（禁止编造，优先使用以下真实经历）"];
+          for (const m of matches.slice(0, 3)) {
+            lines.push(`- **${m.title}**：${m.usage_suggestion}（匹配: ${m.match_score}%）`);
+          }
+          lines.push("→ 在给出示例回答时，优先基于以上真实经历构建。不要编造用户没有的经历。");
+          personalStoryContext = lines.join("\n");
+          trackAssetUsage(supabase, userId, "english_coach", matches);
+        } else {
+          personalStoryContext = "\n## 注意：用户尚未保存相关真实经历。请基于通用场景给出建议，同时鼓励用户分享自己的真实经历以获得更个性化的指导。不要编造用户的个人经历。";
+        }
+      } catch (assetErr) {
+        console.error("[english-coach] asset context error (non-fatal):", (assetErr as Error).message);
+      }
+    }
+
     // ── Build messages with context injection ──
     const finalMessages = [...messages];
     if (learningContext) {
@@ -173,6 +208,11 @@ serve(async (req: Request) => {
       } else {
         finalMessages.unshift({ role: "system", content: learningContext });
       }
+    }
+
+    // Inject personal story context as a high-priority system message
+    if (personalStoryContext) {
+      finalMessages.unshift({ role: "system", content: personalStoryContext });
     }
 
     // ── AI Runtime: chat agent (raw text, no JSON parse) ──
@@ -211,6 +251,7 @@ serve(async (req: Request) => {
       model: model,
       tokensUsed: aiResult.usage?.totalTokens,
       context_injected: true,
+      personal_story_injected: !!personalStoryContext,
       context_sources: learningContext ? {
         memories_count: (confirmedMemories || []).length,
         reviews_count: totalReviewed,

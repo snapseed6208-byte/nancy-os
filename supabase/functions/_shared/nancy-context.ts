@@ -585,7 +585,334 @@ export async function getExpressionAssetSummary(
   };
 }
 
+// ── 8b. Expression Asset Retrieval Engine ──
+
+export interface ExpressionAssetCompact {
+  id: string;
+  title: string;
+  asset_type: string;
+  tags: string[];
+  summary: string;
+  key_skills: string[];
+  scenarios: string[];
+  usable_for: string[];
+  quality_score: { completeness: number; authenticity: number; reusability: number };
+}
+
+export interface ExpressionAssetCollection {
+  stories: ExpressionAssetCompact[];
+  cases: ExpressionAssetCompact[];
+  viewpoints: ExpressionAssetCompact[];
+  expressions: ExpressionAssetCompact[];
+  total: number;
+}
+
+export interface MatchedAsset {
+  asset_id: string;
+  title: string;
+  asset_type: string;
+  match_score: number;
+  reason: string;
+  usage_suggestion: string;
+}
+
+interface AssetDataRaw {
+  background?: string;
+  challenge?: string;
+  action?: string;
+  result?: string;
+  reflection?: string;
+  situation?: string;
+  task?: string;
+  learning?: string;
+  topic?: string;
+  my_position?: string;
+  reasoning?: string;
+  example?: string;
+  boundary?: string;
+  counter_argument?: string;
+  original_question?: string;
+  my_original_answer?: string;
+  optimized_answer?: string;
+  why_good?: string;
+  skill_tags?: string[];
+  quote?: string;
+  source_context?: string;
+  my_understanding?: string;
+  application_scene?: string;
+}
+
+function extractAssetCompact(row: Record<string, unknown>): ExpressionAssetCompact {
+  const assetType = (row.asset_type as string) || "";
+  const title = (row.title as string) || "";
+  const tags = (row.tags as string[]) || [];
+  const ad = (row.asset_data || {}) as AssetDataRaw;
+  const qs = (row.quality_score || { completeness: 0, authenticity: 0, reusability: 0 }) as {
+    completeness: number; authenticity: number; reusability: number;
+  };
+
+  let summary = "";
+  const scenarios: string[] = [];
+  const keySkills: string[] = [...tags];
+
+  switch (assetType) {
+    case "personal_story": {
+      summary = [ad.background, ad.challenge, ad.action, ad.reflection]
+        .filter(Boolean).join(" → ").slice(0, 200);
+      if (ad.background) scenarios.push(ad.background.slice(0, 60));
+      if (ad.challenge) scenarios.push(ad.challenge.slice(0, 60));
+      break;
+    }
+    case "experience_case": {
+      summary = [ad.situation, ad.task, ad.learning].filter(Boolean).join(" | ").slice(0, 200);
+      if (ad.situation) scenarios.push(ad.situation.slice(0, 60));
+      if (ad.task) scenarios.push(ad.task.slice(0, 60));
+      break;
+    }
+    case "viewpoint": {
+      summary = `关于"${ad.topic || ""}"：${ad.my_position || ""}`.slice(0, 200);
+      if (ad.topic) scenarios.push(ad.topic.slice(0, 60));
+      if (ad.boundary) scenarios.push(`适用边界：${ad.boundary.slice(0, 60)}`);
+      break;
+    }
+    case "quality_expression": {
+      summary = (ad.optimized_answer || ad.my_original_answer || "").slice(0, 200);
+      if (ad.original_question) scenarios.push(`问题：${ad.original_question.slice(0, 60)}`);
+      if (ad.skill_tags) keySkills.push(...ad.skill_tags);
+      break;
+    }
+    case "quote": {
+      summary = `"${(ad.quote || "").slice(0, 120)}" — ${ad.my_understanding || ""}`.slice(0, 200);
+      if (ad.application_scene) scenarios.push(ad.application_scene.slice(0, 60));
+      if (ad.source_context) scenarios.push(ad.source_context.slice(0, 60));
+      break;
+    }
+  }
+
+  // Deduplicate skills
+  const uniqueSkills = [...new Set(keySkills.map((s) => s.trim()).filter(Boolean))];
+
+  // Synthesize usable_for prompts from type + scenarios + skills
+  const usableFor: string[] = [];
+  for (const s of scenarios.slice(0, 2)) {
+    if (assetType === "personal_story" || assetType === "experience_case") {
+      usableFor.push(`分享关于"${s.slice(0, 30)}"的真实经历`);
+    }
+    if (assetType === "viewpoint") {
+      usableFor.push(`用你的观点"${title.slice(0, 30)}"来论证立场`);
+    }
+    if (assetType === "quality_expression") {
+      usableFor.push(`参考你对"${s.slice(0, 30)}"的优质回答`);
+    }
+  }
+
+  return {
+    id: row.id as string,
+    title,
+    asset_type: assetType,
+    tags: uniqueSkills.slice(0, 8),
+    summary: summary || title,
+    key_skills: uniqueSkills.slice(0, 6),
+    scenarios: scenarios.filter(Boolean).slice(0, 4),
+    usable_for: usableFor.slice(0, 3),
+    quality_score: qs,
+  };
+}
+
+/**
+ * Fetch all active expression assets as compact representations.
+ *
+ * Returns assets grouped by type with extracted summaries, skills,
+ * scenarios, and usable_for prompts — ready for AI context injection.
+ * Token-efficient: never returns full narrative content.
+ */
+export async function getExpressionAssets(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: { limit?: number; types?: string[] },
+): Promise<ExpressionAssetCollection> {
+  const { data } = await supabase
+    .from("expression_assets")
+    .select("id, asset_type, title, asset_data, tags, quality_score")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(options?.limit || 20);
+
+  const rows = (data || []) as Array<Record<string, unknown>>;
+  const filtered = options?.types
+    ? rows.filter((r) => options.types!.includes(r.asset_type as string))
+    : rows;
+
+  const all = filtered.map(extractAssetCompact);
+
+  return {
+    stories: all.filter((a) => a.asset_type === "personal_story"),
+    cases: all.filter((a) => a.asset_type === "experience_case"),
+    viewpoints: all.filter((a) => a.asset_type === "viewpoint"),
+    expressions: all.filter((a) =>
+      a.asset_type === "quality_expression" || a.asset_type === "quote",
+    ),
+    total: all.length,
+  };
+}
+
+/**
+ * Match expression assets against a topic, question, scenario, or skill.
+ *
+ * Scoring weights:
+ * - Tag overlap: 40%
+ * - Scenario keyword match: 30%
+ * - Skill keyword match: 20%
+ * - Quality boost: 10%
+ *
+ * Returns top matches with reasoning and usage suggestions.
+ */
+export function matchExpressionAssets(
+  assets: ExpressionAssetCollection,
+  query: {
+    topic?: string;
+    question?: string;
+    scenario?: string;
+    skill?: string;
+    limit?: number;
+  },
+): MatchedAsset[] {
+  if (assets.total === 0) return [];
+
+  const allAssets = [
+    ...assets.stories,
+    ...assets.cases,
+    ...assets.viewpoints,
+    ...assets.expressions,
+  ];
+
+  const queryTokens = tokenize([
+    query.topic,
+    query.question,
+    query.scenario,
+    query.skill,
+  ].filter(Boolean).join(" "));
+
+  if (queryTokens.length === 0) {
+    // No query → return highest quality assets
+    return allAssets
+      .sort((a, b) => (b.quality_score.reusability || 0) - (a.quality_score.reusability || 0))
+      .slice(0, query.limit || 3)
+      .map((a) => ({
+        asset_id: a.id,
+        title: a.title,
+        asset_type: a.asset_type,
+        match_score: a.quality_score.reusability || 50,
+        reason: "高质量可复用资产",
+        usage_suggestion: a.usable_for[0] || `在表达中引用"${a.title}"`,
+      }));
+  }
+
+  const scored = allAssets.map((asset) => {
+    const assetTokens = tokenize([
+      asset.title,
+      ...asset.tags,
+      ...asset.scenarios,
+      ...asset.key_skills,
+    ].join(" "));
+
+    // Tag overlap score
+    const tagOverlap = intersect(queryTokens, asset.tags.map(tokenize).flat());
+    const tagScore = asset.tags.length > 0
+      ? (tagOverlap / Math.max(asset.tags.length, 1)) * 40
+      : 0;
+
+    // Scenario keyword match
+    const scenarioText = asset.scenarios.join(" ");
+    const scenarioTokens = tokenize(scenarioText);
+    const scenarioOverlap = intersect(queryTokens, scenarioTokens);
+    const scenarioScore = scenarioTokens.length > 0
+      ? (scenarioOverlap / Math.max(scenarioTokens.length, 1)) * 30
+      : 0;
+
+    // Skill match
+    const skillText = asset.key_skills.join(" ");
+    const skillTokens = tokenize(skillText);
+    const skillOverlap = intersect(queryTokens, skillTokens);
+    const skillScore = skillTokens.length > 0
+      ? (skillOverlap / Math.max(skillTokens.length, 1)) * 20
+      : 0;
+
+    // Quality boost
+    const qualityScore = ((asset.quality_score.reusability || 50) / 100) * 10;
+
+    const matchScore = Math.round(tagScore + scenarioScore + skillScore + qualityScore);
+
+    // Build reason
+    const reasons: string[] = [];
+    if (tagOverlap > 1) reasons.push(`标签匹配：${tagOverlap}个共同关键词`);
+    if (scenarioOverlap > 1) reasons.push(`场景相关`);
+    if (skillOverlap > 1) reasons.push(`技能匹配：${skillOverlap}个共同技能`);
+    if (reasons.length === 0) reasons.push("通用高质量资产");
+
+    return {
+      asset_id: asset.id,
+      title: asset.title,
+      asset_type: asset.asset_type,
+      match_score: Math.min(matchScore, 100),
+      reason: reasons.join("；"),
+      usage_suggestion: asset.usable_for[0] || `引用"${asset.title}"来丰富表达`,
+    };
+  });
+
+  return scored
+    .filter((s) => s.match_score > 0)
+    .sort((a, b) => b.match_score - a.match_score)
+    .slice(0, query.limit || 5);
+}
+
+// ── 8c. Asset Usage Tracking ──
+
+/**
+ * Record that an agent recommended expression assets.
+ * Fire-and-forget — errors are caught and logged, never thrown.
+ */
+export async function trackAssetUsage(
+  supabase: SupabaseClient,
+  userId: string,
+  agentType: string,
+  matchedAssets: MatchedAsset[],
+): Promise<void> {
+  if (!userId || matchedAssets.length === 0) return;
+
+  const rows = matchedAssets.map((m) => ({
+    asset_id: m.asset_id,
+    user_id: userId,
+    agent_type: agentType,
+    action: "recommended",
+    match_score: m.match_score,
+  }));
+
+  try {
+    await supabase.from("expression_asset_usage").insert(rows);
+  } catch (err) {
+    console.error(`[nancy-context] trackAssetUsage error (non-fatal):`, (err as Error).message);
+  }
+}
+
+// ── Helpers ──
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\w一-鿿\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 1);
+}
+
+function intersect(a: string[], b: string[]): number {
+  const bSet = new Set(b);
+  return a.filter((t) => bSet.has(t)).length;
+}
+
 // ── 9. Expression Personalization Context Builder ──
+
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   personal_story: "个人故事",

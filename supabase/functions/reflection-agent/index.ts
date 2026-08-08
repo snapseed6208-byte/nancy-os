@@ -12,6 +12,9 @@ import {
   getCorsHeaders,
   jsonResponse,
   getConfirmedMemories,
+  getExpressionAssets,
+  matchExpressionAssets,
+  trackAssetUsage,
   buildMemoryProfile,
 } from "../_shared/nancy-context.ts";
 
@@ -174,6 +177,38 @@ serve(async (req: Request) => {
     // 3 ─ Build existing memory context for cross-reference (nancy-context)
     const existingMemoryContext = buildMemoryProfile(confirmedMemories, "minimal");
 
+    // ── Historical asset correlation (non-fatal) ──
+    // Extract themes from this week's data and find related past experiences
+    let historicalAssetContext = "";
+    try {
+      const eventTitles = (events || []).map((e: Record<string, unknown>) => String(e.title || "")).filter(Boolean);
+      const journalTopics = (journalEntries || []).map((j: Record<string, unknown>) =>
+        String(j.title || "").slice(0, 60)
+      ).filter(Boolean);
+      const weekThemes = [...new Set([...eventTitles, ...journalTopics])].join(" ");
+
+      if (weekThemes.length > 5) {
+        const assets = await getExpressionAssets(supabase, userId, { limit: 20 });
+        const weekMatches = matchExpressionAssets(assets, {
+          topic: weekThemes.slice(0, 300),
+          scenario: eventTitles.slice(0, 3).join(" "),
+        });
+
+        if (weekMatches.length > 0) {
+          const lines = ["\n## 历史相关经历（来自表达资产库）"];
+          lines.push("以下是用户过去记录的真实经历，可能与本周事件相关。在生成 growth_insights 时，请关联这些长期资产：");
+          for (const m of weekMatches.slice(0, 5)) {
+            lines.push(`- **${m.title}**（匹配度: ${m.match_score}%）：${m.usage_suggestion}`);
+          }
+          lines.push("→ 如果本周事件与历史经历有明显关联，请在 behavior_patterns 或 growth_insights 中指出长期模式。");
+          historicalAssetContext = lines.join("\n");
+          trackAssetUsage(supabase, userId, "reflection", weekMatches);
+        }
+      }
+    } catch (assetErr) {
+      console.error("[reflection-agent] historical asset correlation error (non-fatal):", (assetErr as Error).message);
+    }
+
     // 4 ─ Call DeepSeek with existing memory context
     const userData = JSON.stringify({
       period: `${sevenDaysAgo} 至 ${today}`,
@@ -191,6 +226,10 @@ serve(async (req: Request) => {
 
     if (existingMemoryContext) {
       messages.push({ role: "system", content: existingMemoryContext });
+    }
+
+    if (historicalAssetContext) {
+      messages.push({ role: "system", content: historicalAssetContext });
     }
 
     messages.push({ role: "user", content: userData });
