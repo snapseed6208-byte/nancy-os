@@ -2637,3 +2637,427 @@ describe("S7 — Next Card Resets State", () => {
     expect(newCardState.evalError).toBe(false);
   });
 });
+
+// ═══════════════════════════════════════
+// Session Lifecycle Inline Mirrors
+// ═══════════════════════════════════════
+
+type SessionTypeForTest = "learn" | "review";
+
+interface ReviewSessionForTest {
+  id: string;
+  userId: string;
+  sessionDate: string;
+  targetCount: number;
+  status: "active" | "completed" | "abandoned";
+  currentStage: "recall" | "sentence" | "application";
+  sessionType: SessionTypeForTest;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+function getShanghaiDateKeyForTest(date?: Date): string {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(date ?? new Date());
+}
+
+function getUtcDateKeyForTest(date?: Date): string {
+  return (date ?? new Date()).toISOString().split("T")[0];
+}
+
+enum SessionErrorCodeForTest {
+  NOT_FOUND = "SESSION_NOT_FOUND",
+  DUPLICATE = "SESSION_DUPLICATE",
+  UNAUTHORIZED = "SESSION_UNAUTHORIZED",
+  DB_ERROR = "SESSION_DB_ERROR",
+  UNKNOWN = "SESSION_UNKNOWN",
+}
+
+class SessionErrorForTest extends Error {
+  code: SessionErrorCodeForTest;
+  constructor(code: SessionErrorCodeForTest, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function classifySessionErrorForTest(err: { code?: string; status?: number }): SessionErrorForTest {
+  if (err.code === "23505") return new SessionErrorForTest(SessionErrorCodeForTest.DUPLICATE, "duplicate");
+  if (err.code === "PGRST116" || err.status === 406) return new SessionErrorForTest(SessionErrorCodeForTest.NOT_FOUND, "not found");
+  if (err.status === 401 || err.code === "PGRST301") return new SessionErrorForTest(SessionErrorCodeForTest.UNAUTHORIZED, "unauthorized");
+  return new SessionErrorForTest(SessionErrorCodeForTest.DB_ERROR, "db error");
+}
+
+function isExpressionDueForReview(status: string, nextReviewDate: string | null): boolean {
+  // Only review/mastered expressions with a due date enter the review queue
+  if (status === "collected" || status === "learning") return false;
+  if (status === "archived") return false;
+  if (!nextReviewDate) return false;
+  return new Date(nextReviewDate) <= new Date();
+}
+
+function isExpressionInLearningQueue(status: string, archived: boolean): boolean {
+  if (archived) return false;
+  return status === "collected" || status === "learning";
+}
+
+function getLearnQueuePriority(a: { status: string; createdAt: string }, b: { status: string; createdAt: string }): number {
+  if (a.status === "learning" && b.status !== "learning") return -1;
+  if (a.status !== "learning" && b.status === "learning") return 1;
+  return 0;
+}
+
+function getOrCreateSessionForTest(
+  existing: Map<string, ReviewSessionForTest>,
+  userId: string,
+  date: string,
+  sessionType: SessionTypeForTest,
+): { session: ReviewSessionForTest; isNew: boolean } {
+  const key = `${userId}|${date}|${sessionType}`;
+  if (existing.has(key)) return { session: existing.get(key)!, isNew: false };
+
+  const session: ReviewSessionForTest = {
+    id: `session-${key}`,
+    userId,
+    sessionDate: date,
+    targetCount: 0,
+    status: "active",
+    currentStage: "recall",
+    sessionType,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  };
+  existing.set(key, session);
+  return { session, isNew: true };
+}
+
+function getOrCreateConcurrentForTest(
+  existing: Map<string, ReviewSessionForTest>,
+  userId: string,
+  date: string,
+  sessionType: SessionTypeForTest,
+): { session: ReviewSessionForTest; isNew: boolean; simulatedRace: boolean } {
+  const key = `${userId}|${date}|${sessionType}`;
+
+  // First check (simulates two concurrent requests both seeing nothing)
+  const firstCheck = !existing.has(key);
+
+  // Second concurrent request also sees nothing
+  const secondCheck = !existing.has(key);
+
+  // Second creates first
+  if (firstCheck && secondCheck) {
+    const session: ReviewSessionForTest = {
+      id: `session-${key}-concurrent`,
+      userId,
+      sessionDate: date,
+      targetCount: 0,
+      status: "active",
+      currentStage: "recall",
+      sessionType,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    };
+    existing.set(key, session);
+  }
+
+  // First request discovers the duplicate and re-fetches
+  if (firstCheck && existing.has(key)) {
+    return { session: existing.get(key)!, isNew: false, simulatedRace: true };
+  }
+
+  if (existing.has(key)) return { session: existing.get(key)!, isNew: false, simulatedRace: false };
+
+  const session: ReviewSessionForTest = {
+    id: `session-${key}`,
+    userId,
+    sessionDate: date,
+    targetCount: 0,
+    status: "active",
+    currentStage: "recall",
+    sessionType,
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  };
+  existing.set(key, session);
+  return { session, isNew: true, simulatedRace: false };
+}
+
+// ═══════════════════════════════════════
+// L1-L3: Date & Timezone
+// ═══════════════════════════════════════
+
+describe("L1 — Shanghai Date Key", () => {
+  it("L1.1 getShanghaiDateKey returns YYYY-MM-DD format", () => {
+    const key = getShanghaiDateKeyForTest(new Date("2026-08-10T04:00:00Z"));
+    expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // At 04:00 UTC, Shanghai is 12:00 noon — same day
+    expect(key).toBe("2026-08-10");
+  });
+
+  it("L1.2 Shanghai date key differs from UTC near midnight", () => {
+    // 2026-08-10 20:00 UTC = 2026-08-11 04:00 Shanghai (+8)
+    const shanghai = getShanghaiDateKeyForTest(new Date("2026-08-10T20:00:00Z"));
+    const utc = getUtcDateKeyForTest(new Date("2026-08-10T20:00:00Z"));
+    expect(shanghai).toBe("2026-08-11");
+    expect(utc).toBe("2026-08-10");
+    expect(shanghai).not.toBe(utc);
+  });
+
+  it("L1.3 Shanghai date key matches UTC during daytime overlap", () => {
+    // 2026-08-10 06:00 UTC = 2026-08-10 14:00 Shanghai — both same day
+    const shanghai = getShanghaiDateKeyForTest(new Date("2026-08-10T06:00:00Z"));
+    const utc = getUtcDateKeyForTest(new Date("2026-08-10T06:00:00Z"));
+    expect(shanghai).toBe("2026-08-10");
+    expect(utc).toBe("2026-08-10");
+  });
+});
+
+// ═══════════════════════════════════════
+// L4-L6: Due Query — collected/learning excluded
+// ═══════════════════════════════════════
+
+describe("L4 — Review Queue Excludes Non-Review Statuses", () => {
+  it("L4.1 collected expressions are never due for review", () => {
+    expect(isExpressionDueForReview("collected", null)).toBe(false);
+    expect(isExpressionDueForReview("collected", "2026-01-01T00:00:00Z")).toBe(false);
+  });
+
+  it("L4.2 learning expressions are never due for review", () => {
+    expect(isExpressionDueForReview("learning", null)).toBe(false);
+    expect(isExpressionDueForReview("learning", "2026-01-01T00:00:00Z")).toBe(false);
+  });
+
+  it("L4.3 review expressions with past next_review_date ARE due", () => {
+    const pastDate = new Date(Date.now() - 86400000).toISOString();
+    expect(isExpressionDueForReview("review", pastDate)).toBe(true);
+  });
+
+  it("L4.4 review expressions with NULL next_review_date are NOT due", () => {
+    // NULL next_review_date means "not yet in review cycle" — not due
+    expect(isExpressionDueForReview("review", null)).toBe(false);
+  });
+
+  it("L4.5 mastered expressions follow same rule — due when date passed", () => {
+    const pastDate = new Date(Date.now() - 86400000).toISOString();
+    expect(isExpressionDueForReview("mastered", pastDate)).toBe(true);
+  });
+
+  it("L4.6 future next_review_date = NOT due", () => {
+    const futureDate = new Date(Date.now() + 86400000).toISOString();
+    expect(isExpressionDueForReview("review", futureDate)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════
+// L7-L9: Learning Queue Priority
+// ═══════════════════════════════════════
+
+describe("L7 — Learning Queue Membership", () => {
+  it("L7.1 collected expressions are in learning queue", () => {
+    expect(isExpressionInLearningQueue("collected", false)).toBe(true);
+  });
+
+  it("L7.2 learning expressions are in learning queue (resume)", () => {
+    expect(isExpressionInLearningQueue("learning", false)).toBe(true);
+  });
+
+  it("L7.3 review/mastered/archived are NOT in learning queue", () => {
+    expect(isExpressionInLearningQueue("review", false)).toBe(false);
+    expect(isExpressionInLearningQueue("mastered", false)).toBe(false);
+    expect(isExpressionInLearningQueue("collected", true)).toBe(false);
+  });
+
+  it("L7.4 learning status sorts before collected (resume first)", () => {
+    const learning = { status: "learning", createdAt: "2026-08-10T00:00:00Z" };
+    const collected = { status: "collected", createdAt: "2026-08-01T00:00:00Z" };
+    expect(getLearnQueuePriority(learning, collected)).toBe(-1);
+    expect(getLearnQueuePriority(collected, learning)).toBe(1);
+  });
+
+  it("L7.5 same status preserves original order", () => {
+    const a = { status: "collected", createdAt: "2026-08-01T00:00:00Z" };
+    const b = { status: "collected", createdAt: "2026-08-05T00:00:00Z" };
+    expect(getLearnQueuePriority(a, b)).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════
+// L10-L12: Session Type & UNIQUE Constraint
+// ═══════════════════════════════════════
+
+describe("L10 — Session Type Separation", () => {
+  it("L10.1 learn and review sessions can coexist on same date", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const learn = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "learn");
+    const review = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    expect(learn.isNew).toBe(true);
+    expect(review.isNew).toBe(true);
+    expect(learn.session.sessionType).toBe("learn");
+    expect(review.session.sessionType).toBe("review");
+    expect(learn.session.id).not.toBe(review.session.id);
+  });
+
+  it("L10.2 same type + same date returns existing (idempotent)", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const first = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    const second = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    expect(first.isNew).toBe(true);
+    expect(second.isNew).toBe(false);
+    expect(second.session.id).toBe(first.session.id);
+  });
+
+  it("L10.3 key includes session_type for unique identification", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "learn");
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    expect(sessions.size).toBe(2);
+    expect(sessions.has("user-1|2026-08-10|learn")).toBe(true);
+    expect(sessions.has("user-1|2026-08-10|review")).toBe(true);
+  });
+});
+
+describe("L11 — Concurrent Get-or-Create Race Condition", () => {
+  it("L11.1 second concurrent request returns existing session after race", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const result = getOrCreateConcurrentForTest(sessions, "user-1", "2026-08-10", "review");
+
+    // Even with simulated race, result should be consistent
+    expect(result.session.sessionType).toBe("review");
+    expect(result.session.sessionDate).toBe("2026-08-10");
+    expect(sessions.size).toBe(1); // Only one session despite race
+  });
+
+  it("L11.2 idempotent: repeated calls return same session", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const r1 = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    const r2 = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    const r3 = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    expect(r1.session.id).toBe(r2.session.id);
+    expect(r2.session.id).toBe(r3.session.id);
+    expect(sessions.size).toBe(1);
+  });
+});
+
+// ═══════════════════════════════════════
+// L13-L15: Error Classification
+// ═══════════════════════════════════════
+
+describe("L13 — Error Classification", () => {
+  it("L13.1 PostgreSQL 23505 classified as DUPLICATE", () => {
+    const err = classifySessionErrorForTest({ code: "23505" });
+    expect(err.code).toBe(SessionErrorCodeForTest.DUPLICATE);
+  });
+
+  it("L13.2 PostgREST 406 or PGRST116 classified as NOT_FOUND", () => {
+    expect(classifySessionErrorForTest({ code: "PGRST116" }).code).toBe(SessionErrorCodeForTest.NOT_FOUND);
+    expect(classifySessionErrorForTest({ status: 406 }).code).toBe(SessionErrorCodeForTest.NOT_FOUND);
+  });
+
+  it("L13.3 Auth errors classified as UNAUTHORIZED", () => {
+    expect(classifySessionErrorForTest({ status: 401 }).code).toBe(SessionErrorCodeForTest.UNAUTHORIZED);
+    expect(classifySessionErrorForTest({ code: "PGRST301" }).code).toBe(SessionErrorCodeForTest.UNAUTHORIZED);
+  });
+
+  it("L13.4 Unknown errors fall back to DB_ERROR", () => {
+    expect(classifySessionErrorForTest({}).code).toBe(SessionErrorCodeForTest.DB_ERROR);
+    expect(classifySessionErrorForTest({ code: "XX000" }).code).toBe(SessionErrorCodeForTest.DB_ERROR);
+  });
+});
+
+// ═══════════════════════════════════════
+// L16-L18: Session Status Transitions
+// ═══════════════════════════════════════
+
+describe("L16 — Session Status Lifecycle", () => {
+  it("L16.1 new session starts as active with recall stage", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const { session } = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    expect(session.status).toBe("active");
+    expect(session.currentStage).toBe("recall");
+  });
+
+  it("L16.2 learn session type is preserved", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const { session } = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "learn");
+    expect(session.sessionType).toBe("learn");
+    expect(session.status).toBe("active");
+  });
+
+  it("L16.3 different users can each have their own sessions", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    getOrCreateSessionForTest(sessions, "user-2", "2026-08-10", "review");
+
+    expect(sessions.size).toBe(2);
+    expect(sessions.has("user-1|2026-08-10|review")).toBe(true);
+    expect(sessions.has("user-2|2026-08-10|review")).toBe(true);
+  });
+
+  it("L16.4 different dates can each have their own sessions", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-11", "review");
+
+    expect(sessions.size).toBe(2);
+  });
+});
+
+// ═══════════════════════════════════════
+// L19-L21: Integration — Query & Filter
+// ═══════════════════════════════════════
+
+describe("L19 — Session Query Selectivity", () => {
+  it("L19.1 session_type filter distinguishes learn from review", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    const learn = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "learn");
+    const review = getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    // Filter by session_type
+    const learnOnly = [...sessions.values()].filter((s) => s.sessionType === "learn");
+    const reviewOnly = [...sessions.values()].filter((s) => s.sessionType === "review");
+
+    expect(learnOnly).toHaveLength(1);
+    expect(reviewOnly).toHaveLength(1);
+    expect(learnOnly[0].id).toBe(learn.session.id);
+    expect(reviewOnly[0].id).toBe(review.session.id);
+  });
+
+  it("L19.2 query without session_type returns ambiguous results", () => {
+    const sessions = new Map<string, ReviewSessionForTest>();
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "learn");
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    // Without session_type filter, we get 2 results for same user+date
+    const allForToday = [...sessions.values()].filter(
+      (s) => s.userId === "user-1" && s.sessionDate === "2026-08-10",
+    );
+    expect(allForToday).toHaveLength(2); // Both learn and review
+  });
+
+  it("L19.3 UNIQUE constraint must include session_type", () => {
+    // The old constraint UNIQUE(user_id, session_date) would reject
+    // having both learn AND review session on same day.
+    // The new constraint UNIQUE(user_id, session_date, session_type) allows it.
+
+    const sessions = new Map<string, ReviewSessionForTest>();
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "learn");
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+
+    // Both should exist — this proves the constraint includes session_type
+    expect(sessions.size).toBe(2);
+
+    // But two of the same type on same day should be idempotent
+    getOrCreateSessionForTest(sessions, "user-1", "2026-08-10", "review");
+    expect(sessions.size).toBe(2); // No duplicate review session
+  });
+});

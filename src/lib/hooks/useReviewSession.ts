@@ -10,6 +10,16 @@ import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
+import {
+  getShanghaiDateKey,
+  getShanghaiISO,
+  getOrCreateEnglishSession,
+  fetchSessionItems,
+  createSessionItems,
+  classifySessionError,
+  SessionErrorCode,
+  type SessionType,
+} from "@/lib/english/sessionRepository";
 
 // ═══════════════════════════════════════
 // Types
@@ -93,11 +103,11 @@ const EXPRESSION_SELECT =
   "type,scene,status,mastery_level";
 
 function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
+  return getShanghaiDateKey();
 }
 
 function nowISO(): string {
-  return new Date().toISOString();
+  return getShanghaiISO();
 }
 
 // ═══════════════════════════════════════
@@ -112,41 +122,19 @@ async function fetchOrCreateSession(): Promise<{
   const userId = await getUserId();
   const today = todayStr();
 
-  // 1. Try to get existing session
-  const { data: existing } = await supabase
-    .from("review_sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("session_date", today)
-    .limit(1)
-    .single();
+  // Idempotent get-or-create (handles 406/409 via sessionRepository)
+  const { session: sessionData, isNew } = await getOrCreateEnglishSession({
+    userId,
+    date: today,
+    sessionType: "review",
+  });
 
-  if (existing) {
-    // Load items with expressions joined
-    const { data: items } = await supabase
-      .from("review_session_items")
-      .select("*, expression:expressions(*)")
-      .eq("session_id", existing.id)
-      .order("created_at", { ascending: true });
-
-    return {
-      session: {
-        id: existing.id,
-        userId: existing.user_id,
-        sessionDate: existing.session_date,
-        targetCount: existing.target_count,
-        status: existing.status,
-        currentStage: existing.current_stage,
-        sessionType: existing.session_type || "review",
-        createdAt: existing.created_at,
-        completedAt: existing.completed_at,
-      } as ReviewSession,
-      items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
-      isNew: false,
-    };
+  if (!isNew) {
+    const items = await fetchSessionItems(sessionData.id);
+    return { session: sessionData, items, isNew: false };
   }
 
-  // 2. Create new session — select due review expressions
+  // New session: select due review expressions
   const { data: dueCards } = await supabase
     .from("expressions")
     .select(EXPRESSION_SELECT)
@@ -159,53 +147,26 @@ async function fetchOrCreateSession(): Promise<{
 
   const selectedCards = dueCards || [];
 
-  // Create session
-  const { data: session } = await supabase
-    .from("review_sessions")
-    .insert({
-      user_id: userId,
-      session_date: today,
-      target_count: selectedCards.length,
-      status: "active",
-      current_stage: "recall",
-      session_type: "review",
-    })
-    .select()
-    .single();
-
-  if (!session) throw new Error("Failed to create session");
-
-  // Create session items
-  if (selectedCards.length > 0) {
-    const items = (selectedCards as unknown as Record<string, unknown>[]).map((card) => ({
-      session_id: session.id,
-      expression_id: card.id,
-      status: "pending",
-    }));
-
-    await supabase.from("review_session_items").insert(items);
+  // Update target count
+  if (selectedCards.length !== sessionData.targetCount) {
+    await supabase
+      .from("review_sessions")
+      .update({ target_count: selectedCards.length })
+      .eq("id", sessionData.id);
   }
 
+  // Create session items
+  await createSessionItems(
+    sessionData.id,
+    (selectedCards as unknown as Record<string, unknown>[]).map((c) => c.id as string),
+  );
+
   // Reload with expressions
-  const { data: items } = await supabase
-    .from("review_session_items")
-    .select("*, expression:expressions(*)")
-    .eq("session_id", session.id)
-    .order("created_at", { ascending: true });
+  const items = await fetchSessionItems(sessionData.id);
 
   return {
-    session: {
-      id: session.id,
-      userId: session.user_id,
-      sessionDate: session.session_date,
-      targetCount: session.target_count,
-      status: session.status,
-      currentStage: session.current_stage,
-      sessionType: session.session_type || "review",
-      createdAt: session.created_at,
-      completedAt: session.completed_at,
-    } as ReviewSession,
-    items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
+    session: { ...sessionData, targetCount: selectedCards.length },
+    items,
     isNew: true,
   };
 }
@@ -224,42 +185,20 @@ async function fetchOrCreateLearnSession(): Promise<{
   const userId = await getUserId();
   const today = todayStr();
 
-  // 1. Try to get existing learn session
-  const { data: existing } = await supabase
-    .from("review_sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("session_date", today)
-    .eq("session_type", "learn")
-    .limit(1)
-    .single();
+  // Idempotent get-or-create (handles 406/409 via sessionRepository)
+  const { session: sessionData, isNew } = await getOrCreateEnglishSession({
+    userId,
+    date: today,
+    sessionType: "learn",
+  });
 
-  if (existing) {
-    const { data: items } = await supabase
-      .from("review_session_items")
-      .select("*, expression:expressions(*)")
-      .eq("session_id", existing.id)
-      .order("created_at", { ascending: true });
-
-    return {
-      session: {
-        id: existing.id,
-        userId: existing.user_id,
-        sessionDate: existing.session_date,
-        targetCount: existing.target_count,
-        status: existing.status,
-        currentStage: existing.current_stage,
-        sessionType: "learn",
-        createdAt: existing.created_at,
-        completedAt: existing.completed_at,
-      } as ReviewSession,
-      items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
-      isNew: false,
-    };
+  if (!isNew) {
+    const items = await fetchSessionItems(sessionData.id);
+    return { session: sessionData, items, isNew: false };
   }
 
-  // 2. Create new learn session — select collected/learning expressions
-  // Priority: in-progress learning first (resume), then collected by creation date
+  // New session: select collected/learning expressions
+  // Priority: "learning" status first (resume in-progress), then "collected" by created_at
   const { data: learnData } = await supabase
     .from("expressions")
     .select(EXPRESSION_SELECT)
@@ -270,62 +209,32 @@ async function fetchOrCreateLearnSession(): Promise<{
     .order("created_at", { ascending: true })
     .limit(Math.min(DEFAULT_LEARN_TARGET, MAX_DAILY_CARDS));
 
-  const learnCards = (learnData || []) as unknown as Record<string, unknown>[];
-
-  // Re-sort: "learning" status first (resume in-progress), then "collected" by created_at
-  const selectedCards = learnCards.sort((a, b) => {
+  const selectedCards = ((learnData || []) as unknown as Record<string, unknown>[]).sort((a, b) => {
     if (a.status === "learning" && b.status !== "learning") return -1;
     if (a.status !== "learning" && b.status === "learning") return 1;
     return 0;
   });
 
-  // Create session
-  const { data: session } = await supabase
-    .from("review_sessions")
-    .insert({
-      user_id: userId,
-      session_date: today,
-      target_count: selectedCards.length,
-      status: "active",
-      current_stage: "recall",
-      session_type: "learn",
-    })
-    .select()
-    .single();
-
-  if (!session) throw new Error("Failed to create learn session");
-
-  // Create session items
-  if (selectedCards.length > 0) {
-    const items = selectedCards.map((card) => ({
-      session_id: session.id,
-      expression_id: card.id,
-      status: "pending",
-    }));
-
-    await supabase.from("review_session_items").insert(items);
+  // Update target count
+  if (selectedCards.length !== sessionData.targetCount) {
+    await supabase
+      .from("review_sessions")
+      .update({ target_count: selectedCards.length })
+      .eq("id", sessionData.id);
   }
 
+  // Create session items
+  await createSessionItems(
+    sessionData.id,
+    selectedCards.map((c) => c.id as string),
+  );
+
   // Reload with expressions
-  const { data: items } = await supabase
-    .from("review_session_items")
-    .select("*, expression:expressions(*)")
-    .eq("session_id", session.id)
-    .order("created_at", { ascending: true });
+  const items = await fetchSessionItems(sessionData.id);
 
   return {
-    session: {
-      id: session.id,
-      userId: session.user_id,
-      sessionDate: session.session_date,
-      targetCount: session.target_count,
-      status: session.status,
-      currentStage: session.current_stage,
-      sessionType: "learn",
-      createdAt: session.created_at,
-      completedAt: session.completed_at,
-    } as ReviewSession,
-    items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
+    session: { ...sessionData, targetCount: selectedCards.length },
+    items,
     isNew: true,
   };
 }
@@ -799,14 +708,15 @@ export function useLearningHistory() {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const sinceDate = thirtyDaysAgo.toISOString().split("T")[0];
 
-      // 1. Today's session
+      // 1. Today's review session
       const { data: todaySession } = await supabase
         .from("review_sessions")
         .select("id,status,target_count")
         .eq("user_id", userId)
         .eq("session_date", today)
+        .eq("session_type", "review")
         .limit(1)
-        .single();
+        .maybeSingle();
 
       let todayData: LearningHistoryData["todaySession"] = null;
       if (todaySession) {
@@ -1192,8 +1102,9 @@ export function useHubSessionProgress() {
         .select("id,status,target_count")
         .eq("user_id", userId)
         .eq("session_date", today)
+        .eq("session_type", "review")
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (!session) {
         return {
@@ -1360,14 +1271,15 @@ export function useSessionDetail() {
       const userId = await getUserId();
       const today = todayStr();
 
-      // Get today's session
+      // Get today's review session
       const { data: session } = await supabase
         .from("review_sessions")
         .select("id,session_date,status,target_count")
         .eq("user_id", userId)
         .eq("session_date", today)
+        .eq("session_type", "review")
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (!session) return null;
 
