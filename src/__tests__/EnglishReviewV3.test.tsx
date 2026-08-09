@@ -127,7 +127,11 @@ interface ClozeQuestion {
   surfaceForm?: string;
   source: "cloze_sentence" | "example_sentence" | "fallback";
   valid: boolean;
-  scenario?: string;
+  /** Full source sentence — ONLY for post-submit reveal, NEVER shown before answer. */
+  sourceSentence?: string;
+  /** Safe context from context/situation fields only (no expression leakage). */
+  safeContext?: string;
+  /** Chinese translation, hidden behind progressive hint toggle. */
   chineseHint?: string;
 }
 
@@ -223,7 +227,7 @@ function detectSurfaceForm(
   return null;
 }
 
-// ── buildClozeQuestion (V3.4 target-anchored) ──
+// ── buildClozeQuestion (V3.5 — no leakage) ──
 
 function buildClozeQuestion(
   english: string,
@@ -233,7 +237,11 @@ function buildClozeQuestion(
   context?: string | null,
   situation?: string | null,
 ): ClozeQuestion {
-  const scenario = [context, situation].filter(Boolean).join(" · ") || undefined;
+  // Build safe context from context/situation ONLY (never example_sentence)
+  const rawContext = [context, situation].filter(Boolean).join(" · ") || undefined;
+  const safeContext = rawContext && !hasExpressionLeakage(rawContext, english)
+    ? rawContext
+    : undefined;
 
   // Priority 1: cloze_sentence
   if (clozeSentence) {
@@ -247,7 +255,8 @@ function buildClozeQuestion(
         surfaceForm: surfaceInfo?.surfaceForm,
         source: "cloze_sentence",
         valid: true,
-        scenario,
+        sourceSentence: undefined,
+        safeContext,
         chineseHint: chinese,
       };
     }
@@ -261,6 +270,9 @@ function buildClozeQuestion(
       const regex = new RegExp(escaped, "gi");
       const replaced = exampleSentence.replace(regex, "_____");
       if (replaced !== exampleSentence && !hasExpressionLeakage(replaced, english)) {
+        const contextFromExample = !hasExpressionLeakage(replaced, english)
+          ? replaced
+          : undefined;
         return {
           prompt: replaced,
           expectedAnswer: english,
@@ -268,7 +280,8 @@ function buildClozeQuestion(
           surfaceForm: surfaceInfo.surfaceForm !== english ? surfaceInfo.surfaceForm : undefined,
           source: "example_sentence",
           valid: true,
-          scenario: scenario || exampleSentence,
+          sourceSentence: exampleSentence,
+          safeContext: safeContext || contextFromExample,
           chineseHint: chinese,
         };
       }
@@ -276,14 +289,15 @@ function buildClozeQuestion(
   }
 
   // Priority 3: Fallback with context
-  if (scenario || exampleSentence) {
+  if (safeContext || exampleSentence) {
     return {
       prompt: "_____",
       expectedAnswer: english,
       acceptedAnswers: [english.toLowerCase()],
       source: "fallback",
       valid: true,
-      scenario: scenario || (exampleSentence ? exampleSentence.slice(0, 80) : undefined),
+      sourceSentence: exampleSentence || undefined,
+      safeContext,
       chineseHint: chinese,
     };
   }
@@ -295,21 +309,55 @@ function buildClozeQuestion(
     acceptedAnswers: [english.toLowerCase()],
     source: "fallback",
     valid: false,
-    scenario: undefined,
+    sourceSentence: undefined,
+    safeContext: undefined,
     chineseHint: chinese,
   };
 }
 
-// ── buildHint mirror (V3.4) ──
+// ── V3.5: promptIntegrityCheck mirror ──
 
-function buildHint(expectedAnswer: string, attempt: number): string | null {
-  if (attempt < 1) return null;
-  const words = expectedAnswer.split(/\s+/);
-  if (attempt === 1) {
-    const firstLetters = words.map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1))).join(" ");
-    return words.length + " 个词 · " + firstLetters;
+function promptIntegrityCheck(question: ClozeQuestion): boolean {
+  if (hasExpressionLeakage(question.prompt, question.expectedAnswer)) return false;
+  if (!/_{2,}|\[blank\]/i.test(question.prompt)) return false;
+  if (
+    question.sourceSentence &&
+    normalizeClozeAnswer(question.prompt) === normalizeClozeAnswer(question.sourceSentence)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+// ── V3.5: isSafeContext mirror ──
+
+function isSafeContext(context: string, expression: string): boolean {
+  return !hasExpressionLeakage(context, expression);
+}
+
+// ── V3.5: buildProgressiveHint mirror ──
+
+function buildProgressiveHint(
+  chineseHint: string | undefined,
+  expectedAnswer: string,
+  hintLevel: number,
+): string | null {
+  if (hintLevel === 0) return null;
+  if (hintLevel === 1) {
+    if (chineseHint) return chineseHint;
+    return buildStructureHint(expectedAnswer);
+  }
+  if (hintLevel >= 2) {
+    return buildStructureHint(expectedAnswer);
   }
   return null;
+}
+
+function buildStructureHint(expectedAnswer: string): string {
+  const words = expectedAnswer.split(/\s+/);
+  return words
+    .map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1)))
+    .join(" ");
 }
 
 // ── buildFallbackSummary mirror (V3.4 PART 10) ──
@@ -949,24 +997,34 @@ describe("V3.4 Source Validation", () => {
       "presentation",
     );
     expect(q.valid).toBe(true);
-    expect(q.scenario).toContain("business meeting");
+    expect(q.safeContext).toContain("business meeting");
   });
 });
 
-// ── V10-V11: Retry hints (PART 7) ──
+// ── V10-V11: Progressive hints (V3.5 updated) ──
 
-describe("V3.4 Retry Hints", () => {
-  it("V10. first retry shows word count + first-letter pattern", () => {
-    const hint = buildHint("take the bull by the horns", 1);
-    expect(hint).not.toBeNull();
-    expect(hint).toContain("6");
+describe("V3.5 Progressive Hints", () => {
+  it("V10. hint level 0 returns null (no hint)", () => {
+    const hint = buildProgressiveHint("提示", "take the bull by the horns", 0);
+    expect(hint).toBeNull();
+  });
+
+  it("V11. hint level 1 returns Chinese when available", () => {
+    const hint = buildProgressiveHint("迎难而上", "take the bull by the horns", 1);
+    expect(hint).toBe("迎难而上");
+  });
+
+  it("V11a. hint level 1 falls back to structure when no Chinese", () => {
+    const hint = buildProgressiveHint(undefined, "take the bull by the horns", 1);
     expect(hint).toContain("t___");
     expect(hint).toContain("b___");
   });
 
-  it("V11. no hint before first attempt (attempt=0)", () => {
-    const hint = buildHint("hello world", 0);
-    expect(hint).toBeNull();
+  it("V11b. hint level 2 shows structure hint with first letters", () => {
+    const hint = buildProgressiveHint("迎难而上", "take the bull by the horns", 2);
+    expect(hint).toContain("t___");
+    expect(hint).toContain("b___");
+    expect(hint).toContain("h____");
   });
 });
 
@@ -1000,10 +1058,10 @@ describe("V3.4 Deterministic Fallback Summary", () => {
   });
 });
 
-// ── V14: ClozeQuestion has scenario/chineseHint fields (PART 2, 9) ──
+// ── V14: ClozeQuestion has safeContext/sourceSentence/chineseHint (V3.5) ──
 
-describe("V3.4 ClozeQuestion Fields", () => {
-  it("V14. question includes scenario and chineseHint for contextual activation", () => {
+describe("V3.5 ClozeQuestion Fields", () => {
+  it("V14. question includes safeContext and chineseHint, sourceSentence hidden", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
       "迎难而上",
@@ -1012,8 +1070,10 @@ describe("V3.4 ClozeQuestion Fields", () => {
       "business negotiation",
       "When facing a tough decision",
     );
-    expect(q.scenario).toBeTruthy();
+    expect(q.safeContext).toBeTruthy();
     expect(q.chineseHint).toBe("迎难而上");
+    // sourceSentence should be undefined when using cloze_sentence (it IS the prompt)
+    expect(q.sourceSentence).toBeUndefined();
   });
 });
 
@@ -1025,5 +1085,257 @@ describe("V3.4 Legacy Compatibility", () => {
     expect(validateClozeAnswer("hello world", accepted)).toBe(true);
     expect(validateClozeAnswer("goodbye", accepted)).toBe(false);
     expect(validateClozeAnswer("", accepted)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.5 NEW TESTS N1-N18
+// ═══════════════════════════════════════
+
+// ── N1-N3: sourceSentence isolation (STAGE 1-2) ──
+
+describe("V3.5 Source Sentence Isolation", () => {
+  it("N1. example_sentence stores full sentence as sourceSentence for post-submit", () => {
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "与某人失去联系",
+      undefined,
+      "I've lost touch with most of my classmates from high school.",
+    );
+    expect(q.source).toBe("example_sentence");
+    expect(q.sourceSentence).toBe("I've lost touch with most of my classmates from high school.");
+    expect(q.prompt).not.toContain("lost touch with"); // blanked
+  });
+
+  it("N2. sourceSentence is NEVER leaked into prompt", () => {
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "与某人失去联系",
+      undefined,
+      "I've lost touch with most of my classmates from high school.",
+    );
+    // The prompt must not contain the answer
+    expect(hasExpressionLeakage(q.prompt, "lost touch with")).toBe(false);
+  });
+
+  it("N3. cloze_sentence source stores undefined sourceSentence (it IS the prompt)", () => {
+    const q = buildClozeQuestion(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to _____ and fix the problem.",
+    );
+    expect(q.source).toBe("cloze_sentence");
+    expect(q.sourceSentence).toBeUndefined();
+  });
+});
+
+// ── N4-N6: safeContext never leaks target expression (STAGE 3) ──
+
+describe("V3.5 safeContext — No Expression Leakage", () => {
+  it("N4. safeContext does NOT contain the target expression", () => {
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "与某人失去联系",
+      undefined,
+      "I've lost touch with most of my classmates.", // full sentence has expression
+      "talking about old friends",
+      "catching up after many years",
+    );
+    expect(q.safeContext).toBeTruthy();
+    expect(hasExpressionLeakage(q.safeContext!, "lost touch with")).toBe(false);
+  });
+
+  it("N5. safeContext uses context/situation only, not example_sentence", () => {
+    const q = buildClozeQuestion(
+      "soak up the sunshine",
+      "沐浴阳光",
+      undefined,
+      "We soaked up the sunshine all afternoon.",
+      "vacation memory",
+      "relaxing at the beach",
+    );
+    expect(q.safeContext).toContain("vacation memory");
+    expect(q.safeContext).toContain("relaxing at the beach");
+    // Must NOT contain the example sentence text
+    expect(q.safeContext).not.toContain("soaked up the sunshine");
+  });
+
+  it("N6. sourceSentence retains the full example (for post-submit only)", () => {
+    const q = buildClozeQuestion(
+      "soak up the sunshine",
+      "沐浴阳光",
+      undefined,
+      "We soaked up the sunshine all afternoon.",
+      "vacation memory",
+    );
+    // sourceSentence is the full original sentence
+    expect(q.sourceSentence).toBe("We soaked up the sunshine all afternoon.");
+    // safeContext does NOT include example sentence
+    expect(q.safeContext).not.toContain("soaked");
+  });
+});
+
+// ── N7-N9: promptIntegrityCheck (STAGE 5) ──
+
+describe("V3.5 Prompt Integrity Check", () => {
+  it("N7. clean prompt with blank passes integrity check", () => {
+    const q = buildClozeQuestion(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to _____ and fix the problem.",
+    );
+    expect(promptIntegrityCheck(q)).toBe(true);
+  });
+
+  it("N8. prompt containing expected answer FAILS integrity check", () => {
+    const q: ClozeQuestion = {
+      prompt: "Sometimes you just have to take the bull by the horns and fix the problem.",
+      expectedAnswer: "take the bull by the horns",
+      acceptedAnswers: ["take the bull by the horns"],
+      source: "example_sentence",
+      valid: true,
+    };
+    expect(promptIntegrityCheck(q)).toBe(false);
+  });
+
+  it("N9. prompt without blank FAILS integrity check", () => {
+    const q: ClozeQuestion = {
+      prompt: "Complete this sentence.",
+      expectedAnswer: "hello",
+      acceptedAnswers: ["hello"],
+      source: "fallback",
+      valid: true,
+    };
+    expect(promptIntegrityCheck(q)).toBe(false);
+  });
+});
+
+// ── N10: isSafeContext helper ──
+
+describe("V3.5 isSafeContext", () => {
+  it("N10. returns false when context contains target expression", () => {
+    expect(isSafeContext("I lost touch with friends", "lost touch with")).toBe(false);
+  });
+
+  it("N10a. returns true when context is expression-free", () => {
+    expect(isSafeContext("talking about friendship", "lost touch with")).toBe(true);
+  });
+});
+
+// ── N11-N13: buildProgressiveHint levels (STAGE 4) ──
+
+describe("V3.5 Progressive Hint Levels", () => {
+  it("N11. level 0 returns null (no hint shown)", () => {
+    expect(buildProgressiveHint("提示", "hello world", 0)).toBeNull();
+  });
+
+  it("N12. level 1 returns Chinese when available", () => {
+    const hint = buildProgressiveHint("与某人失去联系", "lost touch with", 1);
+    expect(hint).toBe("与某人失去联系");
+  });
+
+  it("N13. level 2 returns structure hint (first letter + underscores)", () => {
+    const hint = buildProgressiveHint("沐浴阳光", "soak up the sunshine", 2);
+    expect(hint).toBe("s___ u_ t__ s_______");
+  });
+});
+
+// ── N14-N15: example_sentence leakage prevention (STAGE 1-2) ──
+
+describe("V3.5 Example Sentence Leakage Prevention", () => {
+  it("N14. example_sentence with expression is blanked in prompt, never shown as context", () => {
+    const q = buildClozeQuestion(
+      "catch up",
+      "叙旧",
+      undefined,
+      "Let's catch up over coffee sometime.",
+      undefined,
+      undefined,
+    );
+    // The prompt must have the expression blanked
+    expect(q.prompt).toContain("_____");
+    expect(q.prompt).not.toMatch(/\bcatch up\b/i);
+    // safeContext from blanked prompt is expression-free
+    if (q.safeContext) {
+      expect(hasExpressionLeakage(q.safeContext, "catch up")).toBe(false);
+    }
+  });
+
+  it("N15. context that contains expression is filtered out from safeContext", () => {
+    // If someone puts an example_sentence into the context field (data issue),
+    // safeContext should filter it out
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "与某人失去联系",
+      undefined,
+      undefined,
+      "I've lost touch with my old friends", // Leaked into context field!
+      undefined,
+    );
+    // safeContext should be undefined because context contains the expression
+    expect(q.safeContext).toBeUndefined();
+    // Without safe context or example_sentence, question falls to invalid
+    // because no safe source exists
+    expect(q.valid).toBe(false);
+    expect(q.source).toBe("fallback");
+  });
+});
+
+// ── N16-N18: ClozeQuestion structure integrity ──
+
+describe("V3.5 ClozeQuestion Structural Integrity", () => {
+  it("N16. valid cloze from cloze_sentence has all required fields", () => {
+    const q = buildClozeQuestion(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to _____ and fix the problem.",
+      undefined,
+      "business negotiation",
+      "When facing a tough decision",
+    );
+    expect(q.valid).toBe(true);
+    expect(q.source).toBe("cloze_sentence");
+    expect(q.prompt).toContain("_____");
+    expect(q.expectedAnswer).toBe("take the bull by the horns");
+    expect(q.acceptedAnswers.length).toBeGreaterThanOrEqual(1);
+    expect(q.safeContext).toBeTruthy();
+    expect(q.chineseHint).toBe("迎难而上");
+    expect(q.sourceSentence).toBeUndefined();
+    // No more 'scenario' field
+    expect((q as Record<string, unknown>).scenario).toBeUndefined();
+  });
+
+  it("N17. fallback with no sources has valid=false", () => {
+    const q = buildClozeQuestion(
+      "rare phrase",
+      "稀有短语",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(q.valid).toBe(false);
+    expect(q.source).toBe("fallback");
+    expect(q.safeContext).toBeUndefined();
+    expect(q.sourceSentence).toBeUndefined();
+  });
+
+  it("N18. V3.4 scenario field is REMOVED — no backwards leak", () => {
+    // Build a question that in V3.4 would have scenario=exampleSentence
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "与某人失去联系",
+      undefined,
+      "I've lost touch with most of my classmates.",
+      "talking about old friends",
+      undefined,
+    );
+    // V3.5: no scenario field at all
+    const qAny = q as Record<string, unknown>;
+    expect(qAny.scenario).toBeUndefined();
+    // sourceSentence is stored but for post-submit only
+    expect(q.sourceSentence).toBe("I've lost touch with most of my classmates.");
+    // safeContext is the safe version
+    expect(q.safeContext).toBe("talking about old friends");
   });
 });

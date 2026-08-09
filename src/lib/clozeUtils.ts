@@ -1,12 +1,11 @@
 // ============================================
-// English SRS V3.4 — Cloze Question Builder & Validator
+// English SRS V3.5 — Cloze Question Builder & Validator
 //
-// V3.4 changes:
-// - Three-state result: correct | partially_correct | incorrect
-// - Target-anchored cloze only (blank must be target expression)
-// - Grammatical form awareness (surface form detection)
-// - Source validation (cloze_unavailable when no valid source)
-// - Scenario/context for contextual activation
+// V3.5 changes:
+// - REMOVED answer leakage: sourceSentence NEVER shown before submit
+// - safeContext only uses context/situation fields (no example_sentence leak)
+// - Added promptIntegrityCheck() for pre-render validation
+// - Progressive hint system: Chinese → structure
 // ============================================
 
 export type ClozeResult = "correct" | "partially_correct" | "incorrect";
@@ -20,9 +19,11 @@ export interface ClozeQuestion {
   source: "cloze_sentence" | "example_sentence" | "fallback";
   /** false = no valid source available for this expression. */
   valid: boolean;
-  /** Context / scenario for display as primary hint (V3.4 contextual activation). */
-  scenario?: string;
-  /** Chinese translation, hidden behind toggle. */
+  /** Full source sentence — ONLY for post-submit reveal, NEVER shown before answer. */
+  sourceSentence?: string;
+  /** Safe context from context/situation fields only (no expression leakage). */
+  safeContext?: string;
+  /** Chinese translation, hidden behind progressive hint toggle. */
   chineseHint?: string;
 }
 
@@ -35,8 +36,8 @@ export function normalizeClozeAnswer(input: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ")
-    .replace(/['‘’‚‛′‵]/g, "'")
-    .replace(/[""„‟″‶]/g, '"')
+    .replace(/[''''''']/g, "'")
+    .replace(/[""""""]/g, '"')
     .replace(/[,.!?;:'"]+$/, "")
     .trim();
 }
@@ -45,14 +46,6 @@ export function normalizeClozeAnswer(input: string): string {
 // Three-state validation (V3.4)
 // ═══════════════════════════════════════
 
-/**
- * Validate a cloze answer with three-state result.
- *
- * - `correct`: exact match with an accepted answer (canonical form)
- * - `partially_correct`: matches the surface form but not canonical
- *   (e.g., user typed "soaked" but canonical is "soak")
- * - `incorrect`: no match
- */
 export function validateClozeResult(
   userAnswer: string,
   acceptedAnswers: string[],
@@ -63,12 +56,10 @@ export function validateClozeResult(
   const normalized = normalizeClozeAnswer(userAnswer);
   if (!normalized) return "incorrect";
 
-  // Exact match with canonical accepted answers → correct
   if (acceptedAnswers.some((a) => normalizeClozeAnswer(a) === normalized)) {
     return "correct";
   }
 
-  // Match with surface form (right expression, wrong grammatical form)
   if (surfaceForm && normalizeClozeAnswer(surfaceForm) === normalized) {
     return "partially_correct";
   }
@@ -76,10 +67,6 @@ export function validateClozeResult(
   return "incorrect";
 }
 
-/**
- * Legacy boolean validator — wraps validateClozeResult.
- * Returns true only for "correct" results.
- */
 export function validateClozeAnswer(
   userAnswer: string,
   acceptedAnswers: string[],
@@ -98,12 +85,48 @@ export function hasExpressionLeakage(prompt: string, expression: string): boolea
 }
 
 // ═══════════════════════════════════════
-// Grammatical form detection (V3.4)
+// V3.5: Prompt integrity check
 // ═══════════════════════════════════════
 
 /**
- * Common inflection suffixes to strip for stem comparison.
+ * Verify a cloze question's prompt does not leak the expected answer.
+ * Must be called before rendering the question to the user.
+ *
+ * Returns true if the prompt is CLEAN (no leakage).
  */
+export function promptIntegrityCheck(question: ClozeQuestion): boolean {
+  // 1. Prompt must not contain the expected answer
+  if (hasExpressionLeakage(question.prompt, question.expectedAnswer)) {
+    return false;
+  }
+
+  // 2. Prompt must contain a blank
+  if (!/_{2,}|\[blank\]/i.test(question.prompt)) {
+    return false;
+  }
+
+  // 3. Prompt must not be the same as sourceSentence (should have blanks)
+  if (
+    question.sourceSentence &&
+    normalizeClozeAnswer(question.prompt) === normalizeClozeAnswer(question.sourceSentence)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check if a context string is safe to show (doesn't contain the target expression).
+ */
+export function isSafeContext(context: string, expression: string): boolean {
+  return !hasExpressionLeakage(context, expression);
+}
+
+// ═══════════════════════════════════════
+// Grammatical form detection (V3.4)
+// ═══════════════════════════════════════
+
 const INFLECTION_SUFFIXES = [
   /ed$/i, /ing$/i, /s$/i, /es$/i, /ies$/i,
   /er$/i, /est$/i, /'s$/i, /s'$/i,
@@ -118,10 +141,6 @@ function toStem(word: string): string {
   return lower;
 }
 
-/**
- * Try to find the expression (possibly inflected) in a sentence.
- * Returns the matched surface form and match type, or null.
- */
 function detectSurfaceForm(
   sentence: string,
   expression: string,
@@ -134,41 +153,33 @@ function detectSurfaceForm(
 
   // 1. Exact case-insensitive match
   const escaped = escapeRegex(expression);
-  const exactRegex = new RegExp(`\\b${escaped}\\b`, "gi");
+  const exactRegex = new RegExp("\\b" + escaped + "\\b", "gi");
   const exactMatch = exactRegex.exec(sentence);
   if (exactMatch) {
     return { surfaceForm: exactMatch[0], matchType: "exact" };
   }
 
   // 2. Stem-based fuzzy match for inflected forms
-  // Slide a window of exprWords.length over sentWords
   for (let start = 0; start <= sentWords.length - exprWords.length; start++) {
     let allMatch = true;
     for (let j = 0; j < exprWords.length; j++) {
       const sentWord = sentWords[start + j];
       const exprWord = exprWords[j];
 
-      // Exact word match OR same stem
       if (sentWord.toLowerCase() === exprWord.toLowerCase()) continue;
 
       const sentStem = toStem(sentWord);
       const exprStem = toStem(exprWord);
       if (sentStem === exprStem) continue;
 
-      // Special: common small words must match exactly
       const isSmallWord = ["a", "an", "the", "in", "on", "at", "to", "of", "for", "by", "up", "out", "off", "my"].includes(exprWord.toLowerCase());
-      if (isSmallWord) {
-        allMatch = false;
-        break;
-      }
+      if (isSmallWord) { allMatch = false; break; }
 
-      // Allow one-word fuzzy for longer expressions
       allMatch = false;
       break;
     }
     if (allMatch) {
-      const surfaceForm = sentWords.slice(start, start + exprWords.length).join(" ");
-      return { surfaceForm, matchType: "inflected" };
+      return { surfaceForm: sentWords.slice(start, start + exprWords.length).join(" "), matchType: "inflected" };
     }
   }
 
@@ -176,18 +187,16 @@ function detectSurfaceForm(
 }
 
 // ═══════════════════════════════════════
-// Build cloze question (V3.4 target-anchored)
+// Build cloze question (V3.5 — no leakage)
 // ═══════════════════════════════════════
 
 /**
- * Build a cloze question that is TARGET-ANCHORED:
- * the blank is always the target expression (canonical or inflected form).
+ * Build a cloze question that is TARGET-ANCHORED and LEAKAGE-FREE.
  *
- * Priority:
- * 1. Pre-generated cloze_sentence (validated for blanks + no leakage)
- * 2. example_sentence with expression replacement (exact or inflected)
- * 3. Fallback using scenario/context
- * 4. Mark as invalid if no source available
+ * V3.5 critical rule:
+ * - `sourceSentence` stores the full sentence for post-submit reveal ONLY
+ * - `safeContext` is built ONLY from context/situation fields (never example_sentence)
+ * - `safeContext` is checked for leakage before being shown
  */
 export function buildClozeQuestion(
   english: string,
@@ -197,8 +206,11 @@ export function buildClozeQuestion(
   context?: string | null,
   situation?: string | null,
 ): ClozeQuestion {
-  // Build scenario text from context/situation fields
-  const scenario = [context, situation].filter(Boolean).join(" · ") || undefined;
+  // Build safe context from context/situation ONLY (never example_sentence)
+  const rawContext = [context, situation].filter(Boolean).join(" · ") || undefined;
+  const safeContext = rawContext && !hasExpressionLeakage(rawContext, english)
+    ? rawContext
+    : undefined;
 
   // ── Priority 1: Pre-generated cloze_sentence ──
   if (clozeSentence) {
@@ -212,11 +224,11 @@ export function buildClozeQuestion(
         surfaceForm: surfaceInfo?.surfaceForm,
         source: "cloze_sentence",
         valid: true,
-        scenario,
+        sourceSentence: undefined,
+        safeContext,
         chineseHint: chinese,
       };
     }
-    // Invalid cloze_sentence (leakage or no blanks) — fall through
   }
 
   // ── Priority 2: example_sentence with expression replacement ──
@@ -229,6 +241,11 @@ export function buildClozeQuestion(
       const replaced = exampleSentence.replace(regex, "_____");
 
       if (replaced !== exampleSentence && !hasExpressionLeakage(replaced, english)) {
+        // Check if example_sentence WITHOUT the expression is safe as context
+        const contextFromExample = !hasExpressionLeakage(replaced, english)
+          ? replaced
+          : undefined;
+
         return {
           prompt: replaced,
           expectedAnswer: english,
@@ -236,40 +253,82 @@ export function buildClozeQuestion(
           surfaceForm: surfaceInfo.surfaceForm !== english ? surfaceInfo.surfaceForm : undefined,
           source: "example_sentence",
           valid: true,
-          scenario: scenario || exampleSentence,
+          sourceSentence: exampleSentence, // Only for post-submit reveal
+          safeContext: safeContext || contextFromExample,
           chineseHint: chinese,
         };
       }
     }
 
-    // Expression not found in example — source not valid for target-anchored cloze
-    // Fall through to fallback
+    // Expression not found in example — fall through to fallback
   }
 
-  // ── Priority 3: Fallback using scenario/context ──
-  if (scenario || exampleSentence) {
-    const ctx = scenario || exampleSentence!.slice(0, 80);
+  // ── Priority 3: Fallback using safe context ──
+  if (safeContext || exampleSentence) {
     return {
-      prompt: `_____`,
+      prompt: "_____",
       expectedAnswer: english,
       acceptedAnswers: [english.toLowerCase(), ...generateVariants(english)],
       source: "fallback",
       valid: true,
-      scenario: ctx,
+      sourceSentence: exampleSentence || undefined,
+      safeContext,
       chineseHint: chinese,
     };
   }
 
   // ── Priority 4: No valid source — cloze unavailable ──
   return {
-    prompt: `_____`,
+    prompt: "_____",
     expectedAnswer: english,
     acceptedAnswers: [english.toLowerCase()],
     source: "fallback",
     valid: false,
-    scenario: undefined,
+    sourceSentence: undefined,
+    safeContext: undefined,
     chineseHint: chinese,
   };
+}
+
+// ═══════════════════════════════════════
+// V3.5: Progressive hint builder
+// ═══════════════════════════════════════
+
+/**
+ * Build a progressive hint for the cloze question.
+ * Level 0: no hint
+ * Level 1: Chinese semantic hint (e.g., "与某人失去联系")
+ * Level 2: Structure hint (e.g., "l___ t____ w___")
+ *
+ * Never reveals the full answer.
+ */
+export function buildProgressiveHint(
+  chineseHint: string | undefined,
+  expectedAnswer: string,
+  hintLevel: number,
+): string | null {
+  if (hintLevel === 0) return null;
+
+  if (hintLevel === 1) {
+    // Level 1: Chinese meaning
+    if (chineseHint) return chineseHint;
+    // Fall back to structure if no Chinese
+    return buildStructureHint(expectedAnswer);
+  }
+
+  if (hintLevel >= 2) {
+    // Level 2: Structure hint (first letter + blanks)
+    return buildStructureHint(expectedAnswer);
+  }
+
+  return null;
+}
+
+function buildStructureHint(expectedAnswer: string): string {
+  const words = expectedAnswer.split(/\s+/);
+  return words
+    .map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1)))
+    .join(" ");
 }
 
 // ═══════════════════════════════════════
@@ -284,7 +343,6 @@ function generateVariants(english: string): string[] {
   const variants: string[] = [];
   const lower = english.toLowerCase();
   variants.push(lower);
-  // Capitalize first letter variant
   variants.push(lower.charAt(0).toUpperCase() + lower.slice(1));
   return variants;
 }

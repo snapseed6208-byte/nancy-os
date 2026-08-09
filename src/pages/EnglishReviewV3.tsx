@@ -21,7 +21,7 @@ import {
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
-import { buildClozeQuestion, validateClozeResult, normalizeClozeAnswer } from "@/lib/clozeUtils";
+import { buildClozeQuestion, validateClozeResult, promptIntegrityCheck, buildProgressiveHint } from "@/lib/clozeUtils";
 import type { ClozeResult } from "@/lib/clozeUtils";
 import { invokeAI } from "@/lib/ai/aiService";
 import { cn } from "@/lib/utils";
@@ -118,11 +118,13 @@ function ModeHeader({
   stats,
   onModeChange,
   onBack,
+  onViewHistory,
 }: {
   currentMode: ReviewMode;
   stats: { recall: ModeStats; cloze: ModeStats; sentence: ModeStats };
   onModeChange: (mode: ReviewMode) => void;
   onBack: () => void;
+  onViewHistory: () => void;
 }) {
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-4 space-y-3">
@@ -134,6 +136,13 @@ function ModeHeader({
           <ArrowLeft size={16} className="text-ink-light" />
         </button>
         <h3 className="font-semibold text-ink text-sm">今日复习</h3>
+        <button
+          onClick={onViewHistory}
+          className="ml-auto flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] text-ink-lighter hover:text-ink hover:bg-warm-cream transition-colors"
+        >
+          <TrendingUp size={11} />
+          学习历史
+        </button>
       </div>
 
       {/* Mode tabs */}
@@ -415,14 +424,14 @@ function RecallCard({
 }
 
 // ═══════════════════════════════════════
-// Cloze Card (V3.4 — contextual activation)
+// Cloze Card (V3.5 — cloze integrity)
 //
-// Changes from V3.3:
-// - Three-state result: correct | partially_correct | incorrect
-// - 2-attempt retry with progressive hints
-// - No auto-advance (manual "下一题" button)
-// - Chinese hidden by default, "需要提示?" toggle
-// - Scenario/context shown as primary hint
+// V3.5 changes:
+// - safeContext only (no expression leakage from example_sentence)
+// - sourceSentence revealed ONLY after submit
+// - Progressive hint toggle: Level 0→1→2→0 (none / Chinese / structure)
+// - promptIntegrityCheck guard before rendering
+// - hintLevel tracked per question for practice log
 // ═══════════════════════════════════════
 
 function ClozeCard({
@@ -430,7 +439,7 @@ function ClozeCard({
   onResult,
 }: {
   item: SessionItem;
-  onResult: (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string) => void;
+  onResult: (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string, hintCount: number) => void;
 }) {
   const expr = item.expression;
   const english = expr?.english || "";
@@ -452,11 +461,23 @@ function ClozeCard({
   const [answer, setAnswer] = useState("");
   const [attempt, setAttempt] = useState(0); // 0 = not yet submitted, 1 = first attempt, 2 = second attempt
   const [finalResult, setFinalResult] = useState<ClozeResult | null>(null);
-  const [showHint, setShowHint] = useState(false);
+  const [hintLevel, setHintLevel] = useState(0); // 0=none, 1=Chinese, 2=structure
   const [showDetails, setShowDetails] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const maxHintRef = useRef(0); // Track max hint level for logging
 
   const MAX_ATTEMPTS = 2;
+
+  // V3.5: Prompt integrity check before rendering
+  const promptOk = useMemo(() => promptIntegrityCheck(question), [question]);
+
+  const advanceHint = () => {
+    setHintLevel((prev) => {
+      const next = prev >= 2 ? 0 : prev + 1;
+      if (next > maxHintRef.current) maxHintRef.current = next;
+      return next;
+    });
+  };
 
   const handleSubmit = () => {
     if (!answer.trim()) return;
@@ -468,33 +489,57 @@ function ClozeCard({
       setFinalResult("correct");
       setAttempt(nextAttempt);
     } else if (nextAttempt >= MAX_ATTEMPTS) {
-      // Final attempt exhausted
       setFinalResult(result);
       setAttempt(nextAttempt);
     } else {
-      // Wrong but has retries left — show hint
+      // Wrong but has retries left — auto-advance hint
       setAttempt(nextAttempt);
       setAnswer("");
-      setShowHint(true);
-      // Refocus input for retry
+      setHintLevel((prev) => {
+        const next = prev === 0 ? 1 : Math.min(prev + 1, 2);
+        if (next > maxHintRef.current) maxHintRef.current = next;
+        return next;
+      });
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   };
 
   const handleNext = () => {
-    onResult(item.id, finalResult || "incorrect", answer, question.expectedAnswer);
+    onResult(item.id, finalResult || "incorrect", answer, question.expectedAnswer, maxHintRef.current);
   };
 
-  // Build hint text for retry
-  const hintText = buildHint(question.expectedAnswer, attempt);
+  // V3.5: Progressive hint from clozeUtils
+  const progressiveHint = useMemo(
+    () => buildProgressiveHint(question.chineseHint, question.expectedAnswer, hintLevel),
+    [question.chineseHint, question.expectedAnswer, hintLevel],
+  );
+
+  // ── Integrity check failed: show skip card ──
+  if (!promptOk) {
+    return (
+      <div className="bg-white border border-accent-warm/30 rounded-2xl p-6 space-y-4">
+        <div className="flex items-center gap-2 text-accent-warm">
+          <AlertTriangle size={16} />
+          <p className="text-sm font-medium">题目数据异常</p>
+        </div>
+        <p className="text-xs text-ink-light">该填空题的题目数据存在问题（答案泄漏或格式错误），请跳过此题。</p>
+        <button
+          onClick={() => onResult(item.id, "incorrect", "", question.expectedAnswer, 0)}
+          className="w-full py-2.5 bg-warm-cream text-ink rounded-xl text-sm font-medium hover:bg-warm-cream/70 transition-colors"
+        >
+          跳过此题
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* Scenario / Context as primary hint (V3.4 contextual activation) */}
-      {question.scenario && (
+      {/* V3.5: Safe context only — built from context/situation, never leaks target expression */}
+      {question.safeContext && (
         <div className="bg-warm-cream rounded-xl p-3">
           <p className="text-[10px] text-ink-lighter mb-0.5">场景</p>
-          <p className="text-xs text-ink-light leading-relaxed">{question.scenario}</p>
+          <p className="text-xs text-ink-light leading-relaxed">{question.safeContext}</p>
         </div>
       )}
 
@@ -517,11 +562,11 @@ function ClozeCard({
             autoFocus
           />
 
-          {/* Hint on retry */}
-          {showHint && hintText && (
+          {/* V3.5: Progressive hint display */}
+          {hintLevel > 0 && progressiveHint && (
             <div className="flex items-start gap-2 bg-amber-50/50 rounded-xl p-3">
               <Lightbulb size={13} className="text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">{hintText}</p>
+              <p className="text-xs text-amber-700">{progressiveHint}</p>
             </div>
           )}
 
@@ -598,6 +643,14 @@ function ClozeCard({
             </div>
           )}
 
+          {/* V3.5: Source sentence revealed ONLY after submit (NEVER before) */}
+          {question.sourceSentence && (
+            <div className="bg-sage-light/20 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter mb-0.5">原句</p>
+              <p className="text-xs text-ink-light italic">{question.sourceSentence}</p>
+            </div>
+          )}
+
           {/* Expression details toggle */}
           {finalResult !== "correct" && (
             <button
@@ -623,7 +676,7 @@ function ClozeCard({
             </div>
           )}
 
-          {/* Manual "下一题" button (V3.4: no auto-advance) */}
+          {/* Manual "下一题" button */}
           <button
             onClick={handleNext}
             className="w-full py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors flex items-center justify-center gap-2"
@@ -634,40 +687,23 @@ function ClozeCard({
         </div>
       )}
 
-      {/* Chinese hint toggle (V3.4: hidden by default) */}
-      {finalResult === null && chinese && (
+      {/* V3.5: Progressive hint toggle (cycles 0→1→2→0) */}
+      {finalResult === null && (
         <div className="text-center">
-          {!showHint || !chinese ? null : (
-            <p className="text-xs text-ink-light mb-2">{chinese}</p>
-          )}
           <button
-            onClick={() => setShowHint(!showHint)}
+            onClick={advanceHint}
             className={cn(
               "text-[11px] transition-colors flex items-center gap-1 mx-auto",
-              showHint ? "text-ink-light" : "text-ink-lighter hover:text-ink-light",
+              hintLevel > 0 ? "text-ink-light" : "text-ink-lighter hover:text-ink-light",
             )}
           >
             <HelpCircle size={11} />
-            {showHint ? "隐藏中文提示" : "需要提示?"}
+            {hintLevel === 0 ? "需要提示?" : hintLevel === 1 ? "更多提示" : "隐藏提示"}
           </button>
         </div>
       )}
     </div>
   );
-}
-
-/** Build a progressive hint for retry attempts. */
-function buildHint(expectedAnswer: string, attempt: number): string | null {
-  if (attempt < 1) return null;
-
-  const words = expectedAnswer.split(/\s+/);
-  if (attempt === 1) {
-    // First retry: show word count + first letter of each word
-    const firstLetters = words.map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1))).join(" ");
-    return `${words.length} 个词 · ${firstLetters}`;
-  }
-  // Second hint is handled by showing Chinese (via the hint toggle)
-  return null;
 }
 
 // ═══════════════════════════════════════
@@ -1224,7 +1260,7 @@ export default function EnglishReviewV3() {
 
   // ── Cloze handler (NO SRS) ──
   const handleClozeResult = useCallback(
-    async (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string) => {
+    async (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string, hintCount: number) => {
       const item = allItems.find((i) => i.id === itemId);
       if (!item || !session) return;
 
@@ -1235,7 +1271,7 @@ export default function EnglishReviewV3() {
         expressionId: item.expressionId,
         mode: "cloze",
         answer: userAnswer,
-        feedback: isCorrect ? undefined : `expected: ${expectedAnswer}`,
+        feedback: isCorrect ? undefined : `expected: ${expectedAnswer}${hintCount > 0 ? ` (hints: ${hintCount})` : ""}`,
         score,
         sessionId: session.id,
       });
@@ -1336,8 +1372,8 @@ export default function EnglishReviewV3() {
       },
       cloze: {
         completed: clozeLogIds.has(item.expressionId),
-        correct: clozeLogIds.has(item.expressionId),
-        user_answer: null,
+        correct: localClozeResults.get(item.expressionId)?.result === "correct",
+        user_answer: localClozeResults.get(item.expressionId)?.userAnswer || null,
       },
       sentence: {
         completed: sentenceLogIds.has(item.expressionId) || item.userSentence !== null,
@@ -1374,7 +1410,7 @@ export default function EnglishReviewV3() {
     const fallbackSummary = buildFallbackSummary(allItems, dailySet, modeCompletion);
     setAiSummary(fallbackSummary);
     setSummaryGenerating(false);
-  }, [session, allItems, clozeLogIds, sentenceLogIds, recallCompleted, clozeCompleted, clozeCorrect, sentenceCompleted]);
+  }, [session, allItems, clozeLogIds, sentenceLogIds, localClozeResults, recallCompleted, clozeCompleted, clozeCorrect, sentenceCompleted]);
 
   // ── Navigation ──
   const handleBack = () => navigate("/english");
@@ -1461,6 +1497,7 @@ export default function EnglishReviewV3() {
         stats={displayStats}
         onModeChange={switchMode}
         onBack={handleBack}
+        onViewHistory={handleViewHistory}
       />
 
       {/* AI Summary (if shown) */}
