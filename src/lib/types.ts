@@ -180,107 +180,25 @@ export const MONEY_CATEGORY_LABELS: Record<MoneyCategory, string> = {
   other: "其他",
 };
 
-// ── Sidebar Navigation (9 modules) ──
-export const NAV_ITEMS = [
-  {
-    key: "home",
-    label: "首页 Dashboard",
-    icon: "LayoutDashboard" as const,
-    path: "/",
-    description: "每日控制中心",
-  },
-  {
-    key: "plan",
-    label: "计划管理",
-    icon: "CalendarCheck" as const,
-    path: "/plan",
-    description: "目标、任务、习惯",
-  },
-  {
-    key: "career",
-    label: "工作成长",
-    icon: "Briefcase" as const,
-    path: "/career",
-    description: "求职、面试、职业规划",
-  },
-  {
-    key: "english",
-    label: "English OS",
-    icon: "BookOpen" as const,
-    path: "/english",
-    description: "口语、表达库、复习",
-  },
-  {
-    key: "health",
-    label: "健康管理",
-    icon: "Heart" as const,
-    path: "/health",
-    description: "健身、饮食、身体档案",
-  },
-  {
-    key: "exam",
-    label: "考试学习",
-    icon: "GraduationCap" as const,
-    path: "/exam",
-    description: "IELTS、课程、证书",
-  },
-  {
-    key: "life-trace",
-    label: "Life Trace",
-    icon: "Footprints" as const,
-    path: "/life-trace",
-    description: "日记、心情、记账",
-  },
-  {
-    key: "ideas",
-    label: "灵感库",
-    icon: "Lightbulb" as const,
-    path: "/ideas",
-    description: "想法捕捉与整理",
-  },
-  {
-    key: "resources",
-    label: "知识库",
-    icon: "FolderOpen" as const,
-    path: "/resources",
-    description: "资源收藏与管理",
-  },
-  {
-    key: "review",
-    label: "数据复盘",
-    icon: "BarChart3" as const,
-    path: "/review",
-    description: "周报、月报、趋势",
-  },
-  {
-    key: "reflection",
-    label: "AI 反思",
-    icon: "Brain" as const,
-    path: "/reflection",
-    description: "深度反思与成长洞察",
-  },
-  {
-    key: "chinese",
-    label: "中文表达",
-    icon: "Mic" as const,
-    path: "/chinese",
-    description: "中文表达训练",
-  },
-  {
-    key: "ai-dashboard",
-    label: "AI 仪表盘",
-    icon: "Sparkles" as const,
-    path: "/dashboard/ai",
-    description: "个人 AI 能力驾驶舱",
-  },
-  {
-    key: "memory-center",
-    label: "记忆中心",
-    icon: "Database" as const,
-    path: "/memory-center",
-    description: "AI 记忆管理与确认",
-  },
-] as const;
+// ── Sidebar Navigation (re-exported from config) ──
+import { NAVIGATION_ITEMS } from "@/config/navigation";
+
+export const NAV_ITEMS = NAVIGATION_ITEMS.map((item) => ({
+  key: item.id,
+  label: item.label,
+  icon: item.icon,
+  path: item.path,
+  description: item.description,
+  group: item.group,
+})) as readonly {
+  key: string;
+  label: string;
+  icon: string;
+  path: string;
+  description: string;
+  group: string;
+}[];
+
 export type NavKey = (typeof NAV_ITEMS)[number]["key"];
 
 // ── Quick actions ──
