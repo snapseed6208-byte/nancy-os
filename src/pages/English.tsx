@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import {
   BookOpen, Mic, Library, Brain, Eye, Edit3,
   ChevronRight, Zap, Upload, TrendingUp, FileUp,
+  Sparkles, CheckCircle2,
 } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -26,35 +27,33 @@ export default function English() {
         <StatCard label="已掌握" value={isLoading ? "-" : stats?.mastered ?? 0} color="sage" />
       </div>
 
-      {/* Quick review modes */}
-      {dueCount > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-ink-light">选择复习模式 ({dueCount} 条待复习)</p>
-          <div className="grid grid-cols-3 gap-2">
-            <ModeCard
-              icon={Brain}
-              label="主动回忆"
-              desc="看中文说英文"
-              color="purple"
-              onClick={() => navigate("/english/review")}
-            />
-            <ModeCard
-              icon={Eye}
-              label="识别模式"
-              desc="看英文选中文"
-              color="blue"
-              onClick={() => navigate("/english/review")}
-            />
-            <ModeCard
-              icon={Edit3}
-              label="填空模式"
-              desc="例句中填空"
-              color="amber"
-              onClick={() => navigate("/english/review")}
-            />
-          </div>
+      {/* Three training modes — independent entry points */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-ink-light">训练模式</p>
+        <div className="grid grid-cols-3 gap-2">
+          <ModeCard
+            icon={Brain}
+            label="主动回忆"
+            desc="看中文说英文"
+            color="purple"
+            onClick={() => navigate("/english/review?mode=recall")}
+          />
+          <ModeCard
+            icon={Edit3}
+            label="语境填空"
+            desc="例句中填空"
+            color="amber"
+            onClick={() => navigate("/english/review?mode=cloze")}
+          />
+          <ModeCard
+            icon={Eye}
+            label="个人造句"
+            desc="活用表达造句"
+            color="blue"
+            onClick={() => navigate("/english/review?mode=sentence")}
+          />
         </div>
-      )}
+      </div>
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 gap-3">
@@ -63,7 +62,7 @@ export default function English() {
           label="SRS 复习"
           desc={dueCount ? `${dueCount} 条待复习` : "全部掌握!"}
           highlight={!!(dueCount > 0)}
-          onClick={() => navigate("/english/review")}
+          onClick={() => navigate("/english/review?mode=recall")}
           extra={stats?.todayReviewed ? `今日已复习 ${stats.todayReviewed} 条` : undefined}
         />
         <ActionCard
@@ -80,9 +79,9 @@ export default function English() {
         />
         <ActionCard
           icon={TrendingUp}
-          label="My Progress"
-          desc="口语成长轨迹 · 弱点分析 · 高频错误"
-          onClick={() => navigate("/english/progress")}
+          label="学习历史"
+          desc="今日报告 · 学习记录 · 趋势分析"
+          onClick={() => navigate("/english/history")}
         />
         <ActionCard
           icon={Upload}
@@ -128,15 +127,15 @@ export default function English() {
           </span>
         </div>
         <p className="text-sm text-ink-light leading-relaxed">
-          3种复习模式：主动回忆（看中文说英文）、识别模式（看英文选中文）、填空模式（例句填空）。
-          AI 驱动的间隔重复系统 + 口语练习四维评分。从"看到英文认识"到"看到场景主动说英文"。
+          3 种训练模式：主动回忆（看中文说英文）、语境填空（例句填空）、个人造句（活用表达造句）。
+          三种模式共享同一套 Daily Set，自由切换，独立追踪进度。
         </p>
       </div>
     </div>
   );
 }
 
-// ── Mode Card (small, for quick mode select) ──
+// ── Mode Card ──
 
 function ModeCard({
   icon: Icon,

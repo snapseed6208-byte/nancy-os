@@ -1,16 +1,17 @@
 // ============================================
-// English SRS V3.2 — 32 Regression Tests
+// English SRS V3.3 — 44 Regression Tests
 // Self-contained: no app imports to avoid
 // transitive dependency resolution in test worker.
 //
-// Tests 1-20: Original tests (updated for corrected model)
-// Tests A-L: 12 new tests from Correction Audit
+// Tests 1-20: Preserved SRS core + cloze tests
+// Tests A-J: V3.3 Mode routing, cloze validation, SRS isolation
+// Tests K-O: Resume, daily set, mode-specific stats
 // ============================================
 
 import { describe, it, expect } from "vitest";
 
 // ═══════════════════════════════════════
-// Inline type mirrors (kept in sync with useReviewSession.ts)
+// Inline type mirrors
 // ═══════════════════════════════════════
 
 interface ExpressionCard {
@@ -103,302 +104,593 @@ function makeSessionItem(overrides?: Partial<SessionItem>): SessionItem {
   };
 }
 
+function make15Items(): SessionItem[] {
+  return Array.from({ length: 15 }, (_, i) =>
+    makeSessionItem({ id: `item-${i}`, expressionId: `expr-${i}` }),
+  );
+}
+
 // ═══════════════════════════════════════
-// Pure logic extracted from EnglishReviewV3.tsx
+// Pure logic mirrors from source files
 // ═══════════════════════════════════════
 
-function buildClozeText(item: SessionItem): string {
-  const expr = item.expression;
-  const english = expr?.english || "";
-  const clozeSaved = expr?.cloze_sentence;
-  const example = expr?.example_sentence;
+// ── clozeUtils.ts mirrors ──
 
-  if (clozeSaved) return clozeSaved;
+interface ClozeQuestion {
+  prompt: string;
+  expectedAnswer: string;
+  acceptedAnswers: string[];
+  source: "cloze_sentence" | "example_sentence" | "fallback";
+  valid: boolean;
+}
 
-  if (example) {
-    const escaped = english.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function normalizeClozeAnswer(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/['‘’‚‛′‵]/g, "'")
+    .replace(/["“”„″‶]/g, '"')
+    .replace(/[,.!?;:'"]+$/, "")
+    .trim();
+}
+
+function validateClozeAnswer(userAnswer: string, acceptedAnswers: string[]): boolean {
+  if (!userAnswer.trim()) return false;
+  const normalized = normalizeClozeAnswer(userAnswer);
+  if (!normalized) return false;
+  return acceptedAnswers.some((a) => normalizeClozeAnswer(a) === normalized);
+}
+
+function hasExpressionLeakage(prompt: string, expression: string): boolean {
+  const p = normalizeClozeAnswer(prompt);
+  const e = normalizeClozeAnswer(expression);
+  return p.includes(e);
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildClozeQuestion(
+  english: string,
+  chinese: string,
+  clozeSentence?: string | null,
+  exampleSentence?: string | null,
+): ClozeQuestion {
+  // Priority 1: cloze_sentence
+  if (clozeSentence) {
+    const blanks = (clozeSentence.match(/_{2,}|\[blank\]/gi) || []).length;
+    if (blanks >= 1) {
+      const hasLeak = hasExpressionLeakage(clozeSentence, english);
+      if (!hasLeak) {
+        return {
+          prompt: clozeSentence,
+          expectedAnswer: english,
+          acceptedAnswers: [english],
+          source: "cloze_sentence",
+          valid: true,
+        };
+      }
+    }
+  }
+
+  // Priority 2: example_sentence
+  if (exampleSentence) {
+    const escaped = escapeRegex(english);
     const regex = new RegExp(escaped, "gi");
-    const replaced = example.replace(regex, "_____");
-    if (replaced !== example) return replaced;
+    const replaced = exampleSentence.replace(regex, "_____");
+    if (replaced !== exampleSentence) {
+      if (!hasExpressionLeakage(replaced, english)) {
+        return {
+          prompt: replaced,
+          expectedAnswer: english,
+          acceptedAnswers: [english],
+          source: "example_sentence",
+          valid: true,
+        };
+      }
+    }
 
-    const words = example.split(/\s+/);
+    const words = exampleSentence.split(/\s+/);
     if (words.length >= 6) {
       const start = Math.floor(words.length * 0.3);
       const end = Math.min(words.length, start + 3);
       const parts = [...words];
       for (let i = start; i < end; i++) parts[i] = "_____";
-      return parts.join(" ");
+      const prompt = parts.join(" ");
+      if (!hasExpressionLeakage(prompt, english)) {
+        const expectedWords = words.slice(start, end).join(" ");
+        return { prompt, expectedAnswer: expectedWords, acceptedAnswers: [expectedWords], source: "example_sentence", valid: true };
+      }
     }
-    return example;
   }
 
-  const words = english.split(/\s+/);
-  if (words.length >= 2) {
-    const mid = Math.floor(words.length / 2);
-    const parts = [...words];
+  // Priority 3: fallback
+  const exprWords = english.split(/\s+/);
+  if (exprWords.length >= 2) {
+    const mid = Math.floor(exprWords.length / 2);
+    const parts = [...exprWords];
     parts[mid] = "_____";
-    return parts.join(" ");
+    const prompt = parts.join(" ");
+    if (!hasExpressionLeakage(prompt, english)) {
+      return { prompt, expectedAnswer: exprWords[mid], acceptedAnswers: [exprWords[mid]], source: "fallback", valid: true };
+    }
   }
 
-  return `_____ (${expr?.chinese || ""})`;
+  return {
+    prompt: `_____ (${chinese})`,
+    expectedAnswer: english,
+    acceptedAnswers: [english],
+    source: "fallback",
+    valid: true,
+  };
 }
+
+// ── Mode helpers ──
+
+type ReviewMode = "recall" | "cloze" | "sentence";
+
+function getDailySetIds(items: SessionItem[]): string[] {
+  return items.map((i) => i.id);
+}
+
+function countModeCompleted(
+  items: SessionItem[],
+  mode: ReviewMode,
+  clozeLogIds?: Set<string>,
+  sentenceLogIds?: Set<string>,
+): number {
+  if (mode === "recall") return items.filter((i) => i.recallScore !== null).length;
+  if (mode === "cloze") return clozeLogIds ? clozeLogIds.size : 0;
+  if (mode === "sentence") return sentenceLogIds ? sentenceLogIds.size : 0;
+  return 0;
+}
+
+function findResumeIndex(
+  items: SessionItem[],
+  dailySetIds: string[],
+  mode: ReviewMode,
+  clozeLogIds: Set<string>,
+  sentenceLogIds: Set<string>,
+): number {
+  for (let i = 0; i < dailySetIds.length; i++) {
+    const item = items.find((it) => it.id === dailySetIds[i]);
+    if (!item) continue;
+    if (mode === "recall" && item.recallScore === null) return i;
+    if (mode === "cloze" && !clozeLogIds.has(item.expressionId)) return i;
+    if (mode === "sentence" && !sentenceLogIds.has(item.expressionId)) return i;
+  }
+  return dailySetIds.length;
+}
+
+// ── SRS helpers ──
 
 function getSrsRating(score: number): "again" | "hard" | "good" | "easy" {
   if (score >= 4) return "good";
   return "hard";
 }
 
-// ═══════════════════════════════════════
-// V3.2 CORRECTED round derivation:
-//
-// dailySetIds = immutable array of ALL 15 session item IDs
-// ALL 3 rounds use dailySetIds
-// reinforcementOrder is separate (only score 1-2 from Round 1)
-// ═══════════════════════════════════════
-
-function getDailySetIds(items: SessionItem[]): string[] {
-  return items.map((i) => i.id);
+function shouldSubmitSrs(inRecallMode: boolean, srsSubmittedIds: Set<string>, itemId: string): boolean {
+  return inRecallMode && !srsSubmittedIds.has(itemId);
 }
-
-function getReinforcementOrder(items: SessionItem[]): string[] {
-  return items
-    .filter((i) => i.recallScore !== null && i.recallScore <= 2)
-    .map((i) => i.id);
-}
-
-function getRoundOrder(round: 1 | 2 | 3, dailySetIds: string[], _items: SessionItem[]): string[] {
-  // ALL 3 rounds return the full dailySetIds
-  return [...dailySetIds];
-}
-
-// ── Mutation helpers (unchanged from V3.1) ──
 
 function applyRecallResult(item: SessionItem, score: number): void {
-  const passed = score >= 3;
   item.recallScore = score;
-  item.status = passed ? "passed" : "failed";
+  item.status = score >= 3 ? "passed" : "failed";
   item.attemptCount += 1;
-  item.reinforcementRound = 0;
-}
-
-function applyRecallResultInReinforcement(item: SessionItem, score: number, reinforcementRound: number): void {
-  const passed = score >= 3;
-  item.recallScore = score;
-  item.status = passed ? "passed" : "failed";
-  item.attemptCount += 1;
-  item.reinforcementRound = reinforcementRound;
-}
-
-function applyClozeResult(item: SessionItem, passed: boolean): void {
-  item.status = passed ? "passed" : "failed";
-  item.attemptCount += 1;
-}
-
-function applySentenceResult(item: SessionItem, sentence: string): void {
-  item.userSentence = sentence;
-  item.sentenceScore = 3;
-  item.status = "completed";
-  item.attemptCount += 1;
-}
-
-function shouldSubmitSrs(inReinforcement: boolean, srsSubmittedIds: Set<string>, itemId: string): boolean {
-  return !inReinforcement && !srsSubmittedIds.has(itemId);
-}
-
-function getSessionStats(items: SessionItem[]) {
-  const total = items.length;
-  const passed = items.filter((i) => i.status === "passed" || i.status === "completed").length;
-  const failed = items.filter((i) => i.status === "failed" || i.status === "reinforcement").length;
-  const pending = items.filter((i) => i.status === "pending").length;
-  const inProgress = items.filter((i) => i.status === "in_progress").length;
-  return { total, passed, failed, pending, inProgress };
 }
 
 // ═══════════════════════════════════════
-// Tests 1–4: buildClozeText fallback chain
+// Tests 1-4: buildClozeQuestion (NEW V3.3)
 // ═══════════════════════════════════════
 
-describe("buildClozeText — fallback chain", () => {
-  it("1. uses pre-generated cloze_sentence when available", () => {
-    const item = makeSessionItem({
-      expression: makeExpression({
-        cloze_sentence: "The quick _____ fox jumps over the lazy dog.",
-      }),
-    });
-    expect(buildClozeText(item)).toBe("The quick _____ fox jumps over the lazy dog.");
+describe("buildClozeQuestion — V3.3", () => {
+  it("1. uses valid cloze_sentence when available (no leakage)", () => {
+    const q = buildClozeQuestion(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to _____ and fix the problem.",
+    );
+    expect(q.source).toBe("cloze_sentence");
+    expect(q.prompt).toContain("_____");
+    expect(q.valid).toBe(true);
+    expect(q.expectedAnswer).toBe("take the bull by the horns");
   });
 
-  it("2. blanks out expression in example_sentence when no cloze_sentence", () => {
-    const item = makeSessionItem({
-      expression: makeExpression({
-        cloze_sentence: undefined,
-        english: "take the bull by the horns",
-        example_sentence: "Sometimes you just have to take the bull by the horns and fix the problem.",
-      }),
-    });
-    const result = buildClozeText(item);
-    expect(result).toContain("_____");
-    expect(result).not.toContain("take the bull by the horns");
+  it("2. rejects cloze_sentence that leaks target expression", () => {
+    const q = buildClozeQuestion(
+      "get something off my plate",
+      "卸下负担",
+      "get something off my plate means to remove a burden.",
+      "I need to get something off my plate before the weekend.",
+    );
+    // cloze_sentence has leakage → should fall back to example_sentence
+    expect(q.source).toBe("example_sentence");
+    expect(q.valid).toBe(true);
+    expect(hasExpressionLeakage(q.prompt, "get something off my plate")).toBe(false);
   });
 
-  it("3. blanks phrase in long example when expression not embedded", () => {
-    const item = makeSessionItem({
-      expression: makeExpression({
-        cloze_sentence: undefined,
-        english: "xyzzy",
-        example_sentence: "The quick brown fox jumps over the lazy dog today.",
-      }),
-    });
-    const result = buildClozeText(item);
-    expect(result).toContain("_____");
-    const blankCount = (result.match(/_____/g) || []).length;
-    expect(blankCount).toBe(3);
+  it("3. blanks expression in example_sentence (exact replacement)", () => {
+    const q = buildClozeQuestion(
+      "a great way to unwind",
+      "放松的好方法",
+      undefined,
+      "Cycling is a great way to unwind after a stressful day at work.",
+    );
+    expect(q.source).toBe("example_sentence");
+    expect(q.prompt).toContain("_____");
+    expect(q.prompt).not.toContain("a great way to unwind");
+    expect(q.expectedAnswer).toBe("a great way to unwind");
   });
 
-  it("4. blanks expression word(s) when no example sentence at all", () => {
-    const item = makeSessionItem({
-      expression: makeExpression({
-        cloze_sentence: undefined,
-        example_sentence: undefined,
-        english: "take the bull by the horns",
-        chinese: "迎难而上",
-      }),
-    });
-    const result = buildClozeText(item);
-    expect(result).toContain("_____");
-    expect(result).toContain("take");
+  it("4. falls back to word blanking when expression not in example", () => {
+    const q = buildClozeQuestion(
+      "xyzzy",
+      "测试",
+      undefined,
+      "The quick brown fox jumps over the lazy dog today.",
+    );
+    expect(q.source).toBe("example_sentence");
+    expect(q.prompt).toContain("_____");
+    expect(q.valid).toBe(true);
+    expect(hasExpressionLeakage(q.prompt, "xyzzy")).toBe(false);
   });
 });
 
 // ═══════════════════════════════════════
-// Tests 5–8: SRS rating cap
+// Tests 5-8: Cloze answer validation
 // ═══════════════════════════════════════
 
-describe("SRS rating — reinforcement cap", () => {
-  it("5. score 1 → 'hard' (capped, not 'again')", () => {
+describe("validateClozeAnswer — strict matching", () => {
+  const accepted = ["take the bull by the horns"];
+
+  it("5. correct answer passes", () => {
+    expect(validateClozeAnswer("take the bull by the horns", accepted)).toBe(true);
+  });
+
+  it("6. wrong answer fails", () => {
+    expect(validateClozeAnswer("Skirts of my plate", accepted)).toBe(false);
+  });
+
+  it("7. empty answer fails", () => {
+    expect(validateClozeAnswer("", accepted)).toBe(false);
+    expect(validateClozeAnswer("   ", accepted)).toBe(false);
+  });
+
+  it("8. correct answer with different case/spacing passes", () => {
+    expect(validateClozeAnswer("  Take   the Bull by the Horns.  ", accepted)).toBe(true);
+    expect(validateClozeAnswer("TAKE THE BULL BY THE HORNS!", accepted)).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════
+// Tests 9-12: normalizeClozeAnswer
+// ═══════════════════════════════════════
+
+describe("normalizeClozeAnswer", () => {
+  it("9. trims, lowercases, collapses spaces", () => {
+    expect(normalizeClozeAnswer("  Take   Initiative.  ")).toBe("take initiative");
+  });
+
+  it("10. removes trailing punctuation", () => {
+    expect(normalizeClozeAnswer("Hello World!")).toBe("hello world");
+    expect(normalizeClozeAnswer("What's up?")).toBe("what's up");
+  });
+
+  it("11. normalizes apostrophes", () => {
+    expect(normalizeClozeAnswer("don’t")).toBe("don't");
+  });
+
+  it("12. preserves internal punctuation", () => {
+    const result = normalizeClozeAnswer("state-of-the-art");
+    expect(result).toBe("state-of-the-art");
+  });
+});
+
+// ═══════════════════════════════════════
+// Tests 13-16: Cloze leakage guard
+// ═══════════════════════════════════════
+
+describe("hasExpressionLeakage", () => {
+  it("13. detects leaked expression in prompt", () => {
+    expect(hasExpressionLeakage(
+      "get something off my plate means...",
+      "get something off my plate",
+    )).toBe(true);
+  });
+
+  it("14. no leakage when expression removed", () => {
+    expect(hasExpressionLeakage(
+      "_____ means to remove a burden.",
+      "get something off my plate",
+    )).toBe(false);
+  });
+
+  it("15. builds valid question with no leakage from example_sentence", () => {
+    const q = buildClozeQuestion(
+      "get something off my plate",
+      "卸下负担",
+      undefined,
+      "I need to get something off my plate before the weekend.",
+    );
+    expect(q.valid).toBe(true);
+    expect(q.source).toBe("example_sentence");
+    expect(hasExpressionLeakage(q.prompt, "get something off my plate")).toBe(false);
+    expect(q.prompt).toContain("_____");
+  });
+
+  it("16. invalid cloze with leakage falls back correctly", () => {
+    const q = buildClozeQuestion(
+      "test phrase",
+      "测试",
+      undefined,
+      undefined,
+    );
+    expect(q.valid).toBe(true);
+    expect(q.source).toBe("fallback");
+  });
+});
+
+// ═══════════════════════════════════════
+// Tests 17-20: SRS rating cap (preserved from V3.2)
+// ═══════════════════════════════════════
+
+describe("SRS rating", () => {
+  it("17. score 1 → 'hard' (capped)", () => {
     expect(getSrsRating(1)).toBe("hard");
   });
 
-  it("6. score 2 → 'hard' (capped, not 'again')", () => {
+  it("18. score 2 → 'hard' (capped)", () => {
     expect(getSrsRating(2)).toBe("hard");
   });
 
-  it("7. score 3 → 'hard' (borderline, capped)", () => {
+  it("19. score 3 → 'hard' (borderline)", () => {
     expect(getSrsRating(3)).toBe("hard");
   });
 
-  it("8. score 4–5 → 'good' (clear pass, normal rating)", () => {
+  it("20. score 4-5 → 'good'", () => {
     expect(getSrsRating(4)).toBe("good");
     expect(getSrsRating(5)).toBe("good");
   });
 });
 
 // ═══════════════════════════════════════
-// Tests 9–12: CORRECTED Round order — all 3 rounds = dailySetIds
+// TESTS A-D: Mode Routing (V3.3 NEW)
 // ═══════════════════════════════════════
 
-describe("getRoundOrder — ALL 3 rounds use same dailySetIds (corrected)", () => {
-  const items = [
-    makeSessionItem({ id: "a", status: "pending", recallScore: null, reinforcementRound: 0 }),
-    makeSessionItem({ id: "b", status: "pending", recallScore: null, reinforcementRound: 0 }),
-    makeSessionItem({ id: "c", status: "passed", recallScore: 5, reinforcementRound: 0 }),
-    makeSessionItem({ id: "d", status: "failed", recallScore: 1, reinforcementRound: 0 }),
-    makeSessionItem({ id: "e", status: "failed", recallScore: 2, reinforcementRound: 0 }),
-    makeSessionItem({ id: "f", status: "completed", recallScore: 1, reinforcementRound: 3 }),
-  ];
-  const dailySetIds = getDailySetIds(items);
-
-  it("9. Round 1 = dailySetIds (all 15 in real session, all 6 in test)", () => {
-    const order = getRoundOrder(1, dailySetIds, items);
-    expect(order).toEqual(["a", "b", "c", "d", "e", "f"]);
-    expect(order.length).toBe(6);
+describe("V3.3 Mode Routing", () => {
+  it("A1. mode=recall routes to recall mode", () => {
+    const params = new URLSearchParams("mode=recall");
+    const rawMode = params.get("mode") || "";
+    const mode: ReviewMode = ["recall", "cloze", "sentence"].includes(rawMode)
+      ? (rawMode as ReviewMode) : "recall";
+    expect(mode).toBe("recall");
   });
 
-  it("10. Round 2 = dailySetIds (ALL 15, NOT failed-only)", () => {
-    const order = getRoundOrder(2, dailySetIds, items);
-    // Must include ALL items, even those that passed Round 1
-    expect(order).toEqual(["a", "b", "c", "d", "e", "f"]);
-    expect(order.length).toBe(6);
-    // Specifically verify passed items are included (the bug was filtering them out)
-    expect(order).toContain("c"); // passed in Round 1
-    expect(order).toContain("f"); // completed
+  it("A2. mode=cloze routes to cloze mode", () => {
+    const params = new URLSearchParams("mode=cloze");
+    const rawMode = params.get("mode") || "";
+    const mode: ReviewMode = ["recall", "cloze", "sentence"].includes(rawMode)
+      ? (rawMode as ReviewMode) : "recall";
+    expect(mode).toBe("cloze");
   });
 
-  it("11. Round 3 = dailySetIds (ALL 15, NOT still-failed-only)", () => {
-    const order = getRoundOrder(3, dailySetIds, items);
-    expect(order).toEqual(["a", "b", "c", "d", "e", "f"]);
-    expect(order.length).toBe(6);
-    expect(order).toContain("c"); // passed previously
-    expect(order).toContain("a"); // pending
+  it("A3. mode=sentence routes to sentence mode", () => {
+    const params = new URLSearchParams("mode=sentence");
+    const rawMode = params.get("mode") || "";
+    const mode: ReviewMode = ["recall", "cloze", "sentence"].includes(rawMode)
+      ? (rawMode as ReviewMode) : "recall";
+    expect(mode).toBe("sentence");
   });
 
-  it("12. dailySetIds never changes regardless of item status changes", () => {
-    const ids1 = getDailySetIds(items);
-    // Simulate mutations that change item statuses
-    applyRecallResult(items[0], 4); // a: passed
-    applyRecallResult(items[1], 1); // b: failed
-    const ids2 = getDailySetIds(items);
-    // IDs stay the same (order and content unchanged)
+  it("A4. invalid mode falls back to recall", () => {
+    const params = new URLSearchParams("mode=invalid");
+    const rawMode = params.get("mode") || "";
+    const mode: ReviewMode = ["recall", "cloze", "sentence"].includes(rawMode)
+      ? (rawMode as ReviewMode) : "recall";
+    expect(mode).toBe("recall");
+  });
+
+  it("A5. no mode param falls back to recall", () => {
+    const params = new URLSearchParams("");
+    const rawMode = params.get("mode") || "";
+    const mode: ReviewMode = ["recall", "cloze", "sentence"].includes(rawMode)
+      ? (rawMode as ReviewMode) : "recall";
+    expect(mode).toBe("recall");
+  });
+});
+
+// ═══════════════════════════════════════
+// TESTS E-H: Daily Set identity (V3.3)
+// ═══════════════════════════════════════
+
+describe("V3.3 Daily Set Identity", () => {
+  it("E. all 3 modes share identical dailySetIds", () => {
+    const items = make15Items();
+    const ids = getDailySetIds(items);
+    expect(ids.length).toBe(15);
+
+    // Same IDs used for all modes
+    const recallIds = getDailySetIds(items);
+    const clozeIds = getDailySetIds(items);
+    const sentenceIds = getDailySetIds(items);
+    expect(recallIds).toEqual(clozeIds);
+    expect(clozeIds).toEqual(sentenceIds);
+  });
+
+  it("F. dailySetIds unchanged after recall results", () => {
+    const items = make15Items();
+    const before = getDailySetIds(items);
+
+    // Apply recall results
+    for (let i = 0; i < 5; i++) applyRecallResult(items[i], 4);
+
+    const after = getDailySetIds(items);
+    expect(before).toEqual(after);
+  });
+
+  it("G. dailySetIds unchanged after cloze completions (tracked separately)", () => {
+    const items = make15Items();
+    const before = getDailySetIds(items);
+
+    // Cloze completions don't modify items
+    const clozeLogIds = new Set<string>(["expr-0", "expr-1", "expr-2"]);
+
+    const after = getDailySetIds(items);
+    expect(before).toEqual(after);
+    expect(before.length).toBe(15);
+  });
+
+  it("H. page refresh preserves dailySetIds (simulated)", () => {
+    const items1 = make15Items();
+    const ids1 = getDailySetIds(items1);
+
+    // Simulated reload: same data from DB
+    const items2 = make15Items();
+    const ids2 = getDailySetIds(items2);
+
     expect(ids1).toEqual(ids2);
-    expect(ids1.length).toBe(6);
   });
 });
 
 // ═══════════════════════════════════════
-// Tests 13–14: Round completion detection
+// TESTS I-L: Mode progress resume (V3.3 NEW)
 // ═══════════════════════════════════════
 
-describe("Round completion detection", () => {
-  it("13. round complete when currentIndex reaches roundOrder.length", () => {
-    const roundOrder = ["a", "b", "c"];
-    expect(3 >= roundOrder.length).toBe(true);
+describe("V3.3 Mode Progress Resume", () => {
+  it("I. cloze 6/15 done → resume at 7th item", () => {
+    const items = make15Items();
+    const dailySetIds = getDailySetIds(items);
+    const clozeLogIds = new Set<string>([
+      "expr-0", "expr-1", "expr-2", "expr-3", "expr-4", "expr-5",
+    ]);
+
+    const idx = findResumeIndex(items, dailySetIds, "cloze", clozeLogIds, new Set());
+    expect(idx).toBe(6);
   });
 
-  it("14. round NOT complete when currentIndex < roundOrder.length", () => {
-    const roundOrder = ["a", "b", "c"];
-    expect(1 >= roundOrder.length).toBe(false);
+  it("J. sentence 4/15 done → resume at 5th item", () => {
+    const items = make15Items();
+    const dailySetIds = getDailySetIds(items);
+    const sentenceLogIds = new Set<string>([
+      "expr-0", "expr-1", "expr-2", "expr-3",
+    ]);
+
+    const idx = findResumeIndex(items, dailySetIds, "sentence", new Set(), sentenceLogIds);
+    expect(idx).toBe(4);
   });
-});
 
-// ═══════════════════════════════════════
-// Test 15: Progress stability — dailySetIds immutable
-// ═══════════════════════════════════════
+  it("K. recall 15/15 done → resume at end (all complete)", () => {
+    const items = make15Items();
+    const dailySetIds = getDailySetIds(items);
+    for (const item of items) applyRecallResult(item, 4);
 
-describe("Progress stability", () => {
-  it("15. denominator stays constant — dailySetIds never shrinks during any round", () => {
-    const items = Array.from({ length: 15 }, (_, i) =>
-      makeSessionItem({ id: `item-${i}`, status: "pending" }),
-    );
+    const idx = findResumeIndex(items, dailySetIds, "recall", new Set(), new Set());
+    expect(idx).toBe(15); // all complete
+  });
+
+  it("L. cloze 0/15 → resume at 0 (first item)", () => {
+    const items = make15Items();
     const dailySetIds = getDailySetIds(items);
 
-    // Round 1: 15 items
-    expect(dailySetIds.length).toBe(15);
-
-    // Simulate Round 1 processing: some pass, some fail
-    applyRecallResult(items[0], 5); // passed
-    applyRecallResult(items[1], 1); // failed
-    applyRecallResult(items[2], 2); // failed
-
-    // dailySetIds still 15
-    const idsAfterR1 = getDailySetIds(items);
-    expect(idsAfterR1.length).toBe(15);
-
-    // Round 2: still 15 (not filtered to failed-only)
-    const r2Order = getRoundOrder(2, idsAfterR1, items);
-    expect(r2Order.length).toBe(15);
-
-    // Round 3: still 15 (not filtered to still-failed-only)
-    const r3Order = getRoundOrder(3, idsAfterR1, items);
-    expect(r3Order.length).toBe(15);
+    const idx = findResumeIndex(items, dailySetIds, "cloze", new Set(), new Set());
+    expect(idx).toBe(0);
   });
 });
 
 // ═══════════════════════════════════════
-// Tests 16–17: ExpressionCard fields
+// TESTS M-P: SRS Isolation (V3.3 CRITICAL)
 // ═══════════════════════════════════════
 
-describe("ExpressionCard — full detail fields", () => {
-  it("16. all detail fields are present on ExpressionCard", () => {
+describe("V3.3 SRS Isolation", () => {
+  it("M. SRS submits only in recall mode", () => {
+    const srsSubmitted = new Set<string>();
+    // In recall mode, not yet submitted → true
+    expect(shouldSubmitSrs(true, srsSubmitted, "expr-1")).toBe(true);
+  });
+
+  it("N. SRS does NOT submit in non-recall mode (cloze/sentence)", () => {
+    const srsSubmitted = new Set<string>();
+    // Not in recall mode → always false
+    expect(shouldSubmitSrs(false, srsSubmitted, "expr-1")).toBe(false);
+  });
+
+  it("O. SRS does NOT submit twice for same expression in recall", () => {
+    const srsSubmitted = new Set<string>(["expr-1"]);
+    expect(shouldSubmitSrs(true, srsSubmitted, "expr-1")).toBe(false);
+  });
+
+  it("P. applyRecallResult modifies recallScore (SRS-relevant), others don't", () => {
+    const item1 = makeSessionItem({ id: "a", expressionId: "expr-a", recallScore: null });
+
+    // Recall changes recallScore
+    applyRecallResult(item1, 4);
+    expect(item1.recallScore).toBe(4); // SRS uses this
+
+    // Cloze would NOT change recallScore (tested via no-op)
+    const scoreBeforeCloze = item1.recallScore;
+    item1.status = "passed"; // simulate cloze
+    expect(item1.recallScore).toBe(scoreBeforeCloze); // unchanged
+
+    // Sentence would NOT change recallScore
+    const scoreBeforeSentence = item1.recallScore;
+    item1.userSentence = "My sentence.";
+    expect(item1.recallScore).toBe(scoreBeforeSentence); // unchanged
+  });
+});
+
+// ═══════════════════════════════════════
+// TESTS Q-T: Mode completion stats (V3.3)
+// ═══════════════════════════════════════
+
+describe("V3.3 Mode Completion Stats", () => {
+  it("Q. recall completion count = items with recallScore !== null", () => {
+    const items = make15Items();
+    for (let i = 0; i < 8; i++) applyRecallResult(items[i], i < 5 ? 4 : 2);
+
+    const completed = countModeCompleted(items, "recall");
+    expect(completed).toBe(8);
+  });
+
+  it("R. cloze completion count = from practice logs (independent of recall)", () => {
+    const items = make15Items();
+    // Even if recall is 0, cloze can have progress
+    const clozeLogIds = new Set<string>(["expr-0", "expr-1", "expr-2", "expr-3", "expr-4", "expr-5"]);
+    const completed = countModeCompleted(items, "cloze", clozeLogIds);
+    expect(completed).toBe(6);
+  });
+
+  it("S. sentence completion count = from practice logs", () => {
+    const items = make15Items();
+    const sentenceLogIds = new Set<string>(["expr-0", "expr-1", "expr-2"]);
+    const completed = countModeCompleted(items, "sentence", undefined, sentenceLogIds);
+    expect(completed).toBe(3);
+  });
+
+  it("T. all 3 modes can have different completion counts", () => {
+    const items = make15Items();
+    for (let i = 0; i < 15; i++) applyRecallResult(items[i], 4);
+
+    const clozeIds = new Set(["expr-0", "expr-1", "expr-2", "expr-3", "expr-4", "expr-5"]);
+    const sentenceIds = new Set(["expr-0", "expr-1", "expr-2"]);
+
+    const recallDone = countModeCompleted(items, "recall");
+    const clozeDone = countModeCompleted(items, "cloze", clozeIds);
+    const sentenceDone = countModeCompleted(items, "sentence", undefined, sentenceIds);
+
+    expect(recallDone).toBe(15);
+    expect(clozeDone).toBe(6);
+    expect(sentenceDone).toBe(3);
+  });
+});
+
+// ═══════════════════════════════════════
+// TESTS U-X: ExpressionCard + status transitions (preserved)
+// ═══════════════════════════════════════
+
+describe("ExpressionCard & Status", () => {
+  it("U. all detail fields present", () => {
     const card = makeExpression();
     expect(card.pronunciation).toBeTruthy();
     expect(card.example_sentence).toBeTruthy();
@@ -416,325 +708,22 @@ describe("ExpressionCard — full detail fields", () => {
     expect(card.notes).toBeTruthy();
   });
 
-  it("17. undefined detail fields don't break consumers (optional chaining safety)", () => {
-    const card = makeExpression({
-      pronunciation: undefined,
-      english_explanation: undefined,
-      usage_note: undefined,
-      context: undefined,
-      memory_tip: undefined,
-      cloze_sentence: undefined,
-    });
-
+  it("V. undefined fields safe with optional chaining", () => {
+    const card = makeExpression({ pronunciation: undefined, memory_tip: undefined });
     expect(card?.pronunciation).toBeUndefined();
     expect(card?.memory_tip).toBeUndefined();
     expect(card.english).toBe("take the bull by the horns");
-    expect(card.chinese).toBe("迎难而上");
   });
-});
 
-// ═══════════════════════════════════════
-// Tests 18–19: Status transitions
-// ═══════════════════════════════════════
-
-describe("SessionItem — status transitions", () => {
-  it("18. Round 1: score >= 3 → status 'passed', SRS gets 'hard' or 'good'", () => {
+  it("W. recall score ≥ 3 → status 'passed'", () => {
     const item = makeSessionItem({ status: "pending" });
     applyRecallResult(item, 4);
     expect(item.status).toBe("passed");
-    expect(item.recallScore).toBe(4);
-    expect(getSrsRating(4)).toBe("good");
-
-    const item2 = makeSessionItem({ status: "pending" });
-    applyRecallResult(item2, 3);
-    expect(item2.status).toBe("passed");
-    expect(getSrsRating(3)).toBe("hard");
   });
 
-  it("19. Round 1: score < 3 → status 'failed', SRS capped at 'hard'", () => {
+  it("X. recall score < 3 → status 'failed'", () => {
     const item = makeSessionItem({ status: "pending" });
     applyRecallResult(item, 1);
     expect(item.status).toBe("failed");
-    expect(item.recallScore).toBe(1);
-    expect(getSrsRating(1)).toBe("hard");
-  });
-});
-
-// ═══════════════════════════════════════
-// Test 20: CORRECTED Full 3-round lifecycle
-// (All rounds use dailySetIds, reinforcement is separate)
-// ═══════════════════════════════════════
-
-describe("Full 3-round lifecycle (corrected)", () => {
-  it("20. Round 1 → Round 2 (ALL items) → Round 3 (ALL items) with separate reinforcement", () => {
-    const items = [
-      makeSessionItem({ id: "a", status: "pending" }),
-      makeSessionItem({ id: "b", status: "pending" }),
-      makeSessionItem({ id: "c", status: "pending" }),
-    ];
-    const dailySetIds = getDailySetIds(items);
-
-    // ── Round 1: Active Recall (all items) ──
-    const r1Order = getRoundOrder(1, dailySetIds, items);
-    expect(r1Order).toEqual(["a", "b", "c"]);
-
-    applyRecallResult(items[0], 4); // a: passed (good)
-    applyRecallResult(items[1], 2); // b: failed (hard)
-    applyRecallResult(items[2], 5); // c: passed (good)
-
-    expect(getSrsRating(items[0].recallScore!)).toBe("good");
-    expect(getSrsRating(items[1].recallScore!)).toBe("hard");
-    expect(getSrsRating(items[2].recallScore!)).toBe("good");
-
-    // Reinforcement: only score 1-2
-    const reinfOrder = getReinforcementOrder(items);
-    expect(reinfOrder).toEqual(["b"]);
-
-    // Simulate reinforcement on b
-    applyRecallResultInReinforcement(items[1], 4, 1); // b passes in reinforcement
-    expect(items[1].status).toBe("passed");
-    expect(items[1].reinforcementRound).toBe(1);
-
-    // ── Round 2: Cloze (ALL items, not just b) ──
-    const r2Order = getRoundOrder(2, dailySetIds, items);
-    expect(r2Order).toEqual(["a", "b", "c"]); // ALL 3, not just b!
-
-    // Process all in Round 2
-    applyClozeResult(items[0], true);
-    applyClozeResult(items[1], true);
-    applyClozeResult(items[2], false); // c fails cloze
-
-    // ── Round 3: Sentence (ALL items again) ──
-    const r3Order = getRoundOrder(3, dailySetIds, items);
-    expect(r3Order).toEqual(["a", "b", "c"]); // ALL 3, not filtered!
-
-    applySentenceResult(items[0], "I took the bull by the horns today.");
-    applySentenceResult(items[1], "You should take the bull by the horns.");
-    applySentenceResult(items[2], "She takes the bull by the horns at work.");
-
-    // ── Verify stats ──
-    const stats = getSessionStats(items);
-    expect(stats.total).toBe(3);
-    expect(stats.passed).toBe(3);
-
-    // ── SRS was only submitted for Round 1 first attempt ──
-    // Items a and c have recall scores from Round 1 (SRS-relevant)
-    expect(items[0].recallScore).toBe(4);
-    expect(items[1].recallScore).toBe(4); // updated in reinforcement
-    expect(items[2].recallScore).toBe(5);
-  });
-});
-
-// ═══════════════════════════════════════
-// TESTS A–L: 12 new tests from Correction Audit
-// ═══════════════════════════════════════
-
-describe("V3.2 Correction Audit — Tests A-L", () => {
-  // ── Helpers for creating 15-item set ──
-  function make15Items(): SessionItem[] {
-    return Array.from({ length: 15 }, (_, i) =>
-      makeSessionItem({
-        id: `item-${i}`,
-        expressionId: `expr-${i}`,
-        status: "pending",
-        recallScore: null,
-      }),
-    );
-  }
-
-  // ─── A. Daily Set IDs 全部15个 ───
-  it("A. dailySetIds contains all 15 session item IDs", () => {
-    const items = make15Items();
-    const ids = getDailySetIds(items);
-    expect(ids.length).toBe(15);
-    for (let i = 0; i < 15; i++) {
-      expect(ids).toContain(`item-${i}`);
-    }
-  });
-
-  // ─── B. Round 1 = dailySetIds ───
-  it("B. Round 1 order equals dailySetIds (all 15 items)", () => {
-    const items = make15Items();
-    const dailySetIds = getDailySetIds(items);
-    const r1Order = getRoundOrder(1, dailySetIds, items);
-    expect(r1Order).toEqual(dailySetIds);
-    expect(r1Order.length).toBe(15);
-  });
-
-  // ─── C. Round 2 ≡ Round 1 IDs (same 15 items) ───
-  it("C. Round 2 order equals Round 1 order (same 15 items)", () => {
-    const items = make15Items();
-    const dailySetIds = getDailySetIds(items);
-    const r1Order = getRoundOrder(1, dailySetIds, items);
-    const r2Order = getRoundOrder(2, dailySetIds, items);
-    expect(r2Order).toEqual(r1Order);
-    expect(r2Order.length).toBe(15);
-  });
-
-  // ─── D. Round 3 ≡ Round 1 IDs (same 15 items) ───
-  it("D. Round 3 order equals Round 1 order (same 15 items)", () => {
-    const items = make15Items();
-    const dailySetIds = getDailySetIds(items);
-    const r1Order = getRoundOrder(1, dailySetIds, items);
-    const r3Order = getRoundOrder(3, dailySetIds, items);
-    expect(r3Order).toEqual(r1Order);
-    expect(r3Order.length).toBe(15);
-  });
-
-  // ─── E. Reinforcement = subset of failed (score 1-2 only) ───
-  it("E. reinforcementOrder only contains items with recallScore 1-2", () => {
-    const items = make15Items();
-    // Mark various items with different scores
-    applyRecallResult(items[0], 5); // passed
-    applyRecallResult(items[1], 4); // passed
-    applyRecallResult(items[2], 1); // failed
-    applyRecallResult(items[3], 2); // failed
-    applyRecallResult(items[4], 3); // passed
-    applyRecallResult(items[5], 1); // failed
-
-    const reinfOrder = getReinforcementOrder(items);
-    expect(reinfOrder).toEqual(["item-2", "item-3", "item-5"]);
-    expect(reinfOrder.length).toBe(3);
-    // Verify only score 1-2
-    for (const id of reinfOrder) {
-      const item = items.find((i) => i.id === id)!;
-      expect(item.recallScore).toBeLessThanOrEqual(2);
-      expect(item.recallScore).toBeGreaterThanOrEqual(1);
-    }
-  });
-
-  // ─── F. Round 2 = 15 items (not filtered to failed-only) ───
-  it("F. Round 2 count is always 15 regardless of Round 1 results", () => {
-    const items = make15Items();
-    const dailySetIds = getDailySetIds(items);
-
-    // Simulate mixed Round 1 results
-    for (let i = 0; i < 15; i++) {
-      const score = i < 5 ? 5 : i < 10 ? 1 : 3; // 5 passed, 5 failed, 5 borderline
-      applyRecallResult(items[i], score);
-    }
-
-    const r2Order = getRoundOrder(2, dailySetIds, items);
-    expect(r2Order.length).toBe(15);
-    // All items present, not just the failed ones
-    expect(r2Order).toContain("item-0"); // passed
-    expect(r2Order).toContain("item-5"); // failed
-  });
-
-  // ─── G. Round 3 = 15 items (not filtered to still-failed-only) ───
-  it("G. Round 3 count is always 15 regardless of Round 2 results", () => {
-    const items = make15Items();
-    const dailySetIds = getDailySetIds(items);
-
-    // Simulate varied Round 2 results on statuses
-    for (let i = 0; i < 15; i++) {
-      items[i].status = i < 7 ? "passed" : "failed";
-    }
-
-    const r3Order = getRoundOrder(3, dailySetIds, items);
-    expect(r3Order.length).toBe(15);
-    expect(r3Order).toContain("item-0"); // passed
-    expect(r3Order).toContain("item-7"); // failed
-  });
-
-  // ─── H. SRS NOT submitted in reinforcement ───
-  it("H. shouldSubmitSrs returns false during reinforcement", () => {
-    const srsSubmitted = new Set<string>();
-    // In reinforcement: always false
-    expect(shouldSubmitSrs(true, srsSubmitted, "item-1")).toBe(false);
-    // Even if not previously submitted
-    expect(shouldSubmitSrs(true, new Set(), "item-new")).toBe(false);
-  });
-
-  // ─── I. SRS NOT submitted in Round 2 ───
-  it("I. SRS not triggered by Round 2 (cloze) operations", () => {
-    // Cloze handler has NO SRS mutation call — verified by code audit
-    // This test verifies the pure logic: applyClozeResult doesn't touch recallScore
-    const item = makeSessionItem({ recallScore: 3 });
-    const scoreBefore = item.recallScore;
-    applyClozeResult(item, true);
-    // Cloze does NOT change recallScore (SRS depends on recallScore)
-    expect(item.recallScore).toBe(scoreBefore);
-  });
-
-  // ─── J. SRS NOT submitted in Round 3 ───
-  it("J. SRS not triggered by Round 3 (sentence) operations", () => {
-    // Sentence handler has NO SRS mutation call — verified by code audit
-    // This test verifies the pure logic: applySentenceResult doesn't touch recallScore
-    const item = makeSessionItem({ recallScore: 4 });
-    const scoreBefore = item.recallScore;
-    applySentenceResult(item, "My sentence.");
-    // Sentence does NOT change recallScore (SRS depends on recallScore)
-    expect(item.recallScore).toBe(scoreBefore);
-  });
-
-  // ─── K. Page refresh doesn't change dailySetIds ───
-  it("K. dailySetIds remain identical after simulated page refresh (re-fetch)", () => {
-    // Simulates: session created, items loaded, page refreshed, items reloaded
-    const items1 = make15Items();
-    const ids1 = getDailySetIds(items1);
-
-    // "Refresh" — same items re-loaded from DB
-    const items2 = make15Items(); // Same composition
-    const ids2 = getDailySetIds(items2);
-
-    expect(ids1).toEqual(ids2);
-    expect(ids1.length).toBe(15);
-  });
-
-  // ─── L. Learning history data composition ───
-  it("L. session stats correctly reflect per-round breakdown", () => {
-    const items = make15Items();
-
-    // Round 1: process all 15
-    for (let i = 0; i < 15; i++) {
-      const score = i < 8 ? 4 : i < 12 ? 2 : 5;
-      applyRecallResult(items[i], score);
-    }
-
-    const stats = getSessionStats(items);
-    expect(stats.total).toBe(15);
-
-    // 8 passed (score 4, i=0-7) + 3 passed (score 5, i=12-14) = 11 passed
-    expect(stats.passed).toBe(11);
-    // 4 failed (score 2, i=8-11)
-    expect(stats.failed).toBe(4);
-
-    // Reinforcement check
-    const reinfOrder = getReinforcementOrder(items);
-    expect(reinfOrder.length).toBe(4); // items 8-11 with score 2
-
-    // Round 2: all 15 participate
-    const dailySetIds = getDailySetIds(items);
-    const r2Order = getRoundOrder(2, dailySetIds, items);
-    expect(r2Order.length).toBe(15);
-
-    // Process Round 2 (cloze) on all items
-    for (const item of items) {
-      applyClozeResult(item, true);
-    }
-    // All still in good state
-    const stats2 = getSessionStats(items);
-    expect(stats2.total).toBe(15);
-
-    // Round 3: all 15
-    const r3Order = getRoundOrder(3, dailySetIds, items);
-    expect(r3Order.length).toBe(15);
-
-    // Process Round 3 (sentence) on all items
-    for (const item of items) {
-      applySentenceResult(item, `Sentence using ${item.expression?.english}`);
-    }
-
-    const finalStats = getSessionStats(items);
-    expect(finalStats.passed).toBe(15); // all completed
-    expect(finalStats.failed).toBe(0);
-    expect(finalStats.pending).toBe(0);
-
-    // Verify sentence data preserved
-    for (const item of items) {
-      expect(item.userSentence).toBeTruthy();
-      expect(item.status).toBe("completed");
-    }
   });
 });

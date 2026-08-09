@@ -757,6 +757,60 @@ export function useLearningHistory() {
   });
 }
 
+// ═══════════════════════════════════════
+// V3.3: Today's practice logs (for mode progress tracking)
+// ═══════════════════════════════════════
+
+export interface TodayPracticeLogs {
+  clozeIds: Set<string>;
+  sentenceIds: Set<string>;
+  clozeResults: Map<string, { correct: boolean; userAnswer: string }>;
+  sentenceResults: Map<string, { sentence: string }>;
+}
+
+export function useTodayPracticeLogs(sessionId?: string | null) {
+  return useQuery({
+    queryKey: ["practice-logs", "today", sessionId],
+    queryFn: async (): Promise<TodayPracticeLogs> => {
+      if (!sessionId) return { clozeIds: new Set(), sentenceIds: new Set(), clozeResults: new Map(), sentenceResults: new Map() };
+
+      const userId = await getUserId();
+      const today = todayStr();
+
+      const { data: logs } = await supabase
+        .from("expression_practice_logs")
+        .select("expression_id,mode,answer,score,feedback")
+        .eq("user_id", userId)
+        .eq("session_id", sessionId)
+        .gte("created_at", `${today}T00:00:00`);
+
+      const clozeIds = new Set<string>();
+      const sentenceIds = new Set<string>();
+      const clozeResults = new Map<string, { correct: boolean; userAnswer: string }>();
+      const sentenceResults = new Map<string, { sentence: string }>();
+
+      for (const log of (logs || [])) {
+        if (log.mode === "cloze") {
+          clozeIds.add(log.expression_id as string);
+          clozeResults.set(log.expression_id as string, {
+            correct: (log.score as number) >= 1,
+            userAnswer: (log.answer as string) || "",
+          });
+        } else if (log.mode === "sentence") {
+          sentenceIds.add(log.expression_id as string);
+          sentenceResults.set(log.expression_id as string, {
+            sentence: (log.answer as string) || "",
+          });
+        }
+      }
+
+      return { clozeIds, sentenceIds, clozeResults, sentenceResults };
+    },
+    enabled: !!sessionId,
+    staleTime: 30_000,
+  });
+}
+
 export function getSessionStats(items: SessionItem[]) {
   const total = items.length;
   const passed = items.filter((i) => i.status === "passed" || i.status === "completed").length;
