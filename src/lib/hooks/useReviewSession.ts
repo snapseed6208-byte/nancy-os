@@ -25,6 +25,13 @@ import {
 // Types
 // ═══════════════════════════════════════
 
+export type LearnStage = "understand" | "contextUsage" | "recall" | "production";
+
+export interface LearnProgress {
+  expressionIndex: number;
+  stage: LearnStage;
+}
+
 export interface ReviewSession {
   id: string;
   userId: string;
@@ -35,6 +42,7 @@ export interface ReviewSession {
   sessionType: "learn" | "review";
   createdAt: string;
   completedAt: string | null;
+  learnProgress?: LearnProgress | null;
 }
 
 export interface SessionItem {
@@ -334,7 +342,7 @@ export function useUpdateSessionItem() {
       itemId: string;
       updates: Partial<{
         recallScore: number;
-        sentenceScore: number;
+        sentenceScore: number | null;
         applicationScore: number;
         userSentence: string;
         aiFeedback: string;
@@ -383,8 +391,39 @@ export function useRecordPracticeLog() {
         answer: entry.answer || null,
         feedback: entry.feedback || null,
         score: entry.score,
+        metadata: entry.metadata || undefined,
       });
       if (error) throw error;
+    },
+  });
+}
+
+/** V4: Persist learn-session resume progress (expression index + stage). */
+export function useUpdateLearnProgress() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      sessionId,
+      progress,
+    }: {
+      sessionId: string;
+      progress: LearnProgress;
+    }) => {
+      const { error } = await supabase
+        .from("review_sessions")
+        .update({
+          learn_progress: {
+            expression_index: progress.expressionIndex,
+            stage: progress.stage,
+          },
+        })
+        .eq("id", sessionId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["learn-session"] });
     },
   });
 }
