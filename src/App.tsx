@@ -38,6 +38,7 @@ import ChineseSpeakingDetail from "@/pages/ChineseSpeakingDetail";
 import ChineseMaterialNew from "@/pages/ChineseMaterialNew";
 import ExpressionAssetLibrary from "@/pages/ExpressionAssetLibrary";
 import ExpressionAssetDetail from "@/pages/ExpressionAssetDetail";
+import NancyAIDashboard from "@/pages/NancyAIDashboard";
 import { Loader2 } from "lucide-react";
 
 function AppRoutes() {
@@ -59,6 +60,7 @@ function AppRoutes() {
     <AppShell>
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/dashboard/ai" component={NancyAIDashboard} />
         <Route path="/plan" component={Plan} />
         <Route path="/career" component={Career} />
         <Route path="/english" component={English} />

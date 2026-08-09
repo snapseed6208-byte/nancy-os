@@ -38,6 +38,7 @@ const iconMap: Record<string, LucideIcon> = {
   FolderOpen,
   Settings,
   Mic,
+  Sparkles,
 };
 
 export default function Sidebar() {

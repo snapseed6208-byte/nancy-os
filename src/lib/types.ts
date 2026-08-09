@@ -267,6 +267,13 @@ export const NAV_ITEMS = [
     description: "中文表达训练",
   },
   {
+    key: "ai-dashboard",
+    label: "AI 仪表盘",
+    icon: "Sparkles" as const,
+    path: "/dashboard/ai",
+    description: "个人 AI 能力驾驶舱",
+  },
+  {
     key: "memory-center",
     label: "记忆中心",
     icon: "Database" as const,
