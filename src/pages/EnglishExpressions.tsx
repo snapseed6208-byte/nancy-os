@@ -21,14 +21,14 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  new: "新学",
+  collected: "待学习",
   learning: "学习中",
   review: "待复习",
   mastered: "已掌握",
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  new: "bg-blue-50 text-blue-600",
+  collected: "bg-blue-50 text-blue-600",
   learning: "bg-amber-50 text-amber-600",
   review: "bg-purple-50 text-purple-600",
   mastered: "bg-sage-light text-sage-deep",
@@ -429,7 +429,7 @@ function ExpressionCard({
   onToggleSelect: () => void;
   onClick: () => void;
 }) {
-  const status = (expr.status as string) || "new";
+  const status = (expr.status as string) || "collected";
   const type = (expr.type as string) || "vocabulary";
 
   return (
@@ -473,7 +473,7 @@ function ExpressionCard({
               <span className="text-[10px] text-ink-lighter bg-ink/5 rounded-full px-2 py-0.5">
                 {TYPE_LABELS[type] || type}
               </span>
-              <span className={cn("text-[10px] rounded-full px-2 py-0.5", STATUS_STYLE[status] || STATUS_STYLE.new)}>
+              <span className={cn("text-[10px] rounded-full px-2 py-0.5", STATUS_STYLE[status] || STATUS_STYLE.collected)}>
                 {STATUS_LABELS[status] || status}
               </span>
             </div>

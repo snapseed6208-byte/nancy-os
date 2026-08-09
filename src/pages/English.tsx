@@ -2,18 +2,20 @@ import { useLocation } from "wouter";
 import {
   BookOpen, Mic, Library, Brain, Eye, Edit3,
   ChevronRight, Zap, Upload, TrendingUp, FileUp,
-  Sparkles, CheckCircle2,
+  Sparkles, CheckCircle2, GraduationCap, Settings,
 } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
-import { useHubSessionProgress } from "@/lib/hooks/useReviewSession";
+import { useHubSessionProgress, useLearnQueueCount } from "@/lib/hooks/useReviewSession";
 import { cn } from "@/lib/utils";
 
 export default function English() {
   const [, navigate] = useLocation();
   const { data: stats, isLoading } = useEnglishStats();
   const { data: sessionProgress } = useHubSessionProgress();
+  const { data: learnCount } = useLearnQueueCount();
 
   const dueCount = stats?.due ?? 0;
+  const toLearnCount = learnCount ?? 0;
 
   return (
     <div className="space-y-6">
@@ -23,13 +25,36 @@ export default function English() {
       </header>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-2">
         <StatCard label="表达库" value={isLoading ? "-" : stats?.total ?? 0} color="ink" />
+        <StatCard label="待学习" value={toLearnCount} color={toLearnCount ? "blue" : "ink"} />
         <StatCard label="待复习" value={isLoading ? "-" : dueCount} color={dueCount ? "sage" : "ink"} />
         <StatCard label="已掌握" value={isLoading ? "-" : stats?.mastered ?? 0} color="sage" />
       </div>
 
-      {/* Three training modes — independent entry points */}
+      {/* Primary actions: Learn + Review */}
+      <div className="space-y-3">
+        <ActionCard
+          icon={GraduationCap}
+          label="学习新表达"
+          desc={toLearnCount ? `${toLearnCount} 条待学习` : "暂无待学习的表达"}
+          highlight={toLearnCount > 0}
+          color="blue"
+          onClick={() => navigate("/english/learn")}
+          extra={toLearnCount > 0 ? "开始学习今日新表达" : undefined}
+        />
+        <ActionCard
+          icon={Brain}
+          label="SRS 复习"
+          desc={dueCount ? `${dueCount} 条待复习` : "全部掌握!"}
+          highlight={dueCount > 0}
+          color="purple"
+          onClick={() => navigate("/english/review?mode=recall")}
+          extra={sessionProgress?.hasSession ? `今日已复习 ${sessionProgress.recallCompleted}/${sessionProgress.totalExpressions} 条` : undefined}
+        />
+      </div>
+
+      {/* Three training modes */}
       <div className="space-y-2">
         <p className="text-xs font-medium text-ink-light">训练模式</p>
         <div className="grid grid-cols-3 gap-2">
@@ -57,49 +82,7 @@ export default function English() {
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-1 gap-3">
-        <ActionCard
-          icon={Brain}
-          label="SRS 复习"
-          desc={dueCount ? `${dueCount} 条待复习` : "全部掌握!"}
-          highlight={!!(dueCount > 0)}
-          onClick={() => navigate("/english/review?mode=recall")}
-          extra={sessionProgress?.hasSession ? `今日复习 ${sessionProgress.recallCompleted}/${sessionProgress.totalExpressions} 条` : undefined}
-        />
-        <ActionCard
-          icon={Library}
-          label="表达库"
-          desc={`${stats?.total ?? 0} 条表达 · 搜索 & 管理`}
-          onClick={() => navigate("/english/expressions")}
-        />
-        <ActionCard
-          icon={Mic}
-          label="口语练习"
-          desc={`${stats?.totalSessions ?? 0} 次练习记录`}
-          onClick={() => navigate("/english/speaking")}
-        />
-        <ActionCard
-          icon={TrendingUp}
-          label="学习历史"
-          desc="今日报告 · 学习记录 · 趋势分析"
-          onClick={() => navigate("/english/history")}
-        />
-        <ActionCard
-          icon={Upload}
-          label="导入表达"
-          desc="从文件或文本批量导入英语表达"
-          onClick={() => navigate("/english/import")}
-        />
-        <ActionCard
-          icon={FileUp}
-          label="导入口语题库"
-          desc="上传文件 AI 提取 · 自动分类去重 · 批量导入"
-          onClick={() => navigate("/english/speaking/import")}
-        />
-      </div>
-
-      {/* V3.5: Session-based review progress (same data source as Review page) */}
+      {/* Today's review progress */}
       {sessionProgress?.hasSession && sessionProgress.totalExpressions > 0 && (
         <div className="bg-card rounded-2xl border border-border p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -138,17 +121,52 @@ export default function English() {
         </div>
       )}
 
-      {/* Bottom info */}
-      <div className="bg-card rounded-2xl border border-sage-light/50 p-6">
+      {/* Quick actions */}
+      <div className="grid grid-cols-1 gap-3">
+        <ActionCard
+          icon={Library}
+          label="表达库"
+          desc={`${stats?.total ?? 0} 条表达 · 搜索 & 管理`}
+          onClick={() => navigate("/english/expressions")}
+        />
+        <ActionCard
+          icon={Mic}
+          label="口语练习"
+          desc={`${stats?.totalSessions ?? 0} 次练习记录`}
+          onClick={() => navigate("/english/speaking")}
+        />
+        <ActionCard
+          icon={TrendingUp}
+          label="学习历史"
+          desc="今日报告 · 学习记录 · 趋势分析"
+          onClick={() => navigate("/english/history")}
+        />
+        <ActionCard
+          icon={Upload}
+          label="导入表达"
+          desc="从文件或文本批量导入英语表达"
+          onClick={() => navigate("/english/import")}
+        />
+        <ActionCard
+          icon={FileUp}
+          label="导入口语题库"
+          desc="上传文件 AI 提取 · 自动分类去重 · 批量导入"
+          onClick={() => navigate("/english/speaking/import")}
+        />
+      </div>
+
+      {/* Bottom: Learning intensity */}
+      <div className="bg-card rounded-2xl border border-border p-4">
         <div className="flex items-center gap-2 mb-3">
-          <BookOpen size={18} className="text-sage-deep" />
-          <span className="text-xs font-medium text-sage-deep bg-sage-light px-2 py-0.5 rounded-full">
-            Phase 3 — 主动输出训练
-          </span>
+          <Settings size={14} className="text-ink-light" />
+          <span className="text-xs font-medium text-ink">每日学习设置</span>
         </div>
-        <p className="text-sm text-ink-light leading-relaxed">
-          3 种训练模式：主动回忆（看中文说英文）、语境填空（例句填空）、个人造句（活用表达造句）。
-          三种模式共享同一套 Daily Set，自由切换，独立追踪进度。
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-ink-lighter">每日学习新表达:</span>
+          <span className="text-sm font-semibold text-ink">5 条</span>
+        </div>
+        <p className="text-[11px] text-ink-lighter mt-2">
+          收集表达 → 学习 → SRS 复习 → 掌握，四步建立长期记忆。
         </p>
       </div>
     </div>
@@ -226,14 +244,14 @@ function ProgressRow({
 // ── Stat Card ──
 function StatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
-    <div className="bg-card rounded-2xl border border-border p-4 text-center">
+    <div className="bg-card rounded-2xl border border-border p-3 text-center">
       <p className={cn(
-        "text-2xl font-bold",
-        color === "sage" ? "text-sage-deep" : "text-ink",
+        "text-xl font-bold",
+        color === "sage" ? "text-sage-deep" : color === "blue" ? "text-blue-600" : "text-ink",
       )}>
         {value}
       </p>
-      <p className="text-xs text-ink-lighter mt-0.5">{label}</p>
+      <p className="text-[10px] text-ink-lighter mt-0.5">{label}</p>
     </div>
   );
 }
@@ -256,6 +274,15 @@ function ActionCard({
   onClick: () => void;
   extra?: string;
 }) {
+  const highlightColors: Record<string, string> = {
+    blue: "bg-blue-50",
+    purple: "bg-purple-50",
+  };
+  const highlightIcons: Record<string, string> = {
+    blue: "text-blue-600",
+    purple: "text-purple-600",
+  };
+
   return (
     <button
       onClick={onClick}
@@ -266,9 +293,11 @@ function ActionCard({
     >
       <div className={cn(
         "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
-        highlight ? "bg-purple-50" : "bg-ink/5",
+        highlight && color ? (highlightColors[color] || "bg-purple-50") : "bg-ink/5",
       )}>
-        <Icon size={18} className={highlight ? "text-purple-600" : "text-ink-light"} />
+        <Icon size={18} className={
+          highlight && color ? (highlightIcons[color] || "text-purple-600") : "text-ink-light"
+        } />
       </div>
       <div className="flex-1 min-w-0">
         <h3 className="text-sm font-semibold text-ink">{label}</h3>

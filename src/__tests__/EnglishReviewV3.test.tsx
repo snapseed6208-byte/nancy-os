@@ -2143,3 +2143,143 @@ describe("V3.6 computeActivationState", () => {
     expect(state.fullyActivated).toBe(false);
   });
 });
+
+// ============================================
+// V4 Lifecycle — Inline Mirrors
+// ============================================
+
+/** V4: Simulates the lifecycle status transition */
+function transitionStatusForTest(
+  currentStatus: "collected" | "learning" | "review" | "mastered",
+  action: "start_learn" | "complete_learn" | "srs_promote" | "srs_master",
+): string {
+  if (action === "start_learn" && currentStatus === "collected") return "learning";
+  if (action === "complete_learn" && currentStatus === "learning") return "review";
+  if (action === "srs_promote" && currentStatus === "review") return "review";
+  if (action === "srs_master" && currentStatus === "review") return "mastered";
+  return currentStatus;
+}
+
+/** V4: Simulates the due query filter */
+function isDueForReview(status: string, nextReviewDate: string | null, now: Date): boolean {
+  if (status !== "review" && status !== "mastered") return false;
+  if (!nextReviewDate) return false;
+  return new Date(nextReviewDate) <= now;
+}
+
+/** V4: Simulates learning queue ordering */
+function sortLearnQueue(
+  expressions: Array<{ id: string; status: string; created_at: string }>,
+): string[] {
+  return [...expressions]
+    .sort((a, b) => {
+      if (a.status === "learning" && b.status !== "learning") return -1;
+      if (a.status !== "learning" && b.status === "learning") return 1;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    })
+    .map((e) => e.id);
+}
+
+/** V4: Simulates session_type default logic */
+function getSessionType(sessionType: string | undefined): "learn" | "review" {
+  return sessionType === "learn" ? "learn" : "review";
+}
+
+// ============================================
+// V4 Lifecycle Tests
+// ============================================
+
+describe("V4 Lifecycle — State Transitions", () => {
+  it("L1. collected → learning when start_learn", () => {
+    expect(transitionStatusForTest("collected", "start_learn")).toBe("learning");
+  });
+
+  it("L2. learning → review when complete_learn", () => {
+    expect(transitionStatusForTest("learning", "complete_learn")).toBe("review");
+  });
+
+  it("L3. review stays review during srs_promote", () => {
+    expect(transitionStatusForTest("review", "srs_promote")).toBe("review");
+  });
+
+  it("L3b. review → mastered when srs_master", () => {
+    expect(transitionStatusForTest("review", "srs_master")).toBe("mastered");
+  });
+});
+
+describe("V4 Lifecycle — Due Query Filter", () => {
+  const now = new Date("2026-08-10T12:00:00Z");
+  const yesterday = new Date("2026-08-09T12:00:00Z");
+  const tomorrow = new Date("2026-08-11T12:00:00Z");
+
+  it("L4. collected excluded from review queue", () => {
+    expect(isDueForReview("collected", null, now)).toBe(false);
+    expect(isDueForReview("collected", yesterday.toISOString(), now)).toBe(false);
+  });
+
+  it("L5. learning excluded from review queue", () => {
+    expect(isDueForReview("learning", null, now)).toBe(false);
+    expect(isDueForReview("learning", yesterday.toISOString(), now)).toBe(false);
+  });
+
+  it("L6. review with past date is due", () => {
+    expect(isDueForReview("review", yesterday.toISOString(), now)).toBe(true);
+  });
+
+  it("L6b. review with future date is not due", () => {
+    expect(isDueForReview("review", tomorrow.toISOString(), now)).toBe(false);
+  });
+
+  it("L6c. review with null date is not due", () => {
+    expect(isDueForReview("review", null, now)).toBe(false);
+  });
+
+  it("L6d. mastered with past date is due", () => {
+    expect(isDueForReview("mastered", yesterday.toISOString(), now)).toBe(true);
+  });
+});
+
+describe("V4 Lifecycle — Learning Queue Ordering", () => {
+  it("L7. learning (resume) before collected", () => {
+    const ids = sortLearnQueue([
+      { id: "a", status: "collected", created_at: "2026-08-01T00:00:00Z" },
+      { id: "b", status: "learning", created_at: "2026-08-05T00:00:00Z" },
+    ]);
+    expect(ids[0]).toBe("b");
+    expect(ids[1]).toBe("a");
+  });
+
+  it("L8. same status ordered by created_at ASC", () => {
+    const ids = sortLearnQueue([
+      { id: "c", status: "collected", created_at: "2026-08-10T00:00:00Z" },
+      { id: "a", status: "collected", created_at: "2026-08-01T00:00:00Z" },
+      { id: "b", status: "collected", created_at: "2026-08-05T00:00:00Z" },
+    ]);
+    expect(ids).toEqual(["a", "b", "c"]);
+  });
+
+  it("L9. multiple learning sorted by created_at within group", () => {
+    const ids = sortLearnQueue([
+      { id: "x", status: "learning", created_at: "2026-08-08T00:00:00Z" },
+      { id: "y", status: "collected", created_at: "2026-08-01T00:00:00Z" },
+      { id: "z", status: "learning", created_at: "2026-08-05T00:00:00Z" },
+    ]);
+    expect(ids[0]).toBe("z");
+    expect(ids[1]).toBe("x");
+    expect(ids[2]).toBe("y");
+  });
+});
+
+describe("V4 Lifecycle — Session Type", () => {
+  it("L10. undefined session_type defaults to review", () => {
+    expect(getSessionType(undefined)).toBe("review");
+  });
+
+  it("L11. explicit learn returns learn", () => {
+    expect(getSessionType("learn")).toBe("learn");
+  });
+
+  it("L12. explicit review returns review", () => {
+    expect(getSessionType("review")).toBe("review");
+  });
+});

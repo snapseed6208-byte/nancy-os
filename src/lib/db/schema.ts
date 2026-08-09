@@ -159,7 +159,7 @@ export const expressions = pgTable("expressions", {
   exampleSentence: text("example_sentence"),
   scene: text("scene").notNull().default("daily life"),
   usefulnessLevel: smallint("usefulness_level").notNull().default(3),
-  status: text("status").notNull().default("new"),
+  status: text("status").notNull().default("collected"),
   masteryLevel: smallint("mastery_level").default(0),
   nextReviewDate: timestamp("next_review_date", { withTimezone: true }),
   reviewCount: integer("review_count").notNull().default(0),

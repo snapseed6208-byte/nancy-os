@@ -22,6 +22,7 @@ export interface ReviewSession {
   targetCount: number;
   status: "active" | "completed" | "abandoned";
   currentStage: "recall" | "sentence" | "application";
+  sessionType: "learn" | "review";
   createdAt: string;
   completedAt: string | null;
 }
@@ -85,6 +86,12 @@ const DAILY_TARGET = 15;
 const MAX_DAILY_CARDS = 50;
 const MAX_REINFORCEMENT_ROUNDS = 3;
 
+const EXPRESSION_SELECT =
+  "id,english,chinese,pronunciation,example_sentence," +
+  "english_explanation,usage_note,native_usage,context,situation," +
+  "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence," +
+  "type,scene,status,mastery_level";
+
 function todayStr(): string {
   return new Date().toISOString().split("T")[0];
 }
@@ -123,27 +130,30 @@ async function fetchOrCreateSession(): Promise<{
       .order("created_at", { ascending: true });
 
     return {
-      session: existing as ReviewSession,
+      session: {
+        id: existing.id,
+        userId: existing.user_id,
+        sessionDate: existing.session_date,
+        targetCount: existing.target_count,
+        status: existing.status,
+        currentStage: existing.current_stage,
+        sessionType: existing.session_type || "review",
+        createdAt: existing.created_at,
+        completedAt: existing.completed_at,
+      } as ReviewSession,
       items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
       isNew: false,
     };
   }
 
-  // 2. Create new session — select 15 due expressions
-  // Same selection logic as fetchDailyReviewQueue
-  const EXPRESSION_SELECT =
-    "id,english,chinese,pronunciation,example_sentence," +
-    "english_explanation,usage_note,native_usage,context,situation," +
-    "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence," +
-    "type,scene,status,mastery_level";
-
+  // 2. Create new session — select due review expressions
   const { data: dueCards } = await supabase
     .from("expressions")
     .select(EXPRESSION_SELECT)
     .eq("user_id", userId)
     .eq("archived", false)
-    .neq("status", "mastered")
-    .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
+    .in("status", ["review", "mastered"])
+    .lte("next_review_date", nowISO())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(Math.min(DAILY_TARGET, MAX_DAILY_CARDS));
 
@@ -158,6 +168,7 @@ async function fetchOrCreateSession(): Promise<{
       target_count: selectedCards.length,
       status: "active",
       current_stage: "recall",
+      session_type: "review",
     })
     .select()
     .single();
@@ -183,7 +194,137 @@ async function fetchOrCreateSession(): Promise<{
     .order("created_at", { ascending: true });
 
   return {
-    session: session as ReviewSession,
+    session: {
+      id: session.id,
+      userId: session.user_id,
+      sessionDate: session.session_date,
+      targetCount: session.target_count,
+      status: session.status,
+      currentStage: session.current_stage,
+      sessionType: session.session_type || "review",
+      createdAt: session.created_at,
+      completedAt: session.completed_at,
+    } as ReviewSession,
+    items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
+    isNew: true,
+  };
+}
+
+// ═══════════════════════════════════════
+// V4: Learning Session
+// ═══════════════════════════════════════
+
+const DEFAULT_LEARN_TARGET = 5;
+
+async function fetchOrCreateLearnSession(): Promise<{
+  session: ReviewSession;
+  items: SessionItem[];
+  isNew: boolean;
+}> {
+  const userId = await getUserId();
+  const today = todayStr();
+
+  // 1. Try to get existing learn session
+  const { data: existing } = await supabase
+    .from("review_sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("session_date", today)
+    .eq("session_type", "learn")
+    .limit(1)
+    .single();
+
+  if (existing) {
+    const { data: items } = await supabase
+      .from("review_session_items")
+      .select("*, expression:expressions(*)")
+      .eq("session_id", existing.id)
+      .order("created_at", { ascending: true });
+
+    return {
+      session: {
+        id: existing.id,
+        userId: existing.user_id,
+        sessionDate: existing.session_date,
+        targetCount: existing.target_count,
+        status: existing.status,
+        currentStage: existing.current_stage,
+        sessionType: "learn",
+        createdAt: existing.created_at,
+        completedAt: existing.completed_at,
+      } as ReviewSession,
+      items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
+      isNew: false,
+    };
+  }
+
+  // 2. Create new learn session — select collected/learning expressions
+  // Priority: in-progress learning first (resume), then collected by creation date
+  const { data: learnData } = await supabase
+    .from("expressions")
+    .select(EXPRESSION_SELECT)
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .in("status", ["collected", "learning"])
+    .order("status", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(Math.min(DEFAULT_LEARN_TARGET, MAX_DAILY_CARDS));
+
+  const learnCards = (learnData || []) as unknown as Record<string, unknown>[];
+
+  // Re-sort: "learning" status first (resume in-progress), then "collected" by created_at
+  const selectedCards = learnCards.sort((a, b) => {
+    if (a.status === "learning" && b.status !== "learning") return -1;
+    if (a.status !== "learning" && b.status === "learning") return 1;
+    return 0;
+  });
+
+  // Create session
+  const { data: session } = await supabase
+    .from("review_sessions")
+    .insert({
+      user_id: userId,
+      session_date: today,
+      target_count: selectedCards.length,
+      status: "active",
+      current_stage: "recall",
+      session_type: "learn",
+    })
+    .select()
+    .single();
+
+  if (!session) throw new Error("Failed to create learn session");
+
+  // Create session items
+  if (selectedCards.length > 0) {
+    const items = selectedCards.map((card) => ({
+      session_id: session.id,
+      expression_id: card.id,
+      status: "pending",
+    }));
+
+    await supabase.from("review_session_items").insert(items);
+  }
+
+  // Reload with expressions
+  const { data: items } = await supabase
+    .from("review_session_items")
+    .select("*, expression:expressions(*)")
+    .eq("session_id", session.id)
+    .order("created_at", { ascending: true });
+
+  return {
+    session: {
+      id: session.id,
+      userId: session.user_id,
+      sessionDate: session.session_date,
+      targetCount: session.target_count,
+      status: session.status,
+      currentStage: session.current_stage,
+      sessionType: "learn",
+      createdAt: session.created_at,
+      completedAt: session.completed_at,
+    } as ReviewSession,
     items: (items || []).map((i: Record<string, unknown>) => formatSessionItem(i)),
     isNew: true,
   };
@@ -242,6 +383,34 @@ export function useTodaySession() {
     queryFn: fetchOrCreateSession,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useTodayLearnSession() {
+  return useQuery({
+    queryKey: ["learn-session", "today"],
+    queryFn: fetchOrCreateLearnSession,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** V4: Count of collected + learning expressions (learning queue) */
+export function useLearnQueueCount() {
+  return useQuery({
+    queryKey: ["learn-queue-count"],
+    queryFn: async (): Promise<number> => {
+      const userId = await getUserId();
+      const { count, error } = await supabase
+        .from("expressions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("archived", false)
+        .in("status", ["collected", "learning"]);
+      if (error) throw error;
+      return count ?? 0;
+    },
+    staleTime: 60_000,
   });
 }
 

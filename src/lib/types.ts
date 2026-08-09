@@ -146,7 +146,7 @@ export type Priority = (typeof PRIORITIES)[number];
 export const EXPRESSION_TYPES = ["vocabulary", "chunk", "sentence", "sentencePattern", "speakingExpression"] as const;
 export type ExpressionType = (typeof EXPRESSION_TYPES)[number];
 
-export const EXPRESSION_STATUSES = ["new", "learning", "review", "mastered"] as const;
+export const EXPRESSION_STATUSES = ["collected", "learning", "review", "mastered"] as const;
 export type ExpressionStatus = (typeof EXPRESSION_STATUSES)[number];
 
 export const EXPRESSION_DIFFICULTY_LEVELS = ["beginner", "intermediate", "advanced"] as const;

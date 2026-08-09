@@ -242,7 +242,8 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     // Reviews due
     supabase.from("expressions")
       .select("id")
-      .or(`next_review_date.is.null,next_review_date.lte.${today}`)
+      .in("status", ["review", "mastered"])
+      .lte("next_review_date", today)
       .limit(50),
     // Speaking sessions today
     supabase.from("speaking_sessions")

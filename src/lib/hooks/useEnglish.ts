@@ -281,8 +281,8 @@ async function fetchDueExpressions() {
     .select("*")
     .eq("user_id", userId)
     .eq("archived", false)
-    .neq("status", "mastered")
-    .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
+    .in("status", ["review", "mastered"])
+    .lte("next_review_date", nowISO())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(200);
 
@@ -332,8 +332,8 @@ async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
     .select("id")
     .eq("user_id", userId)
     .eq("archived", false)
-    .neq("status", "mastered")
-    .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
+    .in("status", ["review", "mastered"])
+    .lte("next_review_date", nowISO())
     .order("next_review_date", { ascending: true, nullsFirst: true });
 
   if (dueErr) throw dueErr;
@@ -348,8 +348,8 @@ async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
     .select("*")
     .eq("user_id", userId)
     .eq("archived", false)
-    .neq("status", "mastered")
-    .or(`next_review_date.is.null,next_review_date.lte.${nowISO()}`)
+    .in("status", ["review", "mastered"])
+    .lte("next_review_date", nowISO())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(limit);
 
@@ -656,8 +656,8 @@ async function fetchEnglishStats() {
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("archived", false)
-      .neq("status", "mastered")
-      .or(`next_review_date.is.null,next_review_date.lte.${now}`),
+      .in("status", ["review", "mastered"])
+      .lte("next_review_date", now),
     supabase
       .from("expressions")
       .select("id", { count: "exact", head: true })
@@ -832,7 +832,7 @@ export function useBatchImportExpressions() {
           context: expr.context || null,
           common_patterns: expr.common_patterns || null,
           category_id: catName ? (catMap.get(catName) || null) : null,
-          status: "new",
+          status: "collected",
           ease_factor: 2.5,
           source: input.source_name || "import",
           import_batch_id: batch.id,
