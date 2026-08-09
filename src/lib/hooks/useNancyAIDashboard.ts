@@ -2,10 +2,12 @@
 // Nancy OS — useNancyAIDashboard (v2 — graceful degradation)
 //
 // Architecture: "Database data first / AI enhancement second"
-// - Direct DB queries for asset & career data (always available)
-// - Edge function for AI-processed sections (identity, growth, recommendations)
+// - Direct DB queries for asset data (always available)
+// - Edge function for AI-processed sections (identity, growth, career, recommendations)
+// - Career/profile data has NO direct DB fallback — it's aggregated at runtime
+//   by getNancyPersonalProfileWithGrowth() from multiple source tables
 // - Each section independently handles loading/error/empty states
-// - No single-point-of-failure: DB sections render even when AI agent is down
+// - No single-point-of-failure: asset section renders even when AI agent is down
 // ============================================
 
 import { useQuery } from "@tanstack/react-query";
@@ -177,55 +179,14 @@ async function fetchAssetsDirect(): Promise<AssetOverview> {
 }
 
 // ═══════════════════════════════════════
-// Direct DB: Career (Section 4)
+// Career (Section 4)
+//
+// Career data is ONLY available via nancy-dashboard-agent.
+// There is no nancy_personal_profile table — profile data
+// is aggregated at runtime by getNancyPersonalProfileWithGrowth()
+// from profiles, expression_assets, ai_memories, and growth data.
+// No direct DB fallback query exists for this section.
 // ═══════════════════════════════════════
-
-async function fetchCareerDirect(): Promise<CareerCard> {
-  const [profileResult, skillMemoriesResult] = await Promise.allSettled([
-    supabase
-      .from("nancy_personal_profile")
-      .select("career_field, career_direction, strengths")
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("ai_memories")
-      .select("memory_type,content")
-      .eq("is_active", true)
-      .in("status", ["confirmed", "probable"])
-      .in("memory_type", ["skill", "insight"])
-      .order("confidence", { ascending: false })
-      .limit(30),
-  ]);
-
-  const profile =
-    profileResult.status === "fulfilled" && profileResult.value.data
-      ? (profileResult.value.data as Record<string, unknown>)
-      : null;
-
-  const skillMemories =
-    skillMemoriesResult.status === "fulfilled" && skillMemoriesResult.value.data
-      ? (skillMemoriesResult.value.data as Array<Record<string, unknown>>)
-      : [];
-
-  const skillItems: string[] = [];
-  for (const m of skillMemories) {
-    const content = String(m.content || "");
-    skillItems.push(content.length < 80 ? content : content.slice(0, 80) + "…");
-  }
-
-  const careerField = (profile?.career_field as string) || "";
-  const careerDirection = (profile?.career_direction as string) || "";
-  const profileStrengths = (profile?.strengths as string[]) || [];
-  const skillTags = [...new Set(skillItems)].slice(0, 8);
-
-  return {
-    targetDirection: careerDirection || careerField || "待探索",
-    careerField,
-    strengths: profileStrengths.length > 0 ? profileStrengths.slice(0, 5) : skillTags.slice(0, 5),
-    skillTags,
-    learningPatterns: [],
-  };
-}
 
 // ═══════════════════════════════════════
 // Edge function: AI sections (1, 2, 5)
@@ -272,13 +233,6 @@ export function useNancyAIDashboard(): DashboardState {
     refetchOnWindowFocus: false,
   });
 
-  const careerQuery = useQuery({
-    queryKey: ["nancy-dashboard-career-direct"],
-    queryFn: fetchCareerDirect,
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
   const agentData = agentQuery.isSuccess ? agentQuery.data : null;
   const isAgentDown = agentQuery.isError;
 
@@ -308,11 +262,9 @@ export function useNancyAIDashboard(): DashboardState {
         : null,
     },
     career: {
-      data: agentData?.section4_career ?? (careerQuery.isSuccess ? careerQuery.data : null),
-      isLoading: careerQuery.isLoading && !agentData,
-      error: careerQuery.isError && !agentData
-        ? (careerQuery.error as Error)?.message || "职业数据加载失败"
-        : null,
+      data: agentData?.section4_career ?? null,
+      isLoading: agentQuery.isLoading,
+      error: agentQuery.isError ? (agentQuery.error as Error)?.message || "职业数据加载失败" : null,
     },
     hasRealData: agentData?._meta.hasRealData ?? false,
     generatedAt: agentData?._meta.generatedAt ?? null,

@@ -53,7 +53,7 @@ serve(async (req: Request) => {
     const { action } = await req.json().catch(() => ({ action: "get_dashboard_data" }));
 
     if (action !== "get_dashboard_data") {
-      return jsonResponse({ error: `Unknown action: ${action}` }, 400, corsHeaders);
+      return jsonResponse({ error: `Unknown action: ${action}` }, corsHeaders, 400);
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -278,15 +278,15 @@ serve(async (req: Request) => {
           generatedAt: new Date().toISOString(),
         },
       },
-      200,
       corsHeaders,
+      200,
     );
   } catch (error) {
     console.error("Dashboard agent error:", error);
     return jsonResponse(
       { error: error instanceof Error ? error.message : "Unknown error" },
-      500,
       corsHeaders,
+      500,
     );
   }
 });
