@@ -1961,3 +1961,522 @@ export async function mineAssetCandidates(
     return [];
   }
 }
+
+// ── 15. Intent Router ──
+
+/**
+ * User intent types that the system can route to appropriate agents.
+ */
+export type UserIntent =
+  | "speaking_practice"
+  | "english_learning"
+  | "reflection"
+  | "planning"
+  | "interview"
+  | "knowledge_import"
+  | "health"
+  | "general";
+
+export interface IntentDetection {
+  /** Primary intent */
+  intent: UserIntent;
+  /** Confidence 0-1 */
+  confidence: number;
+  /** Sub-type for further routing */
+  subType: string;
+  /** Suggested agent to handle this intent */
+  suggestedAgent: string;
+  /** All detected intents sorted by confidence */
+  allIntents: Array<{ intent: UserIntent; confidence: number }>;
+}
+
+interface IntentRule {
+  intent: UserIntent;
+  /** Keywords with individual weights */
+  keywords: Array<{ word: string; weight: number }>;
+  /** Exact phrase matches (higher weight) */
+  phrases: Array<{ phrase: string; weight: number }>;
+  /** Sub-type keywords */
+  subTypes: Array<{ word: string; subType: string }>;
+  suggestedAgent: string;
+}
+
+const INTENT_RULES: IntentRule[] = [
+  {
+    intent: "interview",
+    keywords: [
+      { word: "面试", weight: 3 },
+      { word: "interview", weight: 3 },
+      { word: "简历", weight: 2 },
+      { word: "求职", weight: 2 },
+      { word: "应聘", weight: 2 },
+      { word: "自我介绍", weight: 3 },
+      { word: "职业规划", weight: 2 },
+      { word: "career", weight: 1 },
+    ],
+    phrases: [
+      { phrase: "面试问题", weight: 4 },
+      { phrase: "模拟面试", weight: 5 },
+      { phrase: "如何回答", weight: 3 },
+      { phrase: "自我介绍", weight: 4 },
+      { phrase: "behavioral question", weight: 4 },
+      { phrase: "job interview", weight: 5 },
+    ],
+    subTypes: [
+      { word: "自我介绍", subType: "self_intro" },
+      { word: "行为面试", subType: "behavioral" },
+      { word: "技术面试", subType: "technical" },
+      { word: "behavioral", subType: "behavioral" },
+      { word: "technical", subType: "technical" },
+    ],
+    suggestedAgent: "chinese-expression-agent",
+  },
+  {
+    intent: "speaking_practice",
+    keywords: [
+      { word: "表达", weight: 2 },
+      { word: "演讲", weight: 2 },
+      { word: "说话", weight: 1 },
+      { word: "口语", weight: 2 },
+      { word: "话题", weight: 1 },
+      { word: "一分钟", weight: 2 },
+      { word: "表达力", weight: 2 },
+      { word: "中文表达", weight: 3 },
+      { word: "speaking", weight: 1 },
+      { word: "presentation", weight: 1 },
+    ],
+    phrases: [
+      { phrase: "练习表达", weight: 4 },
+      { phrase: "中文表达训练", weight: 5 },
+      { phrase: "一分钟表达", weight: 5 },
+      { phrase: "口语训练", weight: 4 },
+      { phrase: "表达训练", weight: 5 },
+      { phrase: "演讲练习", weight: 4 },
+      { phrase: "帮我分析", weight: 3 },
+    ],
+    subTypes: [
+      { word: "观点", subType: "opinion" },
+      { word: "经历", subType: "experience" },
+      { word: "概念", subType: "concept" },
+      { word: "故事", subType: "story" },
+      { word: "感悟", subType: "reflection" },
+      { word: "面试", subType: "interview" },
+    ],
+    suggestedAgent: "chinese-expression-agent",
+  },
+  {
+    intent: "english_learning",
+    keywords: [
+      { word: "英语", weight: 3 },
+      { word: "英文", weight: 3 },
+      { word: "english", weight: 3 },
+      { word: "单词", weight: 2 },
+      { word: "语法", weight: 2 },
+      { word: "翻译", weight: 2 },
+      { word: "translate", weight: 2 },
+      { word: "vocabulary", weight: 2 },
+      { word: "grammar", weight: 2 },
+      { word: "英语口语", weight: 3 },
+      { word: "英语表达", weight: 3 },
+    ],
+    phrases: [
+      { phrase: "英语学习", weight: 5 },
+      { phrase: "英语练习", weight: 5 },
+      { phrase: "用英语说", weight: 5 },
+      { phrase: "english learning", weight: 5 },
+      { phrase: "improve my english", weight: 5 },
+      { phrase: "英语怎么说", weight: 5 },
+      { phrase: "帮我翻译", weight: 4 },
+    ],
+    subTypes: [
+      { word: "口语", subType: "speaking" },
+      { word: "写作", subType: "writing" },
+      { word: "单词", subType: "vocabulary" },
+      { word: "语法", subType: "grammar" },
+      { word: "翻译", subType: "translation" },
+      { word: "speaking", subType: "speaking" },
+      { word: "writing", subType: "writing" },
+    ],
+    suggestedAgent: "english-coach",
+  },
+  {
+    intent: "reflection",
+    keywords: [
+      { word: "反思", weight: 3 },
+      { word: "回顾", weight: 2 },
+      { word: "总结", weight: 2 },
+      { word: "复盘", weight: 3 },
+      { word: "周记", weight: 2 },
+      { word: "reflect", weight: 2 },
+      { word: "review", weight: 1 },
+      { word: "journal", weight: 2 },
+      { word: "记录", weight: 1 },
+      { word: "心情", weight: 1 },
+    ],
+    phrases: [
+      { phrase: "今天发生了什么", weight: 4 },
+      { phrase: "本周总结", weight: 5 },
+      { phrase: "这周怎么样", weight: 4 },
+      { phrase: "回顾这一周", weight: 5 },
+      { phrase: "帮我反思", weight: 5 },
+      { phrase: "自我反思", weight: 5 },
+      { phrase: "今天过得", weight: 4 },
+      { phrase: "daily reflection", weight: 4 },
+    ],
+    subTypes: [
+      { word: "今天", subType: "daily" },
+      { word: "本周", subType: "weekly" },
+      { word: "这周", subType: "weekly" },
+      { word: "今日", subType: "daily" },
+      { word: "daily", subType: "daily" },
+      { word: "weekly", subType: "weekly" },
+    ],
+    suggestedAgent: "reflection-agent",
+  },
+  {
+    intent: "planning",
+    keywords: [
+      { word: "计划", weight: 3 },
+      { word: "任务", weight: 2 },
+      { word: "目标", weight: 2 },
+      { word: "安排", weight: 2 },
+      { word: "规划", weight: 3 },
+      { word: "plan", weight: 2 },
+      { word: "task", weight: 2 },
+      { word: "goal", weight: 2 },
+      { word: "todo", weight: 2 },
+      { word: "下一步", weight: 2 },
+      { word: "怎么做", weight: 2 },
+    ],
+    phrases: [
+      { phrase: "帮我规划", weight: 5 },
+      { phrase: "任务拆解", weight: 5 },
+      { phrase: "制定计划", weight: 5 },
+      { phrase: "今天要做什么", weight: 4 },
+      { phrase: "明天计划", weight: 4 },
+      { phrase: "如何安排", weight: 4 },
+      { phrase: "帮我安排", weight: 4 },
+      { phrase: "下一步做什么", weight: 4 },
+    ],
+    subTypes: [
+      { word: "拆解", subType: "task_breakdown" },
+      { word: "目标", subType: "goal_setting" },
+      { word: "今日", subType: "daily_plan" },
+      { word: "明天", subType: "daily_plan" },
+      { word: "本周", subType: "weekly_plan" },
+      { word: "breakdown", subType: "task_breakdown" },
+    ],
+    suggestedAgent: "task-breakdown-agent",
+  },
+  {
+    intent: "knowledge_import",
+    keywords: [
+      { word: "导入", weight: 3 },
+      { word: "文章", weight: 2 },
+      { word: "读书", weight: 2 },
+      { word: "笔记", weight: 1 },
+      { word: "材料", weight: 1 },
+      { word: "import", weight: 2 },
+      { word: "article", weight: 2 },
+      { word: "extract", weight: 1 },
+      { word: "链接", weight: 1 },
+      { word: "视频", weight: 1 },
+    ],
+    phrases: [
+      { phrase: "帮我分析这篇文章", weight: 5 },
+      { phrase: "导入材料", weight: 5 },
+      { phrase: "提取关键信息", weight: 5 },
+      { phrase: "分析这个视频", weight: 4 },
+      { phrase: "这篇文章讲了什么", weight: 4 },
+      { phrase: "帮我总结", weight: 3 },
+    ],
+    subTypes: [
+      { word: "文章", subType: "article" },
+      { word: "视频", subType: "video" },
+      { word: "读书", subType: "book" },
+      { word: "链接", subType: "url" },
+      { word: "article", subType: "article" },
+      { word: "video", subType: "video" },
+    ],
+    suggestedAgent: "resource-extract",
+  },
+  {
+    intent: "health",
+    keywords: [
+      { word: "健康", weight: 3 },
+      { word: "运动", weight: 2 },
+      { word: "饮食", weight: 2 },
+      { word: "减肥", weight: 2 },
+      { word: "健身", weight: 2 },
+      { word: "睡眠", weight: 2 },
+      { word: "health", weight: 2 },
+      { word: "diet", weight: 2 },
+      { word: "exercise", weight: 2 },
+      { word: "卡路里", weight: 1 },
+      { word: "体重", weight: 1 },
+    ],
+    phrases: [
+      { phrase: "健康管理", weight: 4 },
+      { phrase: "饮食建议", weight: 4 },
+      { phrase: "运动计划", weight: 4 },
+      { phrase: "今天吃了什么", weight: 4 },
+      { phrase: "帮我记录饮食", weight: 4 },
+      { phrase: "睡眠质量", weight: 3 },
+    ],
+    subTypes: [
+      { word: "饮食", subType: "diet" },
+      { word: "运动", subType: "exercise" },
+      { word: "睡眠", subType: "sleep" },
+      { word: "体重", subType: "weight" },
+      { word: "diet", subType: "diet" },
+      { word: "exercise", subType: "exercise" },
+    ],
+    suggestedAgent: "health-coach-agent",
+  },
+];
+
+/**
+ * Detect user intent from natural language input.
+ *
+ * Lightweight rule-based classifier — no AI call needed.
+ * Designed for routing user requests to the right agent.
+ *
+ * Returns the top intent + all detected intents sorted by confidence.
+ *
+ * Usage:
+ *   const intent = detectUserIntent("帮我练习一分钟口语表达");
+ *   // { intent: "speaking_practice", confidence: 0.85, ... }
+ */
+export function detectUserIntent(text: string): IntentDetection {
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    return {
+      intent: "general",
+      confidence: 1.0,
+      subType: "",
+      suggestedAgent: "chinese-expression-agent",
+      allIntents: [{ intent: "general", confidence: 1.0 }],
+    };
+  }
+
+  const lower = text.toLowerCase();
+  const scores = new Map<UserIntent, number>();
+  const subTypeScores = new Map<string, Map<string, number>>();
+
+  for (const rule of INTENT_RULES) {
+    let score = 0;
+    const subMap = new Map<string, number>();
+
+    // Keyword matching
+    for (const kw of rule.keywords) {
+      const lowerKw = kw.word.toLowerCase();
+      // Count occurrences
+      let count = 0;
+      let pos = -1;
+      while ((pos = lower.indexOf(lowerKw, pos + 1)) !== -1) count++;
+      if (count > 0) {
+        score += kw.weight * Math.min(count, 3); // cap at 3x per keyword
+      }
+    }
+
+    // Phrase matching (exact, higher weight)
+    for (const ph of rule.phrases) {
+      if (lower.includes(ph.phrase.toLowerCase())) {
+        score += ph.weight;
+      }
+    }
+
+    // Sub-type detection
+    for (const st of rule.subTypes) {
+      if (lower.includes(st.word.toLowerCase())) {
+        subMap.set(st.subType, (subMap.get(st.subType) || 0) + 1);
+      }
+    }
+
+    if (score > 0) {
+      scores.set(rule.intent, score);
+      subTypeScores.set(rule.intent, subMap);
+    }
+  }
+
+  // No matches → general
+  if (scores.size === 0) {
+    return {
+      intent: "general",
+      confidence: 0.8,
+      subType: "",
+      suggestedAgent: "chinese-expression-agent",
+      allIntents: [{ intent: "general", confidence: 0.8 }],
+    };
+  }
+
+  // Normalize scores to 0-1 range
+  const maxPossible = 35; // Theoretical max: 5-6 phrase matches + keyword accumulation
+  const allIntents: Array<{ intent: UserIntent; confidence: number }> = [];
+
+  for (const [intent, rawScore] of scores) {
+    const confidence = Math.min(1, Math.round((rawScore / maxPossible) * 100) / 100);
+    allIntents.push({ intent, confidence });
+  }
+
+  allIntents.sort((a, b) => b.confidence - a.confidence);
+
+  const top = allIntents[0];
+  const topRule = INTENT_RULES.find((r) => r.intent === top.intent)!;
+
+  // Determine sub-type
+  const topSubMap = subTypeScores.get(top.intent);
+  let subType = "";
+  if (topSubMap && topSubMap.size > 0) {
+    subType = [...topSubMap.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+
+  return {
+    intent: top.intent,
+    confidence: top.confidence,
+    subType,
+    suggestedAgent: topRule.suggestedAgent,
+    allIntents,
+  };
+}
+
+// ── 16. AI Feedback Loop ──
+
+export type FeedbackRating = "helpful" | "not_helpful" | "partially_helpful";
+
+export interface FeedbackRecord {
+  agentType: string;
+  action: string;
+  suggestionType?: string;
+  suggestionId?: string;
+  feedback: FeedbackRating;
+  userComment?: string;
+  context?: Record<string, unknown>;
+}
+
+export interface FeedbackStats {
+  total: number;
+  helpful: number;
+  notHelpful: number;
+  partiallyHelpful: number;
+  helpfulRate: number;
+  byAgent: Record<string, { total: number; helpfulRate: number }>;
+  byType: Record<string, { total: number; helpfulRate: number }>;
+  recentComments: string[];
+}
+
+/**
+ * Record user feedback on an AI suggestion.
+ *
+ * Fire-and-forget — errors are caught and logged, never thrown.
+ * Used by frontend to rate AI suggestions as helpful/not_helpful.
+ */
+export async function recordFeedback(
+  supabase: SupabaseClient,
+  userId: string,
+  record: FeedbackRecord,
+): Promise<boolean> {
+  if (!userId || !record.agentType || !record.feedback) return false;
+
+  try {
+    const { error } = await supabase.from("ai_feedback").insert({
+      user_id: userId,
+      agent_type: record.agentType,
+      action: record.action,
+      suggestion_type: record.suggestionType || null,
+      suggestion_id: record.suggestionId || null,
+      feedback: record.feedback,
+      user_comment: record.userComment || null,
+      context: record.context || {},
+    });
+
+    if (error) {
+      console.error(`[recordFeedback] insert error:`, error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[recordFeedback] error:`, (err as Error).message);
+    return false;
+  }
+}
+
+/**
+ * Get feedback statistics for a user or globally.
+ *
+ * Used by agents to understand which types of suggestions work best.
+ */
+export async function getFeedbackStats(
+  supabase: SupabaseClient,
+  userId: string,
+  options?: { agentType?: string; limit?: number },
+): Promise<FeedbackStats | null> {
+  try {
+    let query = supabase.from("ai_feedback")
+      .select("agent_type,suggestion_type,feedback,user_comment")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (options?.agentType) {
+      query = query.eq("agent_type", options.agentType);
+    }
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const { data } = await query;
+
+    if (!data || data.length === 0) return null;
+
+    const rows = data as Array<Record<string, unknown>>;
+    const total = rows.length;
+    const helpful = rows.filter((r) => r.feedback === "helpful").length;
+    const notHelpful = rows.filter((r) => r.feedback === "not_helpful").length;
+    const partiallyHelpful = rows.filter((r) => r.feedback === "partially_helpful").length;
+
+    // By agent
+    const byAgent: Record<string, { total: number; helpfulRate: number }> = {};
+    for (const r of rows) {
+      const agent = String(r.agent_type || "unknown");
+      if (!byAgent[agent]) byAgent[agent] = { total: 0, helpfulRate: 0 };
+      byAgent[agent].total++;
+    }
+    for (const [agent, stats] of Object.entries(byAgent)) {
+      const agentRows = rows.filter((r) => String(r.agent_type) === agent);
+      const agentHelpful = agentRows.filter((r) => r.feedback === "helpful").length;
+      stats.helpfulRate = Math.round((agentHelpful / stats.total) * 100);
+    }
+
+    // By suggestion type
+    const byType: Record<string, { total: number; helpfulRate: number }> = {};
+    for (const r of rows) {
+      const st = String(r.suggestion_type || "general");
+      if (!byType[st]) byType[st] = { total: 0, helpfulRate: 0 };
+      byType[st].total++;
+    }
+    for (const [st, stats] of Object.entries(byType)) {
+      const typeRows = rows.filter((r) => String(r.suggestion_type || "general") === st);
+      const typeHelpful = typeRows.filter((r) => r.feedback === "helpful").length;
+      stats.helpfulRate = Math.round((typeHelpful / stats.total) * 100);
+    }
+
+    // Recent comments
+    const recentComments = rows
+      .filter((r) => r.user_comment)
+      .slice(0, 10)
+      .map((r) => String(r.user_comment));
+
+    return {
+      total,
+      helpful,
+      notHelpful,
+      partiallyHelpful,
+      helpfulRate: Math.round((helpful / total) * 100),
+      byAgent,
+      byType,
+      recentComments,
+    };
+  } catch (err) {
+    console.error(`[getFeedbackStats] error:`, (err as Error).message);
+    return null;
+  }
+}
