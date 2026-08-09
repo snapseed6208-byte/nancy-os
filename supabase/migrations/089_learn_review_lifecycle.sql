@@ -54,21 +54,7 @@ ALTER TABLE expressions
 -- 5. Update practice_logs.mode CHECK to add 'learn'
 -- ═══════════════════════════════════════
 
-DO $$
-DECLARE
-  constraint_name TEXT;
-BEGIN
-  SELECT con.conname INTO constraint_name
-  FROM pg_constraint con
-  JOIN pg_class rel ON con.conrelid = rel.oid
-  WHERE rel.relname = 'expression_practice_logs'
-    AND con.contype = 'c'
-    AND pg_get_constraintdef(con.oid) LIKE '%mode%';
-
-  IF constraint_name IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE expression_practice_logs DROP CONSTRAINT %I', constraint_name);
-  END IF;
-END $$;
+ALTER TABLE expression_practice_logs DROP CONSTRAINT IF EXISTS chk_practice_logs_mode;
 
 ALTER TABLE expression_practice_logs
   ADD CONSTRAINT chk_practice_logs_mode
