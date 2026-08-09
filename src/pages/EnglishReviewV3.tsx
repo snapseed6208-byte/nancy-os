@@ -12,9 +12,11 @@ import {
   useUpdateSessionItem,
   useRecordPracticeLog,
   useUpdateSessionStage,
+  useDiagnoseItem,
   getReinforcementItems,
   getSessionStats,
   type SessionItem,
+  type DifficultyDiagnosis,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -30,6 +32,11 @@ import {
   Pencil,
   History,
   Target,
+  Lightbulb,
+  Zap,
+  BookOpen,
+  MessageCircle,
+  ChevronDown,
 } from "lucide-react";
 
 // ═══════════════════════════════════════
@@ -118,23 +125,42 @@ function SessionHeader({
 // Recall Card (show Chinese → type English)
 // ═══════════════════════════════════════
 
+// ── Diagnosis display helpers ──
+
+const PROBLEM_TYPE_CONFIG: Record<string, { icon: typeof Brain; label: string; color: string }> = {
+  memory: { icon: Brain, label: "记忆问题", color: "text-purple-600 bg-purple-50 border-purple-200" },
+  application: { icon: Pencil, label: "应用问题", color: "text-blue-600 bg-blue-50 border-blue-200" },
+  context: { icon: MessageCircle, label: "语境问题", color: "text-amber-600 bg-amber-50 border-amber-200" },
+  fluency: { icon: Zap, label: "流利度问题", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
+};
+
 function RecallCard({
   item,
+  diagnosis,
+  isDiagnosing,
   onResult,
 }: {
   item: SessionItem;
+  diagnosis?: DifficultyDiagnosis | null;
+  isDiagnosing?: boolean;
   onResult: (itemId: string, passed: boolean, score: number) => void;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [selfRating, setSelfRating] = useState<number | null>(null);
+  const [showDiagnosis, setShowDiagnosis] = useState(false);
 
   const handleReveal = () => setRevealed(true);
 
   const handleRate = (rating: number) => {
     setSelfRating(rating);
     const passed = rating >= 3;
-    setTimeout(() => onResult(item.id, passed, rating), 200);
+    setTimeout(() => {
+      onResult(item.id, passed, rating);
+      if (!passed) setShowDiagnosis(true);
+    }, 200);
   };
+
+  const ptConfig = diagnosis ? PROBLEM_TYPE_CONFIG[diagnosis.problem_type] : null;
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
@@ -190,6 +216,54 @@ function RecallCard({
               ))}
             </div>
           </div>
+
+          {/* V3.1: AI Diagnosis for failed items */}
+          {selfRating !== null && selfRating < 4 && (
+            <div className="space-y-2">
+              {isDiagnosing ? (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-warm-cream rounded-xl">
+                  <Loader2 size={14} className="animate-spin text-sage" />
+                  <span className="text-xs text-ink-light">AI 正在分析你的困难原因…</span>
+                </div>
+              ) : diagnosis ? (
+                <div className={cn("border rounded-xl overflow-hidden transition-all", ptConfig?.color.split(" ")[2] || "border-border/40")}>
+                  <button
+                    onClick={() => setShowDiagnosis(!showDiagnosis)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      {ptConfig && <ptConfig.icon size={14} className={ptConfig.color.split(" ")[0]} />}
+                      <span className="text-xs font-medium text-ink">
+                        {ptConfig?.label || "诊断"} · {diagnosis.suggestion.slice(0, 30)}…
+                      </span>
+                    </div>
+                    <ChevronDown
+                      size={14}
+                      className={cn("text-ink-lighter transition-transform", showDiagnosis && "rotate-180")}
+                    />
+                  </button>
+                  {showDiagnosis && (
+                    <div className="px-4 pb-3 space-y-2">
+                      <div className="flex flex-wrap gap-1">
+                        {diagnosis.sub_problems.map((sp) => (
+                          <span
+                            key={sp}
+                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-ink/5 text-ink-light"
+                          >
+                            {sp}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-start gap-1.5">
+                        <Lightbulb size={12} className="text-accent-warm mt-0.5 shrink-0" />
+                        <p className="text-xs text-ink-light leading-relaxed">{diagnosis.suggestion}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -339,11 +413,16 @@ export default function EnglishReviewV3() {
   const recordLog = useRecordPracticeLog();
   const submitReview = useSubmitReview();
   const updateStage = useUpdateSessionStage();
+  const diagnoseItem = useDiagnoseItem();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [roundComplete, setRoundComplete] = useState(false);
   const [reinforcementRound, setReinforcementRound] = useState(0);
   const [stage, setStage] = useState<"recall" | "sentence">("recall");
+
+  // V3.1: Diagnosis state
+  const [diagnoses, setDiagnoses] = useState<Record<string, DifficultyDiagnosis>>({});
+  const [diagnosingIds, setDiagnosingIds] = useState<Set<string>>(new Set());
 
   const session = data?.session;
   const allItems = data?.items || [];
@@ -411,6 +490,39 @@ export default function EnglishReviewV3() {
         reviewMode: "active_recall",
       });
 
+      // V3.1: Trigger AI diagnosis for failed items
+      if (!passed && item.expression) {
+        setDiagnosingIds((prev) => new Set(prev).add(itemId));
+        try {
+          const recentFailed = allItems
+            .filter((i) => i.status === "failed" || i.status === "reinforcement")
+            .slice(-5)
+            .map((i) => ({
+              expression: i.expression?.english || "",
+              score: i.recallScore || 0,
+              status: i.status,
+            }));
+
+          const diagnosis = await diagnoseItem.mutateAsync({
+            itemId,
+            expressionEnglish: item.expression.english,
+            expressionChinese: item.expression.chinese,
+            expressionExample: item.expression.example_sentence,
+            score,
+            sessionId: session?.id,
+            recentAttempts: recentFailed,
+          });
+          setDiagnoses((prev) => ({ ...prev, [itemId]: diagnosis }));
+        } catch {
+          // Diagnosis is non-blocking; silently ignore failures
+        }
+        setDiagnosingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+      }
+
       // Advance
       if (currentIndex >= queue.length - 1) {
         setRoundComplete(true);
@@ -418,7 +530,7 @@ export default function EnglishReviewV3() {
         setCurrentIndex((i) => i + 1);
       }
     },
-    [allItems, currentIndex, queue.length, reinforcementRound, updateItem, recordLog, session?.id, submitReview],
+    [allItems, currentIndex, queue.length, reinforcementRound, updateItem, recordLog, session?.id, submitReview, diagnoseItem],
   );
 
   // Handle sentence result
@@ -568,7 +680,12 @@ export default function EnglishReviewV3() {
 
           {/* Card */}
           {stage === "recall" ? (
-            <RecallCard item={currentItem} onResult={handleRecallResult} />
+            <RecallCard
+              item={currentItem}
+              onResult={handleRecallResult}
+              diagnosis={diagnoses[currentItem.id]}
+              isDiagnosing={diagnosingIds.has(currentItem.id)}
+            />
           ) : (
             <SentenceCard item={currentItem} onResult={handleSentenceResult} />
           )}

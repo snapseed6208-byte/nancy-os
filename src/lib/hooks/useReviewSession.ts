@@ -348,6 +348,67 @@ export function getReinforcementItems(items: SessionItem[]): SessionItem[] {
   );
 }
 
+// ═══════════════════════════════════════
+// V3.1: AI Diagnosis
+// ═══════════════════════════════════════
+
+export interface DifficultyDiagnosis {
+  problem_type: "memory" | "application" | "context" | "fluency";
+  sub_problems: string[];
+  suggestion: string;
+  confidence: number;
+}
+
+export function useDiagnoseItem() {
+  return useMutation({
+    mutationFn: async ({
+      itemId,
+      expressionEnglish,
+      expressionChinese,
+      expressionExample,
+      score,
+      sessionId,
+      recentAttempts,
+    }: {
+      itemId: string;
+      expressionEnglish: string;
+      expressionChinese: string;
+      expressionExample?: string;
+      score: number;
+      sessionId?: string;
+      recentAttempts?: Array<{ expression: string; score: number; status: string }>;
+    }): Promise<DifficultyDiagnosis> => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/diagnose-difficulty-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            expressionEnglish,
+            expressionChinese,
+            expressionExample,
+            score,
+            itemId,
+            sessionId,
+            recentAttempts,
+          }),
+        },
+      );
+
+      if (!res.ok) throw new Error(`Diagnosis failed: ${res.status}`);
+      const data = await res.json();
+      return data.diagnosis as DifficultyDiagnosis;
+    },
+  });
+}
+
 export function getSessionStats(items: SessionItem[]) {
   const total = items.length;
   const passed = items.filter((i) => i.status === "passed" || i.status === "completed").length;
