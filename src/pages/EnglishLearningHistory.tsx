@@ -1,12 +1,17 @@
 // ============================================
-// English SRS V3.1 — Learning History Dashboard
+// English SRS V3.2 — Learning History Dashboard
 //
-// Shows today's summary, 30-day trends, problem
-// areas, and reinforcement history.
+// Shows today's detailed session breakdown with
+// per-round stats, sentence practice details,
+// problem areas, and 30-day trends.
 // ============================================
 
 import { useLocation } from "wouter";
-import { useLearningHistory } from "@/lib/hooks/useReviewSession";
+import {
+  useLearningHistory,
+  useSessionDetail,
+  type SentenceDetail,
+} from "@/lib/hooks/useReviewSession";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -18,9 +23,17 @@ import {
   Calendar,
   Flame,
   BarChart3,
+  Pencil,
+  MessageCircle,
+  CheckCircle2,
+  XCircle,
+  RotateCcw,
+  ChevronRight,
 } from "lucide-react";
 
-// ── Color mapping for problem types ──
+// ═══════════════════════════════════════
+// Problem area helpers
+// ═══════════════════════════════════════
 
 const PROBLEM_COLORS: Record<string, string> = {
   memory: "bg-purple-50 text-purple-600",
@@ -36,7 +49,9 @@ const PROBLEM_LABELS: Record<string, string> = {
   fluency: "流利度",
 };
 
-// ── Mini bar chart component ──
+// ═══════════════════════════════════════
+// Mini bar chart
+// ═══════════════════════════════════════
 
 function MiniBarChart({ data }: { data: Array<{ date: string; total: number; passed: number; failed: number }> }) {
   const maxVal = Math.max(...data.map((d) => d.total), 1);
@@ -67,11 +82,46 @@ function MiniBarChart({ data }: { data: Array<{ date: string; total: number; pas
   );
 }
 
-// ── Main Page ──
+// ═══════════════════════════════════════
+// Stat box
+// ═══════════════════════════════════════
+
+function StatBox({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div className="text-center">
+      <p className={cn("text-2xl font-bold", color || "text-ink")}>{value}</p>
+      <p className="text-[11px] text-ink-lighter">{label}</p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// Sentence practice detail card
+// ═══════════════════════════════════════
+
+function SentenceDetailCard({ detail }: { detail: SentenceDetail }) {
+  return (
+    <div className="bg-warm-cream rounded-xl p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-sage-deep">{detail.expressionEnglish}</span>
+        <span className="text-xs text-ink-lighter">{detail.expressionChinese}</span>
+      </div>
+      <p className="text-sm text-ink italic">"{detail.userSentence}"</p>
+      {detail.aiFeedback && (
+        <p className="text-xs text-ink-light leading-relaxed">{detail.aiFeedback}</p>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// Main Page
+// ═══════════════════════════════════════
 
 export default function EnglishLearningHistory() {
   const [, navigate] = useLocation();
   const { data, isLoading, error } = useLearningHistory();
+  const { data: sessionDetail, isLoading: detailLoading } = useSessionDetail();
 
   if (isLoading) {
     return (
@@ -110,35 +160,234 @@ export default function EnglishLearningHistory() {
         <h2 className="text-lg font-semibold text-ink">学习历史</h2>
       </div>
 
-      {/* ── Today's Summary ── */}
-      <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Calendar size={16} className="text-sage-deep" />
-          <h3 className="text-sm font-semibold text-ink">今日复习</h3>
-        </div>
+      {/* ═══════════════════════════════════════ */}
+      {/* Today's Detailed Session Breakdown    */}
+      {/* ═══════════════════════════════════════ */}
 
-        {todaySession ? (
-          <div className="grid grid-cols-4 gap-3">
-            <StatBox label="总复习" value={todaySession.total} />
-            <StatBox label="已掌握" value={todaySession.passed} color="text-sage-deep" />
-            <StatBox label="需强化" value={todaySession.failed} color="text-accent-warm" />
-            <StatBox label="强化中" value={todaySession.reinforcement} color="text-blue-500" />
+      {sessionDetail ? (
+        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-5">
+          <div className="flex items-center gap-2">
+            <Calendar size={16} className="text-sage-deep" />
+            <h3 className="text-sm font-semibold text-ink">
+              今日复习详情
+            </h3>
+            <span className={cn(
+              "ml-auto text-[11px] px-2 py-0.5 rounded-full",
+              sessionDetail.status === "completed"
+                ? "bg-sage-light/50 text-sage-deep"
+                : "bg-accent-warm/10 text-accent-warm",
+            )}>
+              {sessionDetail.status === "completed" ? "已完成" : "进行中"}
+            </span>
           </div>
-        ) : (
-          <p className="text-sm text-ink-light">今天还没有开始复习</p>
-        )}
 
-        {todaySession && !todaySession.completed && (
-          <button
-            onClick={() => navigate("/english/review")}
-            className="w-full py-2.5 bg-sage text-white text-sm font-medium rounded-xl hover:bg-sage-deep transition-colors"
-          >
-            继续复习
-          </button>
-        )}
-      </div>
+          {/* Round 1: Active Recall */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Brain size={14} className="text-sage-deep" />
+              <h4 className="text-xs font-semibold text-ink">
+                Round 1 主动回忆
+              </h4>
+              <span className="text-[11px] text-ink-lighter">
+                {sessionDetail.round1Total} 个表达
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-sage-light/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-sage-deep">{sessionDetail.round1FirstPassed}</p>
+                <p className="text-[10px] text-ink-lighter">首次通过</p>
+              </div>
+              <div className="bg-accent-warm/10 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-accent-warm">{sessionDetail.round1FirstFailed}</p>
+                <p className="text-[10px] text-ink-lighter">首次未通过</p>
+              </div>
+              <div className="bg-blue-50 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-blue-500">
+                  {sessionDetail.round1Total - sessionDetail.round1FirstPassed - sessionDetail.round1FirstFailed}
+                </p>
+                <p className="text-[10px] text-ink-lighter">未完成</p>
+              </div>
+            </div>
+          </div>
 
-      {/* ── Stats Row ── */}
+          {/* Reinforcement (Round 1 internal) */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <RotateCcw size={14} className="text-accent-warm" />
+              <h4 className="text-xs font-semibold text-ink">
+                Round 1 强化
+              </h4>
+              <span className="text-[11px] text-ink-lighter">
+                {sessionDetail.reinforcementCount} 个进入强化
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-sage-light/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-sage-deep">{sessionDetail.reinforcedPassed}</p>
+                <p className="text-[10px] text-ink-lighter">强化后通过</p>
+              </div>
+              <div className="bg-accent-warm/10 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-accent-warm">
+                  {sessionDetail.reinforcementCount - sessionDetail.reinforcedPassed}
+                </p>
+                <p className="text-[10px] text-ink-lighter">仍需工作</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Round 2: Cloze */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Pencil size={14} className="text-sage-deep" />
+              <h4 className="text-xs font-semibold text-ink">
+                Round 2 语境填空
+              </h4>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-sage-light/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-sage-deep">{sessionDetail.round2Passed}</p>
+                <p className="text-[10px] text-ink-lighter">
+                  正确 / {sessionDetail.round2Total}
+                </p>
+              </div>
+              <div className="bg-accent-warm/10 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-accent-warm">
+                  {sessionDetail.round2Total - sessionDetail.round2Passed}
+                </p>
+                <p className="text-[10px] text-ink-lighter">
+                  未正确 / {sessionDetail.round2Total}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Round 3: Sentence */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <MessageCircle size={14} className="text-sage-deep" />
+              <h4 className="text-xs font-semibold text-ink">
+                Round 3 个人造句
+              </h4>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-sage-light/30 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-sage-deep">{sessionDetail.round3Completed}</p>
+                <p className="text-[10px] text-ink-lighter">
+                  已完成 / {sessionDetail.round3Total}
+                </p>
+              </div>
+              <div className="bg-ink/5 rounded-xl p-3 text-center">
+                <p className="text-lg font-bold text-ink-light">
+                  {sessionDetail.round3Total - sessionDetail.round3Completed}
+                </p>
+                <p className="text-[10px] text-ink-lighter">
+                  未完成 / {sessionDetail.round3Total}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Continue review button */}
+          {sessionDetail.status !== "completed" && (
+            <button
+              onClick={() => navigate("/english/review")}
+              className="w-full py-2.5 bg-sage text-white text-sm font-medium rounded-xl hover:bg-sage-deep transition-colors"
+            >
+              继续复习
+            </button>
+          )}
+        </div>
+      ) : (
+        /* Fallback: simple today summary when no session detail */
+        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Calendar size={16} className="text-sage-deep" />
+            <h3 className="text-sm font-semibold text-ink">今日复习</h3>
+          </div>
+
+          {todaySession ? (
+            <div className="grid grid-cols-4 gap-3">
+              <StatBox label="总复习" value={todaySession.total} />
+              <StatBox label="已掌握" value={todaySession.passed} color="text-sage-deep" />
+              <StatBox label="需强化" value={todaySession.failed} color="text-accent-warm" />
+              <StatBox label="强化中" value={todaySession.reinforcement} color="text-blue-500" />
+            </div>
+          ) : (
+            <p className="text-sm text-ink-light">今天还没有开始复习</p>
+          )}
+
+          {todaySession && !todaySession.completed && (
+            <button
+              onClick={() => navigate("/english/review")}
+              className="w-full py-2.5 bg-sage text-white text-sm font-medium rounded-xl hover:bg-sage-deep transition-colors"
+            >
+              继续复习
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════ */}
+      {/* Sentence Practice Details             */}
+      {/* ═══════════════════════════════════════ */}
+
+      {sessionDetail && sessionDetail.sentenceDetails.length > 0 && (
+        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <MessageCircle size={16} className="text-sage-deep" />
+            <h3 className="text-sm font-semibold text-ink">
+              今日造句记录
+            </h3>
+            <span className="text-[11px] text-ink-lighter ml-auto">
+              {sessionDetail.sentenceDetails.length} 条
+            </span>
+          </div>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {sessionDetail.sentenceDetails.map((d, idx) => (
+              <SentenceDetailCard key={idx} detail={d} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════ */}
+      {/* Difficult Expressions                 */}
+      {/* ═══════════════════════════════════════ */}
+
+      {sessionDetail && sessionDetail.difficultExpressions.length > 0 && (
+        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <XCircle size={16} className="text-accent-warm" />
+            <h3 className="text-sm font-semibold text-ink">
+              困难表达
+            </h3>
+            <span className="text-[11px] text-ink-lighter ml-auto">
+              {sessionDetail.difficultExpressions.length} 个
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {sessionDetail.difficultExpressions.map((expr, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-3 px-3 py-2 bg-warm-cream rounded-xl"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink truncate">{expr.english}</p>
+                  <p className="text-[11px] text-ink-lighter truncate">{expr.chinese}</p>
+                </div>
+                <span className="text-[11px] font-medium text-accent-warm shrink-0">
+                  {expr.recallScore !== null ? `${expr.recallScore}/5` : "-"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════ */}
+      {/* Stats Row                             */}
+      {/* ═══════════════════════════════════════ */}
+
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white border border-border/60 rounded-xl p-4">
           <div className="flex items-center gap-1.5 mb-1">
@@ -166,7 +415,10 @@ export default function EnglishLearningHistory() {
         </div>
       </div>
 
-      {/* ── 30-Day Trend ── */}
+      {/* ═══════════════════════════════════════ */}
+      {/* 30-Day Trend                          */}
+      {/* ═══════════════════════════════════════ */}
+
       <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
         <div className="flex items-center gap-2">
           <BarChart3 size={16} className="text-sage-deep" />
@@ -195,7 +447,10 @@ export default function EnglishLearningHistory() {
         </div>
       </div>
 
-      {/* ── Problem Areas ── */}
+      {/* ═══════════════════════════════════════ */}
+      {/* Problem Areas (30-day)                */}
+      {/* ═══════════════════════════════════════ */}
+
       <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Brain size={16} className="text-accent-warm" />
@@ -232,17 +487,6 @@ export default function EnglishLearningHistory() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ── Mini stat box ──
-
-function StatBox({ label, value, color }: { label: string; value: number; color?: string }) {
-  return (
-    <div className="text-center">
-      <p className={cn("text-2xl font-bold", color || "text-ink")}>{value}</p>
-      <p className="text-[11px] text-ink-lighter">{label}</p>
     </div>
   );
 }

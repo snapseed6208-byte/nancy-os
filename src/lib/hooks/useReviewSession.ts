@@ -766,3 +766,154 @@ export function getSessionStats(items: SessionItem[]) {
 
   return { total, passed, failed, pending, inProgress };
 }
+
+// ═══════════════════════════════════════
+// V3.2: Detailed Session History (per-round breakdown)
+// ═══════════════════════════════════════
+
+export interface SentenceDetail {
+  expressionEnglish: string;
+  expressionChinese: string;
+  userSentence: string;
+  aiFeedback: string | null;
+  completedAt: string | null;
+}
+
+export interface SessionDetailData {
+  sessionId: string;
+  sessionDate: string;
+  status: string;
+  targetCount: number;
+  // Round 1: Active Recall
+  round1Total: number;
+  round1FirstPassed: number;   // recall_score >= 3, reinforcement_round = 0
+  round1FirstFailed: number;   // recall_score < 3, reinforcement_round = 0
+  // Reinforcement
+  reinforcementCount: number;   // items that entered reinforcement
+  reinforcedPassed: number;     // reinforced then eventually passed
+  // Round 2: Cloze (from practice logs)
+  round2Total: number;
+  round2Passed: number;
+  // Round 3: Sentence
+  round3Total: number;
+  round3Completed: number;
+  sentenceDetails: SentenceDetail[];
+  // Difficult expressions (still failed/reinforcement at session end)
+  difficultExpressions: Array<{
+    english: string;
+    chinese: string;
+    recallScore: number | null;
+    status: string;
+  }>;
+}
+
+export function useSessionDetail() {
+  return useQuery({
+    queryKey: ["session-detail", "today"],
+    queryFn: async (): Promise<SessionDetailData | null> => {
+      const userId = await getUserId();
+      const today = todayStr();
+
+      // Get today's session
+      const { data: session } = await supabase
+        .from("review_sessions")
+        .select("id,session_date,status,target_count")
+        .eq("user_id", userId)
+        .eq("session_date", today)
+        .limit(1)
+        .single();
+
+      if (!session) return null;
+
+      // Get session items with expressions
+      const { data: items } = await supabase
+        .from("review_session_items")
+        .select("*, expression:expressions(english,chinese)")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: true });
+
+      const sessionItems = (items || []) as unknown as Array<{
+        id: string;
+        status: string;
+        recall_score: number | null;
+        reinforcement_round: number;
+        user_sentence: string | null;
+        ai_feedback: string | null;
+        last_practice_at: string | null;
+        expression: { english: string; chinese: string } | null;
+      }>;
+
+      // Round 1 stats: first recall attempt
+      const round1Total = sessionItems.length;
+      const round1FirstPassed = sessionItems.filter(
+        (i) => i.recall_score !== null && i.recall_score >= 3 && i.reinforcement_round === 0,
+      ).length;
+      const round1FirstFailed = sessionItems.filter(
+        (i) => i.recall_score !== null && i.recall_score < 3 && i.reinforcement_round === 0,
+      ).length;
+
+      // Reinforcement stats
+      const reinforcementCount = sessionItems.filter(
+        (i) => (i.reinforcement_round || 0) > 0,
+      ).length;
+      const reinforcedPassed = sessionItems.filter(
+        (i) => (i.reinforcement_round || 0) > 0 && (i.recall_score || 0) >= 3,
+      ).length;
+
+      // Round 2: Cloze from practice logs
+      const { data: clozeLogs } = await supabase
+        .from("expression_practice_logs")
+        .select("expression_id,score")
+        .eq("user_id", userId)
+        .eq("session_id", session.id)
+        .eq("mode", "cloze");
+
+      const clozeSet = new Set((clozeLogs || []).map((l) => l.expression_id));
+      const round2Total = round1Total;
+      const round2Passed = (clozeLogs || []).filter((l) => l.score >= 3).length;
+
+      // Round 3: Sentence
+      const sentenceItems = sessionItems.filter((i) => i.user_sentence !== null);
+      const round3Total = round1Total;
+      const round3Completed = sentenceItems.length;
+
+      // Sentence details
+      const sentenceDetails: SentenceDetail[] = sentenceItems.map((i) => ({
+        expressionEnglish: i.expression?.english || "unknown",
+        expressionChinese: i.expression?.chinese || "",
+        userSentence: i.user_sentence || "",
+        aiFeedback: i.ai_feedback || null,
+        completedAt: i.last_practice_at || null,
+      }));
+
+      // Difficult expressions
+      const difficultExpressions = sessionItems
+        .filter((i) => i.status === "failed" || i.status === "reinforcement")
+        .map((i) => ({
+          english: i.expression?.english || "unknown",
+          chinese: i.expression?.chinese || "",
+          recallScore: i.recall_score,
+          status: i.status,
+        }));
+
+      return {
+        sessionId: session.id,
+        sessionDate: session.session_date,
+        status: session.status,
+        targetCount: session.target_count,
+        round1Total,
+        round1FirstPassed,
+        round1FirstFailed,
+        reinforcementCount,
+        reinforcedPassed,
+        round2Total,
+        round2Passed,
+        round3Total,
+        round3Completed,
+        sentenceDetails,
+        difficultExpressions,
+      };
+    },
+    staleTime: 120_000,
+  });
+}

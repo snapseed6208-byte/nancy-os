@@ -3,7 +3,9 @@
 //
 // Immutable Daily Set of 15 expressions.
 // 3-round training: Recall → Cloze → Sentence.
-// SRS updated only on Round 1.
+// ALL 3 rounds use the same 15 IDs.
+// Round 1 reinforcement is separate (only score 1-2).
+// SRS updated only on Round 1 first attempt.
 // ============================================
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
@@ -35,6 +37,7 @@ import {
   Tag,
   TrendingUp,
   Target,
+  RotateCcw,
 } from "lucide-react";
 
 // ═══════════════════════════════════════
@@ -53,6 +56,8 @@ const ROUND_ICONS: Record<number, typeof Brain> = {
   3: MessageCircle,
 };
 
+const MAX_REINFORCEMENT_ROUNDS = 3;
+
 // ═══════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════
@@ -63,17 +68,14 @@ function buildClozeText(item: SessionItem): string {
   const clozeSaved = expr?.cloze_sentence;
   const example = expr?.example_sentence;
 
-  // Prefer pre-generated cloze_sentence
   if (clozeSaved) return clozeSaved;
 
-  // Try to blank out the expression in the example sentence
   if (example) {
     const escaped = english.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const regex = new RegExp(escaped, "gi");
     const replaced = example.replace(regex, "_____");
     if (replaced !== example) return replaced;
 
-    // If expression not found in example, blank out a phrase in the middle
     const words = example.split(/\s+/);
     if (words.length >= 6) {
       const start = Math.floor(words.length * 0.3);
@@ -82,12 +84,9 @@ function buildClozeText(item: SessionItem): string {
       for (let i = start; i < end; i++) parts[i] = "_____";
       return parts.join(" ");
     }
-
-    // Fallback: blank out the whole example
     return example;
   }
 
-  // No example at all — blank out the expression itself
   const words = english.split(/\s+/);
   if (words.length >= 2) {
     const mid = Math.floor(words.length / 2);
@@ -99,6 +98,11 @@ function buildClozeText(item: SessionItem): string {
   return `_____ (${expr?.chinese || ""})`;
 }
 
+function getSrsRating(score: number): "again" | "hard" | "good" | "easy" {
+  if (score >= 4) return "good";
+  return "hard";
+}
+
 // ═══════════════════════════════════════
 // Session Header — 3-stage flow indicator
 // ═══════════════════════════════════════
@@ -106,19 +110,24 @@ function buildClozeText(item: SessionItem): string {
 function SessionHeader({
   stats,
   currentRound,
+  inReinforcement,
+  reinforcementRound,
   roundOrderLength,
   currentIndex,
   onBack,
 }: {
   stats: ReturnType<typeof getSessionStats>;
   currentRound: number;
+  inReinforcement: boolean;
+  reinforcementRound: number;
   roundOrderLength: number;
   currentIndex: number;
   onBack: () => void;
 }) {
+  const displayRound = inReinforcement ? `1-R${reinforcementRound}` : `Round ${currentRound}/3`;
+
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-4 space-y-3">
-      {/* Top row: back + title */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <button
@@ -129,15 +138,14 @@ function SessionHeader({
           </button>
           <div>
             <h3 className="font-semibold text-ink text-sm">
-              {ROUND_LABELS[currentRound]}
+              {inReinforcement ? "困难表达强化" : ROUND_LABELS[currentRound]}
             </h3>
             <p className="text-[11px] text-ink-light">
-              Round {currentRound}/3 · {stats.total} 个表达
+              {displayRound} · {stats.total} 个表达
             </p>
           </div>
         </div>
 
-        {/* Progress */}
         <div className="flex items-center gap-1.5">
           <div className="w-20 h-2 bg-warm-cream rounded-full overflow-hidden">
             <div
@@ -157,7 +165,7 @@ function SessionHeader({
       <div className="flex items-center gap-1.5">
         {[1, 2, 3].map((r) => {
           const Icon = ROUND_ICONS[r];
-          const isActive = r === currentRound;
+          const isActive = r === currentRound && !inReinforcement;
           const isDone = r < currentRound;
           return (
             <div
@@ -198,14 +206,15 @@ function SessionHeader({
 
 // ═══════════════════════════════════════
 // Round 1: Active Recall Card
-// Shows full expression details after reveal
 // ═══════════════════════════════════════
 
 function RecallCard({
   item,
+  isReinforcement,
   onResult,
 }: {
   item: SessionItem;
+  isReinforcement?: boolean;
   onResult: (itemId: string, score: number) => void;
 }) {
   const [revealed, setRevealed] = useState(false);
@@ -221,9 +230,10 @@ function RecallCard({
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* Chinese cue */}
       <div className="text-center">
-        <p className="text-[11px] text-ink-lighter mb-1">中文提示</p>
+        <p className="text-[11px] text-ink-lighter mb-1">
+          {isReinforcement ? "强化回忆 · 中文提示" : "中文提示"}
+        </p>
         <p className="text-xl font-bold text-ink">{expr?.chinese}</p>
         <div className="flex items-center justify-center gap-2 mt-2">
           {expr?.scene && (
@@ -239,7 +249,6 @@ function RecallCard({
         </div>
       </div>
 
-      {/* Reveal button or answer details */}
       {!revealed ? (
         <button
           onClick={handleReveal}
@@ -249,7 +258,6 @@ function RecallCard({
         </button>
       ) : (
         <div className="space-y-4">
-          {/* English answer + pronunciation */}
           <div className="p-4 bg-warm-cream rounded-xl text-center">
             <p className="text-lg font-bold text-sage-deep">{expr?.english}</p>
             {expr?.pronunciation && (
@@ -257,26 +265,19 @@ function RecallCard({
             )}
           </div>
 
-          {/* English explanation */}
           {expr?.english_explanation && (
             <div className="px-1">
-              <p className="text-xs text-ink-light leading-relaxed">
-                {expr.english_explanation}
-              </p>
+              <p className="text-xs text-ink-light leading-relaxed">{expr.english_explanation}</p>
             </div>
           )}
 
-          {/* Example sentence */}
           {expr?.example_sentence && (
             <div className="bg-ink/5 rounded-xl p-3">
               <p className="text-[10px] text-ink-lighter mb-1">例句</p>
-              <p className="text-xs text-ink italic leading-relaxed">
-                {expr.example_sentence}
-              </p>
+              <p className="text-xs text-ink italic leading-relaxed">{expr.example_sentence}</p>
             </div>
           )}
 
-          {/* Common patterns */}
           {expr?.common_patterns && (
             <div className="bg-ink/5 rounded-xl p-3">
               <p className="text-[10px] text-ink-lighter mb-1">常见搭配</p>
@@ -284,7 +285,6 @@ function RecallCard({
             </div>
           )}
 
-          {/* Usage note */}
           {expr?.usage_note && (
             <div className="flex items-start gap-2 px-1">
               <BookOpen size={13} className="text-ink-lighter shrink-0 mt-0.5" />
@@ -292,7 +292,6 @@ function RecallCard({
             </div>
           )}
 
-          {/* Native usage */}
           {expr?.native_usage && (
             <div className="flex items-start gap-2 px-1">
               <MessageCircle size={13} className="text-ink-lighter shrink-0 mt-0.5" />
@@ -300,7 +299,6 @@ function RecallCard({
             </div>
           )}
 
-          {/* Context / Situation */}
           {(expr?.context || expr?.situation) && (
             <div className="flex items-center gap-2 px-1">
               <Tag size={12} className="text-ink-lighter shrink-0" />
@@ -310,14 +308,12 @@ function RecallCard({
             </div>
           )}
 
-          {/* Synonyms */}
           {expr?.synonyms && (
             <p className="text-[11px] text-ink-lighter px-1">
               近义表达: <span className="text-ink">{expr.synonyms}</span>
             </p>
           )}
 
-          {/* Common mistakes */}
           {expr?.common_mistakes && (
             <div className="flex items-start gap-2 bg-accent-warm/5 rounded-xl p-3">
               <AlertTriangle size={13} className="text-accent-warm shrink-0 mt-0.5" />
@@ -325,7 +321,6 @@ function RecallCard({
             </div>
           )}
 
-          {/* Memory tip */}
           {expr?.memory_tip && (
             <div className="flex items-start gap-2 bg-amber-50/50 rounded-xl p-3">
               <Lightbulb size={13} className="text-amber-500 shrink-0 mt-0.5" />
@@ -333,12 +328,10 @@ function RecallCard({
             </div>
           )}
 
-          {/* Notes */}
           {expr?.notes && (
             <p className="text-[11px] text-ink-lighter px-1 italic">{expr.notes}</p>
           )}
 
-          {/* Self-rating buttons */}
           <div>
             <p className="text-xs text-ink-light mb-2">你记得怎么样？</p>
             <div className="flex gap-2">
@@ -375,7 +368,6 @@ function RecallCard({
 
 // ═══════════════════════════════════════
 // Round 2: Cloze Card (fill-in-blank)
-// Uses cloze_sentence → example_sentence → fallback
 // ═══════════════════════════════════════
 
 function ClozeCard({
@@ -395,7 +387,6 @@ function ClozeCard({
     if (!answer.trim()) return;
     const normalized = answer.trim().toLowerCase();
     const engLower = english.toLowerCase();
-    // Check if the user's answer contains the expression or key words
     const correct =
       normalized.includes(engLower) ||
       engLower.includes(normalized) ||
@@ -472,7 +463,7 @@ function SentenceCard({
   item: SessionItem;
   onResult: (itemId: string, sentence: string) => void;
 }) {
-  const [sentence, setSentence] = useState("");
+  const [sentence, setSentence] = useState(item.userSentence || "");
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = () => {
@@ -533,6 +524,10 @@ function RoundCompleteScreen({
   totalInRound,
   passedInRound,
   failedInRound,
+  isReinforcement,
+  reinforcementRound,
+  hasMoreReinforcement,
+  onReinforce,
   onContinue,
   onDone,
 }: {
@@ -540,10 +535,16 @@ function RoundCompleteScreen({
   totalInRound: number;
   passedInRound: number;
   failedInRound: number;
+  isReinforcement?: boolean;
+  reinforcementRound?: number;
+  hasMoreReinforcement?: boolean;
+  onReinforce?: () => void;
   onContinue: () => void;
   onDone: () => void;
 }) {
-  const isFinal = round >= 3 || failedInRound === 0;
+  const isFinal = round >= 3;
+  const showReinforce =
+    round === 1 && !isReinforcement && failedInRound > 0;
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-5">
@@ -552,22 +553,41 @@ function RoundCompleteScreen({
       </div>
       <div>
         <h3 className="text-lg font-semibold text-ink">
-          {ROUND_LABELS[round]} 完成
+          {isReinforcement
+            ? `强化第 ${reinforcementRound} 轮完成`
+            : `${ROUND_LABELS[round]} 完成`}
         </h3>
         <p className="text-sm text-ink-light mt-1">
           {totalInRound} 个表达 · {passedInRound} 个通过 · {failedInRound} 个困难
         </p>
       </div>
 
-      {!isFinal && failedInRound > 0 && (
+      {showReinforce && (
         <div className="flex items-center justify-center gap-1.5 text-xs text-accent-warm">
-          <RefreshCw size={12} />
-          <span>{failedInRound} 个困难表达进入下一轮强化</span>
+          <RotateCcw size={12} />
+          <span>{failedInRound} 个困难表达可以立即强化（最多 {MAX_REINFORCEMENT_ROUNDS} 轮）</span>
         </div>
       )}
 
       <div className="flex items-center justify-center gap-3">
-        {isFinal ? (
+        {showReinforce && onReinforce ? (
+          <>
+            <button
+              onClick={onReinforce}
+              className="flex items-center gap-2 px-5 py-2.5 bg-accent-warm/10 text-accent-warm rounded-xl text-sm font-medium hover:bg-accent-warm/20 transition-colors"
+            >
+              <RotateCcw size={14} />
+              强化 {failedInRound} 个
+            </button>
+            <button
+              onClick={onContinue}
+              className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
+            >
+              跳过
+              <ArrowRight size={14} />
+            </button>
+          </>
+        ) : isFinal ? (
           <button
             onClick={onDone}
             className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
@@ -596,9 +616,11 @@ function RoundCompleteScreen({
 
 function FinalScreen({
   stats,
+  onViewHistory,
   onDone,
 }: {
   stats: ReturnType<typeof getSessionStats>;
+  onViewHistory: () => void;
   onDone: () => void;
 }) {
   return (
@@ -628,13 +650,22 @@ function FinalScreen({
         </div>
       </div>
 
-      <button
-        onClick={onDone}
-        className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors mx-auto"
-      >
-        返回 English OS
-        <ChevronRight size={14} />
-      </button>
+      <div className="flex items-center justify-center gap-3">
+        <button
+          onClick={onViewHistory}
+          className="flex items-center gap-2 px-5 py-2.5 bg-warm-cream text-ink rounded-xl text-sm font-medium hover:bg-warm-cream/70 transition-colors"
+        >
+          <TrendingUp size={14} />
+          查看学习总结
+        </button>
+        <button
+          onClick={onDone}
+          className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
+        >
+          返回
+          <ChevronRight size={14} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -651,7 +682,7 @@ export default function EnglishReviewV3() {
   const submitReview = useSubmitReview();
   const updateStage = useUpdateSessionStage();
 
-  // ── Round state ──
+  // ── Core state ──
   const [round, setRound] = useState<1 | 2 | 3>(1);
   const [roundOrder, setRoundOrder] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -661,34 +692,41 @@ export default function EnglishReviewV3() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [roundStats, setRoundStats] = useState({ passed: 0, failed: 0 });
 
+  // ── Reinforcement state (Round 1 internal only) ──
+  const [inReinforcement, setInReinforcement] = useState(false);
+  const [reinforcementRound, setReinforcementRound] = useState(0);
+  const [srsSubmitted, setSrsSubmitted] = useState<Set<string>>(new Set());
+
   const session = data?.session;
   const allItems = data?.items || [];
 
-  // ── Derive round order once per round (guard against allItems refetch invalidation) ──
+  // ── dailySetIds: fixed once when items first load ──
+  const dailySetIds = useMemo(() => {
+    return allItems.map((i) => i.id);
+  }, [allItems]);
+
+  // ── Derive round order once per round ──
   useEffect(() => {
     if (allItems.length === 0) return;
     if (sessionComplete) return;
-    if (roundInitializedRef.current) return; // already initialized this round — don't reshuffle
+    if (roundInitializedRef.current) return;
 
     let order: string[];
-    if (round === 1) {
-      // Round 1: all items in the session (initial state = pending)
-      order = allItems.filter((i) => i.status === "pending").map((i) => i.id);
-      if (order.length === 0) {
-        // All items already processed — session is stale, skip
-        setSessionComplete(true);
-        return;
-      }
+
+    if (inReinforcement) {
+      // Reinforcement: only items with recallScore 1-2 from Round 1
+      order = allItems
+        .filter((i) => i.recallScore !== null && i.recallScore <= 2)
+        .map((i) => i.id);
+    } else if (round === 1) {
+      // Round 1: all dailySetIds (first-time pending items)
+      order = [...dailySetIds];
     } else if (round === 2) {
-      // Round 2: items that failed Round 1 (recall_score < 3)
-      order = allItems
-        .filter((i) => i.recallScore !== null && i.recallScore < 3 && i.status !== "completed")
-        .map((i) => i.id);
+      // Round 2: Context Cloze — ALL 15 expressions (full Daily Set)
+      order = [...dailySetIds];
     } else {
-      // Round 3: items still failed after Round 2
-      order = allItems
-        .filter((i) => i.status === "failed" && (i.reinforcementRound || 0) >= 2)
-        .map((i) => i.id);
+      // Round 3: Personal Sentence — ALL 15 expressions (full Daily Set)
+      order = [...dailySetIds];
     }
 
     setRoundOrder(order);
@@ -696,7 +734,7 @@ export default function EnglishReviewV3() {
     currentIndexRef.current = 0;
     setRoundComplete(false);
     roundInitializedRef.current = true;
-  }, [round, allItems, sessionComplete]);
+  }, [round, inReinforcement, allItems, dailySetIds, sessionComplete]);
 
   const currentItemId = roundOrder[currentIndex] || null;
   const currentItem = allItems.find((i) => i.id === currentItemId) || null;
@@ -711,18 +749,16 @@ export default function EnglishReviewV3() {
       const passed = score >= 3;
       const newStatus = passed ? "passed" : "failed";
 
-      // Update session item
       await updateItem.mutateAsync({
         itemId,
         updates: {
           recallScore: score,
           status: newStatus,
           attemptCount: item.attemptCount + 1,
-          reinforcementRound: 0,
+          reinforcementRound: inReinforcement ? reinforcementRound : 0,
         },
       });
 
-      // Record practice log
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "recall",
@@ -730,48 +766,44 @@ export default function EnglishReviewV3() {
         sessionId: session.id,
       });
 
-      // SRS update (Round 1 only)
-      // Failed-but-reinforced items capped at "hard" (not "again")
-      const srsRating =
-        score >= 4 ? "good" : score >= 3 ? "hard" : "hard";
-      submitReview.mutate({
-        expressionId: item.expressionId,
-        rating: srsRating as "again" | "hard" | "good" | "easy",
-        reviewMode: "active_recall",
-      });
+      // SRS update: ONLY on Round 1 first attempt (not reinforcement, not already submitted)
+      if (!inReinforcement && !srsSubmitted.has(itemId)) {
+        const srsRating = getSrsRating(score);
+        submitReview.mutate({
+          expressionId: item.expressionId,
+          rating: srsRating,
+          reviewMode: "active_recall",
+        });
+        setSrsSubmitted((prev) => new Set(prev).add(itemId));
+      }
 
-      // Track round stats
       setRoundStats((prev) => ({
         passed: prev.passed + (passed ? 1 : 0),
         failed: prev.failed + (passed ? 0 : 1),
       }));
 
-      // Advance using ref (avoid stale closure)
       const nextIdx = currentIndexRef.current + 1;
       currentIndexRef.current = nextIdx;
       setCurrentIndex(nextIdx);
     },
-    [allItems, session, updateItem, recordLog, submitReview],
+    [allItems, session, updateItem, recordLog, submitReview, inReinforcement, reinforcementRound, srsSubmitted],
   );
 
-  // ── Round 2: Cloze handler (no SRS update) ──
+  // ── Round 2: Cloze handler (NO SRS) ──
   const handleClozeResult = useCallback(
     async (itemId: string, passed: boolean) => {
       const item = allItems.find((i) => i.id === itemId);
       if (!item || !session) return;
 
-      const newStatus = passed ? "passed" : "failed";
-
       await updateItem.mutateAsync({
         itemId,
         updates: {
-          status: newStatus,
+          status: passed ? "passed" : "failed",
           attemptCount: item.attemptCount + 1,
-          reinforcementRound: 2,
         },
       });
 
-      // Log only — NO SRS update in Round 2
+      // Log only — NO SRS update
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "cloze",
@@ -791,7 +823,7 @@ export default function EnglishReviewV3() {
     [allItems, session, updateItem, recordLog],
   );
 
-  // ── Round 3: Sentence handler (no SRS update) ──
+  // ── Round 3: Sentence handler (NO SRS) ──
   const handleSentenceResult = useCallback(
     async (itemId: string, sentence: string) => {
       const item = allItems.find((i) => i.id === itemId);
@@ -804,11 +836,10 @@ export default function EnglishReviewV3() {
           sentenceScore: 3,
           status: "completed",
           attemptCount: item.attemptCount + 1,
-          reinforcementRound: 3,
         },
       });
 
-      // Log only — NO SRS update in Round 3
+      // Log only — NO SRS update
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "sentence",
@@ -829,23 +860,50 @@ export default function EnglishReviewV3() {
     [allItems, session, updateItem, recordLog],
   );
 
-  // ── Check round completion on index change ──
+  // ── Check round completion ──
   useEffect(() => {
     if (roundOrder.length > 0 && currentIndex >= roundOrder.length && !roundComplete) {
       setRoundComplete(true);
     }
   }, [currentIndex, roundOrder.length, roundComplete]);
 
-  // ── Start next round ──
-  const handleContinueToNextRound = useCallback(async () => {
-    const nextRound = (round + 1) as 1 | 2 | 3;
-    roundInitializedRef.current = false; // allow effect to reinitialize for new round
-    setRound(nextRound);
+  // ── Start reinforcement ──
+  const handleStartReinforcement = useCallback(() => {
+    roundInitializedRef.current = false;
+    const nextReinfRound = reinforcementRound + 1;
+    setReinforcementRound(nextReinfRound);
+    setInReinforcement(true);
     setRoundStats({ passed: 0, failed: 0 });
-    if (session?.id && nextRound === 2) {
-      await updateStage.mutateAsync({ sessionId: session.id, stage: "sentence" });
+  }, [reinforcementRound]);
+
+  // ── Continue after reinforcement or start next round ──
+  const handleContinueToNextRound = useCallback(async () => {
+    roundInitializedRef.current = false;
+
+    if (inReinforcement) {
+      // Check if more reinforcement rounds needed
+      const stillFailed = allItems.filter((i) => i.recallScore !== null && i.recallScore <= 2);
+      if (stillFailed.length > 0 && reinforcementRound < MAX_REINFORCEMENT_ROUNDS) {
+        // More reinforcement available — stay in reinforcement with next round
+        // handled by UI buttons (RoundCompleteScreen shows reinforce option)
+      }
+      setInReinforcement(false);
+      setRoundStats({ passed: 0, failed: 0 });
+      // If Round 1 is done and we skip remaining reinforcement, go to Round 2
+      const nextRound = (round + 1) as 1 | 2 | 3;
+      setRound(nextRound);
+      if (session?.id && nextRound === 2) {
+        await updateStage.mutateAsync({ sessionId: session.id, stage: "sentence" });
+      }
+    } else {
+      const nextRound = (round + 1) as 1 | 2 | 3;
+      setRound(nextRound);
+      setRoundStats({ passed: 0, failed: 0 });
+      if (session?.id && nextRound === 2) {
+        await updateStage.mutateAsync({ sessionId: session.id, stage: "sentence" });
+      }
     }
-  }, [round, session?.id, updateStage]);
+  }, [round, inReinforcement, reinforcementRound, allItems, session?.id, updateStage]);
 
   // ── Done ──
   const handleDone = useCallback(async () => {
@@ -858,6 +916,10 @@ export default function EnglishReviewV3() {
     }
     navigate("/english");
   }, [session?.id, updateStage, navigate]);
+
+  const handleViewHistory = useCallback(() => {
+    navigate("/english/history");
+  }, [navigate]);
 
   const handleBack = useCallback(() => {
     navigate("/english");
@@ -875,7 +937,6 @@ export default function EnglishReviewV3() {
     );
   }
 
-  // ── Error ──
   if (error || !session) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -890,7 +951,6 @@ export default function EnglishReviewV3() {
     );
   }
 
-  // ── Empty state ──
   if (allItems.length === 0) {
     return (
       <div className="text-center py-16 space-y-4">
@@ -913,40 +973,51 @@ export default function EnglishReviewV3() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <SessionHeader
         stats={stats}
         currentRound={round}
+        inReinforcement={inReinforcement}
+        reinforcementRound={reinforcementRound}
         roundOrderLength={roundOrder.length}
         currentIndex={currentIndex}
         onBack={handleBack}
       />
 
-      {/* Main content */}
       {sessionComplete || (roundComplete && round >= 3) ? (
-        <FinalScreen stats={stats} onDone={handleDone} />
+        <FinalScreen
+          stats={stats}
+          onViewHistory={handleViewHistory}
+          onDone={handleDone}
+        />
       ) : roundComplete ? (
         <RoundCompleteScreen
           round={round}
           totalInRound={roundOrder.length}
           passedInRound={roundStats.passed}
           failedInRound={roundStats.failed}
+          isReinforcement={inReinforcement}
+          reinforcementRound={reinforcementRound}
+          onReinforce={
+            round === 1 && !inReinforcement
+              ? handleStartReinforcement
+              : undefined
+          }
           onContinue={handleContinueToNextRound}
           onDone={handleDone}
         />
       ) : currentItem ? (
         <div className="space-y-3">
-          {/* Card-level progress */}
           <div className="text-center text-xs text-ink-light">
             {currentIndex + 1} / {roundOrder.length}
-            {round > 1 && ` · Round ${round}`}
+            {inReinforcement && ` · 强化 R${reinforcementRound}`}
+            {!inReinforcement && round > 1 && ` · Round ${round}`}
           </div>
 
-          {/* Card — key prop ensures fresh state per item */}
-          {round === 1 ? (
+          {round === 1 || inReinforcement ? (
             <RecallCard
               key={currentItem.id}
               item={currentItem}
+              isReinforcement={inReinforcement}
               onResult={handleRecallResult}
             />
           ) : round === 2 ? (
@@ -965,7 +1036,6 @@ export default function EnglishReviewV3() {
         </div>
       ) : null}
 
-      {/* Empty round — immediate complete */}
       {roundOrder.length === 0 && !roundComplete && !sessionComplete && (
         <RoundCompleteScreen
           round={round}
