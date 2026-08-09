@@ -14,16 +14,20 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useTodayLearnSession,
   useUpdateSessionItem,
-  useRecordPracticeLog,
   useUpdateLearnProgress,
   type SessionItem,
   type LearnStage,
 } from "@/lib/hooks/useReviewSession";
 import { supabase } from "@/lib/supabase";
 import { scheduleExpressionReview } from "@/lib/srs/expressionSrs";
+import {
+  insertPracticeLog,
+  updatePracticeLog,
+} from "@/lib/english/practiceLogRepository";
 import {
   buildLearningMaterial,
   checkRecallAnswer,
@@ -84,6 +88,46 @@ function isItemFinished(item: SessionItem): boolean {
   return st === "review" || st === "mastered";
 }
 
+/**
+ * Categorize PostgREST / DB / network errors into a friendly, actionable
+ * message. No more generic "完成失败：未知错误" — the user gets a clear
+ * short reason plus a [重试] path (PART 13).
+ */
+export function classifyCompletionError(err: unknown): string {
+  const e = (err ?? {}) as {
+    code?: string;
+    message?: string;
+    status?: number;
+  };
+  const code = e.code ?? (e.status != null ? String(e.status) : undefined);
+  const msg = e.message ?? "";
+
+  // SQLSTATE constraint / schema violations → 400
+  if (code === "23514") return "学习进度保存失败（数据校验未通过），请重试。";
+  if (code === "23502") return "学习进度保存失败（缺少必要数据），请重试。";
+  if (code === "23503") return "学习进度保存失败（关联数据不存在），请重试。";
+  if (code === "23505") return "学习进度保存失败（重复提交），请重试。";
+  if (code === "42501") return "学习进度保存失败（权限不足），请重试。";
+  if (code === "PGRST204") return "学习进度保存失败（数据字段不匹配），请重试。";
+  if (code === "PGRST301" || code === "406") return "学习进度保存失败（数据格式问题），请重试。";
+
+  // Network / transport
+  if (
+    code === "ECONNABORTED" ||
+    code === "ERR_NETWORK" ||
+    /failed to fetch|networkerror|network request|load failed/i.test(msg)
+  ) {
+    return "网络暂时异常，请检查连接后重试。";
+  }
+
+  // RPC / edge-function not found
+  if (/rpc|function|not found/i.test(msg)) {
+    return "学习进度保存服务异常，请重试。";
+  }
+
+  return "学习进度保存失败，请重试。";
+}
+
 // ═══════════════════════════════════════
 // Main Page
 // ═══════════════════════════════════════
@@ -92,8 +136,8 @@ export default function EnglishLearn() {
   const [, navigate] = useLocation();
   const { data, isLoading, isError } = useTodayLearnSession();
   const updateItem = useUpdateSessionItem();
-  const recordLog = useRecordPracticeLog();
   const saveProgress = useUpdateLearnProgress();
+  const qc = useQueryClient();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stage, setStage] = useState<LearnStage>("understand");
@@ -106,12 +150,16 @@ export default function EnglishLearn() {
   const [completedSet, setCompletedSet] = useState<Set<string>>(new Set());
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Only completion failures offer a [重试] path; other hints are dismiss-only. */
+  const [errorAction, setErrorAction] = useState<"none" | "retry">("none");
   const [showSummary, setShowSummary] = useState(false);
 
   const session = data?.session;
   const items = data?.items || [];
   const initializedRef = useRef(false);
   const indexRef = useRef(currentIndex);
+  /** One sentence = one practice record: id created at submit, updated on AI + completion. */
+  const practiceLogIdRef = useRef<string | null>(null);
 
   useEffect(() => { indexRef.current = currentIndex; }, [currentIndex]);
 
@@ -149,6 +197,8 @@ export default function EnglishLearn() {
     setSentencePhase("writing");
     setSentenceEvaluation(null);
     setError(null);
+    setErrorAction("none");
+    practiceLogIdRef.current = null;
   }, []);
 
   const persistProgress = useCallback((index: number, s: LearnStage) => {
@@ -193,6 +243,20 @@ export default function EnglishLearn() {
       if (result.success && result.data) {
         setSentenceEvaluation(result.data);
         setSentencePhase("feedback");
+        // Persist AI feedback onto the existing practice record (enrichment, non-blocking)
+        if (practiceLogIdRef.current) {
+          try {
+            await updatePracticeLog(practiceLogIdRef.current, {
+              metadata: {
+                ai_evaluation: result.data,
+                ai_feedback: result.data.overall_feedback ?? null,
+                ai_success: true,
+              },
+            });
+          } catch {
+            /* enrichment only — never blocks learning */
+          }
+        }
       } else {
         setSentencePhase("aiFailed");
       }
@@ -202,7 +266,7 @@ export default function EnglishLearn() {
   }, [expr, session, currentItem]);
 
   const handleSubmitSentence = useCallback(async () => {
-    if (!currentItem || !sentenceInput.trim() || sentencePhase === "submitting") return;
+    if (!currentItem || !session || !sentenceInput.trim() || sentencePhase === "submitting") return;
     const sentence = sentenceInput.trim();
     setError(null);
 
@@ -214,8 +278,32 @@ export default function EnglishLearn() {
       return;
     }
 
+    // 2. One sentence = one practice record. Create once at submit; subsequent
+    //    submits (after 修改一下) update the same record.
+    try {
+      if (!practiceLogIdRef.current) {
+        const id = await insertPracticeLog({
+          expressionId: currentItem.expressionId,
+          sessionId: session.id,
+          mode: "learn",
+          answer: recallInput || null,
+          feedback: recallOutcome?.feedback ?? null,
+          score: recallOutcome?.score ?? 0,
+          metadata: { source: "learning", learn_stage: "production", sentence, learn_completed: false },
+        });
+        practiceLogIdRef.current = id;
+      } else {
+        await updatePracticeLog(practiceLogIdRef.current, {
+          metadata: { source: "learning", learn_stage: "production", sentence, learn_completed: false },
+        });
+      }
+    } catch {
+      // Enrichment — sentence is already saved; completion still proceeds.
+    }
+
+    // 3. AI feedback (non-blocking)
     await runSentenceAI(sentence);
-  }, [currentItem, sentenceInput, sentencePhase, updateItem, runSentenceAI]);
+  }, [currentItem, sentenceInput, sentencePhase, session, recallInput, recallOutcome, updateItem, runSentenceAI]);
 
   const handleRetryAI = useCallback(() => {
     if (!sentenceInput.trim()) return;
@@ -228,51 +316,18 @@ export default function EnglishLearn() {
     setError(null);
   }, []);
 
+  // ═══ Query invalidation after a completed learning item ═══
+  const invalidateCompletionQueries = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["learn-session"] });
+    qc.invalidateQueries({ queryKey: ["review-session"] });
+    qc.invalidateQueries({ queryKey: ["expressions"] });
+    qc.invalidateQueries({ queryKey: ["english_stats"] });
+    qc.invalidateQueries({ queryKey: ["learning-history"] });
+    qc.invalidateQueries({ queryKey: ["expressions", "due"] });
+    qc.invalidateQueries({ queryKey: ["expressions", "daily_queue"] });
+  }, [qc]);
+
   // ═══ Completion (only reachable from Stage 4) ═══
-  const initializeSrs = useCallback(async (item: SessionItem, score: number) => {
-    const expression = item.expression;
-    if (!expression || !session) return;
-    // Idempotency guard: only initialize SRS for expressions not yet in review cycle
-    if (expression.status !== "collected" && expression.status !== "learning") return;
-
-    const rating = score >= 3 ? "good" : "hard";
-    const now = new Date();
-    const srs = scheduleExpressionReview(rating, {
-      ease_factor: 2.5,
-      repetitions: 0,
-      interval_days: 0,
-      lapse_count: 0,
-      production_count: 0,
-      status: expression.status,
-      next_review_date: null,
-    }, now);
-
-    const { error } = await supabase
-      .from("expressions")
-      .update({
-        status: "review",
-        learned_at: now.toISOString(),
-        next_review_date: srs.next_review_date,
-        interval_days: srs.interval_days,
-        repetitions: srs.repetitions,
-        ease_factor: srs.ease_factor,
-        last_reviewed_at: now.toISOString(),
-        review_count: 1,
-      })
-      .eq("id", item.expressionId);
-    if (error) throw error;
-
-    const { error: revErr } = await supabase.from("expression_reviews").insert({
-      user_id: session.userId, // ← required NOT NULL column (root-cause fix)
-      expression_id: item.expressionId,
-      result: rating,
-      previous_interval: 0,
-      new_interval: srs.interval_days,
-      review_mode: "learn",
-    });
-    if (revErr) throw revErr;
-  }, [session]);
-
   const completeCurrent = useCallback(async () => {
     if (!currentItem || !session || completing) return;
     if (completedSet.has(currentItem.expressionId)) return;
@@ -289,41 +344,64 @@ export default function EnglishLearn() {
     try {
       const sentence = sentenceInput.trim();
 
-      // 1. Save sentence if provided
-      if (sentence) {
+      // STEP A — Ensure personal sentence is saved (CORE)
+      if (sentence && !currentItem.userSentence) {
         await updateItem.mutateAsync({ itemId: currentItem.id, updates: { userSentence: sentence } });
       }
 
-      // 2. Mark session item completed
-      await updateItem.mutateAsync({
-        itemId: currentItem.id,
-        updates: {
-          status: "completed",
-          recallScore: recallOutcome.score,
-          sentenceScore: sentenceEvaluation ? sentenceScoreOf(sentenceEvaluation) : (sentence ? 1 : null),
-        },
+      // STEP B — Compute SRS schedule in TS (single source = expressionSrs.ts)
+      const rating = recallOutcome.score >= 3 ? "good" : "hard";
+      const srs = scheduleExpressionReview(rating, {
+        ease_factor: 2.5,
+        repetitions: 0,
+        interval_days: 0,
+        lapse_count: 0,
+        production_count: 0,
+        status: currentItem.expression?.status ?? "learning",
+        next_review_date: null,
+      }, new Date());
+      const srsJson = {
+        status: "review",
+        next_review_date: srs.next_review_date,
+        interval_days: srs.interval_days,
+        repetitions: srs.repetitions,
+        ease_factor: srs.ease_factor,
+        result: rating,
+      };
+
+      // STEP C — Atomic core completion: item-complete + SRS init in ONE transaction
+      const { error: rpcError } = await supabase.rpc("complete_expression_learning", {
+        p_session_id: session.id,
+        p_item_id: currentItem.id,
+        p_recall_score: recallOutcome.score,
+        p_sentence_score: sentenceEvaluation ? sentenceScoreOf(sentenceEvaluation) : (sentence ? 1 : null),
+        p_srs: srsJson,
       });
+      if (rpcError) throw rpcError;
 
-      // 3. Practice log
-      await recordLog.mutateAsync({
-        expressionId: currentItem.expressionId,
-        mode: "learn",
-        answer: recallInput,
-        score: recallOutcome.score,
-        sessionId: session.id,
-        feedback: recallOutcome.feedback,
-        metadata: {
-          learn_completed: true,
-          learn_stage: "production",
-          sentence: sentence || null,
-          sentence_feedback: sentenceEvaluation ? JSON.stringify(sentenceEvaluation) : null,
-        },
-      });
+      // STEP D — Practice log enrichment (ENRICHMENT: soft-fail, never blocks)
+      try {
+        if (practiceLogIdRef.current) {
+          await updatePracticeLog(practiceLogIdRef.current, {
+            metadata: { learn_completed: true, learn_stage: "production", sentence: sentence || null },
+          });
+        } else {
+          // No sentence submitted — record the recall-only learn attempt once
+          practiceLogIdRef.current = await insertPracticeLog({
+            expressionId: currentItem.expressionId,
+            sessionId: session.id,
+            mode: "learn",
+            answer: recallInput || null,
+            feedback: recallOutcome.feedback,
+            score: recallOutcome.score,
+            metadata: { source: "learning", learn_completed: true, learn_stage: "recall_only", sentence: null },
+          });
+        }
+      } catch {
+        /* enrichment only — completion already persisted atomically */
+      }
 
-      // 4. SRS initialization (only once, only if not already in review)
-      await initializeSrs(currentItem, recallOutcome.score);
-
-      // 5. Mark completed + advance
+      // STEP E — Mark done + advance (ONLY after core success)
       setCompletedSet((prev) => new Set(prev).add(currentItem.expressionId));
 
       if (currentIndex < items.length - 1) {
@@ -336,16 +414,19 @@ export default function EnglishLearn() {
         setShowSummary(true);
         if (session) saveProgress.mutate({ sessionId: session.id, progress: { expressionIndex: 0, stage: "understand" } });
       }
+
+      // STEP F — Refresh dependent queries
+      invalidateCompletionQueries();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "未知错误";
-      setError(`完成失败：${message}`);
+      setError(classifyCompletionError(err));
+      setErrorAction("retry");
     } finally {
       setCompleting(false);
     }
   }, [
     currentItem, session, completing, completedSet, recallPhase, recallOutcome,
     sentenceInput, sentenceEvaluation, recallInput, currentIndex, items.length,
-    updateItem, recordLog, initializeSrs, resetExpressionState, persistProgress, saveProgress,
+    updateItem, resetExpressionState, persistProgress, saveProgress, invalidateCompletionQueries,
   ]);
 
   // ═══ Render: loading / error / summary / empty ═══
@@ -416,7 +497,19 @@ export default function EnglishLearn() {
       {error && (
         <div className="flex items-center justify-between gap-2 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-sm text-rose-700">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-rose-500 text-xs hover:text-rose-700 shrink-0">关闭</button>
+          <div className="flex items-center gap-2 shrink-0">
+            {errorAction === "retry" && (
+              <button
+                onClick={() => completeCurrent()}
+                disabled={completing}
+                className="text-rose-600 text-xs font-medium hover:text-rose-800 disabled:opacity-50"
+              >
+                <RefreshCw className="w-3 h-3 inline mr-0.5" />
+                重试
+              </button>
+            )}
+            <button onClick={() => setError(null)} className="text-rose-500 text-xs hover:text-rose-700">关闭</button>
+          </div>
         </div>
       )}
 

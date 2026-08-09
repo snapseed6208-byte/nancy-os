@@ -11,6 +11,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import {
+  insertPracticeLog,
+  updatePracticeLog,
+  type PracticeLogMode,
+} from "@/lib/english/practiceLogRepository";
+import {
   getShanghaiDateKey,
   getShanghaiISO,
   getOrCreateEnglishSession,
@@ -381,19 +386,18 @@ export function useUpdateSessionItem() {
 
 export function useRecordPracticeLog() {
   return useMutation({
-    mutationFn: async (entry: PracticeLogEntry) => {
-      const userId = await getUserId();
-      const { error } = await supabase.from("expression_practice_logs").insert({
-        user_id: userId,
-        expression_id: entry.expressionId,
-        session_id: entry.sessionId || null,
-        mode: entry.mode,
-        answer: entry.answer || null,
-        feedback: entry.feedback || null,
+    mutationFn: async (entry: PracticeLogEntry): Promise<string> => {
+      // Route through the canonical repository so INSERT returns the log id
+      // (one sentence = one practice record; completion UPDATES this id).
+      return insertPracticeLog({
+        expressionId: entry.expressionId,
+        sessionId: entry.sessionId,
+        mode: entry.mode as PracticeLogMode,
+        answer: entry.answer,
+        feedback: entry.feedback,
         score: entry.score,
-        metadata: entry.metadata || undefined,
+        metadata: entry.metadata,
       });
-      if (error) throw error;
     },
   });
 }
