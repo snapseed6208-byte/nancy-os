@@ -4,6 +4,7 @@
 // ============================================
 
 import { callAI, extractJSON } from "./client";
+import { invokeAI, type AIResult } from "./aiService";
 import {
   EXTRACT_EXPRESSIONS_PROMPT,
   GENERATE_QUESTION_PROMPT,
@@ -457,4 +458,114 @@ export async function generateClozeSentence(
 
   const raw = extractJSON(response.content, {} as Record<string, unknown>);
   return (raw.clozeSentence as string) || "";
+}
+
+// ── 11. Batch Cloze Sentence Generation (V3.6) ──
+
+/**
+ * Generate cloze sentences for multiple expressions in one AI call.
+ * Used at session start for expressions missing both cloze_sentence and example_sentence.
+ */
+export async function generateClozeBatch(
+  expressions: Array<{ english: string; chinese: string; context?: string | null }>,
+  authToken: string,
+): Promise<Map<string, string>> {
+  if (expressions.length === 0) return new Map();
+
+  const batchPrompt = `Generate one cloze sentence for each expression below.
+For each expression, create a natural English sentence where the expression is replaced with "_____".
+
+Return ONLY a JSON object with expression English as keys and cloze sentences as values:
+{
+  "expression1": "The complete sentence with _____ instead of the expression.",
+  ...
+}
+
+Context about each expression (if available) is provided to help you create natural sentences.`;
+
+  const exprList = expressions
+    .map((e) => {
+      const ctx = e.context ? ` (context: ${e.context})` : "";
+      return `- "${e.english}" (${e.chinese})${ctx}`;
+    })
+    .join("\n");
+
+  const response = await callAI({
+    model: "deepseek-chat",
+    maxTokens: Math.min(expressions.length * 128, 2048),
+    messages: [
+      { role: "system", content: batchPrompt },
+      { role: "user", content: `Expressions:\n${exprList}` },
+    ],
+    injectContext: true,
+    authToken,
+  });
+
+  const raw = extractJSON(response.content, {} as Record<string, unknown>);
+  const result = new Map<string, string>();
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value.includes("_____")) {
+      result.set(key, value);
+    }
+  }
+
+  return result;
+}
+
+// ── 12. Generate Cloze Batch via Edge Function (V3.6) ──
+
+export async function generateClozeBatchViaEdge(
+  expressions: Array<{ english: string; chinese: string; context?: string | null }>,
+): Promise<Map<string, string>> {
+  if (expressions.length === 0) return new Map();
+
+  const result = await invokeAI<Record<string, string>>("english-coach", {
+    action: "generate_cloze_batch",
+    expressions: expressions.map((e) => ({
+      english: e.english,
+      chinese: e.chinese,
+      context: e.context || undefined,
+    })),
+  });
+
+  const data = result.success ? result.data : null;
+  const map = new Map<string, string>();
+
+  if (data) {
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value === "string" && value.includes("_____")) {
+        map.set(key, value);
+      }
+    }
+  }
+
+  return map;
+}
+
+// ── 13. Personal Sentence Evaluation (V3.6) ──
+
+export interface PersonalSentenceEvaluation {
+  grammar_correct: boolean;
+  naturalness: "natural" | "slightly_unnatural" | "awkward" | "incorrect";
+  corrections: Array<{ original: string; corrected: string; explanation: string }>;
+  overall_feedback: string;
+  expression_used_correctly: boolean;
+  example_usage?: string;
+}
+
+export async function evaluatePersonalSentence(
+  expression: string,
+  userSentence: string,
+  safeContext?: string,
+): Promise<AIResult<PersonalSentenceEvaluation>> {
+  return invokeAI<PersonalSentenceEvaluation>("english-coach", {
+    action: "evaluate_personal_sentence",
+    expression,
+    user_sentence: userSentence,
+    safe_context: safeContext || "",
+  }, {
+    timeout: 30_000,
+    retries: 1,
+  });
 }

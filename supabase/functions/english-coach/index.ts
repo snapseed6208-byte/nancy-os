@@ -219,6 +219,178 @@ Use the pre-computed categories as a reference, but apply your own judgment. Onl
   }
 }
 
+// ── Action: generate_cloze_batch ──
+
+async function handleGenerateClozeBatch(
+  req: Request,
+  body: Record<string, unknown>,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<Response> {
+  const expressions = body.expressions as Array<{ english: string; chinese: string; context?: string }> | undefined;
+
+  if (!expressions || !Array.isArray(expressions) || expressions.length === 0) {
+    return jsonResponse(req, { error: "expressions array is required" }, 400);
+  }
+
+  const batchPrompt = `Generate one cloze sentence for each expression below.
+For each expression, create a natural English sentence where the target expression is replaced with "_____".
+The blank should be where the expression naturally appears in the sentence.
+
+Return a JSON object where keys are the exact English expressions and values are the cloze sentences:
+{
+  "expression1": "Complete sentence with _____ replacing the expression.",
+  ...
+}
+
+Rules:
+- Each sentence MUST contain exactly one "_____" where the expression goes
+- The sentence must be a natural, realistic English sentence
+- Do NOT include the expression itself in the sentence (it's replaced by _____)
+- If context is provided, use it to make the sentence more relevant
+
+Expressions:`;
+
+  const exprList = expressions
+    .map((e) => {
+      const ctx = e.context ? ` (context: ${e.context})` : "";
+      return `- "${e.english}" (${e.chinese})${ctx}`;
+    })
+    .join("\n");
+
+  const prompt = `${batchPrompt}\n${exprList}`;
+
+  try {
+    const aiResult = await aiRuntime<Record<string, string>>(
+      [{ role: "user", content: prompt }],
+      {
+        agentName: "english-coach-cloze-batch",
+        maxTokens: Math.min(expressions.length * 128, 2048),
+        temperature: 0.5,
+        parseJson: true,
+        dynamicTokens: false,
+      },
+    );
+
+    if (!aiResult.success) {
+      return jsonResponse(req, {
+        stage: aiResult.stage,
+        error: aiResult.error,
+        detail: aiResult.detail,
+      }, aiResult.stage === "deepseek" ? 502 : 500);
+    }
+
+    // Validate results: each must contain _____
+    const validated: Record<string, string> = {};
+    if (aiResult.data) {
+      for (const [key, value] of Object.entries(aiResult.data)) {
+        if (typeof value === "string" && value.includes("_____")) {
+          validated[key] = value;
+        }
+      }
+    }
+
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "generate_cloze_batch",
+      input_data: { expression_count: expressions.length },
+      output_data: { generated_count: Object.keys(validated).length },
+      model: "deepseek-chat",
+      tokens_used: aiResult.usage?.totalTokens || 0,
+    });
+
+    return jsonResponse(req, { success: true, data: validated });
+  } catch (err) {
+    return jsonResponse(req, {
+      error: err instanceof Error ? err.message : "Cloze batch generation failed",
+    }, 500);
+  }
+}
+
+// ── Action: evaluate_personal_sentence (V3.6) ──
+
+async function handleEvaluatePersonalSentence(
+  req: Request,
+  body: Record<string, unknown>,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<Response> {
+  const expression = body.expression as string | undefined;
+  const userSentence = body.user_sentence as string | undefined;
+  const safeContext = body.safe_context as string | undefined;
+
+  if (!expression || !userSentence) {
+    return jsonResponse(req, { error: "expression and user_sentence are required" }, 400);
+  }
+
+  const evalPrompt = `You are an English grammar and naturalness evaluator.
+
+Evaluate whether the user's sentence correctly and naturally uses the target expression.
+
+Target expression: "${expression}"
+${safeContext ? `Context: ${safeContext}` : ""}
+
+User's sentence: "${userSentence}"
+
+IMPORTANT RULES:
+- Focus on whether THE TARGET EXPRESSION is used correctly and naturally, not on the overall grammar of the sentence
+- Be lenient about minor grammar errors in parts of the sentence that are NOT the target expression
+- "Naturalness" means: does this usage sound like something a native speaker would say?
+- If the expression is used correctly but the rest of the sentence has issues, still mark expression_used_correctly as true
+
+Return ONLY a JSON object (no markdown, no explanation):
+{
+  "grammar_correct": true/false,
+  "naturalness": "natural" | "slightly_unnatural" | "awkward" | "incorrect",
+  "corrections": [
+    { "original": "problematic part of sentence", "corrected": "corrected version", "explanation": "brief explanation in Chinese" }
+  ],
+  "overall_feedback": "1-2 sentences feedback in Chinese, encouraging tone",
+  "expression_used_correctly": true/false,
+  "example_usage": "optional: a natural example sentence using this expression correctly in context"
+}`;
+
+  try {
+    const aiResult = await aiRuntime<Record<string, unknown>>(
+      [{ role: "user", content: evalPrompt }],
+      {
+        agentName: "english-coach-sentence-eval",
+        maxTokens: 1024,
+        temperature: 0.3,
+        parseJson: true,
+        dynamicTokens: false,
+      },
+    );
+
+    if (!aiResult.success) {
+      return jsonResponse(req, {
+        stage: aiResult.stage,
+        error: aiResult.error,
+        detail: aiResult.detail,
+      }, aiResult.stage === "deepseek" ? 502 : 500);
+    }
+
+    const data = aiResult.data || {};
+
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "evaluate_personal_sentence",
+      input_data: { expression, user_sentence: userSentence },
+      output_data: { naturalness: data.naturalness, expression_used_correctly: data.expression_used_correctly },
+      model: "deepseek-chat",
+      tokens_used: aiResult.usage?.totalTokens || 0,
+    });
+
+    return jsonResponse(req, { success: true, data });
+  } catch (err) {
+    return jsonResponse(req, {
+      error: err instanceof Error ? err.message : "Sentence evaluation failed",
+    }, 500);
+  }
+}
+
 // ── Main ──
 
 serve(async (req: Request) => {
@@ -238,6 +410,16 @@ serve(async (req: Request) => {
     // ── Action: summarize_daily_review (no messages required) ──
     if (action === "summarize_daily_review") {
       return handleSummarizeDailyReview(req, body, supabase, userId);
+    }
+
+    // ── Action: generate_cloze_batch (V3.6) ──
+    if (action === "generate_cloze_batch") {
+      return handleGenerateClozeBatch(req, body, supabase, userId);
+    }
+
+    // ── Action: evaluate_personal_sentence (V3.6) ──
+    if (action === "evaluate_personal_sentence") {
+      return handleEvaluatePersonalSentence(req, body, supabase, userId);
     }
 
     // ── Normal coaching: require messages ──

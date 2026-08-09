@@ -85,6 +85,40 @@ export function hasExpressionLeakage(prompt: string, expression: string): boolea
 }
 
 // ═══════════════════════════════════════
+// V3.6: Quality gate — stronger than promptIntegrityCheck
+// ═══════════════════════════════════════
+
+export interface ClozeQualityResult {
+  valid: boolean;
+  reason?: "blank_only" | "no_safe_context" | "no_accepted_answer";
+}
+
+/**
+ * Gate cloze questions for minimum pedagogical viability.
+ * This is STRICTER than promptIntegrityCheck — it rejects questions
+ * that are technically well-formed but not teachable (blank-only, no context).
+ */
+export function validateClozeQuestion(question: ClozeQuestion): ClozeQualityResult {
+  // 1. Prompt must contain alphabetic characters beyond the blank
+  const textBeyondBlank = question.prompt.replace(/_{2,}|\[blank\]/gi, "").trim();
+  if (!/[a-zA-Z]/.test(textBeyondBlank)) {
+    return { valid: false, reason: "blank_only" };
+  }
+
+  // 2. Must have non-empty safeContext
+  if (!question.safeContext || !question.safeContext.trim()) {
+    return { valid: false, reason: "no_safe_context" };
+  }
+
+  // 3. Must have at least one accepted answer
+  if (!question.acceptedAnswers || question.acceptedAnswers.length === 0) {
+    return { valid: false, reason: "no_accepted_answer" };
+  }
+
+  return { valid: true };
+}
+
+// ═══════════════════════════════════════
 // V3.5: Prompt integrity check
 // ═══════════════════════════════════════
 
@@ -258,14 +292,16 @@ export function buildClozeQuestion(
     // Expression not found in example — fall through to fallback
   }
 
-  // ── Priority 3: Fallback using safe context ──
+  // ── Priority 3: Fallback — now invalid since prompt is blank-only ──
+  // V3.6: Blank-only prompts are not pedagogically viable.
+  // Expressions reaching this priority will be skipped or AI-generated.
   if (safeContext || exampleSentence) {
     return {
       prompt: "_____",
       expectedAnswer: english,
       acceptedAnswers: [english.toLowerCase(), ...generateVariants(english)],
       source: "fallback",
-      valid: true,
+      valid: false,
       sourceSentence: exampleSentence || undefined,
       safeContext,
       chineseHint: chinese,
@@ -294,6 +330,7 @@ export function buildClozeQuestion(
  * Level 0: no hint
  * Level 1: Chinese semantic hint (e.g., "与某人失去联系")
  * Level 2: Structure hint (e.g., "l___ t____ w___")
+ * Level 3: Grammar form hint (e.g., "Past tense, regular verb")
  *
  * Never reveals the full answer.
  */
@@ -301,19 +338,22 @@ export function buildProgressiveHint(
   chineseHint: string | undefined,
   expectedAnswer: string,
   hintLevel: number,
+  grammarHint?: string,
 ): string | null {
   if (hintLevel === 0) return null;
 
   if (hintLevel === 1) {
-    // Level 1: Chinese meaning
     if (chineseHint) return chineseHint;
-    // Fall back to structure if no Chinese
     return buildStructureHint(expectedAnswer);
   }
 
-  if (hintLevel >= 2) {
-    // Level 2: Structure hint (first letter + blanks)
+  if (hintLevel === 2) {
     return buildStructureHint(expectedAnswer);
+  }
+
+  if (hintLevel >= 3) {
+    if (grammarHint) return grammarHint;
+    return buildGrammarHint(expectedAnswer);
   }
 
   return null;
@@ -324,6 +364,32 @@ function buildStructureHint(expectedAnswer: string): string {
   return words
     .map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1)))
     .join(" ");
+}
+
+function buildGrammarHint(expectedAnswer: string): string {
+  const words = expectedAnswer.split(/\s+/);
+  const wordCount = words.length;
+
+  if (wordCount === 1) {
+    const w = expectedAnswer.toLowerCase();
+    if (w.endsWith("ed")) return `过去式动词 (past tense) — ${wordCount} 个词`;
+    if (w.endsWith("ing")) return `动名词/进行时 (gerund/present participle) — ${wordCount} 个词`;
+    if (w.endsWith("s") && !w.endsWith("ss")) return `可能是第三人称单数或复数 (3rd person/plural) — ${wordCount} 个词`;
+    if (w === "to" || w.length <= 3) return `功能词 (function word) — ${wordCount} 个词`;
+    return `基本形式 (base form) — ${wordCount} 个词`;
+  }
+
+  if (wordCount >= 2) {
+    const first = words[0].toLowerCase();
+    if (first === "to") return `不定式短语 (infinitive phrase) — ${wordCount} 个词`;
+    if (first === "a" || first === "an" || first === "the") return `名词短语 (noun phrase) — ${wordCount} 个词`;
+    if (["be", "is", "are", "was", "were", "have", "has", "had", "will", "would", "could", "should", "can", "may", "might"].includes(first)) {
+      return `动词短语 (verb phrase with auxiliary) — ${wordCount} 个词`;
+    }
+    return `短语 (phrase) — ${wordCount} 个词`;
+  }
+
+  return `${wordCount} 个词`;
 }
 
 // ═══════════════════════════════════════

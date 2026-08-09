@@ -123,6 +123,11 @@ function SentenceDetailCard({ detail }: { detail: SentenceDetail }) {
 // ═══════════════════════════════════════
 
 function ExpressionDetailRow({ detail }: { detail: ExpressionProgressDetail }) {
+  // V3.6: Compute activation state from detail data
+  const recallMastered = detail.recallScore !== null && detail.recallScore >= 3;
+  const contextActivated = detail.clozeResult === "correct";
+  const productionActivated = detail.userSentence !== null;
+
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-warm-cream rounded-xl">
       <div className="flex-1 min-w-0">
@@ -132,18 +137,18 @@ function ExpressionDetailRow({ detail }: { detail: ExpressionProgressDetail }) {
       {/* Recall score */}
       <span className={cn(
         "text-[11px] font-medium px-1.5 py-0.5 rounded shrink-0",
-        detail.recallScore !== null
-          ? detail.recallScore >= 3
-            ? "bg-sage-light/50 text-sage-deep"
-            : "bg-accent-warm/10 text-accent-warm"
-          : "bg-ink/5 text-ink-lighter",
+        recallMastered
+          ? "bg-sage-light/50 text-sage-deep"
+          : detail.recallScore !== null
+            ? "bg-accent-warm/10 text-accent-warm"
+            : "bg-ink/5 text-ink-lighter",
       )}>
-        {detail.recallScore !== null ? `回忆 ${detail.recallScore}/5` : "未做"}
+        {detail.recallScore !== null ? `Recall ${detail.recallScore}/5` : "未做"}
       </span>
       {/* Cloze result */}
       <span className={cn(
         "text-[11px] font-medium px-1.5 py-0.5 rounded shrink-0",
-        detail.clozeResult === "correct"
+        contextActivated
           ? "bg-sage-light/50 text-sage-deep"
           : detail.clozeResult === "partially_correct"
             ? "bg-amber-50 text-amber-600"
@@ -151,19 +156,29 @@ function ExpressionDetailRow({ detail }: { detail: ExpressionProgressDetail }) {
               ? "bg-accent-warm/10 text-accent-warm"
               : "bg-ink/5 text-ink-lighter",
       )}>
-        {detail.clozeResult === "correct" ? "填空 ✓" :
-         detail.clozeResult === "partially_correct" ? "填空 ~" :
-         detail.clozeResult === "incorrect" ? "填空 ✗" : "未做"}
+        {contextActivated ? "Context ✓" :
+         detail.clozeResult === "partially_correct" ? "Context ~" :
+         detail.clozeResult === "incorrect" ? "Context ✗" : "未做"}
       </span>
-      {/* Sentence */}
+      {/* Sentence / Production */}
       <span className={cn(
         "text-[11px] font-medium px-1.5 py-0.5 rounded shrink-0",
-        detail.userSentence
+        productionActivated
           ? "bg-sage-light/50 text-sage-deep"
           : "bg-ink/5 text-ink-lighter",
       )}>
-        {detail.userSentence ? "造句 ✓" : "未做"}
+        {productionActivated ? "Production ✓" : "未做"}
       </span>
+      {/* Activation state badge */}
+      {recallMastered && contextActivated && productionActivated ? (
+        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-amber-100 text-amber-700">
+          Fully Activated
+        </span>
+      ) : (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-ink/5 text-ink-lighter">
+          {recallMastered ? "R" : "-"}{contextActivated ? "C" : "-"}{productionActivated ? "P" : "-"}
+        </span>
+      )}
     </div>
   );
 }

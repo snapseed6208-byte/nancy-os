@@ -35,7 +35,7 @@ export interface SessionItem {
   applicationScore: number | null;
   userSentence: string | null;
   aiFeedback: string | null;
-  status: "pending" | "in_progress" | "passed" | "failed" | "reinforcement" | "completed";
+  status: "pending" | "in_progress" | "passed" | "failed" | "reinforcement" | "completed" | "skipped_no_question";
   attemptCount: number;
   reinforcementRound: number;
   lastPracticeAt: string | null;
@@ -74,6 +74,7 @@ export interface PracticeLogEntry {
   feedback?: string;
   score: number;
   sessionId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // ═══════════════════════════════════════
@@ -915,6 +916,55 @@ export function getDailyReviewProgress(
   };
 }
 
+// ═══════════════════════════════════════
+// V3.6: Activation State
+// ═══════════════════════════════════════
+
+export type ActivationState =
+  | "recall_mastered"
+  | "context_activated"
+  | "production_activated"
+  | "fully_activated";
+
+export interface ExpressionActivation {
+  expressionId: string;
+  english: string;
+  activationStates: ActivationState[];
+  recallMastered: boolean;
+  contextActivated: boolean;
+  productionActivated: boolean;
+  fullyActivated: boolean;
+}
+
+export function computeActivationState(
+  progress: DailyExpressionProgress,
+  sentenceScore?: number | null,
+): ExpressionActivation {
+  const recallMastered = progress.recall.completed && (progress.recall.score ?? 0) >= 3;
+  const contextActivated = progress.cloze.completed && progress.cloze.result === "correct";
+  const productionActivated = progress.sentence.completed && (sentenceScore ?? 0) >= 3;
+  const fullyActivated = recallMastered && contextActivated && productionActivated;
+
+  const states: ActivationState[] = [];
+  if (fullyActivated) {
+    states.push("fully_activated");
+  } else {
+    if (recallMastered) states.push("recall_mastered");
+    if (contextActivated) states.push("context_activated");
+    if (productionActivated) states.push("production_activated");
+  }
+
+  return {
+    expressionId: progress.expressionId,
+    english: progress.english,
+    activationStates: states,
+    recallMastered,
+    contextActivated,
+    productionActivated,
+    fullyActivated,
+  };
+}
+
 /**
  * Hook: fetch and compute unified daily review progress.
  * Used by Review page to replace inline aggregation.
@@ -1013,7 +1063,7 @@ export function useHubSessionProgress() {
         clozeMap.set(l.expression_id as string, l.score as number);
       }
       const clozeSet = new Set(clozeMap.keys());
-      const clozeCorrect = [...clozeMap.values()].filter((s) => s >= 3).length;
+      const clozeCorrect = [...clozeMap.values()].filter((s) => s >= 2).length;
 
       const sentenceCompleted = sessionItems.filter((i) => i.user_sentence !== null).length;
 
@@ -1203,7 +1253,7 @@ export function useSessionDetail() {
       }
       const clozeSet = new Set(clozeMap.keys());
       const round2Total = round1Total;
-      const round2Passed = [...clozeMap.values()].filter((s) => s >= 3).length;
+      const round2Passed = [...clozeMap.values()].filter((s) => s >= 2).length;
 
       // Round 3: Sentence
       const sentenceItems = sessionItems.filter((i) => i.user_sentence !== null);

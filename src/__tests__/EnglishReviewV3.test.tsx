@@ -288,14 +288,14 @@ function buildClozeQuestion(
     }
   }
 
-  // Priority 3: Fallback with context
+  // Priority 3: Fallback — now invalid since prompt is blank-only (V3.6)
   if (safeContext || exampleSentence) {
     return {
       prompt: "_____",
       expectedAnswer: english,
       acceptedAnswers: [english.toLowerCase()],
       source: "fallback",
-      valid: true,
+      valid: false,
       sourceSentence: exampleSentence || undefined,
       safeContext,
       chineseHint: chinese,
@@ -456,6 +456,98 @@ function applyRecallResult(item: SessionItem, score: number): void {
 }
 
 // ═══════════════════════════════════════
+// V3.6 NEW MIRROR: validateClozeQuestion
+// ═══════════════════════════════════════
+
+function validateClozeQuestionMirror(question: {
+  prompt: string;
+  safeContext?: string;
+  acceptedAnswers: string[];
+}): { valid: boolean; reason?: string } {
+  // 1. Prompt must contain alphabetic characters beyond the blank
+  const textBeyondBlank = question.prompt.replace(/_{2,}|\[blank\]/gi, "").trim();
+  if (!/[a-zA-Z]/.test(textBeyondBlank)) {
+    return { valid: false, reason: "blank_only" };
+  }
+
+  // 2. Must have non-empty safeContext
+  if (!question.safeContext || !question.safeContext.trim()) {
+    return { valid: false, reason: "no_safe_context" };
+  }
+
+  // 3. Must have at least one accepted answer
+  if (!question.acceptedAnswers || question.acceptedAnswers.length === 0) {
+    return { valid: false, reason: "no_accepted_answer" };
+  }
+
+  return { valid: true };
+}
+
+// ═══════════════════════════════════════
+// V3.6 NEW MIRROR: deriveSentenceScore
+// ═══════════════════════════════════════
+
+interface PersonalSentenceEvalMirror {
+  grammar_correct: boolean;
+  naturalness: "natural" | "slightly_unnatural" | "awkward" | "incorrect";
+  expression_used_correctly: boolean;
+}
+
+function deriveSentenceScoreMirror(result: PersonalSentenceEvalMirror): number {
+  if (result.expression_used_correctly && result.naturalness === "natural") return 5;
+  if (result.expression_used_correctly && result.naturalness === "slightly_unnatural") return 3;
+  if (result.expression_used_correctly || result.naturalness === "awkward") return 3;
+  if (!result.expression_used_correctly && result.naturalness === "incorrect") return 1;
+  if (!result.grammar_correct) return 2;
+  return 3;
+}
+
+// ═══════════════════════════════════════
+// V3.6 NEW MIRROR: computeActivationState
+// ═══════════════════════════════════════
+
+type ActivationStateMirror =
+  | "recall_mastered"
+  | "context_activated"
+  | "production_activated"
+  | "fully_activated";
+
+interface ExpressionActivationMirror {
+  recallMastered: boolean;
+  contextActivated: boolean;
+  productionActivated: boolean;
+  fullyActivated: boolean;
+  activationStates: ActivationStateMirror[];
+}
+
+interface ActivationInputMirror {
+  recallCompleted: boolean;
+  recallScore: number;
+  clozeCompleted: boolean;
+  clozeCorrect: boolean;
+  sentenceCompleted: boolean;
+  sentenceScore: number;
+}
+
+function computeActivationStateMirror(input: ActivationInputMirror): ExpressionActivationMirror {
+  const recallMastered = input.recallCompleted && input.recallScore >= 3;
+  const contextActivated = input.clozeCompleted && input.clozeCorrect;
+  const productionActivated = input.sentenceCompleted && input.sentenceScore >= 3;
+  const fullyActivated = recallMastered && contextActivated && productionActivated;
+
+  const states: ActivationStateMirror[] = [];
+  if (fullyActivated) {
+    states.push("fully_activated");
+  } else {
+    if (recallMastered) states.push("recall_mastered");
+    if (contextActivated) states.push("context_activated");
+    if (productionActivated) states.push("production_activated");
+  }
+
+  return { recallMastered, contextActivated, productionActivated, fullyActivated, activationStates: states };
+}
+
+// ═══════════════════════════════════════
 // Tests 1-4: buildClozeQuestion (V3.4 updated)
 // ═══════════════════════════════════════
 
@@ -498,16 +590,16 @@ describe("buildClozeQuestion — V3.4", () => {
     expect(q.expectedAnswer).toBe("a great way to unwind");
   });
 
-  it("4. falls back to simple blank when expression not in example (target-anchored only)", () => {
+  it("4. falls back to simple blank when expression not in example (valid=false in V3.6)", () => {
     const q = buildClozeQuestion(
       "xyzzy",
       "测试",
       undefined,
       "The quick brown fox jumps over the lazy dog today.",
     );
-    // V3.4: no random word blanking; expression not found -> fallback
+    // V3.6: expression not found + no context → fallback, now invalid (blank-only not teachable)
     expect(q.source).toBe("fallback");
-    expect(q.valid).toBe(true);
+    expect(q.valid).toBe(false);
     expect(q.prompt).toBe("_____");
   });
 });
@@ -942,18 +1034,16 @@ describe("V3.4 Grammatical Form Detection", () => {
 // ── V6-V7: Target-anchored cloze (PART 3) ──
 
 describe("V3.4 Target-Anchored Cloze", () => {
-  it("V6. never blanks random words when expression not in example", () => {
+  it("V6. never blanks random words when expression not in example (V3.6: fallback invalid)", () => {
     const q = buildClozeQuestion(
       "hit the sack",
       "睡觉",
       undefined,
       "The quick brown fox jumps over the lazy dog yesterday morning.", // expression not present
     );
-    // V3.4: must NOT blank random words. Should fall back.
+    // V3.6: must NOT blank random words. Should fall back (now invalid — blank-only not teachable).
     expect(q.source).toBe("fallback");
-    // The prompt should not contain a blanked random phrase
-    // It should be simple fallback (just the blank)
-    expect(q.valid).toBe(true);
+    expect(q.valid).toBe(false);
   });
 
   it("V7. blanks the inflected form when that's what appears in source", () => {
@@ -987,7 +1077,7 @@ describe("V3.4 Source Validation", () => {
     expect(q.source).toBe("fallback");
   });
 
-  it("V9. cloze is available when context/situation provided even without sentences", () => {
+  it("V9. V3.6: fallback with context only is now invalid (blank-only not teachable)", () => {
     const q = buildClozeQuestion(
       "some rare expression",
       "稀有表达",
@@ -996,7 +1086,8 @@ describe("V3.4 Source Validation", () => {
       "business meeting",
       "presentation",
     );
-    expect(q.valid).toBe(true);
+    // V3.6: Priority 3 now returns valid=false — expressions need AI-generated cloze
+    expect(q.valid).toBe(false);
     expect(q.safeContext).toContain("business meeting");
   });
 });
@@ -1813,5 +1904,242 @@ describe("V3.5 Historical Summary Entry", () => {
     for (let i = 1; i < entries.length; i++) {
       expect(entries[i].date < entries[i - 1].date).toBe(true);
     }
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.6 NEW TESTS: validateClozeQuestion
+// ═══════════════════════════════════════
+
+describe("V3.6 validateClozeQuestion — Quality Gate", () => {
+  it("A1. rejects blank-only prompt", () => {
+    const result = validateClozeQuestionMirror({
+      prompt: "_____",
+      safeContext: "talking about work",
+      acceptedAnswers: ["take the bull by the horns"],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("blank_only");
+  });
+
+  it("A2. rejects missing safeContext", () => {
+    const result = validateClozeQuestionMirror({
+      prompt: "He _____ the problem.",
+      safeContext: undefined,
+      acceptedAnswers: ["solved"],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("no_safe_context");
+  });
+
+  it("A3. accepts valid question", () => {
+    const result = validateClozeQuestionMirror({
+      prompt: "He _____ the problem.",
+      safeContext: "discussing work challenges",
+      acceptedAnswers: ["solved"],
+    });
+    expect(result.valid).toBe(true);
+  });
+
+  it("A4. rejects empty acceptedAnswers", () => {
+    const result = validateClozeQuestionMirror({
+      prompt: "He _____ the problem.",
+      safeContext: "discussing work",
+      acceptedAnswers: [],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe("no_accepted_answer");
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.6 NEW TESTS: buildClozeQuestion Priority Chain
+// ═══════════════════════════════════════
+
+describe("V3.6 buildClozeQuestion — Source Priority", () => {
+  it("B1. cloze_sentence preferred over example_sentence", () => {
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "失去联系",
+      "I've _____ most of my old friends.",
+      "I've lost touch with most of my old friends.",
+      "talking about old friends",
+    );
+    expect(q.source).toBe("cloze_sentence");
+    expect(q.valid).toBe(true);
+    expect(q.prompt).toContain("_____");
+  });
+
+  it("B2. example_sentence with surface form match is valid", () => {
+    const q = buildClozeQuestion(
+      "lost touch with",
+      "失去联系",
+      undefined,
+      "I've lost touch with most of my old friends.",
+      "talking about old friends",
+    );
+    expect(q.source).toBe("example_sentence");
+    expect(q.valid).toBe(true);
+    expect(q.sourceSentence).toBe("I've lost touch with most of my old friends.");
+  });
+
+  it("B3. fallback with safeContext is now invalid (blank-only)", () => {
+    // V3.6: Priority 3 no longer returns valid=true for blank-only
+    const q = buildClozeQuestion(
+      "rare phrase",
+      "稀有短语",
+      undefined,
+      undefined,
+      "some context about usage",
+    );
+    expect(q.source).toBe("fallback");
+    expect(q.valid).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.6 NEW TESTS: Three-Level Cloze Results
+// ═══════════════════════════════════════
+
+describe("V3.6 Cloze Three-Level Results", () => {
+  it("C1. correct match → score 2", () => {
+    const result = validateClozeResult(
+      "take the bull by the horns",
+      ["take the bull by the horns", "grab the bull by the horns"],
+    );
+    expect(result).toBe("correct");
+  });
+
+  it("C2. surfaceForm match → partially_correct (score 1)", () => {
+    const result = validateClozeResult(
+      "took the bull by the horns",
+      ["take the bull by the horns"],
+      "took the bull by the horns",
+    );
+    expect(result).toBe("partially_correct");
+  });
+
+  it("C3. no match → incorrect (score 0)", () => {
+    const result = validateClozeResult(
+      "xyz",
+      ["take the bull by the horns"],
+    );
+    expect(result).toBe("incorrect");
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.6 NEW TESTS: Sentence Score Mapping
+// ═══════════════════════════════════════
+
+describe("V3.6 deriveSentenceScore — Score Mapping", () => {
+  it("D1. natural + correct usage → score 5", () => {
+    const score = deriveSentenceScoreMirror({
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+    });
+    expect(score).toBe(5);
+  });
+
+  it("D2. slightly_unnatural + correct → score 3", () => {
+    const score = deriveSentenceScoreMirror({
+      grammar_correct: true,
+      naturalness: "slightly_unnatural",
+      expression_used_correctly: true,
+    });
+    expect(score).toBe(3);
+  });
+
+  it("D3. incorrect usage → score 1", () => {
+    const score = deriveSentenceScoreMirror({
+      grammar_correct: false,
+      naturalness: "incorrect",
+      expression_used_correctly: false,
+    });
+    expect(score).toBe(1);
+  });
+
+  it("D4. grammar incorrect but expression OK → score 3", () => {
+    const score = deriveSentenceScoreMirror({
+      grammar_correct: false,
+      naturalness: "awkward",
+      expression_used_correctly: true,
+    });
+    expect(score).toBe(3);
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.6 NEW TESTS: Activation State
+// ═══════════════════════════════════════
+
+describe("V3.6 computeActivationState", () => {
+  it("E1. fully activated when all 3 conditions met", () => {
+    const state = computeActivationStateMirror({
+      recallCompleted: true,
+      recallScore: 4,
+      clozeCompleted: true,
+      clozeCorrect: true,
+      sentenceCompleted: true,
+      sentenceScore: 5,
+    });
+    expect(state.fullyActivated).toBe(true);
+    expect(state.activationStates).toContain("fully_activated");
+  });
+
+  it("E2. recall_mastered only when only recall >= 3", () => {
+    const state = computeActivationStateMirror({
+      recallCompleted: true,
+      recallScore: 4,
+      clozeCompleted: false,
+      clozeCorrect: false,
+      sentenceCompleted: false,
+      sentenceScore: 0,
+    });
+    expect(state.recallMastered).toBe(true);
+    expect(state.contextActivated).toBe(false);
+    expect(state.productionActivated).toBe(false);
+    expect(state.activationStates).toContain("recall_mastered");
+  });
+
+  it("E3. context_activated when cloze is correct", () => {
+    const state = computeActivationStateMirror({
+      recallCompleted: true,
+      recallScore: 2,
+      clozeCompleted: true,
+      clozeCorrect: true,
+      sentenceCompleted: false,
+      sentenceScore: 0,
+    });
+    expect(state.recallMastered).toBe(false);
+    expect(state.contextActivated).toBe(true);
+    expect(state.activationStates).toContain("context_activated");
+  });
+
+  it("E4. production_activated when sentence completed with score >= 3", () => {
+    const state = computeActivationStateMirror({
+      recallCompleted: false,
+      recallScore: 0,
+      clozeCompleted: false,
+      clozeCorrect: false,
+      sentenceCompleted: true,
+      sentenceScore: 4,
+    });
+    expect(state.productionActivated).toBe(true);
+    expect(state.activationStates).toContain("production_activated");
+  });
+
+  it("E5. no activation when nothing completed", () => {
+    const state = computeActivationStateMirror({
+      recallCompleted: false,
+      recallScore: 0,
+      clozeCompleted: false,
+      clozeCorrect: false,
+      sentenceCompleted: false,
+      sentenceScore: 0,
+    });
+    expect(state.activationStates).toHaveLength(0);
+    expect(state.fullyActivated).toBe(false);
   });
 });
