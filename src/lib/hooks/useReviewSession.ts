@@ -473,6 +473,85 @@ export function usePersonalPracticePrompt() {
   });
 }
 
+// ═══════════════════════════════════════
+// V3.1: Adaptive Reinforcement
+// ═══════════════════════════════════════
+
+export type ReinforcementStatus =
+  | "none"
+  | "queued"
+  | "round1_recall"
+  | "round2_cloze"
+  | "round3_context"
+  | "mastered"
+  | "max_rounds";
+
+export function useUpdateReinforcementStatus() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      itemId,
+      reinforcementStatus,
+      resultClassification,
+      reinforcementRound,
+    }: {
+      itemId: string;
+      reinforcementStatus: ReinforcementStatus;
+      resultClassification?: "mastered" | "needs_reinforcement" | "needs_context";
+      reinforcementRound?: number;
+    }) => {
+      const payload: Record<string, unknown> = {
+        reinforcement_status: reinforcementStatus,
+        last_practice_at: nowISO(),
+      };
+      if (resultClassification) payload.result_classification = resultClassification;
+      if (reinforcementRound !== undefined) payload.reinforcement_round = reinforcementRound;
+
+      const { error } = await supabase
+        .from("review_session_items")
+        .update(payload)
+        .eq("id", itemId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["review-session"] });
+    },
+  });
+}
+
+export function useBatchUpdateReinforcement() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      items,
+    }: {
+      items: Array<{
+        itemId: string;
+        reinforcementStatus: ReinforcementStatus;
+        resultClassification?: string;
+        reinforcementRound: number;
+      }>;
+    }) => {
+      const updates = items.map((item) => ({
+        id: item.itemId,
+        reinforcement_status: item.reinforcementStatus,
+        result_classification: item.resultClassification || null,
+        reinforcement_round: item.reinforcementRound,
+        last_practice_at: nowISO(),
+      }));
+
+      const { error } = await supabase.from("review_session_items").upsert(updates);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["review-session"] });
+    },
+  });
+}
+
 export function getSessionStats(items: SessionItem[]) {
   const total = items.length;
   const passed = items.filter((i) => i.status === "passed" || i.status === "completed").length;

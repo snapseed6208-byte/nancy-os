@@ -14,11 +14,13 @@ import {
   useUpdateSessionStage,
   useDiagnoseItem,
   usePersonalPracticePrompt,
+  useUpdateReinforcementStatus,
   getReinforcementItems,
   getSessionStats,
   type SessionItem,
   type DifficultyDiagnosis,
   type PersonalPracticeContext,
+  type ReinforcementStatus,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -379,6 +381,179 @@ function SentenceCard({
 }
 
 // ═══════════════════════════════════════
+// Cloze Card (Round 2: fill-in-blank)
+// ═══════════════════════════════════════
+
+function ClozeCard({
+  item,
+  onResult,
+}: {
+  item: SessionItem;
+  onResult: (itemId: string, passed: boolean) => void;
+}) {
+  const expr = item.expression?.english || "";
+  // Create a cloze by removing 2-4 words from the expression or example
+  const source = item.expression?.example_sentence || expr;
+  const words = source.split(/\s+/);
+  const blankIdx = words.length > 4
+    ? Math.floor(words.length * 0.3) + (Math.floor(Math.random() * Math.min(3, words.length - 2)))
+    : Math.floor(words.length / 2);
+  const blankStart = Math.max(0, blankIdx - 1);
+  const blankEnd = Math.min(words.length, blankIdx + 2);
+  const blanks = words.slice(blankStart, blankEnd).map((w) => w.replace(/[.,!?;:'"]/g, ""));
+
+  const [answer, setAnswer] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [isCorrect, setIsCorrect] = useState(false);
+
+  const handleSubmit = () => {
+    const normalized = answer.trim().toLowerCase();
+    const correct = blanks.some((b) => normalized.includes(b.toLowerCase())) ||
+      blanks.join(" ").toLowerCase() === normalized;
+    setIsCorrect(correct);
+    setSubmitted(true);
+    setTimeout(() => onResult(item.id, correct), 300);
+  };
+
+  const clozeText = words.map((w, i) => {
+    if (i >= blankStart && i < blankEnd) {
+      return "____";
+    }
+    return w;
+  }).join(" ");
+
+  return (
+    <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
+      <div>
+        <p className="text-[11px] text-ink-lighter mb-1">填空练习 · 第2轮强化</p>
+        <p className="text-sm text-ink-light">{item.expression?.chinese}</p>
+      </div>
+
+      {!submitted ? (
+        <div className="space-y-4">
+          <div className="p-4 bg-warm-cream rounded-xl">
+            <p className="text-base font-medium text-ink leading-relaxed">{clozeText}</p>
+          </div>
+          <div>
+            <input
+              type="text"
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              placeholder="填入缺少的单词..."
+              className="w-full px-4 py-3 rounded-xl border border-border/60 text-sm focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage"
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            />
+          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={!answer.trim()}
+            className={cn(
+              "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
+              answer.trim()
+                ? "bg-sage text-white hover:bg-sage-deep"
+                : "bg-warm-cream text-ink-lighter cursor-not-allowed",
+            )}
+          >
+            确认
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className={cn(
+            "flex items-center gap-2 px-4 py-3 rounded-xl",
+            isCorrect ? "bg-sage-light/50" : "bg-accent-warm/10",
+          )}>
+            {isCorrect ? (
+              <CheckCircle2 size={16} className="text-sage-deep" />
+            ) : (
+              <XCircle size={16} className="text-accent-warm" />
+            )}
+            <span className={cn("text-sm font-medium", isCorrect ? "text-sage-deep" : "text-accent-warm")}>
+              {isCorrect ? "正确" : `正确答案: ${blanks.join(" ")}`}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// Context Card (Round 3: scenario-based)
+// ═══════════════════════════════════════
+
+function ContextCard({
+  item,
+  personalContext,
+  onResult,
+}: {
+  item: SessionItem;
+  personalContext?: PersonalPracticeContext | null;
+  onResult: (itemId: string, sentence: string, passed: boolean) => void;
+}) {
+  const [sentence, setSentence] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = () => {
+    if (!sentence.trim()) return;
+    setSubmitted(true);
+    const hasExpression = sentence
+      .toLowerCase()
+      .includes((item.expression?.english || "").split(" ")[0].toLowerCase());
+    const passed = sentence.length > 15 && hasExpression;
+    onResult(item.id, sentence, passed);
+  };
+
+  return (
+    <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-4">
+      <div>
+        <p className="text-[11px] text-ink-lighter mb-1">场景造句 · 第3轮强化</p>
+        <p className="text-base font-semibold text-sage-deep">{item.expression?.english}</p>
+        <p className="text-xs text-ink-light mt-0.5">{item.expression?.chinese}</p>
+      </div>
+
+      {personalContext && (
+        <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl">
+          <p className="text-xs text-blue-700 leading-relaxed">{personalContext.prompt}</p>
+        </div>
+      )}
+
+      {!submitted ? (
+        <>
+          <textarea
+            value={sentence}
+            onChange={(e) => setSentence(e.target.value)}
+            placeholder={personalContext?.prompt || "结合你的实际场景，用这个表达造一个句子..."}
+            rows={3}
+            className="w-full px-4 py-3 rounded-xl border border-border/60 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage"
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={!sentence.trim()}
+            className={cn(
+              "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
+              sentence.trim()
+                ? "bg-sage text-white hover:bg-sage-deep"
+                : "bg-warm-cream text-ink-lighter cursor-not-allowed",
+            )}
+          >
+            提交造句
+          </button>
+        </>
+      ) : (
+        <div className="p-4 bg-sage-light/50 rounded-xl space-y-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={14} className="text-sage-deep" />
+            <span className="text-xs text-sage-deep font-medium">第3轮完成</span>
+          </div>
+          <p className="text-sm text-ink italic">"{sentence}"</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
 // Completion Screen
 // ═══════════════════════════════════════
 
@@ -440,10 +615,12 @@ export default function EnglishReviewV3() {
   const updateStage = useUpdateSessionStage();
   const diagnoseItem = useDiagnoseItem();
   const personalPractice = usePersonalPracticePrompt();
+  const updateReinforcementStatus = useUpdateReinforcementStatus();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [roundComplete, setRoundComplete] = useState(false);
   const [reinforcementRound, setReinforcementRound] = useState(0);
+  const [reinforcementType, setReinforcementType] = useState<"recall" | "cloze" | "context">("recall");
   const [stage, setStage] = useState<"recall" | "sentence">("recall");
 
   // V3.1: Diagnosis state
@@ -452,6 +629,8 @@ export default function EnglishReviewV3() {
 
   // V3.1: Personal practice contexts (loaded when entering sentence stage)
   const [personalContexts, setPersonalContexts] = useState<Record<string, PersonalPracticeContext>>({});
+
+  const MAX_REINFORCEMENT_POOL = 5;
 
   const session = data?.session;
   const allItems = data?.items || [];
@@ -492,6 +671,20 @@ export default function EnglishReviewV3() {
       const newStatus = passed ? "passed" : "failed";
       const newAttemptCount = item.attemptCount + 1;
 
+      // V3.1: Classify result
+      let classification: "mastered" | "needs_reinforcement" | "needs_context" | undefined;
+      let reinfStatus: ReinforcementStatus = "none";
+      if (score >= 4) {
+        classification = "mastered";
+        reinfStatus = "mastered";
+      } else if (score <= 2) {
+        classification = "needs_reinforcement";
+        reinfStatus = reinforcementRound === 0 ? "queued" : "round1_recall";
+      } else {
+        classification = "needs_context";
+        reinfStatus = "round3_context";
+      }
+
       // Update session item
       await updateItem.mutateAsync({
         itemId,
@@ -502,6 +695,16 @@ export default function EnglishReviewV3() {
           reinforcementRound,
         },
       });
+
+      // V3.1: Save classification and reinforcement status
+      if (!passed) {
+        updateReinforcementStatus.mutate({
+          itemId,
+          reinforcementStatus: reinfStatus,
+          resultClassification: classification,
+          reinforcementRound,
+        });
+      }
 
       // Record practice log
       recordLog.mutate({
@@ -559,7 +762,87 @@ export default function EnglishReviewV3() {
         setCurrentIndex((i) => i + 1);
       }
     },
-    [allItems, currentIndex, queue.length, reinforcementRound, updateItem, recordLog, session?.id, submitReview, diagnoseItem],
+    [allItems, currentIndex, queue.length, reinforcementRound, updateItem, recordLog, session?.id, submitReview, diagnoseItem, updateReinforcementStatus],
+  );
+
+  // Handle cloze result (reinforcement round 2)
+  const handleClozeResult = useCallback(
+    async (itemId: string, passed: boolean) => {
+      const item = allItems.find((i) => i.id === itemId);
+      if (!item) return;
+
+      const newStatus = passed ? "passed" : "failed";
+      const nextReinfStatus: ReinforcementStatus = passed ? "mastered" : "round3_context";
+
+      await updateItem.mutateAsync({
+        itemId,
+        updates: {
+          status: newStatus,
+          attemptCount: item.attemptCount + 1,
+        },
+      });
+
+      updateReinforcementStatus.mutate({
+        itemId,
+        reinforcementStatus: nextReinfStatus,
+        resultClassification: passed ? "mastered" : "needs_context",
+      });
+
+      recordLog.mutate({
+        expressionId: item.expressionId,
+        mode: "cloze",
+        score: passed ? 4 : 2,
+        sessionId: session?.id,
+      });
+
+      if (currentIndex >= queue.length - 1) {
+        setRoundComplete(true);
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+    },
+    [allItems, currentIndex, queue.length, updateItem, updateReinforcementStatus, recordLog, session?.id],
+  );
+
+  // Handle context result (reinforcement round 3)
+  const handleContextResult = useCallback(
+    async (itemId: string, sentence: string, passed: boolean) => {
+      const item = allItems.find((i) => i.id === itemId);
+      if (!item) return;
+
+      const nextReinfStatus: ReinforcementStatus = passed ? "mastered" : "max_rounds";
+
+      await updateItem.mutateAsync({
+        itemId,
+        updates: {
+          userSentence: sentence,
+          status: passed ? "passed" : "failed",
+          applicationScore: passed ? 4 : 2,
+          attemptCount: item.attemptCount + 1,
+        },
+      });
+
+      updateReinforcementStatus.mutate({
+        itemId,
+        reinforcementStatus: nextReinfStatus,
+        resultClassification: passed ? "mastered" : "needs_reinforcement",
+      });
+
+      recordLog.mutate({
+        expressionId: item.expressionId,
+        mode: "context",
+        answer: sentence,
+        score: passed ? 4 : 2,
+        sessionId: session?.id,
+      });
+
+      if (currentIndex >= queue.length - 1) {
+        setRoundComplete(true);
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+    },
+    [allItems, currentIndex, queue.length, updateItem, updateReinforcementStatus, recordLog, session?.id],
   );
 
   // Handle sentence result
@@ -595,24 +878,46 @@ export default function EnglishReviewV3() {
     [allItems, currentIndex, queue.length, updateItem, recordLog, session?.id],
   );
 
-  // Start reinforcement
+  // Start reinforcement with 3-round pipeline
   const handleReinforce = useCallback(async () => {
-    // Mark failed items as "reinforcement"
+    // V3.1: Limit pool to 5 items (prioritize lowest scores)
+    const pool = [...reinforcementItems]
+      .sort((a, b) => (a.recallScore || 0) - (b.recallScore || 0))
+      .slice(0, MAX_REINFORCEMENT_POOL);
+
+    const nextRound = reinforcementRound + 1;
+    const nextType: "recall" | "cloze" | "context" =
+      nextRound === 1 ? "recall" :
+      nextRound === 2 ? "cloze" : "context";
+
+    const nextStatus: ReinforcementStatus =
+      nextType === "recall" ? "round1_recall" :
+      nextType === "cloze" ? "round2_cloze" : "round3_context";
+
+    // Batch update all reinforcement items
     await Promise.all(
-      reinforcementItems.map((item) =>
+      pool.map((item) =>
         updateItem.mutateAsync({
           itemId: item.id,
           updates: {
             status: "reinforcement",
-            reinforcementRound: reinforcementRound + 1,
+            reinforcementRound: nextRound,
           },
-        }),
+        }).then(() =>
+          updateReinforcementStatus.mutateAsync({
+            itemId: item.id,
+            reinforcementStatus: nextStatus,
+            reinforcementRound: nextRound,
+          }),
+        ),
       ),
     );
-    setReinforcementRound((r) => r + 1);
+
+    setReinforcementRound(nextRound);
+    setReinforcementType(nextType);
     setCurrentIndex(0);
     setRoundComplete(false);
-  }, [reinforcementItems, reinforcementRound, updateItem]);
+  }, [reinforcementItems, reinforcementRound, updateItem, updateReinforcementStatus]);
 
   // Advance to sentence stage
   const handleAdvanceStage = useCallback(async () => {
@@ -729,18 +1034,33 @@ export default function EnglishReviewV3() {
           </div>
 
           {/* Card */}
-          {stage === "recall" ? (
+          {stage === "recall" && reinforcementRound === 0 ? (
             <RecallCard
               item={currentItem}
               onResult={handleRecallResult}
               diagnosis={diagnoses[currentItem.id]}
               isDiagnosing={diagnosingIds.has(currentItem.id)}
             />
-          ) : (
+          ) : stage === "recall" && reinforcementType === "cloze" ? (
+            <ClozeCard item={currentItem} onResult={handleClozeResult} />
+          ) : stage === "recall" && reinforcementType === "context" ? (
+            <ContextCard
+              item={currentItem}
+              personalContext={personalContexts[currentItem.id]}
+              onResult={handleContextResult}
+            />
+          ) : stage === "sentence" ? (
             <SentenceCard
               item={currentItem}
               personalContext={personalContexts[currentItem.id]}
               onResult={handleSentenceResult}
+            />
+          ) : (
+            <RecallCard
+              item={currentItem}
+              onResult={handleRecallResult}
+              diagnosis={diagnoses[currentItem.id]}
+              isDiagnosing={diagnosingIds.has(currentItem.id)}
             />
           )}
         </div>
