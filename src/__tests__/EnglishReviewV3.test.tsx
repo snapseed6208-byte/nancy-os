@@ -1,11 +1,13 @@
 // ============================================
-// English SRS V3.3 — 44 Regression Tests
+// English SRS V3.4 — 58 Regression Tests
 // Self-contained: no app imports to avoid
 // transitive dependency resolution in test worker.
 //
-// Tests 1-20: Preserved SRS core + cloze tests
-// Tests A-J: V3.3 Mode routing, cloze validation, SRS isolation
-// Tests K-O: Resume, daily set, mode-specific stats
+// Tests 1-20:  Preserved SRS core + V3.3 cloze tests (updated for V3.4)
+// Tests A-J:  V3.3 Mode routing, cloze validation, SRS isolation (updated)
+// Tests K-O:  V3.3 Resume, daily set, mode-specific stats
+// Tests V1-V15: V3.4 Three-state result, grammatical forms, target-anchored,
+//              source validation, fallback summary, retry hints
 // ============================================
 
 import { describe, it, expect } from "vitest";
@@ -63,7 +65,7 @@ function makeExpression(overrides?: Partial<ExpressionCard>): ExpressionCard {
     id: "expr-1",
     english: "take the bull by the horns",
     chinese: "迎难而上",
-    pronunciation: "teɪk ðə bʊl baɪ ðə hɔːnz",
+    pronunciation: "teIk D@ bUl baI D@ hO:nz",
     example_sentence: "Sometimes you just have to take the bull by the horns and fix the problem.",
     english_explanation: "To deal with a difficult situation in a very direct and brave way.",
     usage_note: "Often used in business contexts to describe proactive leadership.",
@@ -111,17 +113,22 @@ function make15Items(): SessionItem[] {
 }
 
 // ═══════════════════════════════════════
-// Pure logic mirrors from source files
+// Pure logic mirrors from source files (V3.4)
 // ═══════════════════════════════════════
 
-// ── clozeUtils.ts mirrors ──
+// ── clozeUtils.ts mirrors (V3.4) ──
+
+type ClozeResult = "correct" | "partially_correct" | "incorrect";
 
 interface ClozeQuestion {
   prompt: string;
   expectedAnswer: string;
   acceptedAnswers: string[];
+  surfaceForm?: string;
   source: "cloze_sentence" | "example_sentence" | "fallback";
   valid: boolean;
+  scenario?: string;
+  chineseHint?: string;
 }
 
 function normalizeClozeAnswer(input: string): string {
@@ -129,17 +136,31 @@ function normalizeClozeAnswer(input: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ")
-    .replace(/['‘’‚‛′‵]/g, "'")
+    .replace(/['‘’‚›′‵]/g, "'")
     .replace(/["“”„″‶]/g, '"')
     .replace(/[,.!?;:'"]+$/, "")
     .trim();
 }
 
-function validateClozeAnswer(userAnswer: string, acceptedAnswers: string[]): boolean {
-  if (!userAnswer.trim()) return false;
+function validateClozeResult(
+  userAnswer: string,
+  acceptedAnswers: string[],
+  surfaceForm?: string,
+): ClozeResult {
+  if (!userAnswer.trim()) return "incorrect";
   const normalized = normalizeClozeAnswer(userAnswer);
-  if (!normalized) return false;
-  return acceptedAnswers.some((a) => normalizeClozeAnswer(a) === normalized);
+  if (!normalized) return "incorrect";
+  if (acceptedAnswers.some((a) => normalizeClozeAnswer(a) === normalized)) {
+    return "correct";
+  }
+  if (surfaceForm && normalizeClozeAnswer(surfaceForm) === normalized) {
+    return "partially_correct";
+  }
+  return "incorrect";
+}
+
+function validateClozeAnswer(userAnswer: string, acceptedAnswers: string[]): boolean {
+  return validateClozeResult(userAnswer, acceptedAnswers) === "correct";
 }
 
 function hasExpressionLeakage(prompt: string, expression: string): boolean {
@@ -152,82 +173,187 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// ── Grammatical form detection (V3.4) ──
+
+const INFLECTION_SUFFIXES = [/ed$/i, /ing$/i, /s$/i, /es$/i, /ies$/i, /er$/i, /est$/i, /'s$/i, /s'$/i];
+
+function toStem(word: string): string {
+  const lower = word.toLowerCase();
+  for (const suffix of INFLECTION_SUFFIXES) {
+    const stripped = lower.replace(suffix, "");
+    if (stripped.length >= 2) return stripped;
+  }
+  return lower;
+}
+
+function detectSurfaceForm(
+  sentence: string,
+  expression: string,
+): { surfaceForm: string; matchType: "exact" | "inflected" } | null {
+  const exprWords = expression.split(/\s+/);
+  if (exprWords.length === 0) return null;
+  const sentWords = sentence.split(/\s+/);
+  if (sentWords.length < exprWords.length) return null;
+
+  // 1. Exact case-insensitive match
+  const escaped = escapeRegex(expression);
+  const exactRegex = new RegExp("\\b" + escaped + "\\b", "gi");
+  const exactMatch = exactRegex.exec(sentence);
+  if (exactMatch) return { surfaceForm: exactMatch[0], matchType: "exact" };
+
+  // 2. Stem-based fuzzy match
+  for (let start = 0; start <= sentWords.length - exprWords.length; start++) {
+    let allMatch = true;
+    for (let j = 0; j < exprWords.length; j++) {
+      const sentWord = sentWords[start + j];
+      const exprWord = exprWords[j];
+      if (sentWord.toLowerCase() === exprWord.toLowerCase()) continue;
+      const sentStem = toStem(sentWord);
+      const exprStem = toStem(exprWord);
+      if (sentStem === exprStem) continue;
+      const isSmallWord = ["a", "an", "the", "in", "on", "at", "to", "of", "for", "by", "up", "out", "off", "my"].includes(exprWord.toLowerCase());
+      if (isSmallWord) { allMatch = false; break; }
+      allMatch = false;
+      break;
+    }
+    if (allMatch) {
+      return { surfaceForm: sentWords.slice(start, start + exprWords.length).join(" "), matchType: "inflected" };
+    }
+  }
+  return null;
+}
+
+// ── buildClozeQuestion (V3.4 target-anchored) ──
+
 function buildClozeQuestion(
   english: string,
   chinese: string,
   clozeSentence?: string | null,
   exampleSentence?: string | null,
+  context?: string | null,
+  situation?: string | null,
 ): ClozeQuestion {
+  const scenario = [context, situation].filter(Boolean).join(" · ") || undefined;
+
   // Priority 1: cloze_sentence
   if (clozeSentence) {
     const blanks = (clozeSentence.match(/_{2,}|\[blank\]/gi) || []).length;
-    if (blanks >= 1) {
-      const hasLeak = hasExpressionLeakage(clozeSentence, english);
-      if (!hasLeak) {
-        return {
-          prompt: clozeSentence,
-          expectedAnswer: english,
-          acceptedAnswers: [english],
-          source: "cloze_sentence",
-          valid: true,
-        };
-      }
+    if (blanks >= 1 && !hasExpressionLeakage(clozeSentence, english)) {
+      const surfaceInfo = detectSurfaceForm(clozeSentence, english);
+      return {
+        prompt: clozeSentence,
+        expectedAnswer: english,
+        acceptedAnswers: [english.toLowerCase(), english.charAt(0).toUpperCase() + english.slice(1).toLowerCase()],
+        surfaceForm: surfaceInfo?.surfaceForm,
+        source: "cloze_sentence",
+        valid: true,
+        scenario,
+        chineseHint: chinese,
+      };
     }
   }
 
-  // Priority 2: example_sentence
+  // Priority 2: example_sentence with expression replacement
   if (exampleSentence) {
-    const escaped = escapeRegex(english);
-    const regex = new RegExp(escaped, "gi");
-    const replaced = exampleSentence.replace(regex, "_____");
-    if (replaced !== exampleSentence) {
-      if (!hasExpressionLeakage(replaced, english)) {
+    const surfaceInfo = detectSurfaceForm(exampleSentence, english);
+    if (surfaceInfo) {
+      const escaped = escapeRegex(surfaceInfo.surfaceForm);
+      const regex = new RegExp(escaped, "gi");
+      const replaced = exampleSentence.replace(regex, "_____");
+      if (replaced !== exampleSentence && !hasExpressionLeakage(replaced, english)) {
         return {
           prompt: replaced,
           expectedAnswer: english,
-          acceptedAnswers: [english],
+          acceptedAnswers: [english.toLowerCase(), english.charAt(0).toUpperCase() + english.slice(1).toLowerCase()],
+          surfaceForm: surfaceInfo.surfaceForm !== english ? surfaceInfo.surfaceForm : undefined,
           source: "example_sentence",
           valid: true,
+          scenario: scenario || exampleSentence,
+          chineseHint: chinese,
         };
       }
     }
-
-    const words = exampleSentence.split(/\s+/);
-    if (words.length >= 6) {
-      const start = Math.floor(words.length * 0.3);
-      const end = Math.min(words.length, start + 3);
-      const parts = [...words];
-      for (let i = start; i < end; i++) parts[i] = "_____";
-      const prompt = parts.join(" ");
-      if (!hasExpressionLeakage(prompt, english)) {
-        const expectedWords = words.slice(start, end).join(" ");
-        return { prompt, expectedAnswer: expectedWords, acceptedAnswers: [expectedWords], source: "example_sentence", valid: true };
-      }
-    }
   }
 
-  // Priority 3: fallback
-  const exprWords = english.split(/\s+/);
-  if (exprWords.length >= 2) {
-    const mid = Math.floor(exprWords.length / 2);
-    const parts = [...exprWords];
-    parts[mid] = "_____";
-    const prompt = parts.join(" ");
-    if (!hasExpressionLeakage(prompt, english)) {
-      return { prompt, expectedAnswer: exprWords[mid], acceptedAnswers: [exprWords[mid]], source: "fallback", valid: true };
-    }
+  // Priority 3: Fallback with context
+  if (scenario || exampleSentence) {
+    return {
+      prompt: "_____",
+      expectedAnswer: english,
+      acceptedAnswers: [english.toLowerCase()],
+      source: "fallback",
+      valid: true,
+      scenario: scenario || (exampleSentence ? exampleSentence.slice(0, 80) : undefined),
+      chineseHint: chinese,
+    };
   }
 
+  // Priority 4: No valid source - cloze unavailable
   return {
-    prompt: `_____ (${chinese})`,
+    prompt: "_____",
     expectedAnswer: english,
-    acceptedAnswers: [english],
+    acceptedAnswers: [english.toLowerCase()],
     source: "fallback",
-    valid: true,
+    valid: false,
+    scenario: undefined,
+    chineseHint: chinese,
   };
 }
 
-// ── Mode helpers ──
+// ── buildHint mirror (V3.4) ──
+
+function buildHint(expectedAnswer: string, attempt: number): string | null {
+  if (attempt < 1) return null;
+  const words = expectedAnswer.split(/\s+/);
+  if (attempt === 1) {
+    const firstLetters = words.map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1))).join(" ");
+    return words.length + " 个词 · " + firstLetters;
+  }
+  return null;
+}
+
+// ── buildFallbackSummary mirror (V3.4 PART 10) ──
+
+interface DailySummaryMirror {
+  overview: string;
+  completion_summary: string;
+  strongest_expressions: string[];
+  weakest_expressions: string[];
+  tomorrow_focus: string;
+}
+
+function buildFallbackSummaryMirror(
+  items: Array<{ english: string; recallScore: number | null }>,
+  recallCompleted: number,
+  clozeCompleted: number,
+  clozeCorrect: number,
+  sentenceCompleted: number,
+  total: number,
+): DailySummaryMirror {
+  const passedItems = items.filter((i) => i.recallScore !== null && i.recallScore >= 3);
+  const failedItems = items.filter((i) => i.recallScore !== null && i.recallScore < 3);
+
+  const totalDone = recallCompleted + clozeCompleted + sentenceCompleted;
+  return {
+    overview: totalDone + " 次练习完成。" + (
+      passedItems.length >= total * 0.7
+        ? "主动回忆表现优秀，继续保持！"
+        : "建议明天重点复习薄弱表达。"
+    ),
+    completion_summary:
+      "主动回忆 " + recallCompleted + "/" + total +
+      " · 语境填空 " + clozeCompleted + "/" + total +
+      "（正确 " + clozeCorrect + "）" +
+      " · 个人造句 " + sentenceCompleted + "/" + total,
+    strongest_expressions: passedItems.slice(0, 5).map((i) => i.english),
+    weakest_expressions: failedItems.slice(0, 5).map((i) => i.english),
+    tomorrow_focus: failedItems.length > 0
+      ? "重点复习：" + failedItems.slice(0, 3).map((i) => i.english).join("、") + "。"
+      : "明天继续巩固今日掌握的表达，保持学习节奏。",
+  };
+}
+
+// ── Mode helpers (V3.3) ──
 
 type ReviewMode = "recall" | "cloze" | "sentence";
 
@@ -282,10 +408,10 @@ function applyRecallResult(item: SessionItem, score: number): void {
 }
 
 // ═══════════════════════════════════════
-// Tests 1-4: buildClozeQuestion (NEW V3.3)
+// Tests 1-4: buildClozeQuestion (V3.4 updated)
 // ═══════════════════════════════════════
 
-describe("buildClozeQuestion — V3.3", () => {
+describe("buildClozeQuestion — V3.4", () => {
   it("1. uses valid cloze_sentence when available (no leakage)", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
@@ -305,7 +431,7 @@ describe("buildClozeQuestion — V3.3", () => {
       "get something off my plate means to remove a burden.",
       "I need to get something off my plate before the weekend.",
     );
-    // cloze_sentence has leakage → should fall back to example_sentence
+    // cloze_sentence has leakage -> should fall back to example_sentence
     expect(q.source).toBe("example_sentence");
     expect(q.valid).toBe(true);
     expect(hasExpressionLeakage(q.prompt, "get something off my plate")).toBe(false);
@@ -324,43 +450,42 @@ describe("buildClozeQuestion — V3.3", () => {
     expect(q.expectedAnswer).toBe("a great way to unwind");
   });
 
-  it("4. falls back to word blanking when expression not in example", () => {
+  it("4. falls back to simple blank when expression not in example (target-anchored only)", () => {
     const q = buildClozeQuestion(
       "xyzzy",
       "测试",
       undefined,
       "The quick brown fox jumps over the lazy dog today.",
     );
-    expect(q.source).toBe("example_sentence");
-    expect(q.prompt).toContain("_____");
+    // V3.4: no random word blanking; expression not found -> fallback
+    expect(q.source).toBe("fallback");
     expect(q.valid).toBe(true);
-    expect(hasExpressionLeakage(q.prompt, "xyzzy")).toBe(false);
+    expect(q.prompt).toBe("_____");
   });
 });
 
 // ═══════════════════════════════════════
-// Tests 5-8: Cloze answer validation
+// Tests 5-8: Cloze answer validation (V3.4 three-state)
 // ═══════════════════════════════════════
 
-describe("validateClozeAnswer — strict matching", () => {
+describe("validateClozeResult — V3.4 three-state", () => {
   const accepted = ["take the bull by the horns"];
 
-  it("5. correct answer passes", () => {
-    expect(validateClozeAnswer("take the bull by the horns", accepted)).toBe(true);
+  it("5. correct answer returns 'correct'", () => {
+    expect(validateClozeResult("take the bull by the horns", accepted)).toBe("correct");
   });
 
-  it("6. wrong answer fails", () => {
-    expect(validateClozeAnswer("Skirts of my plate", accepted)).toBe(false);
+  it("6. wrong answer returns 'incorrect'", () => {
+    expect(validateClozeResult("Skirts of my plate", accepted)).toBe("incorrect");
   });
 
-  it("7. empty answer fails", () => {
-    expect(validateClozeAnswer("", accepted)).toBe(false);
-    expect(validateClozeAnswer("   ", accepted)).toBe(false);
+  it("7. empty answer returns 'incorrect'", () => {
+    expect(validateClozeResult("", accepted)).toBe("incorrect");
+    expect(validateClozeResult("   ", accepted)).toBe("incorrect");
   });
 
-  it("8. correct answer with different case/spacing passes", () => {
-    expect(validateClozeAnswer("  Take   the Bull by the Horns.  ", accepted)).toBe(true);
-    expect(validateClozeAnswer("TAKE THE BULL BY THE HORNS!", accepted)).toBe(true);
+  it("8. correct answer with different case/spacing returns 'correct'", () => {
+    expect(validateClozeResult("  Take   the Bull by the Horns.  ", accepted)).toBe("correct");
   });
 });
 
@@ -420,43 +545,43 @@ describe("hasExpressionLeakage", () => {
     expect(q.prompt).toContain("_____");
   });
 
-  it("16. invalid cloze with leakage falls back correctly", () => {
+  it("16. expression not found in any source -> fallback", () => {
     const q = buildClozeQuestion(
       "test phrase",
       "测试",
       undefined,
       undefined,
     );
-    expect(q.valid).toBe(true);
+    expect(q.valid).toBe(false); // V3.4: no valid source
     expect(q.source).toBe("fallback");
   });
 });
 
 // ═══════════════════════════════════════
-// Tests 17-20: SRS rating cap (preserved from V3.2)
+// Tests 17-20: SRS rating cap
 // ═══════════════════════════════════════
 
 describe("SRS rating", () => {
-  it("17. score 1 → 'hard' (capped)", () => {
+  it("17. score 1 -> 'hard' (capped)", () => {
     expect(getSrsRating(1)).toBe("hard");
   });
 
-  it("18. score 2 → 'hard' (capped)", () => {
+  it("18. score 2 -> 'hard' (capped)", () => {
     expect(getSrsRating(2)).toBe("hard");
   });
 
-  it("19. score 3 → 'hard' (borderline)", () => {
+  it("19. score 3 -> 'hard' (borderline)", () => {
     expect(getSrsRating(3)).toBe("hard");
   });
 
-  it("20. score 4-5 → 'good'", () => {
+  it("20. score 4-5 -> 'good'", () => {
     expect(getSrsRating(4)).toBe("good");
     expect(getSrsRating(5)).toBe("good");
   });
 });
 
 // ═══════════════════════════════════════
-// TESTS A-D: Mode Routing (V3.3 NEW)
+// TESTS A1-A5: Mode Routing (V3.3)
 // ═══════════════════════════════════════
 
 describe("V3.3 Mode Routing", () => {
@@ -511,7 +636,6 @@ describe("V3.3 Daily Set Identity", () => {
     const ids = getDailySetIds(items);
     expect(ids.length).toBe(15);
 
-    // Same IDs used for all modes
     const recallIds = getDailySetIds(items);
     const clozeIds = getDailySetIds(items);
     const sentenceIds = getDailySetIds(items);
@@ -523,7 +647,6 @@ describe("V3.3 Daily Set Identity", () => {
     const items = make15Items();
     const before = getDailySetIds(items);
 
-    // Apply recall results
     for (let i = 0; i < 5; i++) applyRecallResult(items[i], 4);
 
     const after = getDailySetIds(items);
@@ -534,7 +657,6 @@ describe("V3.3 Daily Set Identity", () => {
     const items = make15Items();
     const before = getDailySetIds(items);
 
-    // Cloze completions don't modify items
     const clozeLogIds = new Set<string>(["expr-0", "expr-1", "expr-2"]);
 
     const after = getDailySetIds(items);
@@ -546,7 +668,6 @@ describe("V3.3 Daily Set Identity", () => {
     const items1 = make15Items();
     const ids1 = getDailySetIds(items1);
 
-    // Simulated reload: same data from DB
     const items2 = make15Items();
     const ids2 = getDailySetIds(items2);
 
@@ -555,11 +676,11 @@ describe("V3.3 Daily Set Identity", () => {
 });
 
 // ═══════════════════════════════════════
-// TESTS I-L: Mode progress resume (V3.3 NEW)
+// TESTS I-L: Mode progress resume (V3.3)
 // ═══════════════════════════════════════
 
 describe("V3.3 Mode Progress Resume", () => {
-  it("I. cloze 6/15 done → resume at 7th item", () => {
+  it("I. cloze 6/15 done -> resume at 7th item", () => {
     const items = make15Items();
     const dailySetIds = getDailySetIds(items);
     const clozeLogIds = new Set<string>([
@@ -570,7 +691,7 @@ describe("V3.3 Mode Progress Resume", () => {
     expect(idx).toBe(6);
   });
 
-  it("J. sentence 4/15 done → resume at 5th item", () => {
+  it("J. sentence 4/15 done -> resume at 5th item", () => {
     const items = make15Items();
     const dailySetIds = getDailySetIds(items);
     const sentenceLogIds = new Set<string>([
@@ -581,16 +702,16 @@ describe("V3.3 Mode Progress Resume", () => {
     expect(idx).toBe(4);
   });
 
-  it("K. recall 15/15 done → resume at end (all complete)", () => {
+  it("K. recall 15/15 done -> resume at end (all complete)", () => {
     const items = make15Items();
     const dailySetIds = getDailySetIds(items);
     for (const item of items) applyRecallResult(item, 4);
 
     const idx = findResumeIndex(items, dailySetIds, "recall", new Set(), new Set());
-    expect(idx).toBe(15); // all complete
+    expect(idx).toBe(15);
   });
 
-  it("L. cloze 0/15 → resume at 0 (first item)", () => {
+  it("L. cloze 0/15 -> resume at 0 (first item)", () => {
     const items = make15Items();
     const dailySetIds = getDailySetIds(items);
 
@@ -600,19 +721,17 @@ describe("V3.3 Mode Progress Resume", () => {
 });
 
 // ═══════════════════════════════════════
-// TESTS M-P: SRS Isolation (V3.3 CRITICAL)
+// TESTS M-P: SRS Isolation (V3.3)
 // ═══════════════════════════════════════
 
 describe("V3.3 SRS Isolation", () => {
   it("M. SRS submits only in recall mode", () => {
     const srsSubmitted = new Set<string>();
-    // In recall mode, not yet submitted → true
     expect(shouldSubmitSrs(true, srsSubmitted, "expr-1")).toBe(true);
   });
 
   it("N. SRS does NOT submit in non-recall mode (cloze/sentence)", () => {
     const srsSubmitted = new Set<string>();
-    // Not in recall mode → always false
     expect(shouldSubmitSrs(false, srsSubmitted, "expr-1")).toBe(false);
   });
 
@@ -624,19 +743,16 @@ describe("V3.3 SRS Isolation", () => {
   it("P. applyRecallResult modifies recallScore (SRS-relevant), others don't", () => {
     const item1 = makeSessionItem({ id: "a", expressionId: "expr-a", recallScore: null });
 
-    // Recall changes recallScore
     applyRecallResult(item1, 4);
-    expect(item1.recallScore).toBe(4); // SRS uses this
+    expect(item1.recallScore).toBe(4);
 
-    // Cloze would NOT change recallScore (tested via no-op)
     const scoreBeforeCloze = item1.recallScore;
-    item1.status = "passed"; // simulate cloze
-    expect(item1.recallScore).toBe(scoreBeforeCloze); // unchanged
+    item1.status = "passed";
+    expect(item1.recallScore).toBe(scoreBeforeCloze);
 
-    // Sentence would NOT change recallScore
     const scoreBeforeSentence = item1.recallScore;
     item1.userSentence = "My sentence.";
-    expect(item1.recallScore).toBe(scoreBeforeSentence); // unchanged
+    expect(item1.recallScore).toBe(scoreBeforeSentence);
   });
 });
 
@@ -655,7 +771,6 @@ describe("V3.3 Mode Completion Stats", () => {
 
   it("R. cloze completion count = from practice logs (independent of recall)", () => {
     const items = make15Items();
-    // Even if recall is 0, cloze can have progress
     const clozeLogIds = new Set<string>(["expr-0", "expr-1", "expr-2", "expr-3", "expr-4", "expr-5"]);
     const completed = countModeCompleted(items, "cloze", clozeLogIds);
     expect(completed).toBe(6);
@@ -686,7 +801,7 @@ describe("V3.3 Mode Completion Stats", () => {
 });
 
 // ═══════════════════════════════════════
-// TESTS U-X: ExpressionCard + status transitions (preserved)
+// TESTS U-X: ExpressionCard + status transitions
 // ═══════════════════════════════════════
 
 describe("ExpressionCard & Status", () => {
@@ -715,15 +830,200 @@ describe("ExpressionCard & Status", () => {
     expect(card.english).toBe("take the bull by the horns");
   });
 
-  it("W. recall score ≥ 3 → status 'passed'", () => {
+  it("W. recall score >= 3 -> status 'passed'", () => {
     const item = makeSessionItem({ status: "pending" });
     applyRecallResult(item, 4);
     expect(item.status).toBe("passed");
   });
 
-  it("X. recall score < 3 → status 'failed'", () => {
+  it("X. recall score < 3 -> status 'failed'", () => {
     const item = makeSessionItem({ status: "pending" });
     applyRecallResult(item, 1);
     expect(item.status).toBe("failed");
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.4 NEW TESTS V1-V15
+// ═══════════════════════════════════════
+
+// ── V1-V3: Three-state result model (PART 6) ──
+
+describe("V3.4 Three-State ClozeResult", () => {
+  const canonical = "soak up the sunshine";
+  const surfaceForm = "soaked up the sunshine";
+  const accepted = [canonical.toLowerCase()];
+
+  it("V1. exact canonical match -> correct", () => {
+    expect(validateClozeResult("soak up the sunshine", accepted, surfaceForm)).toBe("correct");
+  });
+
+  it("V2. surface form match (not canonical) -> partially_correct", () => {
+    expect(validateClozeResult("soaked up the sunshine", accepted, surfaceForm)).toBe("partially_correct");
+  });
+
+  it("V3. completely wrong answer -> incorrect", () => {
+    expect(validateClozeResult("enjoy the sun", accepted, surfaceForm)).toBe("incorrect");
+  });
+});
+
+// ── V4-V5: Grammatical form detection (PART 5) ──
+
+describe("V3.4 Grammatical Form Detection", () => {
+  it("V4. detects inflected form in sentence", () => {
+    const result = detectSurfaceForm(
+      "Yesterday I soaked up the sunshine at the beach.",
+      "soak up the sunshine",
+    );
+    expect(result).not.toBeNull();
+    expect(result!.surfaceForm).toBe("soaked up the sunshine");
+    expect(result!.matchType).toBe("inflected");
+  });
+
+  it("V5. detects exact form when unchanged", () => {
+    const result = detectSurfaceForm(
+      "I want to soak up the sunshine today.",
+      "soak up the sunshine",
+    );
+    expect(result).not.toBeNull();
+    expect(result!.surfaceForm).toBe("soak up the sunshine");
+    expect(result!.matchType).toBe("exact");
+  });
+});
+
+// ── V6-V7: Target-anchored cloze (PART 3) ──
+
+describe("V3.4 Target-Anchored Cloze", () => {
+  it("V6. never blanks random words when expression not in example", () => {
+    const q = buildClozeQuestion(
+      "hit the sack",
+      "睡觉",
+      undefined,
+      "The quick brown fox jumps over the lazy dog yesterday morning.", // expression not present
+    );
+    // V3.4: must NOT blank random words. Should fall back.
+    expect(q.source).toBe("fallback");
+    // The prompt should not contain a blanked random phrase
+    // It should be simple fallback (just the blank)
+    expect(q.valid).toBe(true);
+  });
+
+  it("V7. blanks the inflected form when that's what appears in source", () => {
+    const q = buildClozeQuestion(
+      "soak up the sunshine",
+      "沐浴阳光",
+      undefined,
+      "We soaked up the sunshine all afternoon.",
+    );
+    expect(q.valid).toBe(true);
+    expect(q.source).toBe("example_sentence");
+    expect(q.prompt).toContain("_____");
+    expect(q.prompt).not.toContain("soaked up the sunshine");
+    expect(q.surfaceForm).toBe("soaked up the sunshine");
+  });
+});
+
+// ── V8-V9: Source validation (PART 4) ──
+
+describe("V3.4 Source Validation", () => {
+  it("V8. marks cloze as unavailable when no valid source exists", () => {
+    const q = buildClozeQuestion(
+      "some rare expression",
+      "稀有表达",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(q.valid).toBe(false);
+    expect(q.source).toBe("fallback");
+  });
+
+  it("V9. cloze is available when context/situation provided even without sentences", () => {
+    const q = buildClozeQuestion(
+      "some rare expression",
+      "稀有表达",
+      undefined,
+      undefined,
+      "business meeting",
+      "presentation",
+    );
+    expect(q.valid).toBe(true);
+    expect(q.scenario).toContain("business meeting");
+  });
+});
+
+// ── V10-V11: Retry hints (PART 7) ──
+
+describe("V3.4 Retry Hints", () => {
+  it("V10. first retry shows word count + first-letter pattern", () => {
+    const hint = buildHint("take the bull by the horns", 1);
+    expect(hint).not.toBeNull();
+    expect(hint).toContain("6");
+    expect(hint).toContain("t___");
+    expect(hint).toContain("b___");
+  });
+
+  it("V11. no hint before first attempt (attempt=0)", () => {
+    const hint = buildHint("hello world", 0);
+    expect(hint).toBeNull();
+  });
+});
+
+// ── V12-V13: Deterministic fallback summary (PART 10) ──
+
+describe("V3.4 Deterministic Fallback Summary", () => {
+  it("V12. generates summary with correct completion counts", () => {
+    const items = [
+      { english: "expression A", recallScore: 4 },
+      { english: "expression B", recallScore: 2 },
+      { english: "expression C", recallScore: 5 },
+    ];
+    const summary = buildFallbackSummaryMirror(items, 3, 2, 2, 1, 3);
+    expect(summary.strongest_expressions.length).toBeGreaterThan(0);
+    expect(summary.weakest_expressions.length).toBeGreaterThan(0);
+    expect(summary.completion_summary).toContain("3/3");
+    expect(summary.completion_summary).toContain("2/3");
+    expect(summary.completion_summary).toContain("1/3");
+  });
+
+  it("V13. all passed -> no weak expressions, encouraging overview", () => {
+    const items = [
+      { english: "expression A", recallScore: 4 },
+      { english: "expression B", recallScore: 5 },
+      { english: "expression C", recallScore: 4 },
+    ];
+    const summary = buildFallbackSummaryMirror(items, 3, 3, 3, 3, 3);
+    expect(summary.weakest_expressions.length).toBe(0);
+    expect(summary.overview).toContain("继续保持");
+    expect(summary.tomorrow_focus).toContain("继续巩固");
+  });
+});
+
+// ── V14: ClozeQuestion has scenario/chineseHint fields (PART 2, 9) ──
+
+describe("V3.4 ClozeQuestion Fields", () => {
+  it("V14. question includes scenario and chineseHint for contextual activation", () => {
+    const q = buildClozeQuestion(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to _____ and fix the problem.",
+      undefined,
+      "business negotiation",
+      "When facing a tough decision",
+    );
+    expect(q.scenario).toBeTruthy();
+    expect(q.chineseHint).toBe("迎难而上");
+  });
+});
+
+// ── V15: Legacy validateClozeAnswer still works ──
+
+describe("V3.4 Legacy Compatibility", () => {
+  it("V15. validateClozeAnswer (boolean) wraps validateClozeResult correctly", () => {
+    const accepted = ["hello world"];
+    expect(validateClozeAnswer("hello world", accepted)).toBe(true);
+    expect(validateClozeAnswer("goodbye", accepted)).toBe(false);
+    expect(validateClozeAnswer("", accepted)).toBe(false);
   });
 });

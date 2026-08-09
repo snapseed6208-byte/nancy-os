@@ -764,7 +764,7 @@ export function useLearningHistory() {
 export interface TodayPracticeLogs {
   clozeIds: Set<string>;
   sentenceIds: Set<string>;
-  clozeResults: Map<string, { correct: boolean; userAnswer: string }>;
+  clozeResults: Map<string, { result: "correct" | "partially_correct" | "incorrect"; userAnswer: string }>;
   sentenceResults: Map<string, { sentence: string }>;
 }
 
@@ -786,14 +786,15 @@ export function useTodayPracticeLogs(sessionId?: string | null) {
 
       const clozeIds = new Set<string>();
       const sentenceIds = new Set<string>();
-      const clozeResults = new Map<string, { correct: boolean; userAnswer: string }>();
+      const clozeResults = new Map<string, { result: "correct" | "partially_correct" | "incorrect"; userAnswer: string }>();
       const sentenceResults = new Map<string, { sentence: string }>();
 
       for (const log of (logs || [])) {
         if (log.mode === "cloze") {
           clozeIds.add(log.expression_id as string);
+          const s = log.score as number;
           clozeResults.set(log.expression_id as string, {
-            correct: (log.score as number) >= 1,
+            result: s >= 2 ? "correct" : s >= 1 ? "partially_correct" : "incorrect",
             userAnswer: (log.answer as string) || "",
           });
         } else if (log.mode === "sentence") {

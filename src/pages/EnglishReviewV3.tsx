@@ -21,7 +21,8 @@ import {
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
-import { buildClozeQuestion, validateClozeAnswer, hasExpressionLeakage, normalizeClozeAnswer } from "@/lib/clozeUtils";
+import { buildClozeQuestion, validateClozeResult, normalizeClozeAnswer } from "@/lib/clozeUtils";
+import type { ClozeResult } from "@/lib/clozeUtils";
 import { invokeAI } from "@/lib/ai/aiService";
 import { cn } from "@/lib/utils";
 import {
@@ -44,6 +45,7 @@ import {
   RotateCcw,
   Sparkles,
   X,
+  HelpCircle,
 } from "lucide-react";
 
 // ═══════════════════════════════════════
@@ -413,7 +415,14 @@ function RecallCard({
 }
 
 // ═══════════════════════════════════════
-// Cloze Card (fixed validation)
+// Cloze Card (V3.4 — contextual activation)
+//
+// Changes from V3.3:
+// - Three-state result: correct | partially_correct | incorrect
+// - 2-attempt retry with progressive hints
+// - No auto-advance (manual "下一题" button)
+// - Chinese hidden by default, "需要提示?" toggle
+// - Scenario/context shown as primary hint
 // ═══════════════════════════════════════
 
 function ClozeCard({
@@ -421,7 +430,7 @@ function ClozeCard({
   onResult,
 }: {
   item: SessionItem;
-  onResult: (itemId: string, correct: boolean, userAnswer: string, expectedAnswer: string) => void;
+  onResult: (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string) => void;
 }) {
   const expr = item.expression;
   const english = expr?.english || "";
@@ -434,49 +443,88 @@ function ClozeCard({
         chinese,
         expr?.cloze_sentence,
         expr?.example_sentence,
+        expr?.context,
+        expr?.situation,
       ),
-    [english, chinese, expr?.cloze_sentence, expr?.example_sentence],
+    [english, chinese, expr?.cloze_sentence, expr?.example_sentence, expr?.context, expr?.situation],
   );
 
   const [answer, setAnswer] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [isCorrect, setIsCorrect] = useState(false);
+  const [attempt, setAttempt] = useState(0); // 0 = not yet submitted, 1 = first attempt, 2 = second attempt
+  const [finalResult, setFinalResult] = useState<ClozeResult | null>(null);
+  const [showHint, setShowHint] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const MAX_ATTEMPTS = 2;
 
   const handleSubmit = () => {
     if (!answer.trim()) return;
-    const correct = validateClozeAnswer(answer, question.acceptedAnswers);
-    setIsCorrect(correct);
-    setSubmitted(true);
-    setTimeout(
-      () => onResult(item.id, correct, answer, question.expectedAnswer),
-      correct ? 300 : 800,
-    );
+
+    const result = validateClozeResult(answer, question.acceptedAnswers, question.surfaceForm);
+    const nextAttempt = attempt + 1;
+
+    if (result === "correct") {
+      setFinalResult("correct");
+      setAttempt(nextAttempt);
+    } else if (nextAttempt >= MAX_ATTEMPTS) {
+      // Final attempt exhausted
+      setFinalResult(result);
+      setAttempt(nextAttempt);
+    } else {
+      // Wrong but has retries left — show hint
+      setAttempt(nextAttempt);
+      setAnswer("");
+      setShowHint(true);
+      // Refocus input for retry
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
   };
 
-  const normalizedUser = normalizeClozeAnswer(answer);
+  const handleNext = () => {
+    onResult(item.id, finalResult || "incorrect", answer, question.expectedAnswer);
+  };
+
+  // Build hint text for retry
+  const hintText = buildHint(question.expectedAnswer, attempt);
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      <div>
-        <p className="text-[11px] text-ink-lighter mb-1">语境填空</p>
-        <p className="text-sm text-ink-light">{chinese}</p>
+      {/* Scenario / Context as primary hint (V3.4 contextual activation) */}
+      {question.scenario && (
+        <div className="bg-warm-cream rounded-xl p-3">
+          <p className="text-[10px] text-ink-lighter mb-0.5">场景</p>
+          <p className="text-xs text-ink-light leading-relaxed">{question.scenario}</p>
+        </div>
+      )}
+
+      {/* Cloze prompt */}
+      <div className="p-4 bg-ink/5 rounded-xl">
+        <p className="text-base font-medium text-ink leading-relaxed">{question.prompt}</p>
       </div>
 
-      {!submitted ? (
-        <div className="space-y-4">
-          <div className="p-4 bg-warm-cream rounded-xl">
-            <p className="text-base font-medium text-ink leading-relaxed">{question.prompt}</p>
-          </div>
+      {/* Input area (before final result) */}
+      {finalResult === null && (
+        <div className="space-y-3">
           <input
+            ref={inputRef}
             type="text"
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            placeholder="填入缺少的内容..."
+            placeholder={attempt === 0 ? "填入缺少的表达..." : "再试一次..."}
             className="w-full px-4 py-3 rounded-xl border border-border/60 text-sm focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage"
             onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
             autoFocus
           />
+
+          {/* Hint on retry */}
+          {showHint && hintText && (
+            <div className="flex items-start gap-2 bg-amber-50/50 rounded-xl p-3">
+              <Lightbulb size={13} className="text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">{hintText}</p>
+            </div>
+          )}
+
           <button
             onClick={handleSubmit}
             disabled={!answer.trim()}
@@ -487,30 +535,52 @@ function ClozeCard({
                 : "bg-warm-cream text-ink-lighter cursor-not-allowed",
             )}
           >
-            确认
+            {attempt === 0 ? "确认" : `提交 (${attempt + 1}/${MAX_ATTEMPTS})`}
           </button>
         </div>
-      ) : (
+      )}
+
+      {/* Result display (after final result) */}
+      {finalResult !== null && (
         <div className="space-y-3">
           {/* Result banner */}
           <div
             className={cn(
               "flex items-center gap-2 px-4 py-3 rounded-xl",
-              isCorrect ? "bg-sage-light/50" : "bg-accent-warm/10",
+              finalResult === "correct"
+                ? "bg-sage-light/50"
+                : finalResult === "partially_correct"
+                  ? "bg-amber-50"
+                  : "bg-accent-warm/10",
             )}
           >
-            {isCorrect ? (
+            {finalResult === "correct" ? (
               <CheckCircle2 size={16} className="text-sage-deep" />
+            ) : finalResult === "partially_correct" ? (
+              <AlertTriangle size={16} className="text-amber-500" />
             ) : (
               <XCircle size={16} className="text-accent-warm" />
             )}
-            <span className={cn("text-sm font-medium", isCorrect ? "text-sage-deep" : "text-accent-warm")}>
-              {isCorrect ? "✓ 正确" : "答案不正确"}
+            <span
+              className={cn(
+                "text-sm font-medium",
+                finalResult === "correct"
+                  ? "text-sage-deep"
+                  : finalResult === "partially_correct"
+                    ? "text-amber-600"
+                    : "text-accent-warm",
+              )}
+            >
+              {finalResult === "correct"
+                ? "正确"
+                : finalResult === "partially_correct"
+                  ? "表达正确，但形式有偏差"
+                  : "答案不正确"}
             </span>
           </div>
 
-          {/* Show user answer vs correct answer on error */}
-          {!isCorrect && (
+          {/* Show user answer vs correct answer */}
+          {finalResult !== "correct" && (
             <div className="space-y-2">
               <div className="bg-warm-cream rounded-xl p-3">
                 <p className="text-[10px] text-ink-lighter mb-0.5">你的答案</p>
@@ -519,12 +589,17 @@ function ClozeCard({
               <div className="bg-sage-light/30 rounded-xl p-3">
                 <p className="text-[10px] text-ink-lighter mb-0.5">正确答案</p>
                 <p className="text-sm text-sage-deep font-medium">{question.expectedAnswer}</p>
+                {question.surfaceForm && finalResult === "partially_correct" && (
+                  <p className="text-[10px] text-ink-lighter mt-0.5">
+                    语境中出现的形式: {question.surfaceForm}
+                  </p>
+                )}
               </div>
             </div>
           )}
 
-          {/* Expression details */}
-          {!isCorrect && (
+          {/* Expression details toggle */}
+          {finalResult !== "correct" && (
             <button
               onClick={() => setShowDetails(!showDetails)}
               className="text-[11px] text-ink-lighter hover:text-ink transition-colors flex items-center gap-1"
@@ -547,10 +622,52 @@ function ClozeCard({
               )}
             </div>
           )}
+
+          {/* Manual "下一题" button (V3.4: no auto-advance) */}
+          <button
+            onClick={handleNext}
+            className="w-full py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors flex items-center justify-center gap-2"
+          >
+            下一题
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Chinese hint toggle (V3.4: hidden by default) */}
+      {finalResult === null && chinese && (
+        <div className="text-center">
+          {!showHint || !chinese ? null : (
+            <p className="text-xs text-ink-light mb-2">{chinese}</p>
+          )}
+          <button
+            onClick={() => setShowHint(!showHint)}
+            className={cn(
+              "text-[11px] transition-colors flex items-center gap-1 mx-auto",
+              showHint ? "text-ink-light" : "text-ink-lighter hover:text-ink-light",
+            )}
+          >
+            <HelpCircle size={11} />
+            {showHint ? "隐藏中文提示" : "需要提示?"}
+          </button>
         </div>
       )}
     </div>
   );
+}
+
+/** Build a progressive hint for retry attempts. */
+function buildHint(expectedAnswer: string, attempt: number): string | null {
+  if (attempt < 1) return null;
+
+  const words = expectedAnswer.split(/\s+/);
+  if (attempt === 1) {
+    // First retry: show word count + first letter of each word
+    const firstLetters = words.map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1))).join(" ");
+    return `${words.length} 个词 · ${firstLetters}`;
+  }
+  // Second hint is handled by showing Chinese (via the hint toggle)
+  return null;
 }
 
 // ═══════════════════════════════════════
@@ -760,6 +877,59 @@ function AllDoneScreen({
 // AI Daily Summary Section
 // ═══════════════════════════════════════
 
+/** Build a deterministic summary from local data when AI is unavailable (PART 10). */
+function buildFallbackSummary(
+  allItems: SessionItem[],
+  _dailySet: Array<Record<string, unknown>>,
+  modeCompletion: Record<string, unknown>,
+): DailySummaryData {
+  const recall = modeCompletion.recall as { completed_count: number; total: number } || { completed_count: 0, total: 0 };
+  const cloze = modeCompletion.cloze as { completed_count: number; total: number; correct_count: number } || { completed_count: 0, total: 0, correct_count: 0 };
+  const sentence = modeCompletion.sentence as { completed_count: number; total: number } || { completed_count: 0, total: 0 };
+
+  const passedItems = allItems.filter((i) => i.recallScore !== null && i.recallScore >= 3);
+  const failedItems = allItems.filter((i) => i.recallScore !== null && i.recallScore < 3);
+  const expressions = allItems.map((i) => i.expression?.english || "unknown");
+
+  const totalDone = recall.completed_count + cloze.completed_count + sentence.completed_count;
+  const totalPossible = allItems.length * 3;
+
+  return {
+    overview: totalDone > 0
+      ? `今日完成了 ${totalDone} 次练习（共 ${totalPossible} 次可能），涵盖 ${allItems.length} 个表达。${
+          passedItems.length >= allItems.length * 0.7
+            ? "主动回忆表现优秀，继续保持！"
+            : "建议明天重点复习薄弱表达。"
+        }`
+      : "今日尚未开始复习。开始你的每日训练吧！",
+    completion_summary: `主动回忆 ${recall.completed_count}/${recall.total} · 语境填空 ${cloze.completed_count}/${cloze.total}（正确 ${cloze.correct_count}）· 个人造句 ${sentence.completed_count}/${sentence.total}`,
+    recall_analysis: recall.completed_count > 0
+      ? {
+          summary: `${recall.completed_count} 个表达完成主动回忆，其中 ${passedItems.length} 个掌握，${failedItems.length} 个需要加强。`,
+          difficult_expressions: failedItems.slice(0, 5).map((i) => i.expression?.english || "unknown"),
+        }
+      : undefined,
+    cloze_analysis: cloze.completed_count > 0
+      ? {
+          summary: `${cloze.completed_count} 个表达完成语境填空，正确率 ${cloze.total > 0 ? Math.round((cloze.correct_count / cloze.total) * 100) : 0}%。`,
+          common_errors: [],
+        }
+      : undefined,
+    sentence_analysis: sentence.completed_count > 0
+      ? {
+          summary: `${sentence.completed_count} 个表达完成个人造句。`,
+          good_outputs: allItems.filter((i) => i.userSentence).slice(0, 3).map((i) => i.userSentence || ""),
+          needs_improvement: [],
+        }
+      : undefined,
+    strongest_expressions: passedItems.slice(0, 5).map((i) => i.expression?.english || "unknown"),
+    weakest_expressions: failedItems.slice(0, 5).map((i) => i.expression?.english || "unknown"),
+    tomorrow_focus: failedItems.length > 0
+      ? `重点复习：${failedItems.slice(0, 3).map((i) => i.expression?.english).join("、")}。建议在语境中多练习这些表达。`
+      : "明天继续巩固今日掌握的表达，保持学习节奏。",
+  };
+}
+
 interface DailySummaryData {
   overview: string;
   completion_summary: string;
@@ -917,7 +1087,7 @@ export default function EnglishReviewV3() {
   // ── Local progress state (initialized from DB, updated in-session) ──
   const [localClozeIds, setLocalClozeIds] = useState<Set<string>>(new Set());
   const [localSentenceIds, setLocalSentenceIds] = useState<Set<string>>(new Set());
-  const [localClozeResults, setLocalClozeResults] = useState<Map<string, { correct: boolean; userAnswer: string }>>(new Map());
+  const [localClozeResults, setLocalClozeResults] = useState<Map<string, { result: ClozeResult; userAnswer: string }>>(new Map());
 
   // Initialize local state from practice logs when they load
   useEffect(() => {
@@ -991,7 +1161,7 @@ export default function EnglishReviewV3() {
   const recallPassed = allItems.filter((i) => i.recallScore !== null && i.recallScore >= 3).length;
   const recallFailed = allItems.filter((i) => i.recallScore !== null && i.recallScore < 3).length;
   const clozeCompleted = localClozeIds.size;
-  const clozeCorrect = [...localClozeResults.values()].filter((r) => r.correct).length;
+  const clozeCorrect = [...localClozeResults.values()].filter((r) => r.result === "correct").length;
   const clozeIncorrect = clozeCompleted - clozeCorrect;
   const sentenceCompleted = localSentenceIds.size;
 
@@ -1054,23 +1224,26 @@ export default function EnglishReviewV3() {
 
   // ── Cloze handler (NO SRS) ──
   const handleClozeResult = useCallback(
-    async (itemId: string, correct: boolean, userAnswer: string, expectedAnswer: string) => {
+    async (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string) => {
       const item = allItems.find((i) => i.id === itemId);
       if (!item || !session) return;
+
+      const isCorrect = result === "correct";
+      const score = result === "correct" ? 2 : result === "partially_correct" ? 1 : 0;
 
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "cloze",
         answer: userAnswer,
-        feedback: correct ? undefined : `expected: ${expectedAnswer}`,
-        score: correct ? 1 : 0,
+        feedback: isCorrect ? undefined : `expected: ${expectedAnswer}`,
+        score,
         sessionId: session.id,
       });
 
       setLocalClozeIds((prev) => new Set(prev).add(item.expressionId));
       setLocalClozeResults((prev) => {
         const next = new Map(prev);
-        next.set(item.expressionId, { correct, userAnswer });
+        next.set(item.expressionId, { result, userAnswer });
         return next;
       });
 
@@ -1078,8 +1251,8 @@ export default function EnglishReviewV3() {
         ...prev,
         cloze: {
           completed: prev.cloze.completed + 1,
-          correct: prev.cloze.correct + (correct ? 1 : 0),
-          incorrect: prev.cloze.incorrect + (correct ? 0 : 1),
+          correct: prev.cloze.correct + (result === "correct" ? 1 : 0),
+          incorrect: prev.cloze.incorrect + (result !== "correct" ? 1 : 0),
         },
       }));
 
@@ -1144,43 +1317,43 @@ export default function EnglishReviewV3() {
     [navigate],
   );
 
-  // ── Generate AI summary ──
+  // ── Generate AI summary (with deterministic fallback) ──
   const generateSummary = useCallback(async () => {
     if (!session) return;
     setSummaryGenerating(true);
     setShowSummary(true);
 
+    // Build input data for both AI and fallback
+    const dailySet = allItems.map((item) => ({
+      expression_id: item.expressionId,
+      english: item.expression?.english || "unknown",
+      chinese: item.expression?.chinese || "",
+      recall: {
+        completed: item.recallScore !== null,
+        initial_rating: item.recallScore,
+        reinforcement_count: item.reinforcementRound || 0,
+        final_status: item.status,
+      },
+      cloze: {
+        completed: clozeLogIds.has(item.expressionId),
+        correct: clozeLogIds.has(item.expressionId),
+        user_answer: null,
+      },
+      sentence: {
+        completed: sentenceLogIds.has(item.expressionId) || item.userSentence !== null,
+        user_sentence: item.userSentence,
+        ai_feedback: item.aiFeedback,
+        optimized_sentence: null,
+      },
+    }));
+
+    const modeCompletion = {
+      recall: { completed_count: recallCompleted, total: allItems.length },
+      cloze: { completed_count: clozeCompleted, total: allItems.length, correct_count: clozeCorrect },
+      sentence: { completed_count: sentenceCompleted, total: allItems.length },
+    };
+
     try {
-      // Build summary input data
-      const dailySet = allItems.map((item) => ({
-        expression_id: item.expressionId,
-        english: item.expression?.english || "unknown",
-        chinese: item.expression?.chinese || "",
-        recall: {
-          completed: item.recallScore !== null,
-          initial_rating: item.recallScore,
-          reinforcement_count: item.reinforcementRound || 0,
-          final_status: item.status,
-        },
-        cloze: {
-          completed: clozeLogIds.has(item.expressionId),
-          correct: clozeLogIds.has(item.expressionId),
-          user_answer: null,
-        },
-        sentence: {
-          completed: sentenceLogIds.has(item.expressionId) || item.userSentence !== null,
-          user_sentence: item.userSentence,
-          ai_feedback: item.aiFeedback,
-          optimized_sentence: null,
-        },
-      }));
-
-      const modeCompletion = {
-        recall: { completed_count: recallCompleted, total: allItems.length },
-        cloze: { completed_count: clozeCompleted, total: allItems.length, correct_count: clozeCorrect },
-        sentence: { completed_count: sentenceCompleted, total: allItems.length },
-      };
-
       const result = await invokeAI<DailySummaryData>("english-coach", {
         action: "summarize_daily_review",
         date: new Date().toISOString().split("T")[0],
@@ -1188,14 +1361,19 @@ export default function EnglishReviewV3() {
         mode_completion: modeCompletion,
       });
 
-      if (result.success) {
+      if (result.success && result.data) {
         setAiSummary(result.data);
+        setSummaryGenerating(false);
+        return;
       }
     } catch {
-      // Silently fail — summary is non-critical
-    } finally {
-      setSummaryGenerating(false);
+      // AI call failed — fall back to deterministic summary
     }
+
+    // ── Deterministic fallback summary (PART 10) ──
+    const fallbackSummary = buildFallbackSummary(allItems, dailySet, modeCompletion);
+    setAiSummary(fallbackSummary);
+    setSummaryGenerating(false);
   }, [session, allItems, clozeLogIds, sentenceLogIds, recallCompleted, clozeCompleted, clozeCorrect, sentenceCompleted]);
 
   // ── Navigation ──

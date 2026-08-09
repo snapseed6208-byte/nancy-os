@@ -91,6 +91,104 @@ function buildLearningContext(
   return lines.join("\n");
 }
 
+// ── Summarize Daily Review ──
+
+async function handleSummarizeDailyReview(
+  req: Request,
+  body: Record<string, unknown>,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<Response> {
+  const dailySet = body.dailySet as Array<Record<string, unknown>> | undefined;
+  const modeCompletion = body.mode_completion as Record<string, unknown> | undefined;
+  const date = (body.date as string) || new Date().toISOString().split("T")[0];
+
+  if (!dailySet || !Array.isArray(dailySet) || dailySet.length === 0) {
+    return jsonResponse(req, { error: "dailySet array is required for summarization" }, 400);
+  }
+
+  // Build a compact summary prompt
+  const expressions = dailySet.map((item) => ({
+    english: item.english || "unknown",
+    chinese: item.chinese || "",
+    recall_score: item.recall?.initial_rating ?? null,
+    recall_status: item.recall?.final_status ?? "pending",
+    cloze_done: item.cloze?.completed ?? false,
+    sentence_done: item.sentence?.completed ?? false,
+  }));
+
+  const summaryPrompt = `You are an English learning coach. Analyze today's review session and write a concise summary in Chinese.
+
+## Today's Date: ${date}
+
+## Mode Completion
+- Active Recall: ${modeCompletion?.recall?.completed_count ?? 0}/${modeCompletion?.recall?.total ?? 0}
+- Cloze: ${modeCompletion?.cloze?.completed_count ?? 0}/${modeCompletion?.cloze?.total ?? 0} (correct: ${modeCompletion?.cloze?.correct_count ?? 0})
+- Sentence: ${modeCompletion?.sentence?.completed_count ?? 0}/${modeCompletion?.sentence?.total ?? 0}
+
+## Expressions Reviewed
+${JSON.stringify(expressions, null, 2)}
+
+## Instructions
+Return a JSON object with these fields (all in Chinese):
+{
+  "overview": "总体评价，2-3句话，语气鼓励",
+  "completion_summary": "完成情况统计的一句话总结",
+  "recall_analysis": { "summary": "主动回忆分析", "difficult_expressions": ["困难的表达1", ...] } | null,
+  "cloze_analysis": { "summary": "填空分析", "common_errors": ["常见错误1", ...] } | null,
+  "sentence_analysis": { "summary": "造句分析", "good_outputs": ["好的造句1", ...], "needs_improvement": ["需要改进的1", ...] } | null,
+  "strongest_expressions": ["掌握最好的表达", ...] (3-5个),
+  "weakest_expressions": ["需要加强的表达", ...] (3-5个),
+  "tomorrow_focus": "明天学习重点建议，1-2句话"
+}
+
+Only include analysis sections that have relevant data. Keep everything concise.`;
+
+  try {
+    const aiResult = await aiRuntime<Record<string, unknown>>(
+      [{ role: "user", content: summaryPrompt }],
+      {
+        agentName: "english-coach-summary",
+        maxTokens: 2048,
+        temperature: 0.5,
+        parseJson: true,
+        dynamicTokens: false,
+      },
+    );
+
+    if (!aiResult.success) {
+      return jsonResponse(req, {
+        stage: aiResult.stage,
+        error: aiResult.error,
+        detail: aiResult.detail,
+      }, aiResult.stage === "deepseek" ? 502 : 500);
+    }
+
+    // Log the summary generation
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "daily_summary",
+      input_data: {
+        expression_count: dailySet.length,
+        date,
+      },
+      output_data: { summary: aiResult.data },
+      model: "deepseek-chat",
+      tokens_used: aiResult.usage?.totalTokens || 0,
+    });
+
+    return jsonResponse(req, {
+      success: true,
+      data: aiResult.data,
+    });
+  } catch (err) {
+    return jsonResponse(req, {
+      error: err instanceof Error ? err.message : "Summary generation failed",
+    }, 500);
+  }
+}
+
 // ── Main ──
 
 serve(async (req: Request) => {
@@ -100,19 +198,27 @@ serve(async (req: Request) => {
 
   try {
     const body = await req.json();
+    const action = body.action as string | undefined;
+
+    // ── Auth ──
+    const auth = await authenticateRequest(req);
+    if (!auth) return jsonResponse(req, { error: "需要登录" }, 401);
+    const { supabase, userId } = auth;
+
+    // ── Action: summarize_daily_review (no messages required) ──
+    if (action === "summarize_daily_review") {
+      return handleSummarizeDailyReview(req, body, supabase, userId);
+    }
+
+    // ── Normal coaching: require messages ──
     const messages = body.messages as Array<{ role: string; content: string }>;
     const model = (body.model as string) || "deepseek-chat";
     const maxTokens = (body.maxTokens as number) || 2048;
     const temperature = (body.temperature as number) ?? 0.7;
 
     if (!messages || !Array.isArray(messages)) {
-      return jsonResponse(req,{ error: "messages array is required" }, 400);
+      return jsonResponse(req, { error: "messages array is required" }, 400);
     }
-
-    // ── Auth (nancy-context) ──
-    const auth = await authenticateRequest(req);
-    if (!auth) return jsonResponse(req, { error: "需要登录" }, 401);
-    const { supabase, userId } = auth;
 
     // Fetch learning context in parallel
     const [
