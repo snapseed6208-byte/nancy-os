@@ -249,7 +249,7 @@ export async function getConfirmedMemories(
 
   let query = supabase
     .from("ai_memories")
-    .select("id,memory_type,content,confidence,status,reinforcement_count,evidence,title,category,importance")
+    .select("id,memory_type,content,confidence,status,reinforcement_count,evidence")
     .eq("user_id", userId)
     .eq("is_active", true)
     .eq("status", status)

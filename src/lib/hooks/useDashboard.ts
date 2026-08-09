@@ -227,7 +227,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       .limit(20),
     // Active habits with names (for timeline aggregation)
     supabase.from("habits")
-      .select("id,name,icon")
+      .select("id,title,icon")
       .eq("is_active", true),
     // Total expressions
     supabase.from("expressions")

@@ -106,7 +106,7 @@ serve(async (req: Request) => {
     // Fetch existing memories for continuity
     const { data: memories } = await supabase
       .from("ai_memories")
-      .select("title,content,category")
+      .select("memory_type,content,confidence")
       .eq("user_id", user.id)
       .eq("status", "confirmed")
       .order("created_at", { ascending: false })
@@ -129,8 +129,8 @@ serve(async (req: Request) => {
         mood: r.mood,
       })),
       existing_memories: (memories || []).map((m: Record<string, unknown>) => ({
-        title: m.title,
-        category: m.category,
+        title: m.content ? (m.content as string).slice(0, 30) : "",
+        category: m.memory_type,
       })),
     };
 
@@ -162,15 +162,17 @@ serve(async (req: Request) => {
     // Save memory candidate if present
     const mc = parsed.memory_candidate as Record<string, unknown> | undefined;
     if (mc?.content && mc?.title) {
+      const importanceMap: Record<string, number> = { high: 0.9, medium: 0.5, low: 0.3 };
       await supabase.from("ai_memories").insert({
         user_id: user.id,
-        title: mc.title as string,
-        content: mc.content as string,
-        category: (mc.category as string) || "behavior_pattern",
-        importance: (mc.importance as string) || "medium",
+        memory_type: (mc.category as string) || "behavior_pattern",
+        content: `**${mc.title}**\n${mc.content}`,
+        confidence: importanceMap[(mc.importance as string) || "medium"] || 0.5,
         source: "daily_reflection",
-        source_date: date,
+        evidence: [{ date, type: "daily_reflection" }],
         status: "candidate",
+        reinforcement_count: 1,
+        is_active: true,
       });
     }
 
