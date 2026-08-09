@@ -61,7 +61,7 @@ function SessionHeader({
   hasReinforcement: boolean;
 }) {
   const stageLabel =
-    currentStage === "recall" ? "主动回忆" : currentStage === "sentence" ? "造句训练" : "应用练习";
+    currentStage === "recall" ? "主动回忆" : currentStage === "sentence" ? "深度练习" : "应用练习";
   const stageIcons: Record<string, typeof Brain> = {
     recall: Brain,
     sentence: Pencil,
@@ -631,6 +631,7 @@ export default function EnglishReviewV3() {
   const [personalContexts, setPersonalContexts] = useState<Record<string, PersonalPracticeContext>>({});
 
   const MAX_REINFORCEMENT_POOL = 5;
+  const MAX_DEEP_PRACTICE = 5;
 
   const session = data?.session;
   const allItems = data?.items || [];
@@ -646,12 +647,12 @@ export default function EnglishReviewV3() {
       );
     }
     if (stage === "sentence") {
-      return allItems.filter(
-        (i) =>
-          i.status === "passed" ||
-          i.status === "completed" ||
-          (i.recallScore !== null && i.sentenceScore === null),
-      );
+      // V3.1: Only select up to 5 items for deep practice
+      // Prioritize: lowest recall scores + needs_context classification
+      const candidates = allItems
+        .filter((i) => i.recallScore !== null && i.sentenceScore === null && i.status !== "failed")
+        .sort((a, b) => (a.recallScore || 3) - (b.recallScore || 3));
+      return candidates.slice(0, MAX_DEEP_PRACTICE);
     }
     return allItems;
   }, [allItems, stage, reinforcementRound]);
@@ -919,7 +920,7 @@ export default function EnglishReviewV3() {
     setRoundComplete(false);
   }, [reinforcementItems, reinforcementRound, updateItem, updateReinforcementStatus]);
 
-  // Advance to sentence stage
+  // Advance to sentence stage (V3.1: only 5 items for deep practice)
   const handleAdvanceStage = useCallback(async () => {
     setStage("sentence");
     setCurrentIndex(0);
@@ -928,11 +929,27 @@ export default function EnglishReviewV3() {
       await updateStage.mutateAsync({ sessionId: session.id, stage: "sentence" });
     }
 
-    // V3.1: Preload personal practice contexts for sentence items
-    const sentenceItems = allItems.filter(
-      (i) => i.status === "passed" || i.status === "completed" || i.recallScore !== null,
+    // V3.1: Auto-complete high-scoring items that won't get sentence practice
+    const deepPracticeItems = allItems
+      .filter((i) => i.recallScore !== null && i.sentenceScore === null && i.status !== "failed")
+      .sort((a, b) => (a.recallScore || 3) - (b.recallScore || 3))
+      .slice(0, MAX_DEEP_PRACTICE);
+
+    const deepIds = new Set(deepPracticeItems.map((i) => i.id));
+    const toAutoComplete = allItems.filter(
+      (i) => i.recallScore !== null && i.sentenceScore === null && i.status !== "failed" && !deepIds.has(i.id),
     );
-    for (const item of sentenceItems.slice(0, 5)) {
+
+    // Fire-and-forget: mark auto-completed items
+    for (const item of toAutoComplete) {
+      updateItem.mutate({
+        itemId: item.id,
+        updates: { status: "completed" },
+      });
+    }
+
+    // Preload personal practice contexts for deep practice items
+    for (const item of deepPracticeItems) {
       if (!item.expression) continue;
       try {
         const ctx = await personalPractice.mutateAsync({
@@ -948,7 +965,7 @@ export default function EnglishReviewV3() {
         // Non-blocking
       }
     }
-  }, [session?.id, updateStage, allItems, personalPractice]);
+  }, [session?.id, updateStage, allItems, personalPractice, updateItem]);
 
   // Done
   const handleDone = useCallback(async () => {
