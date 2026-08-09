@@ -552,6 +552,181 @@ export function useBatchUpdateReinforcement() {
   });
 }
 
+// ═══════════════════════════════════════
+// V3.1: Learning History
+// ═══════════════════════════════════════
+
+export interface DailySummary {
+  date: string;
+  totalItems: number;
+  passedItems: number;
+  failedItems: number;
+  avgRecallScore: number;
+  reinforcementCount: number;
+  completed: boolean;
+}
+
+export interface ProblemArea {
+  expression: string;
+  chinese: string;
+  failCount: number;
+  problemType: string;
+  lastAttempt: string;
+}
+
+export interface LearningHistoryData {
+  todaySession: {
+    total: number;
+    passed: number;
+    failed: number;
+    reinforcement: number;
+    completed: boolean;
+  } | null;
+  last30Days: DailySummary[];
+  problemAreas: ProblemArea[];
+  totalPracticeLogs: number;
+  streak: number;
+}
+
+export function useLearningHistory() {
+  return useQuery({
+    queryKey: ["learning-history"],
+    queryFn: async (): Promise<LearningHistoryData> => {
+      const userId = await getUserId();
+      const today = todayStr();
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const sinceDate = thirtyDaysAgo.toISOString().split("T")[0];
+
+      // 1. Today's session
+      const { data: todaySession } = await supabase
+        .from("review_sessions")
+        .select("id,status,target_count")
+        .eq("user_id", userId)
+        .eq("session_date", today)
+        .limit(1)
+        .single();
+
+      let todayData: LearningHistoryData["todaySession"] = null;
+      if (todaySession) {
+        const { data: todayItems } = await supabase
+          .from("review_session_items")
+          .select("status,recall_score,reinforcement_round")
+          .eq("session_id", todaySession.id);
+
+        const items = todayItems || [];
+        todayData = {
+          total: items.length,
+          passed: items.filter((i) => i.status === "passed" || i.status === "completed").length,
+          failed: items.filter((i) => i.status === "failed" || i.status === "reinforcement").length,
+          reinforcement: items.filter((i) => (i.reinforcement_round || 0) > 0).length,
+          completed: todaySession.status === "completed",
+        };
+      }
+
+      // 2. 30-day summary from practice logs
+      const { data: practiceLogs } = await supabase
+        .from("expression_practice_logs")
+        .select("created_at,score,mode")
+        .eq("user_id", userId)
+        .gte("created_at", `${sinceDate}T00:00:00`)
+        .order("created_at", { ascending: true });
+
+      const logs = practiceLogs || [];
+      const dailyMap = new Map<string, { scores: number[]; modes: string[] }>();
+      for (const log of logs) {
+        const date = (log.created_at as string).split("T")[0];
+        if (!dailyMap.has(date)) dailyMap.set(date, { scores: [], modes: [] });
+        const d = dailyMap.get(date)!;
+        d.scores.push(log.score as number);
+        d.modes.push(log.mode as string);
+      }
+
+      const last30Days: DailySummary[] = [];
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const ds = d.toISOString().split("T")[0];
+        const dayData = dailyMap.get(ds);
+        const scores = dayData?.scores || [];
+        last30Days.push({
+          date: ds,
+          totalItems: scores.length,
+          passedItems: scores.filter((s) => s >= 3).length,
+          failedItems: scores.filter((s) => s < 3).length,
+          avgRecallScore: scores.length > 0
+            ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+            : 0,
+          reinforcementCount: (dayData?.modes || []).filter((m) =>
+            m === "cloze" || m === "context",
+          ).length,
+          completed: false,
+        });
+      }
+
+      // 3. Problem areas from session items with diagnosis
+      const { data: failedItems } = await supabase
+        .from("review_session_items")
+        .select("expression:expressions(english,chinese),recall_score,difficulty_diagnosis,last_practice_at,result_classification")
+        .eq("status", "failed")
+        .gte("last_practice_at", `${sinceDate}T00:00:00`)
+        .order("last_practice_at", { ascending: false })
+        .limit(20);
+
+      // Group by expression
+      const failMap = new Map<string, { chinese: string; count: number; problemType: string; lastAttempt: string }>();
+      for (const item of (failedItems || [])) {
+        const expr = item.expression as unknown as Record<string, unknown> | null;
+        const key = (expr?.english as string) || "unknown";
+        const diagnosis = item.difficulty_diagnosis as Record<string, unknown> | null;
+
+        if (!failMap.has(key)) {
+          failMap.set(key, {
+            chinese: (expr?.chinese as string) || "",
+            count: 0,
+            problemType: (diagnosis?.problem_type as string) || "memory",
+            lastAttempt: (item.last_practice_at as string) || "",
+          });
+        }
+        failMap.get(key)!.count++;
+      }
+
+      const problemAreas: ProblemArea[] = [...failMap.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 8)
+        .map(([expression, data]) => ({
+          expression,
+          chinese: data.chinese,
+          failCount: data.count,
+          problemType: data.problemType,
+          lastAttempt: data.lastAttempt,
+        }));
+
+      // 4. Streak (consecutive days with at least 1 practice log)
+      let streak = 0;
+      for (let i = 0; i < 30; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const ds = d.toISOString().split("T")[0];
+        if (dailyMap.has(ds) && (dailyMap.get(ds)?.scores.length || 0) > 0) {
+          streak++;
+        } else if (i > 0) {
+          break;
+        }
+      }
+
+      return {
+        todaySession: todayData,
+        last30Days,
+        problemAreas,
+        totalPracticeLogs: logs.length,
+        streak,
+      };
+    },
+    staleTime: 120_000,
+  });
+}
+
 export function getSessionStats(items: SessionItem[]) {
   const total = items.length;
   const passed = items.filter((i) => i.status === "passed" || i.status === "completed").length;

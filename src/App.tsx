@@ -13,6 +13,7 @@ import EnglishReviewV3 from "@/pages/EnglishReviewV3";
 import EnglishSpeaking from "@/pages/EnglishSpeaking";
 import SpeakingImport from "@/pages/SpeakingImport";
 import EnglishProgress from "@/pages/EnglishProgress";
+import EnglishLearningHistory from "@/pages/EnglishLearningHistory";
 import EnglishImport from "@/pages/EnglishImport";
 import Health from "@/pages/Health";
 import Exam from "@/pages/Exam";
@@ -71,6 +72,7 @@ function AppRoutes() {
         <Route path="/english/speaking" component={EnglishSpeaking} />
         <Route path="/english/speaking/import" component={SpeakingImport} />
         <Route path="/english/progress" component={EnglishProgress} />
+        <Route path="/english/history" component={EnglishLearningHistory} />
         <Route path="/english/import" component={EnglishImport} />
         <Route path="/health" component={Health} />
         <Route path="/exam" component={Exam} />
