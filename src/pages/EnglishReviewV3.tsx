@@ -18,6 +18,7 @@ import {
   useUpdateSessionStage,
   useTodayPracticeLogs,
   getSessionStats,
+  getDailyReviewProgress,
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
@@ -1359,34 +1360,43 @@ export default function EnglishReviewV3() {
     setSummaryGenerating(true);
     setShowSummary(true);
 
-    // Build input data for both AI and fallback
-    const dailySet = allItems.map((item) => ({
-      expression_id: item.expressionId,
-      english: item.expression?.english || "unknown",
-      chinese: item.expression?.chinese || "",
+    // V3.5: Use unified progress function (single source of truth)
+    const practiceLogs = {
+      clozeIds: clozeLogIds,
+      sentenceIds: sentenceLogIds,
+      clozeResults: localClozeResults,
+      sentenceResults: new Map(),
+    };
+    const progress = getDailyReviewProgress(session.id, allItems, practiceLogs);
+
+    // Build input data for AI from unified progress
+    const dailySet = progress.expressions.map((ep) => ({
+      expression_id: ep.expressionId,
+      english: ep.english,
+      chinese: ep.chinese,
       recall: {
-        completed: item.recallScore !== null,
-        initial_rating: item.recallScore,
-        reinforcement_count: item.reinforcementRound || 0,
-        final_status: item.status,
+        completed: ep.recall.completed,
+        initial_rating: ep.recall.score,
+        reinforcement_count: ep.recall.reinforcementRound,
+        final_status: ep.recall.status,
       },
       cloze: {
-        completed: clozeLogIds.has(item.expressionId),
-        correct: localClozeResults.get(item.expressionId)?.result === "correct",
-        user_answer: localClozeResults.get(item.expressionId)?.userAnswer || null,
+        completed: ep.cloze.completed,
+        correct: ep.cloze.result === "correct",
+        user_answer: ep.cloze.userAnswer,
       },
       sentence: {
-        completed: sentenceLogIds.has(item.expressionId) || item.userSentence !== null,
-        user_sentence: item.userSentence,
-        ai_feedback: item.aiFeedback,
+        completed: ep.sentence.completed,
+        user_sentence: ep.sentence.userSentence,
+        ai_feedback: ep.sentence.aiFeedback,
         optimized_sentence: null,
       },
     }));
 
     const modeCompletion = {
-      recall: { completed_count: recallCompleted, total: allItems.length },
-      cloze: { completed_count: clozeCompleted, total: allItems.length, correct_count: clozeCorrect },
-      sentence: { completed_count: sentenceCompleted, total: allItems.length },
+      recall: { completed_count: progress.recallCompleted, total: progress.totalExpressions },
+      cloze: { completed_count: progress.clozeCompleted, total: progress.totalExpressions, correct_count: progress.clozeCorrect },
+      sentence: { completed_count: progress.sentenceCompleted, total: progress.totalExpressions },
     };
 
     try {

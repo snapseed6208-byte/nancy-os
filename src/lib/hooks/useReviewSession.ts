@@ -783,7 +783,8 @@ export function useTodayPracticeLogs(sessionId?: string | null) {
         .select("expression_id,mode,answer,score,feedback")
         .eq("user_id", userId)
         .eq("session_id", sessionId)
-        .gte("created_at", `${today}T00:00:00`);
+        .gte("created_at", `${today}T00:00:00`)
+        .order("created_at", { ascending: true }); // V3.5: latest attempt wins for daily stats
 
       const clozeIds = new Set<string>();
       const sentenceIds = new Set<string>();
