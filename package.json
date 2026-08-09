@@ -9,6 +9,8 @@
     "build": "tsc -b && vite build && npm run build:verify",
     "build:verify": "node -e \"const fs=require('fs');const files=fs.readdirSync('dist/assets').filter(f=>f.endsWith('.js'));const found=files.some(f=>fs.readFileSync('dist/assets/'+f,'utf8').includes('placeholder.supabase'));if(found){console.error('BLOCKED: placeholder.supabase.co found in build output!');process.exit(1);}console.log('Build verified: no placeholder found.');\"",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
@@ -31,17 +33,21 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.4",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
     "drizzle-kit": "^0.30.6",
+    "jsdom": "^30.0.1",
     "postgres": "^3.4.5",
     "tailwindcss": "^4.1.4",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.2",
-    "vite-plugin-pwa": "^0.21.2"
+    "vite-plugin-pwa": "^0.21.2",
+    "vitest": "^4.1.10"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
