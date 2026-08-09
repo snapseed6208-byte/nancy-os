@@ -9,6 +9,7 @@ import English from "@/pages/English";
 import EnglishExpressions from "@/pages/EnglishExpressions";
 import EnglishExpressionDetail from "@/pages/EnglishExpressionDetail";
 import EnglishReview from "@/pages/EnglishReview";
+import EnglishReviewV3 from "@/pages/EnglishReviewV3";
 import EnglishSpeaking from "@/pages/EnglishSpeaking";
 import SpeakingImport from "@/pages/SpeakingImport";
 import EnglishProgress from "@/pages/EnglishProgress";
@@ -66,7 +67,7 @@ function AppRoutes() {
         <Route path="/english" component={English} />
         <Route path="/english/expressions" component={EnglishExpressions} />
         <Route path="/english/expressions/:id" component={EnglishExpressionDetail} />
-        <Route path="/english/review" component={EnglishReview} />
+        <Route path="/english/review" component={EnglishReviewV3} />
         <Route path="/english/speaking" component={EnglishSpeaking} />
         <Route path="/english/speaking/import" component={SpeakingImport} />
         <Route path="/english/progress" component={EnglishProgress} />
