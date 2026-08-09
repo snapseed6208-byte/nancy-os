@@ -48,6 +48,18 @@ export interface ExpressionCard {
   chinese: string;
   pronunciation?: string;
   example_sentence?: string;
+  english_explanation?: string;
+  usage_note?: string;
+  native_usage?: string;
+  context?: string;
+  situation?: string;
+  common_patterns?: string;
+  common_mistakes?: string;
+  memory_tip?: string;
+  synonyms?: string;
+  formality?: string;
+  notes?: string;
+  cloze_sentence?: string;
   type: string;
   scene: string;
   status: string;
@@ -117,9 +129,15 @@ async function fetchOrCreateSession(): Promise<{
 
   // 2. Create new session — select 15 due expressions
   // Same selection logic as fetchDailyReviewQueue
+  const EXPRESSION_SELECT =
+    "id,english,chinese,pronunciation,example_sentence," +
+    "english_explanation,usage_note,native_usage,context,situation," +
+    "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence," +
+    "type,scene,status,mastery_level";
+
   const { data: dueCards } = await supabase
     .from("expressions")
-    .select("id,english,chinese,pronunciation,example_sentence,type,scene,status,mastery_level")
+    .select(EXPRESSION_SELECT)
     .eq("user_id", userId)
     .eq("archived", false)
     .neq("status", "mastered")
@@ -146,7 +164,7 @@ async function fetchOrCreateSession(): Promise<{
 
   // Create session items
   if (selectedCards.length > 0) {
-    const items = selectedCards.map((card: Record<string, unknown>) => ({
+    const items = (selectedCards as unknown as Record<string, unknown>[]).map((card) => ({
       session_id: session.id,
       expression_id: card.id,
       status: "pending",
@@ -191,6 +209,18 @@ function formatSessionItem(raw: Record<string, unknown>): SessionItem {
           chinese: expr.chinese as string,
           pronunciation: expr.pronunciation as string | undefined,
           example_sentence: expr.example_sentence as string | undefined,
+          english_explanation: expr.english_explanation as string | undefined,
+          usage_note: expr.usage_note as string | undefined,
+          native_usage: expr.native_usage as string | undefined,
+          context: expr.context as string | undefined,
+          situation: expr.situation as string | undefined,
+          common_patterns: expr.common_patterns as string | undefined,
+          common_mistakes: expr.common_mistakes as string | undefined,
+          memory_tip: expr.memory_tip as string | undefined,
+          synonyms: expr.synonyms as string | undefined,
+          formality: expr.formality as string | undefined,
+          notes: expr.notes as string | undefined,
+          cloze_sentence: expr.cloze_sentence as string | undefined,
           type: expr.type as string,
           scene: expr.scene as string,
           status: expr.status as string,

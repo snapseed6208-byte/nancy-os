@@ -1,26 +1,20 @@
 // ============================================
-// English SRS V3 — Daily Review Session
+// English SRS V3.2 — Daily Review Session
 //
-// Fixed 15 daily expressions. All modes read from
-// the same session. Same-day reinforcement (max 3 rounds).
+// Immutable Daily Set of 15 expressions.
+// 3-round training: Recall → Cloze → Sentence.
+// SRS updated only on Round 1.
 // ============================================
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   useTodaySession,
   useUpdateSessionItem,
   useRecordPracticeLog,
   useUpdateSessionStage,
-  useDiagnoseItem,
-  usePersonalPracticePrompt,
-  useUpdateReinforcementStatus,
-  getReinforcementItems,
   getSessionStats,
   type SessionItem,
-  type DifficultyDiagnosis,
-  type PersonalPracticeContext,
-  type ReinforcementStatus,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -30,151 +24,222 @@ import {
   CheckCircle2,
   XCircle,
   ArrowRight,
+  ArrowLeft,
   RefreshCw,
   ChevronRight,
   Brain,
   Pencil,
-  History,
-  Target,
-  Lightbulb,
-  Zap,
-  BookOpen,
   MessageCircle,
-  ChevronDown,
+  Lightbulb,
+  BookOpen,
+  Tag,
+  TrendingUp,
+  Target,
 } from "lucide-react";
 
 // ═══════════════════════════════════════
-// Progress Header
+// Constants
+// ═══════════════════════════════════════
+
+const ROUND_LABELS: Record<number, string> = {
+  1: "主动回忆",
+  2: "语境填空",
+  3: "个人造句",
+};
+
+const ROUND_ICONS: Record<number, typeof Brain> = {
+  1: Brain,
+  2: Pencil,
+  3: MessageCircle,
+};
+
+// ═══════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════
+
+function buildClozeText(item: SessionItem): string {
+  const expr = item.expression;
+  const english = expr?.english || "";
+  const clozeSaved = expr?.cloze_sentence;
+  const example = expr?.example_sentence;
+
+  // Prefer pre-generated cloze_sentence
+  if (clozeSaved) return clozeSaved;
+
+  // Try to blank out the expression in the example sentence
+  if (example) {
+    const escaped = english.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, "gi");
+    const replaced = example.replace(regex, "_____");
+    if (replaced !== example) return replaced;
+
+    // If expression not found in example, blank out a phrase in the middle
+    const words = example.split(/\s+/);
+    if (words.length >= 6) {
+      const start = Math.floor(words.length * 0.3);
+      const end = Math.min(words.length, start + 3);
+      const parts = [...words];
+      for (let i = start; i < end; i++) parts[i] = "_____";
+      return parts.join(" ");
+    }
+
+    // Fallback: blank out the whole example
+    return example;
+  }
+
+  // No example at all — blank out the expression itself
+  const words = english.split(/\s+/);
+  if (words.length >= 2) {
+    const mid = Math.floor(words.length / 2);
+    const parts = [...words];
+    parts[mid] = "_____";
+    return parts.join(" ");
+  }
+
+  return `_____ (${expr?.chinese || ""})`;
+}
+
+// ═══════════════════════════════════════
+// Session Header — 3-stage flow indicator
 // ═══════════════════════════════════════
 
 function SessionHeader({
   stats,
-  currentStage,
-  reinforcementRound,
-  onAdvanceStage,
-  hasReinforcement,
+  currentRound,
+  roundOrderLength,
+  currentIndex,
+  onBack,
 }: {
   stats: ReturnType<typeof getSessionStats>;
-  currentStage: string;
-  reinforcementRound: number;
-  onAdvanceStage: () => void;
-  hasReinforcement: boolean;
+  currentRound: number;
+  roundOrderLength: number;
+  currentIndex: number;
+  onBack: () => void;
 }) {
-  const stageLabel =
-    currentStage === "recall" ? "主动回忆" : currentStage === "sentence" ? "深度练习" : "应用练习";
-  const stageIcons: Record<string, typeof Brain> = {
-    recall: Brain,
-    sentence: Pencil,
-    application: Target,
-  };
-  const Icon = stageIcons[currentStage] || Brain;
-
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-4 space-y-3">
+      {/* Top row: back + title */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-sage-light flex items-center justify-center">
-            <Icon size={18} className="text-sage-deep" />
-          </div>
+          <button
+            onClick={onBack}
+            className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-warm-cream transition-colors"
+          >
+            <ArrowLeft size={16} className="text-ink-light" />
+          </button>
           <div>
-            <h3 className="font-semibold text-ink text-sm">{stageLabel}</h3>
+            <h3 className="font-semibold text-ink text-sm">
+              {ROUND_LABELS[currentRound]}
+            </h3>
             <p className="text-[11px] text-ink-light">
-              {reinforcementRound > 0
-                ? `第 ${reinforcementRound + 1} 轮 · 强化训练`
-                : `第 1 轮 · ${stats.total} 个表达`}
+              Round {currentRound}/3 · {stats.total} 个表达
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Progress bar */}
-          <div className="flex items-center gap-1.5">
-            <div className="w-20 h-2 bg-warm-cream rounded-full overflow-hidden">
-              <div
-                className="h-full bg-sage-deep rounded-full transition-all"
-                style={{
-                  width: `${stats.total > 0 ? ((stats.passed) / stats.total) * 100 : 0}%`,
-                }}
-              />
-            </div>
-            <span className="text-xs font-medium text-ink-light">
-              {stats.passed}/{stats.total}
-            </span>
+
+        {/* Progress */}
+        <div className="flex items-center gap-1.5">
+          <div className="w-20 h-2 bg-warm-cream rounded-full overflow-hidden">
+            <div
+              className="h-full bg-sage-deep rounded-full transition-all duration-300"
+              style={{
+                width: `${roundOrderLength > 0 ? ((currentIndex) / roundOrderLength) * 100 : 0}%`,
+              }}
+            />
           </div>
-          {/* Advance to next stage */}
-          {currentStage === "recall" && stats.pending === 0 && stats.inProgress === 0 && (
-            <button
-              onClick={onAdvanceStage}
-              className="flex items-center gap-1 px-3 py-1.5 bg-sage-light text-sage-deep text-xs font-medium rounded-lg hover:bg-sage-light/70 transition-colors"
-            >
-              进入造句 <ArrowRight size={12} />
-            </button>
-          )}
+          <span className="text-xs font-medium text-ink-light">
+            {Math.min(currentIndex + 1, roundOrderLength)}/{roundOrderLength}
+          </span>
         </div>
       </div>
 
-      {/* Failed items hint */}
-      {hasReinforcement && stats.failed > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-accent-warm/10 rounded-lg">
-          <RefreshCw size={13} className="text-accent-warm" />
-          <span className="text-xs text-accent-warm">
-            {stats.failed} 个困难表达将在当前轮次结束后强化
-          </span>
-        </div>
-      )}
+      {/* 3-stage indicator */}
+      <div className="flex items-center gap-1.5">
+        {[1, 2, 3].map((r) => {
+          const Icon = ROUND_ICONS[r];
+          const isActive = r === currentRound;
+          const isDone = r < currentRound;
+          return (
+            <div
+              key={r}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
+                isActive && "bg-sage-light text-sage-deep",
+                isDone && "bg-warm-cream text-ink-lighter",
+                !isActive && !isDone && "bg-warm-cream/50 text-ink-lighter/50",
+              )}
+            >
+              <Icon size={12} />
+              <span>{ROUND_LABELS[r]}</span>
+              {isDone && <CheckCircle2 size={10} className="text-sage-deep" />}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Overall stats bar */}
+      <div className="flex items-center gap-4 text-[11px] text-ink-lighter">
+        <span className="flex items-center gap-1">
+          <div className="h-2 w-2 rounded-full bg-sage-deep" />
+          掌握 {stats.passed}
+        </span>
+        <span className="flex items-center gap-1">
+          <div className="h-2 w-2 rounded-full bg-accent-warm" />
+          困难 {stats.failed}
+        </span>
+        <span className="flex items-center gap-1">
+          <div className="h-2 w-2 rounded-full bg-ink-lighter/30" />
+          待练 {stats.pending}
+        </span>
+      </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════
-// Recall Card (show Chinese → type English)
+// Round 1: Active Recall Card
+// Shows full expression details after reveal
 // ═══════════════════════════════════════
-
-// ── Diagnosis display helpers ──
-
-const PROBLEM_TYPE_CONFIG: Record<string, { icon: typeof Brain; label: string; color: string }> = {
-  memory: { icon: Brain, label: "记忆问题", color: "text-purple-600 bg-purple-50 border-purple-200" },
-  application: { icon: Pencil, label: "应用问题", color: "text-blue-600 bg-blue-50 border-blue-200" },
-  context: { icon: MessageCircle, label: "语境问题", color: "text-amber-600 bg-amber-50 border-amber-200" },
-  fluency: { icon: Zap, label: "流利度问题", color: "text-emerald-600 bg-emerald-50 border-emerald-200" },
-};
 
 function RecallCard({
   item,
-  diagnosis,
-  isDiagnosing,
   onResult,
 }: {
   item: SessionItem;
-  diagnosis?: DifficultyDiagnosis | null;
-  isDiagnosing?: boolean;
-  onResult: (itemId: string, passed: boolean, score: number) => void;
+  onResult: (itemId: string, score: number) => void;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [selfRating, setSelfRating] = useState<number | null>(null);
-  const [showDiagnosis, setShowDiagnosis] = useState(false);
+  const expr = item.expression;
 
   const handleReveal = () => setRevealed(true);
 
   const handleRate = (rating: number) => {
     setSelfRating(rating);
-    const passed = rating >= 3;
-    setTimeout(() => {
-      onResult(item.id, passed, rating);
-      if (!passed) setShowDiagnosis(true);
-    }, 200);
+    setTimeout(() => onResult(item.id, rating), 200);
   };
-
-  const ptConfig = diagnosis ? PROBLEM_TYPE_CONFIG[diagnosis.problem_type] : null;
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* Chinese prompt */}
-      <div>
+      {/* Chinese cue */}
+      <div className="text-center">
         <p className="text-[11px] text-ink-lighter mb-1">中文提示</p>
-        <p className="text-lg font-medium text-ink">{item.expression?.chinese}</p>
+        <p className="text-xl font-bold text-ink">{expr?.chinese}</p>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          {expr?.scene && (
+            <span className="text-[10px] bg-ink/5 text-ink-lighter rounded-full px-2 py-0.5">
+              {expr.scene}
+            </span>
+          )}
+          {expr?.formality && (
+            <span className="text-[10px] bg-sage-light/50 text-sage-deep rounded-full px-2 py-0.5">
+              {expr.formality}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Answer reveal */}
+      {/* Reveal button or answer details */}
       {!revealed ? (
         <button
           onClick={handleReveal}
@@ -184,16 +249,96 @@ function RecallCard({
         </button>
       ) : (
         <div className="space-y-4">
-          {/* English answer */}
-          <div className="p-4 bg-warm-cream rounded-xl">
-            <p className="text-[11px] text-ink-lighter mb-1">正确表达</p>
-            <p className="text-base font-medium text-ink">{item.expression?.english}</p>
-            {item.expression?.pronunciation && (
-              <p className="text-xs text-ink-light mt-1">/{item.expression.pronunciation}/</p>
+          {/* English answer + pronunciation */}
+          <div className="p-4 bg-warm-cream rounded-xl text-center">
+            <p className="text-lg font-bold text-sage-deep">{expr?.english}</p>
+            {expr?.pronunciation && (
+              <p className="text-xs text-ink-light mt-1">/{expr.pronunciation}/</p>
             )}
           </div>
 
-          {/* Self-rating */}
+          {/* English explanation */}
+          {expr?.english_explanation && (
+            <div className="px-1">
+              <p className="text-xs text-ink-light leading-relaxed">
+                {expr.english_explanation}
+              </p>
+            </div>
+          )}
+
+          {/* Example sentence */}
+          {expr?.example_sentence && (
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter mb-1">例句</p>
+              <p className="text-xs text-ink italic leading-relaxed">
+                {expr.example_sentence}
+              </p>
+            </div>
+          )}
+
+          {/* Common patterns */}
+          {expr?.common_patterns && (
+            <div className="bg-ink/5 rounded-xl p-3">
+              <p className="text-[10px] text-ink-lighter mb-1">常见搭配</p>
+              <p className="text-xs text-ink font-mono">{expr.common_patterns}</p>
+            </div>
+          )}
+
+          {/* Usage note */}
+          {expr?.usage_note && (
+            <div className="flex items-start gap-2 px-1">
+              <BookOpen size={13} className="text-ink-lighter shrink-0 mt-0.5" />
+              <p className="text-xs text-ink-light">{expr.usage_note}</p>
+            </div>
+          )}
+
+          {/* Native usage */}
+          {expr?.native_usage && (
+            <div className="flex items-start gap-2 px-1">
+              <MessageCircle size={13} className="text-ink-lighter shrink-0 mt-0.5" />
+              <p className="text-xs text-ink-light">{expr.native_usage}</p>
+            </div>
+          )}
+
+          {/* Context / Situation */}
+          {(expr?.context || expr?.situation) && (
+            <div className="flex items-center gap-2 px-1">
+              <Tag size={12} className="text-ink-lighter shrink-0" />
+              <span className="text-[10px] text-ink-lighter">
+                {[expr.context, expr.situation].filter(Boolean).join(" · ")}
+              </span>
+            </div>
+          )}
+
+          {/* Synonyms */}
+          {expr?.synonyms && (
+            <p className="text-[11px] text-ink-lighter px-1">
+              近义表达: <span className="text-ink">{expr.synonyms}</span>
+            </p>
+          )}
+
+          {/* Common mistakes */}
+          {expr?.common_mistakes && (
+            <div className="flex items-start gap-2 bg-accent-warm/5 rounded-xl p-3">
+              <AlertTriangle size={13} className="text-accent-warm shrink-0 mt-0.5" />
+              <p className="text-xs text-accent-warm/90">{expr.common_mistakes}</p>
+            </div>
+          )}
+
+          {/* Memory tip */}
+          {expr?.memory_tip && (
+            <div className="flex items-start gap-2 bg-amber-50/50 rounded-xl p-3">
+              <Lightbulb size={13} className="text-amber-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">{expr.memory_tip}</p>
+            </div>
+          )}
+
+          {/* Notes */}
+          {expr?.notes && (
+            <p className="text-[11px] text-ink-lighter px-1 italic">{expr.notes}</p>
+          )}
+
+          {/* Self-rating buttons */}
           <div>
             <p className="text-xs text-ink-light mb-2">你记得怎么样？</p>
             <div className="flex gap-2">
@@ -210,7 +355,9 @@ function RecallCard({
                   disabled={selfRating !== null}
                   className={cn(
                     "flex-1 py-2 rounded-lg text-xs font-medium border transition-all",
-                    selfRating === score ? color : "border-border/40 text-ink-light hover:bg-warm-cream",
+                    selfRating === score
+                      ? color
+                      : "border-border/40 text-ink-light hover:bg-warm-cream",
                     selfRating !== null && selfRating !== score && "opacity-40",
                   )}
                 >
@@ -220,54 +367,6 @@ function RecallCard({
               ))}
             </div>
           </div>
-
-          {/* V3.1: AI Diagnosis for failed items */}
-          {selfRating !== null && selfRating < 4 && (
-            <div className="space-y-2">
-              {isDiagnosing ? (
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-warm-cream rounded-xl">
-                  <Loader2 size={14} className="animate-spin text-sage" />
-                  <span className="text-xs text-ink-light">AI 正在分析你的困难原因…</span>
-                </div>
-              ) : diagnosis ? (
-                <div className={cn("border rounded-xl overflow-hidden transition-all", ptConfig?.color.split(" ")[2] || "border-border/40")}>
-                  <button
-                    onClick={() => setShowDiagnosis(!showDiagnosis)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-opacity-50"
-                  >
-                    <div className="flex items-center gap-2">
-                      {ptConfig && <ptConfig.icon size={14} className={ptConfig.color.split(" ")[0]} />}
-                      <span className="text-xs font-medium text-ink">
-                        {ptConfig?.label || "诊断"} · {diagnosis.suggestion.slice(0, 30)}…
-                      </span>
-                    </div>
-                    <ChevronDown
-                      size={14}
-                      className={cn("text-ink-lighter transition-transform", showDiagnosis && "rotate-180")}
-                    />
-                  </button>
-                  {showDiagnosis && (
-                    <div className="px-4 pb-3 space-y-2">
-                      <div className="flex flex-wrap gap-1">
-                        {diagnosis.sub_problems.map((sp) => (
-                          <span
-                            key={sp}
-                            className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-ink/5 text-ink-light"
-                          >
-                            {sp}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="flex items-start gap-1.5">
-                        <Lightbulb size={12} className="text-accent-warm mt-0.5 shrink-0" />
-                        <p className="text-xs text-ink-light leading-relaxed">{diagnosis.suggestion}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -275,113 +374,8 @@ function RecallCard({
 }
 
 // ═══════════════════════════════════════
-// Sentence Card
-// ═══════════════════════════════════════
-
-function SentenceCard({
-  item,
-  personalContext,
-  onResult,
-}: {
-  item: SessionItem;
-  personalContext?: PersonalPracticeContext | null;
-  onResult: (itemId: string, sentence: string, score: number) => void;
-}) {
-  const [sentence, setSentence] = useState(item.userSentence || "");
-  const [submitted, setSubmitted] = useState(false);
-
-  const handleSubmit = () => {
-    if (!sentence.trim()) return;
-    setSubmitted(true);
-    // Self-score: simple heuristic — longer sentences with the expression get higher scores
-    const hasExpression = sentence
-      .toLowerCase()
-      .includes((item.expression?.english || "").toLowerCase());
-    const score = sentence.length > 20 && hasExpression ? 4 : sentence.length > 10 ? 3 : 2;
-    onResult(item.id, sentence, score);
-  };
-
-  return (
-    <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-4">
-      {/* Target expression */}
-      <div>
-        <p className="text-[11px] text-ink-lighter mb-1">用这个表达造句</p>
-        <p className="text-lg font-semibold text-sage-deep">{item.expression?.english}</p>
-        <p className="text-xs text-ink-light mt-0.5">{item.expression?.chinese}</p>
-      </div>
-
-      {/* V3.1: Personalized practice prompt */}
-      {personalContext && personalContext.scenario !== "日常场景" && (
-        <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1.5">
-          <div className="flex items-center gap-1.5">
-            <BookOpen size={12} className="text-blue-500" />
-            <span className="text-[11px] font-medium text-blue-600">个性化场景</span>
-          </div>
-          <p className="text-xs text-blue-700">{personalContext.scenario}</p>
-          <p className="text-xs text-blue-600/80 leading-relaxed">{personalContext.prompt}</p>
-          {personalContext.asset_title && (
-            <p className="text-[10px] text-blue-400">
-              关联素材：{personalContext.asset_title}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Sentence input */}
-      <div>
-        <textarea
-          value={sentence}
-          onChange={(e) => setSentence(e.target.value)}
-          disabled={submitted}
-          placeholder={
-            personalContext?.prompt
-              ? personalContext.prompt
-              : "用这个表达写一个句子..."
-          }
-          rows={3}
-          className={cn(
-            "w-full px-4 py-3 rounded-xl border text-sm resize-none transition-colors",
-            "focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage",
-            submitted ? "bg-warm-cream border-border/30" : "border-border/60",
-          )}
-        />
-      </div>
-
-      {/* Submit */}
-      {!submitted && (
-        <button
-          onClick={handleSubmit}
-          disabled={!sentence.trim()}
-          className={cn(
-            "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
-            sentence.trim()
-              ? "bg-sage text-white hover:bg-sage-deep"
-              : "bg-warm-cream text-ink-lighter cursor-not-allowed",
-          )}
-        >
-          提交造句
-        </button>
-      )}
-
-      {/* Submitted feedback */}
-      {submitted && (
-        <div className="p-4 bg-sage-light/50 rounded-xl space-y-3">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 size={14} className="text-sage-deep" />
-            <span className="text-xs text-sage-deep font-medium">已记录</span>
-          </div>
-          <p className="text-sm text-ink italic">"{sentence}"</p>
-          <p className="text-[11px] text-ink-light">
-            评分基于句子长度和表达使用情况自动生成。未来版本将接入 AI 评分。
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════
-// Cloze Card (Round 2: fill-in-blank)
+// Round 2: Cloze Card (fill-in-blank)
+// Uses cloze_sentence → example_sentence → fallback
 // ═══════════════════════════════════════
 
 function ClozeCard({
@@ -391,41 +385,30 @@ function ClozeCard({
   item: SessionItem;
   onResult: (itemId: string, passed: boolean) => void;
 }) {
-  const expr = item.expression?.english || "";
-  // Create a cloze by removing 2-4 words from the expression or example
-  const source = item.expression?.example_sentence || expr;
-  const words = source.split(/\s+/);
-  const blankIdx = words.length > 4
-    ? Math.floor(words.length * 0.3) + (Math.floor(Math.random() * Math.min(3, words.length - 2)))
-    : Math.floor(words.length / 2);
-  const blankStart = Math.max(0, blankIdx - 1);
-  const blankEnd = Math.min(words.length, blankIdx + 2);
-  const blanks = words.slice(blankStart, blankEnd).map((w) => w.replace(/[.,!?;:'"]/g, ""));
-
+  const clozeText = buildClozeText(item);
+  const english = item.expression?.english || "";
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
 
   const handleSubmit = () => {
+    if (!answer.trim()) return;
     const normalized = answer.trim().toLowerCase();
-    const correct = blanks.some((b) => normalized.includes(b.toLowerCase())) ||
-      blanks.join(" ").toLowerCase() === normalized;
+    const engLower = english.toLowerCase();
+    // Check if the user's answer contains the expression or key words
+    const correct =
+      normalized.includes(engLower) ||
+      engLower.includes(normalized) ||
+      english.split(/\s+/).some((w) => w.length > 3 && normalized.includes(w.toLowerCase()));
     setIsCorrect(correct);
     setSubmitted(true);
     setTimeout(() => onResult(item.id, correct), 300);
   };
 
-  const clozeText = words.map((w, i) => {
-    if (i >= blankStart && i < blankEnd) {
-      return "____";
-    }
-    return w;
-  }).join(" ");
-
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
       <div>
-        <p className="text-[11px] text-ink-lighter mb-1">填空练习 · 第2轮强化</p>
+        <p className="text-[11px] text-ink-lighter mb-1">填空练习 · Round 2</p>
         <p className="text-sm text-ink-light">{item.expression?.chinese}</p>
       </div>
 
@@ -434,16 +417,14 @@ function ClozeCard({
           <div className="p-4 bg-warm-cream rounded-xl">
             <p className="text-base font-medium text-ink leading-relaxed">{clozeText}</p>
           </div>
-          <div>
-            <input
-              type="text"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              placeholder="填入缺少的单词..."
-              className="w-full px-4 py-3 rounded-xl border border-border/60 text-sm focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage"
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-            />
-          </div>
+          <input
+            type="text"
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            placeholder="填入缺少的单词..."
+            className="w-full px-4 py-3 rounded-xl border border-border/60 text-sm focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage"
+            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+          />
           <button
             onClick={handleSubmit}
             disabled={!answer.trim()}
@@ -459,17 +440,19 @@ function ClozeCard({
         </div>
       ) : (
         <div className="space-y-3">
-          <div className={cn(
-            "flex items-center gap-2 px-4 py-3 rounded-xl",
-            isCorrect ? "bg-sage-light/50" : "bg-accent-warm/10",
-          )}>
+          <div
+            className={cn(
+              "flex items-center gap-2 px-4 py-3 rounded-xl",
+              isCorrect ? "bg-sage-light/50" : "bg-accent-warm/10",
+            )}
+          >
             {isCorrect ? (
               <CheckCircle2 size={16} className="text-sage-deep" />
             ) : (
               <XCircle size={16} className="text-accent-warm" />
             )}
             <span className={cn("text-sm font-medium", isCorrect ? "text-sage-deep" : "text-accent-warm")}>
-              {isCorrect ? "正确" : `正确答案: ${blanks.join(" ")}`}
+              {isCorrect ? "正确!" : `正确答案: ${english}`}
             </span>
           </div>
         </div>
@@ -479,17 +462,15 @@ function ClozeCard({
 }
 
 // ═══════════════════════════════════════
-// Context Card (Round 3: scenario-based)
+// Round 3: Personal Sentence Card
 // ═══════════════════════════════════════
 
-function ContextCard({
+function SentenceCard({
   item,
-  personalContext,
   onResult,
 }: {
   item: SessionItem;
-  personalContext?: PersonalPracticeContext | null;
-  onResult: (itemId: string, sentence: string, passed: boolean) => void;
+  onResult: (itemId: string, sentence: string) => void;
 }) {
   const [sentence, setSentence] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -497,33 +478,23 @@ function ContextCard({
   const handleSubmit = () => {
     if (!sentence.trim()) return;
     setSubmitted(true);
-    const hasExpression = sentence
-      .toLowerCase()
-      .includes((item.expression?.english || "").split(" ")[0].toLowerCase());
-    const passed = sentence.length > 15 && hasExpression;
-    onResult(item.id, sentence, passed);
+    onResult(item.id, sentence);
   };
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-4">
       <div>
-        <p className="text-[11px] text-ink-lighter mb-1">场景造句 · 第3轮强化</p>
-        <p className="text-base font-semibold text-sage-deep">{item.expression?.english}</p>
+        <p className="text-[11px] text-ink-lighter mb-1">用这个表达造句 · Round 3</p>
+        <p className="text-lg font-semibold text-sage-deep">{item.expression?.english}</p>
         <p className="text-xs text-ink-light mt-0.5">{item.expression?.chinese}</p>
       </div>
-
-      {personalContext && (
-        <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl">
-          <p className="text-xs text-blue-700 leading-relaxed">{personalContext.prompt}</p>
-        </div>
-      )}
 
       {!submitted ? (
         <>
           <textarea
             value={sentence}
             onChange={(e) => setSentence(e.target.value)}
-            placeholder={personalContext?.prompt || "结合你的实际场景，用这个表达造一个句子..."}
+            placeholder="结合你的实际场景，用这个表达写一个句子..."
             rows={3}
             className="w-full px-4 py-3 rounded-xl border border-border/60 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-sage/30 focus:border-sage"
           />
@@ -544,7 +515,7 @@ function ContextCard({
         <div className="p-4 bg-sage-light/50 rounded-xl space-y-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 size={14} className="text-sage-deep" />
-            <span className="text-xs text-sage-deep font-medium">第3轮完成</span>
+            <span className="text-xs text-sage-deep font-medium">已记录</span>
           </div>
           <p className="text-sm text-ink italic">"{sentence}"</p>
         </div>
@@ -554,50 +525,116 @@ function ContextCard({
 }
 
 // ═══════════════════════════════════════
-// Completion Screen
+// Round Complete Screen
 // ═══════════════════════════════════════
 
-function CompletionScreen({
-  stats,
-  reinforcementCount,
-  onReinforce,
+function RoundCompleteScreen({
+  round,
+  totalInRound,
+  passedInRound,
+  failedInRound,
+  onContinue,
   onDone,
 }: {
-  stats: ReturnType<typeof getSessionStats>;
-  reinforcementCount: number;
-  onReinforce: () => void;
+  round: number;
+  totalInRound: number;
+  passedInRound: number;
+  failedInRound: number;
+  onContinue: () => void;
   onDone: () => void;
 }) {
+  const isFinal = round >= 3 || failedInRound === 0;
+
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-5">
       <div className="h-14 w-14 rounded-2xl bg-sage-light flex items-center justify-center mx-auto">
         <CheckCircle2 size={28} className="text-sage-deep" />
       </div>
       <div>
-        <h3 className="text-lg font-semibold text-ink">本轮完成</h3>
+        <h3 className="text-lg font-semibold text-ink">
+          {ROUND_LABELS[round]} 完成
+        </h3>
         <p className="text-sm text-ink-light mt-1">
-          {stats.passed} 个掌握 · {stats.failed} 个需要强化
+          {totalInRound} 个表达 · {passedInRound} 个通过 · {failedInRound} 个困难
         </p>
       </div>
 
+      {!isFinal && failedInRound > 0 && (
+        <div className="flex items-center justify-center gap-1.5 text-xs text-accent-warm">
+          <RefreshCw size={12} />
+          <span>{failedInRound} 个困难表达进入下一轮强化</span>
+        </div>
+      )}
+
       <div className="flex items-center justify-center gap-3">
-        {reinforcementCount > 0 && (
+        {isFinal ? (
           <button
-            onClick={onReinforce}
-            className="flex items-center gap-2 px-4 py-2.5 bg-accent-warm/10 text-accent-warm rounded-xl text-sm font-medium hover:bg-accent-warm/20 transition-colors"
+            onClick={onDone}
+            className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
           >
-            <RefreshCw size={14} />
-            强化 {reinforcementCount} 个困难表达
+            <TrendingUp size={14} />
+            完成复习
+            <ChevronRight size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={onContinue}
+            className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
+          >
+            进入 {ROUND_LABELS[round + 1]}
+            <ArrowRight size={14} />
           </button>
         )}
-        <button
-          onClick={onDone}
-          className="flex items-center gap-2 px-4 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
-        >
-          完成
-          <ChevronRight size={14} />
-        </button>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// Final Completion Screen
+// ═══════════════════════════════════════
+
+function FinalScreen({
+  stats,
+  onDone,
+}: {
+  stats: ReturnType<typeof getSessionStats>;
+  onDone: () => void;
+}) {
+  return (
+    <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-5">
+      <div className="h-14 w-14 rounded-2xl bg-sage-light flex items-center justify-center mx-auto">
+        <Target size={28} className="text-sage-deep" />
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold text-ink">今日复习完成</h3>
+        <p className="text-sm text-ink-light mt-1">
+          所有表达已完成全部 3 轮练习
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-sage-light/50 rounded-xl p-3">
+          <p className="text-xl font-bold text-sage-deep">{stats.passed}</p>
+          <p className="text-[10px] text-ink-lighter">已掌握</p>
+        </div>
+        <div className="bg-accent-warm/10 rounded-xl p-3">
+          <p className="text-xl font-bold text-accent-warm">{stats.failed}</p>
+          <p className="text-[10px] text-ink-lighter">需继续</p>
+        </div>
+        <div className="bg-blue-50 rounded-xl p-3">
+          <p className="text-xl font-bold text-blue-500">{stats.total}</p>
+          <p className="text-[10px] text-ink-lighter">总计</p>
+        </div>
+      </div>
+
+      <button
+        onClick={onDone}
+        className="flex items-center gap-2 px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors mx-auto"
+      >
+        返回 English OS
+        <ChevronRight size={14} />
+      </button>
     </div>
   );
 }
@@ -613,78 +650,63 @@ export default function EnglishReviewV3() {
   const recordLog = useRecordPracticeLog();
   const submitReview = useSubmitReview();
   const updateStage = useUpdateSessionStage();
-  const diagnoseItem = useDiagnoseItem();
-  const personalPractice = usePersonalPracticePrompt();
-  const updateReinforcementStatus = useUpdateReinforcementStatus();
 
+  // ── Round state ──
+  const [round, setRound] = useState<1 | 2 | 3>(1);
+  const [roundOrder, setRoundOrder] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
   const [roundComplete, setRoundComplete] = useState(false);
-  const [reinforcementRound, setReinforcementRound] = useState(0);
-  const [reinforcementType, setReinforcementType] = useState<"recall" | "cloze" | "context">("recall");
-  const [stage, setStage] = useState<"recall" | "sentence">("recall");
-
-  // V3.1: Diagnosis state
-  const [diagnoses, setDiagnoses] = useState<Record<string, DifficultyDiagnosis>>({});
-  const [diagnosingIds, setDiagnosingIds] = useState<Set<string>>(new Set());
-
-  // V3.1: Personal practice contexts (loaded when entering sentence stage)
-  const [personalContexts, setPersonalContexts] = useState<Record<string, PersonalPracticeContext>>({});
-
-  const MAX_REINFORCEMENT_POOL = 5;
-  const MAX_DEEP_PRACTICE = 5;
+  const [sessionComplete, setSessionComplete] = useState(false);
+  const [roundStats, setRoundStats] = useState({ passed: 0, failed: 0 });
 
   const session = data?.session;
   const allItems = data?.items || [];
 
-  // Current queue: pending/active items for the current stage
-  const queue = useMemo(() => {
-    if (stage === "recall") {
-      return allItems.filter(
-        (i) =>
-          i.status === "pending" ||
-          i.status === "reinforcement" ||
-          (i.status === "failed" && reinforcementRound < 3),
-      );
-    }
-    if (stage === "sentence") {
-      // V3.1: Only select up to 5 items for deep practice
-      // Prioritize: lowest recall scores + needs_context classification
-      const candidates = allItems
-        .filter((i) => i.recallScore !== null && i.sentenceScore === null && i.status !== "failed")
-        .sort((a, b) => (a.recallScore || 3) - (b.recallScore || 3));
-      return candidates.slice(0, MAX_DEEP_PRACTICE);
-    }
-    return allItems;
-  }, [allItems, stage, reinforcementRound]);
+  // ── Derive round order when round changes or items load ──
+  useEffect(() => {
+    if (allItems.length === 0) return;
+    if (sessionComplete) return;
 
-  const stats = getSessionStats(allItems);
-  const reinforcementItems = getReinforcementItems(allItems);
-
-  const currentItem = queue[currentIndex] || null;
-  const isSessionComplete = currentIndex >= queue.length && queue.length > 0;
-
-  // Handle recall result
-  const handleRecallResult = useCallback(
-    async (itemId: string, passed: boolean, score: number) => {
-      const item = allItems.find((i) => i.id === itemId);
-      if (!item) return;
-
-      const newStatus = passed ? "passed" : "failed";
-      const newAttemptCount = item.attemptCount + 1;
-
-      // V3.1: Classify result
-      let classification: "mastered" | "needs_reinforcement" | "needs_context" | undefined;
-      let reinfStatus: ReinforcementStatus = "none";
-      if (score >= 4) {
-        classification = "mastered";
-        reinfStatus = "mastered";
-      } else if (score <= 2) {
-        classification = "needs_reinforcement";
-        reinfStatus = reinforcementRound === 0 ? "queued" : "round1_recall";
-      } else {
-        classification = "needs_context";
-        reinfStatus = "round3_context";
+    let order: string[];
+    if (round === 1) {
+      // Round 1: all items in the session
+      order = allItems.filter((i) => i.status === "pending").map((i) => i.id);
+      if (order.length === 0) {
+        // All items already processed — session is stale, skip
+        setSessionComplete(true);
+        return;
       }
+    } else if (round === 2) {
+      // Round 2: items that failed Round 1 (recall_score < 3)
+      order = allItems
+        .filter((i) => i.recallScore !== null && i.recallScore < 3 && i.status !== "completed")
+        .map((i) => i.id);
+    } else {
+      // Round 3: items still failed after Round 2
+      order = allItems
+        .filter((i) => i.status === "failed" && (i.reinforcementRound || 0) >= 2)
+        .map((i) => i.id);
+    }
+
+    setRoundOrder(order);
+    setCurrentIndex(0);
+    currentIndexRef.current = 0;
+    setRoundComplete(false);
+  }, [round, allItems, sessionComplete]);
+
+  const currentItemId = roundOrder[currentIndex] || null;
+  const currentItem = allItems.find((i) => i.id === currentItemId) || null;
+  const stats = getSessionStats(allItems);
+
+  // ── Round 1: Active Recall handler ──
+  const handleRecallResult = useCallback(
+    async (itemId: string, score: number) => {
+      const item = allItems.find((i) => i.id === itemId);
+      if (!item || !session) return;
+
+      const passed = score >= 3;
+      const newStatus = passed ? "passed" : "failed";
 
       // Update session item
       await updateItem.mutateAsync({
@@ -692,288 +714,150 @@ export default function EnglishReviewV3() {
         updates: {
           recallScore: score,
           status: newStatus,
-          attemptCount: newAttemptCount,
-          reinforcementRound,
+          attemptCount: item.attemptCount + 1,
+          reinforcementRound: 0,
         },
       });
-
-      // V3.1: Save classification and reinforcement status
-      if (!passed) {
-        updateReinforcementStatus.mutate({
-          itemId,
-          reinforcementStatus: reinfStatus,
-          resultClassification: classification,
-          reinforcementRound,
-        });
-      }
 
       // Record practice log
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "recall",
         score,
-        sessionId: session?.id,
+        sessionId: session.id,
       });
 
-      // Also submit SRS review
-      const rating = score >= 4 ? "good" : score >= 3 ? "hard" : "again";
+      // SRS update (Round 1 only)
+      // Failed-but-reinforced items capped at "hard" (not "again")
+      const srsRating =
+        score >= 4 ? "good" : score >= 3 ? "hard" : "hard";
       submitReview.mutate({
         expressionId: item.expressionId,
-        rating: rating as "again" | "hard" | "good" | "easy",
+        rating: srsRating as "again" | "hard" | "good" | "easy",
         reviewMode: "active_recall",
       });
 
-      // V3.1: Trigger AI diagnosis for failed items
-      if (!passed && item.expression) {
-        setDiagnosingIds((prev) => new Set(prev).add(itemId));
-        try {
-          const recentFailed = allItems
-            .filter((i) => i.status === "failed" || i.status === "reinforcement")
-            .slice(-5)
-            .map((i) => ({
-              expression: i.expression?.english || "",
-              score: i.recallScore || 0,
-              status: i.status,
-            }));
+      // Track round stats
+      setRoundStats((prev) => ({
+        passed: prev.passed + (passed ? 1 : 0),
+        failed: prev.failed + (passed ? 0 : 1),
+      }));
 
-          const diagnosis = await diagnoseItem.mutateAsync({
-            itemId,
-            expressionEnglish: item.expression.english,
-            expressionChinese: item.expression.chinese,
-            expressionExample: item.expression.example_sentence,
-            score,
-            sessionId: session?.id,
-            recentAttempts: recentFailed,
-          });
-          setDiagnoses((prev) => ({ ...prev, [itemId]: diagnosis }));
-        } catch {
-          // Diagnosis is non-blocking; silently ignore failures
-        }
-        setDiagnosingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(itemId);
-          return next;
-        });
-      }
-
-      // Advance
-      if (currentIndex >= queue.length - 1) {
-        setRoundComplete(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
-      }
+      // Advance using ref (avoid stale closure)
+      const nextIdx = currentIndexRef.current + 1;
+      currentIndexRef.current = nextIdx;
+      setCurrentIndex(nextIdx);
     },
-    [allItems, currentIndex, queue.length, reinforcementRound, updateItem, recordLog, session?.id, submitReview, diagnoseItem, updateReinforcementStatus],
+    [allItems, session, updateItem, recordLog, submitReview],
   );
 
-  // Handle cloze result (reinforcement round 2)
+  // ── Round 2: Cloze handler (no SRS update) ──
   const handleClozeResult = useCallback(
     async (itemId: string, passed: boolean) => {
       const item = allItems.find((i) => i.id === itemId);
-      if (!item) return;
+      if (!item || !session) return;
 
       const newStatus = passed ? "passed" : "failed";
-      const nextReinfStatus: ReinforcementStatus = passed ? "mastered" : "round3_context";
 
       await updateItem.mutateAsync({
         itemId,
         updates: {
           status: newStatus,
           attemptCount: item.attemptCount + 1,
+          reinforcementRound: 2,
         },
       });
 
-      updateReinforcementStatus.mutate({
-        itemId,
-        reinforcementStatus: nextReinfStatus,
-        resultClassification: passed ? "mastered" : "needs_context",
-      });
-
+      // Log only — NO SRS update in Round 2
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "cloze",
         score: passed ? 4 : 2,
-        sessionId: session?.id,
+        sessionId: session.id,
       });
 
-      if (currentIndex >= queue.length - 1) {
-        setRoundComplete(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
-      }
+      setRoundStats((prev) => ({
+        passed: prev.passed + (passed ? 1 : 0),
+        failed: prev.failed + (passed ? 0 : 1),
+      }));
+
+      const nextIdx = currentIndexRef.current + 1;
+      currentIndexRef.current = nextIdx;
+      setCurrentIndex(nextIdx);
     },
-    [allItems, currentIndex, queue.length, updateItem, updateReinforcementStatus, recordLog, session?.id],
+    [allItems, session, updateItem, recordLog],
   );
 
-  // Handle context result (reinforcement round 3)
-  const handleContextResult = useCallback(
-    async (itemId: string, sentence: string, passed: boolean) => {
-      const item = allItems.find((i) => i.id === itemId);
-      if (!item) return;
-
-      const nextReinfStatus: ReinforcementStatus = passed ? "mastered" : "max_rounds";
-
-      await updateItem.mutateAsync({
-        itemId,
-        updates: {
-          userSentence: sentence,
-          status: passed ? "passed" : "failed",
-          applicationScore: passed ? 4 : 2,
-          attemptCount: item.attemptCount + 1,
-        },
-      });
-
-      updateReinforcementStatus.mutate({
-        itemId,
-        reinforcementStatus: nextReinfStatus,
-        resultClassification: passed ? "mastered" : "needs_reinforcement",
-      });
-
-      recordLog.mutate({
-        expressionId: item.expressionId,
-        mode: "context",
-        answer: sentence,
-        score: passed ? 4 : 2,
-        sessionId: session?.id,
-      });
-
-      if (currentIndex >= queue.length - 1) {
-        setRoundComplete(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
-      }
-    },
-    [allItems, currentIndex, queue.length, updateItem, updateReinforcementStatus, recordLog, session?.id],
-  );
-
-  // Handle sentence result
+  // ── Round 3: Sentence handler (no SRS update) ──
   const handleSentenceResult = useCallback(
-    async (itemId: string, sentence: string, score: number) => {
+    async (itemId: string, sentence: string) => {
       const item = allItems.find((i) => i.id === itemId);
-      if (!item) return;
+      if (!item || !session) return;
 
       await updateItem.mutateAsync({
         itemId,
         updates: {
-          sentenceScore: score,
           userSentence: sentence,
+          sentenceScore: 3,
           status: "completed",
           attemptCount: item.attemptCount + 1,
+          reinforcementRound: 3,
         },
       });
 
+      // Log only — NO SRS update in Round 3
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "sentence",
         answer: sentence,
-        score,
-        sessionId: session?.id,
+        score: 3,
+        sessionId: session.id,
       });
 
-      if (currentIndex >= queue.length - 1) {
-        setRoundComplete(true);
-      } else {
-        setCurrentIndex((i) => i + 1);
-      }
+      setRoundStats((prev) => ({
+        passed: prev.passed + 1,
+        failed: prev.failed,
+      }));
+
+      const nextIdx = currentIndexRef.current + 1;
+      currentIndexRef.current = nextIdx;
+      setCurrentIndex(nextIdx);
     },
-    [allItems, currentIndex, queue.length, updateItem, recordLog, session?.id],
+    [allItems, session, updateItem, recordLog],
   );
 
-  // Start reinforcement with 3-round pipeline
-  const handleReinforce = useCallback(async () => {
-    // V3.1: Limit pool to 5 items (prioritize lowest scores)
-    const pool = [...reinforcementItems]
-      .sort((a, b) => (a.recallScore || 0) - (b.recallScore || 0))
-      .slice(0, MAX_REINFORCEMENT_POOL);
+  // ── Check round completion on index change ──
+  useEffect(() => {
+    if (roundOrder.length > 0 && currentIndex >= roundOrder.length && !roundComplete) {
+      setRoundComplete(true);
+    }
+  }, [currentIndex, roundOrder.length, roundComplete]);
 
-    const nextRound = reinforcementRound + 1;
-    const nextType: "recall" | "cloze" | "context" =
-      nextRound === 1 ? "recall" :
-      nextRound === 2 ? "cloze" : "context";
-
-    const nextStatus: ReinforcementStatus =
-      nextType === "recall" ? "round1_recall" :
-      nextType === "cloze" ? "round2_cloze" : "round3_context";
-
-    // Batch update all reinforcement items
-    await Promise.all(
-      pool.map((item) =>
-        updateItem.mutateAsync({
-          itemId: item.id,
-          updates: {
-            status: "reinforcement",
-            reinforcementRound: nextRound,
-          },
-        }).then(() =>
-          updateReinforcementStatus.mutateAsync({
-            itemId: item.id,
-            reinforcementStatus: nextStatus,
-            reinforcementRound: nextRound,
-          }),
-        ),
-      ),
-    );
-
-    setReinforcementRound(nextRound);
-    setReinforcementType(nextType);
-    setCurrentIndex(0);
-    setRoundComplete(false);
-  }, [reinforcementItems, reinforcementRound, updateItem, updateReinforcementStatus]);
-
-  // Advance to sentence stage (V3.1: only 5 items for deep practice)
-  const handleAdvanceStage = useCallback(async () => {
-    setStage("sentence");
-    setCurrentIndex(0);
-    setRoundComplete(false);
-    if (session?.id) {
+  // ── Start next round ──
+  const handleContinueToNextRound = useCallback(async () => {
+    const nextRound = (round + 1) as 1 | 2 | 3;
+    setRound(nextRound);
+    setRoundStats({ passed: 0, failed: 0 });
+    if (session?.id && nextRound === 2) {
       await updateStage.mutateAsync({ sessionId: session.id, stage: "sentence" });
     }
+  }, [round, session?.id, updateStage]);
 
-    // V3.1: Auto-complete high-scoring items that won't get sentence practice
-    const deepPracticeItems = allItems
-      .filter((i) => i.recallScore !== null && i.sentenceScore === null && i.status !== "failed")
-      .sort((a, b) => (a.recallScore || 3) - (b.recallScore || 3))
-      .slice(0, MAX_DEEP_PRACTICE);
-
-    const deepIds = new Set(deepPracticeItems.map((i) => i.id));
-    const toAutoComplete = allItems.filter(
-      (i) => i.recallScore !== null && i.sentenceScore === null && i.status !== "failed" && !deepIds.has(i.id),
-    );
-
-    // Fire-and-forget: mark auto-completed items
-    for (const item of toAutoComplete) {
-      updateItem.mutate({
-        itemId: item.id,
-        updates: { status: "completed" },
-      });
-    }
-
-    // Preload personal practice contexts for deep practice items
-    for (const item of deepPracticeItems) {
-      if (!item.expression) continue;
-      try {
-        const ctx = await personalPractice.mutateAsync({
-          itemId: item.id,
-          expressionEnglish: item.expression.english,
-          expressionChinese: item.expression.chinese,
-          expressionExample: item.expression.example_sentence,
-          expressionType: item.expression.type,
-          sessionId: session?.id,
-        });
-        setPersonalContexts((prev) => ({ ...prev, [item.id]: ctx }));
-      } catch {
-        // Non-blocking
-      }
-    }
-  }, [session?.id, updateStage, allItems, personalPractice, updateItem]);
-
-  // Done
+  // ── Done ──
   const handleDone = useCallback(async () => {
     if (session?.id) {
-      await updateStage.mutateAsync({ sessionId: session.id, stage, status: "completed" });
+      await updateStage.mutateAsync({
+        sessionId: session.id,
+        stage: "sentence",
+        status: "completed",
+      });
     }
     navigate("/english");
-  }, [session?.id, stage, updateStage, navigate]);
+  }, [session?.id, updateStage, navigate]);
+
+  const handleBack = useCallback(() => {
+    navigate("/english");
+  }, [navigate]);
 
   // ── Loading ──
   if (isLoading) {
@@ -1002,7 +886,7 @@ export default function EnglishReviewV3() {
     );
   }
 
-  // ── Empty state (no due cards) ──
+  // ── Empty state ──
   if (allItems.length === 0) {
     return (
       <div className="text-center py-16 space-y-4">
@@ -1028,86 +912,66 @@ export default function EnglishReviewV3() {
       {/* Header */}
       <SessionHeader
         stats={stats}
-        currentStage={stage}
-        reinforcementRound={reinforcementRound}
-        onAdvanceStage={handleAdvanceStage}
-        hasReinforcement={reinforcementItems.length > 0}
+        currentRound={round}
+        roundOrderLength={roundOrder.length}
+        currentIndex={currentIndex}
+        onBack={handleBack}
       />
 
       {/* Main content */}
-      {roundComplete || isSessionComplete ? (
-        <CompletionScreen
-          stats={stats}
-          reinforcementCount={reinforcementItems.length}
-          onReinforce={handleReinforce}
+      {sessionComplete || (roundComplete && round >= 3) ? (
+        <FinalScreen stats={stats} onDone={handleDone} />
+      ) : roundComplete ? (
+        <RoundCompleteScreen
+          round={round}
+          totalInRound={roundOrder.length}
+          passedInRound={roundStats.passed}
+          failedInRound={roundStats.failed}
+          onContinue={handleContinueToNextRound}
           onDone={handleDone}
         />
       ) : currentItem ? (
         <div className="space-y-3">
-          {/* Progress indicator */}
+          {/* Card-level progress */}
           <div className="text-center text-xs text-ink-light">
-            {currentIndex + 1} / {queue.length}
-            {reinforcementRound > 0 && ` · 强化第${reinforcementRound + 1}轮`}
+            {currentIndex + 1} / {roundOrder.length}
+            {round > 1 && ` · Round ${round}`}
           </div>
 
-          {/* Card */}
-          {stage === "recall" && reinforcementRound === 0 ? (
+          {/* Card — key prop ensures fresh state per item */}
+          {round === 1 ? (
             <RecallCard
+              key={currentItem.id}
               item={currentItem}
               onResult={handleRecallResult}
-              diagnosis={diagnoses[currentItem.id]}
-              isDiagnosing={diagnosingIds.has(currentItem.id)}
             />
-          ) : stage === "recall" && reinforcementType === "cloze" ? (
-            <ClozeCard item={currentItem} onResult={handleClozeResult} />
-          ) : stage === "recall" && reinforcementType === "context" ? (
-            <ContextCard
+          ) : round === 2 ? (
+            <ClozeCard
+              key={currentItem.id}
               item={currentItem}
-              personalContext={personalContexts[currentItem.id]}
-              onResult={handleContextResult}
-            />
-          ) : stage === "sentence" ? (
-            <SentenceCard
-              item={currentItem}
-              personalContext={personalContexts[currentItem.id]}
-              onResult={handleSentenceResult}
+              onResult={handleClozeResult}
             />
           ) : (
-            <RecallCard
+            <SentenceCard
+              key={currentItem.id}
               item={currentItem}
-              onResult={handleRecallResult}
-              diagnosis={diagnoses[currentItem.id]}
-              isDiagnosing={diagnosingIds.has(currentItem.id)}
+              onResult={handleSentenceResult}
             />
           )}
         </div>
       ) : null}
 
-      {/* Session empty — all items done but no round complete trigger */}
-      {queue.length === 0 && !isSessionComplete && (
-        <CompletionScreen
-          stats={stats}
-          reinforcementCount={reinforcementItems.length}
-          onReinforce={handleReinforce}
+      {/* Empty round — immediate complete */}
+      {roundOrder.length === 0 && !roundComplete && !sessionComplete && (
+        <RoundCompleteScreen
+          round={round}
+          totalInRound={0}
+          passedInRound={0}
+          failedInRound={0}
+          onContinue={handleContinueToNextRound}
           onDone={handleDone}
         />
       )}
-
-      {/* Quick stats bar at bottom */}
-      <div className="flex items-center justify-center gap-4 text-xs text-ink-lighter">
-        <span className="flex items-center gap-1">
-          <div className="h-2 w-2 rounded-full bg-sage-deep" />
-          掌握 {stats.passed}
-        </span>
-        <span className="flex items-center gap-1">
-          <div className="h-2 w-2 rounded-full bg-accent-warm" />
-          困难 {stats.failed}
-        </span>
-        <span className="flex items-center gap-1">
-          <div className="h-2 w-2 rounded-full bg-ink-lighter/30" />
-          待练 {stats.pending}
-        </span>
-      </div>
     </div>
   );
 }
