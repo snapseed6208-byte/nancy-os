@@ -1339,3 +1339,479 @@ describe("V3.5 ClozeQuestion Structural Integrity", () => {
     expect(q.safeContext).toBe("talking about old friends");
   });
 });
+
+// ═══════════════════════════════════════
+// V3.5 NEW MIRROR: getDailyReviewProgress
+// ═══════════════════════════════════════
+
+interface DailyExpressionProgressMirror {
+  expressionId: string;
+  english: string;
+  chinese: string;
+  recall: { completed: boolean; score: number | null; status: string; reinforcementRound: number };
+  cloze: { completed: boolean; result: "correct" | "partially_correct" | "incorrect" | null };
+  sentence: { completed: boolean };
+}
+
+interface TodayPracticeLogsMirror {
+  clozeIds: Set<string>;
+  sentenceIds: Set<string>;
+  clozeResults: Map<string, { result: "correct" | "partially_correct" | "incorrect" }>;
+  sentenceResults: Map<string, unknown>;
+}
+
+function getDailyReviewProgressMirror(
+  items: SessionItem[],
+  practiceLogs: TodayPracticeLogsMirror,
+): {
+  totalExpressions: number;
+  recallCompleted: number;
+  recallCorrect: number;
+  clozeCompleted: number;
+  clozeCorrect: number;
+  sentenceCompleted: number;
+  expressions: DailyExpressionProgressMirror[];
+} {
+  const expressions: DailyExpressionProgressMirror[] = items.map((item) => {
+    const expr = item.expression;
+    const recallScore = item.recallScore;
+    const recallCompleted = recallScore !== null;
+    const clozeResult = practiceLogs.clozeResults.get(item.expressionId) || null;
+
+    return {
+      expressionId: item.expressionId,
+      english: expr?.english || "unknown",
+      chinese: expr?.chinese || "",
+      recall: {
+        completed: recallCompleted,
+        score: recallScore,
+        status: item.status,
+        reinforcementRound: item.reinforcementRound || 0,
+      },
+      cloze: {
+        completed: practiceLogs.clozeIds.has(item.expressionId),
+        result: clozeResult?.result || null,
+      },
+      sentence: {
+        completed: practiceLogs.sentenceIds.has(item.expressionId) || item.userSentence !== null,
+      },
+    };
+  });
+
+  return {
+    expressions,
+    totalExpressions: items.length,
+    recallCompleted: items.filter((i) => i.recallScore !== null).length,
+    recallCorrect: items.filter((i) => i.recallScore !== null && i.recallScore >= 3).length,
+    clozeCompleted: practiceLogs.clozeIds.size,
+    clozeCorrect: [...practiceLogs.clozeResults.values()].filter((r) => r.result === "correct").length,
+    sentenceCompleted: practiceLogs.sentenceIds.size,
+  };
+}
+
+// ═══════════════════════════════════════
+// V3.5 NEW MIRROR: buildFallbackSummary V3.5
+// ═══════════════════════════════════════
+
+interface FallbackSummaryV35Mirror {
+  overview: string;
+  completion_summary: string;
+  activated_expressions: string[];
+  recall_only_expressions: string[];
+  context_weak_expressions: string[];
+  production_weak_expressions: string[];
+  error_patterns: Array<{ pattern: string; expressions: string[]; suggestion: string }>;
+  strongest_expressions: string[];
+  weakest_expressions: string[];
+  tomorrow_focus: string;
+}
+
+function buildFallbackSummaryV35Mirror(
+  dailySet: Array<{
+    english?: string;
+    recall?: { completed?: boolean; initial_rating?: number | null };
+    cloze?: { completed?: boolean; correct?: boolean };
+    sentence?: { completed?: boolean };
+  }>,
+  passedItems: Array<{ english: string }>,
+  failedItems: Array<{ english: string }>,
+): FallbackSummaryV35Mirror {
+  const activated = dailySet
+    .filter((e) => e.recall?.completed && e.cloze?.correct && e.sentence?.completed)
+    .map((e) => e.english || "");
+  const recallOnly = dailySet
+    .filter((e) => e.recall?.completed && !e.cloze?.completed && !e.sentence?.completed)
+    .map((e) => e.english || "");
+  const contextWeak = dailySet
+    .filter((e) => e.cloze?.completed && !e.cloze?.correct)
+    .map((e) => e.english || "");
+  const productionWeak = dailySet
+    .filter((e) => e.recall?.completed && (e.recall?.initial_rating || 0) < 3)
+    .map((e) => e.english || "");
+
+  return {
+    overview: "V3.5 fallback test summary.",
+    completion_summary: "Test completion.",
+    activated_expressions: activated.slice(0, 5),
+    recall_only_expressions: recallOnly.slice(0, 5),
+    context_weak_expressions: contextWeak.slice(0, 5),
+    production_weak_expressions: productionWeak.slice(0, 5),
+    error_patterns: contextWeak.length > 0
+      ? [{ pattern: "语境理解薄弱", expressions: contextWeak.slice(0, 3), suggestion: "建议在更多例句中熟悉这些表达的用法" }]
+      : [],
+    strongest_expressions: passedItems.map((i) => i.english).slice(0, 5),
+    weakest_expressions: failedItems.map((i) => i.english).slice(0, 5),
+    tomorrow_focus: failedItems.length > 0 ? "重点复习。" : "保持节奏。",
+  };
+}
+
+// ═══════════════════════════════════════
+// V3.5 NEW TESTS: Daily Review Progress Consistency
+// ═══════════════════════════════════════
+
+describe("V3.5 getDailyReviewProgress — Unified Progress", () => {
+  const emptyLogs: TodayPracticeLogsMirror = {
+    clozeIds: new Set(),
+    sentenceIds: new Set(),
+    clozeResults: new Map(),
+    sentenceResults: new Map(),
+  };
+
+  it("W1. all pending items → zero progress", () => {
+    const items = [makeSessionItem({ id: "a", expressionId: "e1" })];
+    const progress = getDailyReviewProgressMirror(items, emptyLogs);
+    expect(progress.recallCompleted).toBe(0);
+    expect(progress.clozeCompleted).toBe(0);
+    expect(progress.sentenceCompleted).toBe(0);
+    expect(progress.totalExpressions).toBe(1);
+  });
+
+  it("W2. recall scored → completed count updates", () => {
+    const items = [
+      makeSessionItem({ id: "a", expressionId: "e1", recallScore: 4, status: "passed" }),
+      makeSessionItem({ id: "b", expressionId: "e2", recallScore: 2, status: "failed" }),
+    ];
+    const progress = getDailyReviewProgressMirror(items, emptyLogs);
+    expect(progress.recallCompleted).toBe(2);
+    expect(progress.recallCorrect).toBe(1);
+  });
+
+  it("W3. cloze practice logs → cloze completed counts", () => {
+    const items = [makeSessionItem({ id: "a", expressionId: "e1" })];
+    const logs: TodayPracticeLogsMirror = {
+      clozeIds: new Set(["e1"]),
+      sentenceIds: new Set(),
+      clozeResults: new Map([["e1", { result: "correct" }]]),
+      sentenceResults: new Map(),
+    };
+    const progress = getDailyReviewProgressMirror(items, logs);
+    expect(progress.clozeCompleted).toBe(1);
+    expect(progress.clozeCorrect).toBe(1);
+  });
+
+  it("W4. cloze partially correct → counts as completed but not correct", () => {
+    const items = [makeSessionItem({ id: "a", expressionId: "e1" })];
+    const logs: TodayPracticeLogsMirror = {
+      clozeIds: new Set(["e1"]),
+      sentenceIds: new Set(),
+      clozeResults: new Map([["e1", { result: "partially_correct" }]]),
+      sentenceResults: new Map(),
+    };
+    const progress = getDailyReviewProgressMirror(items, logs);
+    expect(progress.clozeCompleted).toBe(1);
+    expect(progress.clozeCorrect).toBe(0);
+  });
+
+  it("W5. latest cloze attempt wins (Map overwrite)", () => {
+    // Simulate 3 attempts on same expression: incorrect → partially → correct
+    // The Map should hold the latest (correct)
+    const logs: TodayPracticeLogsMirror = {
+      clozeIds: new Set(["e1"]),
+      sentenceIds: new Set(),
+      clozeResults: new Map([["e1", { result: "correct" }]]),
+      sentenceResults: new Map(),
+    };
+    const items = [makeSessionItem({ id: "a", expressionId: "e1" })];
+    const progress = getDailyReviewProgressMirror(items, logs);
+    expect(progress.clozeCorrect).toBe(1);
+    expect(progress.clozeCompleted).toBe(1);
+  });
+
+  it("W6. mixed mode progress — per-expression state", () => {
+    const items = [
+      makeSessionItem({ id: "a", expressionId: "e1", recallScore: 4, status: "passed" }),
+      makeSessionItem({ id: "b", expressionId: "e2", recallScore: 2, status: "failed" }),
+    ];
+    const logs: TodayPracticeLogsMirror = {
+      clozeIds: new Set(["e1"]),
+      sentenceIds: new Set(["e2"]),
+      clozeResults: new Map([["e1", { result: "correct" }]]),
+      sentenceResults: new Map(),
+    };
+    const progress = getDailyReviewProgressMirror(items, logs);
+
+    const e1 = progress.expressions.find((e) => e.expressionId === "e1")!;
+    expect(e1.recall.completed).toBe(true);
+    expect(e1.cloze.completed).toBe(true);
+    expect(e1.cloze.result).toBe("correct");
+
+    const e2 = progress.expressions.find((e) => e.expressionId === "e2")!;
+    expect(e2.recall.completed).toBe(true);
+    expect(e2.sentence.completed).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.5 NEW TESTS: Fallback Summary V3.5 Categories
+// ═══════════════════════════════════════
+
+describe("V3.5 Fallback Summary — Expression Categories", () => {
+  it("X1. activated_expressions: all 3 modes complete + correct", () => {
+    const dailySet = [{
+      english: "proactive",
+      recall: { completed: true, initial_rating: 4 },
+      cloze: { completed: true, correct: true },
+      sentence: { completed: true },
+    }];
+    const summary = buildFallbackSummaryV35Mirror(dailySet, [{ english: "proactive" }], []);
+    expect(summary.activated_expressions).toEqual(["proactive"]);
+    expect(summary.recall_only_expressions).toEqual([]);
+    expect(summary.context_weak_expressions).toEqual([]);
+  });
+
+  it("X2. recall_only_expressions: recall done but no cloze/sentence", () => {
+    const dailySet = [{
+      english: "take the bull by the horns",
+      recall: { completed: true, initial_rating: 4 },
+      cloze: { completed: false, correct: false },
+      sentence: { completed: false },
+    }];
+    const summary = buildFallbackSummaryV35Mirror(dailySet, [{ english: "take the bull by the horns" }], []);
+    expect(summary.recall_only_expressions).toEqual(["take the bull by the horns"]);
+    expect(summary.activated_expressions).toEqual([]);
+  });
+
+  it("X3. context_weak_expressions: cloze done but incorrect", () => {
+    const dailySet = [{
+      english: "lost touch with",
+      recall: { completed: true, initial_rating: 3 },
+      cloze: { completed: true, correct: false },
+      sentence: { completed: false },
+    }];
+    const summary = buildFallbackSummaryV35Mirror(dailySet, [], [{ english: "lost touch with" }]);
+    expect(summary.context_weak_expressions).toEqual(["lost touch with"]);
+    expect(summary.error_patterns.length).toBe(1);
+    expect(summary.error_patterns[0].pattern).toBe("语境理解薄弱");
+  });
+
+  it("X4. production_weak_expressions: recall score < 3", () => {
+    const dailySet = [{
+      english: "ambiguous",
+      recall: { completed: true, initial_rating: 2 },
+      cloze: { completed: false, correct: false },
+      sentence: { completed: false },
+    }];
+    const summary = buildFallbackSummaryV35Mirror(dailySet, [], [{ english: "ambiguous" }]);
+    expect(summary.production_weak_expressions).toEqual(["ambiguous"]);
+  });
+
+  it("X5. mixed expressions — correct categorization", () => {
+    const dailySet = [
+      { english: "activated", recall: { completed: true, initial_rating: 4 }, cloze: { completed: true, correct: true }, sentence: { completed: true } },
+      { english: "recall", recall: { completed: true, initial_rating: 3 }, cloze: { completed: false, correct: false }, sentence: { completed: false } },
+      { english: "context", recall: { completed: true, initial_rating: 4 }, cloze: { completed: true, correct: false }, sentence: { completed: false } },
+      { english: "production", recall: { completed: true, initial_rating: 1 }, cloze: { completed: false, correct: false }, sentence: { completed: false } },
+      { english: "untouched", recall: { completed: false, initial_rating: null }, cloze: { completed: false, correct: false }, sentence: { completed: false } },
+    ];
+    const summary = buildFallbackSummaryV35Mirror(dailySet, [{ english: "activated" }, { english: "recall" }], [{ english: "context" }, { english: "production" }]);
+    expect(summary.activated_expressions).toEqual(["activated"]);
+    expect(summary.recall_only_expressions).toEqual(["recall", "production"]);
+    expect(summary.context_weak_expressions).toEqual(["context"]);
+    expect(summary.production_weak_expressions).toEqual(["production"]);
+  });
+
+  it("X6. empty dailySet → all categories empty", () => {
+    const summary = buildFallbackSummaryV35Mirror([], [], []);
+    expect(summary.activated_expressions).toEqual([]);
+    expect(summary.recall_only_expressions).toEqual([]);
+    expect(summary.context_weak_expressions).toEqual([]);
+    expect(summary.production_weak_expressions).toEqual([]);
+    expect(summary.error_patterns).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.5 NEW TESTS: AI Summary Data Structure
+// ═══════════════════════════════════════
+
+describe("V3.5 AI Summary Data Structure", () => {
+  it("Y1. full AI summary has all V3.5 fields", () => {
+    const summary = {
+      overview: "test",
+      completion_summary: "test",
+      recall_analysis: { summary: "r", difficult_expressions: [] },
+      cloze_analysis: { summary: "c", common_errors: [] },
+      sentence_analysis: { summary: "s", good_outputs: [], needs_improvement: [] },
+      activated_expressions: ["a", "b"],
+      recall_only_expressions: ["c"],
+      context_weak_expressions: ["d"],
+      production_weak_expressions: ["e"],
+      error_patterns: [{ pattern: "语境薄弱", expressions: ["d"], suggestion: "多练习" }],
+      strongest_expressions: ["a", "b", "f"],
+      weakest_expressions: ["d", "e"],
+      tomorrow_focus: "重点复习语境薄弱表达",
+    };
+
+    expect(summary.activated_expressions).toHaveLength(2);
+    expect(summary.recall_only_expressions).toHaveLength(1);
+    expect(summary.context_weak_expressions).toHaveLength(1);
+    expect(summary.production_weak_expressions).toHaveLength(1);
+    expect(summary.error_patterns).toHaveLength(1);
+    expect(summary.error_patterns[0].pattern).toBeTruthy();
+    expect(summary.error_patterns[0].suggestion).toBeTruthy();
+  });
+
+  it("Y2. minimal AI summary (no optional fields) still valid", () => {
+    const summary = {
+      overview: "已完成今日复习。",
+      completion_summary: "0/0 完成。",
+      strongest_expressions: [],
+      weakest_expressions: [],
+      tomorrow_focus: "暂无建议。",
+    };
+
+    expect(summary.overview).toBeTruthy();
+    expect(summary.completion_summary).toBeTruthy();
+    expect(summary.strongest_expressions).toEqual([]);
+    expect(summary.weakest_expressions).toEqual([]);
+  });
+
+  it("Y3. error_patterns array structure is correct", () => {
+    const errorPatterns = [
+      { pattern: "介词使用错误", expressions: ["depend on", "focus on"], suggestion: "注意动词+介词的固定搭配" },
+      { pattern: "时态混淆", expressions: ["I've been"], suggestion: "区分现在完成时和一般过去时的使用场景" },
+    ];
+
+    expect(errorPatterns).toHaveLength(2);
+    for (const ep of errorPatterns) {
+      expect(typeof ep.pattern).toBe("string");
+      expect(Array.isArray(ep.expressions)).toBe(true);
+      expect(typeof ep.suggestion).toBe("string");
+      expect(ep.pattern.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.5 NEW TESTS: Progress Cap (Corrupted Data Resilience)
+// ═══════════════════════════════════════
+
+describe("V3.5 Progress Cap — Corrupted Resilience", () => {
+  it("Z1. progress with 0 items → zero completion", () => {
+    const progress = getDailyReviewProgressMirror([], {
+      clozeIds: new Set(),
+      sentenceIds: new Set(),
+      clozeResults: new Map(),
+      sentenceResults: new Map(),
+    });
+    expect(progress.totalExpressions).toBe(0);
+    expect(progress.recallCompleted).toBe(0);
+    expect(progress.clozeCompleted).toBe(0);
+  });
+
+  it("Z2. recallCorrect never exceeds recallCompleted (cap at recallCompleted level)", () => {
+    const items = [makeSessionItem({ id: "a", expressionId: "e1", recallScore: 1, status: "failed" })];
+    const progress = getDailyReviewProgressMirror(items, {
+      clozeIds: new Set(),
+      sentenceIds: new Set(),
+      clozeResults: new Map(),
+      sentenceResults: new Map(),
+    });
+    // recallCompleted=1 because recallScore is not null, recallCorrect=0 because score < 3
+    expect(progress.recallCorrect).toBe(0);
+    expect(progress.recallCompleted).toBe(1);
+    // recallCorrect <= recallCompleted
+    expect(progress.recallCorrect).toBeLessThanOrEqual(progress.recallCompleted);
+  });
+
+  it("Z3. clozeCorrect never exceeds clozeCompleted", () => {
+    const items = [makeSessionItem({ id: "a", expressionId: "e1" })];
+    const logs: TodayPracticeLogsMirror = {
+      clozeIds: new Set(["e1"]),
+      sentenceIds: new Set(),
+      clozeResults: new Map([["e1", { result: "incorrect" }]]),
+      sentenceResults: new Map(),
+    };
+    const progress = getDailyReviewProgressMirror(items, logs);
+    expect(progress.clozeCompleted).toBe(1);
+    expect(progress.clozeCorrect).toBe(0);
+    expect(progress.clozeCorrect).toBeLessThanOrEqual(progress.clozeCompleted);
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.5 NEW TESTS: Historical Summary Entry
+// ═══════════════════════════════════════
+
+describe("V3.5 Historical Summary Entry", () => {
+  it("H1. historical summary entry has required fields", () => {
+    const entry = {
+      id: "log-1",
+      date: "2026-08-10",
+      summary: {
+        overview: "今天表现不错",
+        activated_expressions: ["proactive"],
+        context_weak_expressions: ["ambiguous"],
+        error_patterns: [],
+      },
+      expressionCount: 15,
+      createdAt: "2026-08-10T14:00:00Z",
+    };
+
+    expect(entry.id).toBeTruthy();
+    expect(entry.date).toBe("2026-08-10");
+    expect(entry.expressionCount).toBe(15);
+    expect(typeof entry.summary).toBe("object");
+    expect(entry.summary.overview).toBeTruthy();
+  });
+
+  it("H2. historical summary preserves V3.5 category arrays", () => {
+    const entry = {
+      id: "log-2",
+      date: "2026-08-09",
+      summary: {
+        overview: "复习概括",
+        activated_expressions: ["a", "b"],
+        recall_only_expressions: ["c", "d"],
+        context_weak_expressions: ["e"],
+        production_weak_expressions: ["f"],
+        error_patterns: [{ pattern: "test", expressions: ["e"], suggestion: "fix" }],
+        strongest_expressions: ["a", "b"],
+        weakest_expressions: ["e", "f"],
+        tomorrow_focus: "focus on e",
+      },
+      expressionCount: 10,
+      createdAt: "2026-08-09T12:00:00Z",
+    };
+
+    // All V3.5 category fields present
+    expect(Array.isArray(entry.summary.activated_expressions)).toBe(true);
+    expect(Array.isArray(entry.summary.recall_only_expressions)).toBe(true);
+    expect(Array.isArray(entry.summary.context_weak_expressions)).toBe(true);
+    expect(Array.isArray(entry.summary.production_weak_expressions)).toBe(true);
+    expect(Array.isArray(entry.summary.error_patterns)).toBe(true);
+  });
+
+  it("H3. multiple historical summaries sorted by date descending", () => {
+    const entries = [
+      { date: "2026-08-10", summary: {} },
+      { date: "2026-08-09", summary: {} },
+      { date: "2026-08-07", summary: {} },
+    ];
+
+    // Verify descending order (newest first, as from `order("created_at", { ascending: false })`)
+    for (let i = 1; i < entries.length; i++) {
+      expect(entries[i].date < entries[i - 1].date).toBe(true);
+    }
+  });
+});

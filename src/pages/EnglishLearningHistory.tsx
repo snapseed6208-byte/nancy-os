@@ -10,8 +10,10 @@ import { useLocation } from "wouter";
 import {
   useLearningHistory,
   useSessionDetail,
+  useHistoricalSummaries,
   type SentenceDetail,
   type ExpressionProgressDetail,
+  type HistoricalSummary,
 } from "@/lib/hooks/useReviewSession";
 import { cn } from "@/lib/utils";
 import {
@@ -30,6 +32,7 @@ import {
   XCircle,
   RotateCcw,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 
 // ═══════════════════════════════════════
@@ -166,6 +169,85 @@ function ExpressionDetailRow({ detail }: { detail: ExpressionProgressDetail }) {
 }
 
 // ═══════════════════════════════════════
+// V3.5: Historical AI Summary Card
+// ═══════════════════════════════════════
+
+function HistoricalSummaryCard({ entry }: { entry: HistoricalSummary }) {
+  const summary = entry.summary;
+  const overview = summary.overview as string | undefined;
+  const completionSummary = summary.completion_summary as string | undefined;
+  const activatedExpressions = summary.activated_expressions as string[] | undefined;
+  const contextWeakExpressions = summary.context_weak_expressions as string[] | undefined;
+  const recallOnlyExpressions = summary.recall_only_expressions as string[] | undefined;
+  const strongestExpressions = summary.strongest_expressions as string[] | undefined;
+  const weakestExpressions = summary.weakest_expressions as string[] | undefined;
+  const tomorrowFocus = summary.tomorrow_focus as string | undefined;
+
+  return (
+    <div className="bg-white border border-border/60 rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles size={14} className="text-purple-400" />
+        <span className="text-xs font-medium text-ink">{entry.date} AI 总结</span>
+        <span className="text-[10px] text-ink-lighter ml-auto">{entry.expressionCount} 个表达</span>
+      </div>
+
+      {overview && <p className="text-xs text-ink-light leading-relaxed">{overview}</p>}
+      {completionSummary && <p className="text-[11px] text-ink-lighter">{completionSummary}</p>}
+
+      {activatedExpressions && activatedExpressions.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-sage-deep shrink-0">已激活:</span>
+          {activatedExpressions.slice(0, 5).map((e, i) => (
+            <span key={i} className="text-[10px] bg-sage-light/30 text-sage-deep px-1 py-0.5 rounded">{e}</span>
+          ))}
+        </div>
+      )}
+
+      {(recallOnlyExpressions && recallOnlyExpressions.length > 0) && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-ink-lighter shrink-0">仅回忆:</span>
+          {recallOnlyExpressions.slice(0, 4).map((e, i) => (
+            <span key={i} className="text-[10px] bg-ink/5 text-ink-light px-1 py-0.5 rounded">{e}</span>
+          ))}
+        </div>
+      )}
+
+      {(contextWeakExpressions && contextWeakExpressions.length > 0) && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-orange-500 shrink-0">语境弱:</span>
+          {contextWeakExpressions.slice(0, 4).map((e, i) => (
+            <span key={i} className="text-[10px] bg-orange-50 text-orange-600 px-1 py-0.5 rounded">{e}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        {strongestExpressions && strongestExpressions.length > 0 && (
+          <div className="bg-sage-light/20 rounded-lg p-2">
+            <p className="text-[9px] text-ink-lighter mb-0.5">最强</p>
+            {strongestExpressions.slice(0, 3).map((e, i) => (
+              <p key={i} className="text-[10px] text-sage-deep font-medium">{e}</p>
+            ))}
+          </div>
+        )}
+        {weakestExpressions && weakestExpressions.length > 0 && (
+          <div className="bg-accent-warm/10 rounded-lg p-2">
+            <p className="text-[9px] text-ink-lighter mb-0.5">最弱</p>
+            {weakestExpressions.slice(0, 3).map((e, i) => (
+              <p key={i} className="text-[10px] text-accent-warm font-medium">{e}</p>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {tomorrowFocus && (
+        <p className="text-[11px] text-sage-deep leading-relaxed bg-sage-light/20 rounded-lg p-2">{tomorrowFocus}</p>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
 // Main Page
 // ═══════════════════════════════════════
 
@@ -173,6 +255,7 @@ export default function EnglishLearningHistory() {
   const [, navigate] = useLocation();
   const { data, isLoading, error } = useLearningHistory();
   const { data: sessionDetail, isLoading: detailLoading } = useSessionDetail();
+  const { data: historicalSummaries } = useHistoricalSummaries(14);
 
   if (isLoading) {
     return (
@@ -518,6 +601,27 @@ export default function EnglishLearningHistory() {
           </span>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════ */}
+      {/* V3.5: Historical AI Summaries         */}
+      {/* ═══════════════════════════════════════ */}
+
+      {historicalSummaries && historicalSummaries.length > 0 && (
+        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles size={16} className="text-purple-400" />
+            <h3 className="text-sm font-semibold text-ink">历史 AI 总结</h3>
+            <span className="text-[11px] text-ink-lighter ml-auto">
+              近 14 天 · {historicalSummaries.length} 条
+            </span>
+          </div>
+          <div className="space-y-2">
+            {historicalSummaries.map((entry) => (
+              <HistoricalSummaryCard key={entry.id} entry={entry} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════ */}
       {/* Problem Areas (30-day)                */}

@@ -107,15 +107,34 @@ async function handleSummarizeDailyReview(
     return jsonResponse(req, { error: "dailySet array is required for summarization" }, 400);
   }
 
-  // Build a compact summary prompt
+  // Build a compact summary prompt with enriched per-expression data
   const expressions = dailySet.map((item) => ({
     english: item.english || "unknown",
     chinese: item.chinese || "",
     recall_score: item.recall?.initial_rating ?? null,
     recall_status: item.recall?.final_status ?? "pending",
+    recall_reinforcement: item.recall?.reinforcement_count ?? 0,
     cloze_done: item.cloze?.completed ?? false,
+    cloze_correct: item.cloze?.correct ?? false,
+    cloze_user_answer: item.cloze?.user_answer ?? null,
     sentence_done: item.sentence?.completed ?? false,
+    sentence_text: item.sentence?.user_sentence ?? null,
+    sentence_feedback: item.sentence?.ai_feedback ?? null,
   }));
+
+  // V3.5: Pre-compute expression categories to help AI
+  const activatedExpressions = expressions.filter(
+    (e) => e.recall_score !== null && e.cloze_correct && e.sentence_done,
+  );
+  const recallOnlyExpressions = expressions.filter(
+    (e) => e.recall_score !== null && !e.cloze_done && !e.sentence_done,
+  );
+  const contextWeakExpressions = expressions.filter(
+    (e) => e.cloze_done && !e.cloze_correct,
+  );
+  const productionWeakExpressions = expressions.filter(
+    (e) => e.sentence_done && e.recall_score !== null && e.recall_score < 3,
+  );
 
   const summaryPrompt = `You are an English learning coach. Analyze today's review session and write a concise summary in Chinese.
 
@@ -129,6 +148,12 @@ async function handleSummarizeDailyReview(
 ## Expressions Reviewed
 ${JSON.stringify(expressions, null, 2)}
 
+## Pre-computed Categories (V3.5)
+- activated_expressions (completed all 3 modes correctly): ${JSON.stringify(activatedExpressions.map((e) => e.english))}
+- recall_only (only recall done, no cloze/sentence yet): ${JSON.stringify(recallOnlyExpressions.map((e) => e.english))}
+- context_weak (cloze done but incorrect): ${JSON.stringify(contextWeakExpressions.map((e) => e.english))}
+- production_weak (sentence done but recall score < 3): ${JSON.stringify(productionWeakExpressions.map((e) => e.english))}
+
 ## Instructions
 Return a JSON object with these fields (all in Chinese):
 {
@@ -137,12 +162,17 @@ Return a JSON object with these fields (all in Chinese):
   "recall_analysis": { "summary": "主动回忆分析", "difficult_expressions": ["困难的表达1", ...] } | null,
   "cloze_analysis": { "summary": "填空分析", "common_errors": ["常见错误1", ...] } | null,
   "sentence_analysis": { "summary": "造句分析", "good_outputs": ["好的造句1", ...], "needs_improvement": ["需要改进的1", ...] } | null,
+  "activated_expressions": ["已全面激活的表达", ...] (expressions mastered across all 3 modes),
+  "recall_only_expressions": ["仅完成回忆的表达", ...] (expressions that need cloze/sentence practice),
+  "context_weak_expressions": ["语境薄弱的表达", ...] (cloze was incorrect — poor contextual understanding),
+  "production_weak_expressions": ["输出薄弱的表达", ...] (recall score < 3 — weak active production),
   "strongest_expressions": ["掌握最好的表达", ...] (3-5个),
   "weakest_expressions": ["需要加强的表达", ...] (3-5个),
+  "error_patterns": [{ "pattern": "错误模式描述", "expressions": ["相关表达"], "suggestion": "改进建议" }] (1-3 common error patterns),
   "tomorrow_focus": "明天学习重点建议，1-2句话"
 }
 
-Only include analysis sections that have relevant data. Keep everything concise.`;
+Use the pre-computed categories as a reference, but apply your own judgment. Only include analysis sections that have relevant data. Keep everything concise.`;
 
   try {
     const aiResult = await aiRuntime<Record<string, unknown>>(

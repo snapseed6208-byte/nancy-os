@@ -5,11 +5,13 @@ import {
   Sparkles, CheckCircle2,
 } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
+import { useHubSessionProgress } from "@/lib/hooks/useReviewSession";
 import { cn } from "@/lib/utils";
 
 export default function English() {
   const [, navigate] = useLocation();
   const { data: stats, isLoading } = useEnglishStats();
+  const { data: sessionProgress } = useHubSessionProgress();
 
   const dueCount = stats?.due ?? 0;
 
@@ -63,7 +65,7 @@ export default function English() {
           desc={dueCount ? `${dueCount} 条待复习` : "全部掌握!"}
           highlight={!!(dueCount > 0)}
           onClick={() => navigate("/english/review?mode=recall")}
-          extra={stats?.todayReviewed ? `今日已复习 ${stats.todayReviewed} 条` : undefined}
+          extra={sessionProgress?.hasSession ? `今日复习 ${sessionProgress.recallCompleted}/${sessionProgress.totalExpressions} 条` : undefined}
         />
         <ActionCard
           icon={Library}
@@ -97,23 +99,41 @@ export default function English() {
         />
       </div>
 
-      {/* Review progress */}
-      {stats && stats.todayReviewed > 0 && (
+      {/* V3.5: Session-based review progress (same data source as Review page) */}
+      {sessionProgress?.hasSession && sessionProgress.totalExpressions > 0 && (
         <div className="bg-card rounded-2xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-3">
             <Zap size={14} className="text-sage-deep" />
             <span className="text-sm font-medium text-ink">今日复习进度</span>
+            {sessionProgress.allDone && (
+              <span className="text-[10px] font-medium text-sage-deep bg-sage-light/50 px-2 py-0.5 rounded-full ml-auto">
+                全部完成
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-2 bg-ink/5 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-sage-light rounded-full transition-all"
-                style={{ width: `${Math.min((stats.todayGood / Math.max(stats.todayReviewed, 1)) * 100, 100)}%` }}
-              />
-            </div>
-            <span className="text-xs text-ink-lighter shrink-0">
-              {stats.todayGood}/{stats.todayReviewed} 掌握
-            </span>
+          <div className="space-y-2">
+            <ProgressRow
+              label="主动回忆"
+              completed={sessionProgress.recallCompleted}
+              passed={sessionProgress.recallPassed}
+              total={sessionProgress.totalExpressions}
+              color="bg-purple-400"
+            />
+            <ProgressRow
+              label="语境填空"
+              completed={sessionProgress.clozeCompleted}
+              passed={sessionProgress.clozeCorrect}
+              total={sessionProgress.totalExpressions}
+              color="bg-amber-400"
+            />
+            <ProgressRow
+              label="个人造句"
+              completed={sessionProgress.sentenceCompleted}
+              passed={sessionProgress.sentenceCompleted}
+              total={sessionProgress.totalExpressions}
+              color="bg-blue-400"
+              showPassed={false}
+            />
           </div>
         </div>
       )}
@@ -166,6 +186,40 @@ function ModeCard({
       <p className="text-xs font-medium text-ink">{label}</p>
       <p className="text-[10px] text-ink-lighter mt-0.5">{desc}</p>
     </button>
+  );
+}
+
+// ── Progress Row (V3.5: session-based) ──
+
+function ProgressRow({
+  label,
+  completed,
+  passed,
+  total,
+  color,
+  showPassed = true,
+}: {
+  label: string;
+  completed: number;
+  passed: number;
+  total: number;
+  color: string;
+  showPassed?: boolean;
+}) {
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-ink-lighter w-14 shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-ink/5 rounded-full overflow-hidden">
+        <div
+          className={cn("h-full rounded-full transition-all", color)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[10px] text-ink-lighter shrink-0 w-12 text-right">
+        {showPassed ? `${passed}/${completed}` : `${completed}/${total}`}
+      </span>
+    </div>
   );
 }
 

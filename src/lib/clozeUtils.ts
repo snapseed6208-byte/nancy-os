@@ -241,11 +241,6 @@ export function buildClozeQuestion(
       const replaced = exampleSentence.replace(regex, "_____");
 
       if (replaced !== exampleSentence && !hasExpressionLeakage(replaced, english)) {
-        // Check if example_sentence WITHOUT the expression is safe as context
-        const contextFromExample = !hasExpressionLeakage(replaced, english)
-          ? replaced
-          : undefined;
-
         return {
           prompt: replaced,
           expectedAnswer: english,
@@ -254,7 +249,7 @@ export function buildClozeQuestion(
           source: "example_sentence",
           valid: true,
           sourceSentence: exampleSentence, // Only for post-submit reveal
-          safeContext: safeContext || contextFromExample,
+          safeContext, // V3.5: context/situation only — never the sentence-with-blank
           chineseHint: chinese,
         };
       }

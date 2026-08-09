@@ -946,6 +946,144 @@ export function getSessionStats(items: SessionItem[]) {
 }
 
 // ═══════════════════════════════════════
+// V3.5: Hub session progress (lightweight)
+// ═══════════════════════════════════════
+
+export interface HubSessionProgress {
+  hasSession: boolean;
+  sessionId: string | null;
+  totalExpressions: number;
+  recallCompleted: number;
+  recallPassed: number;
+  clozeCompleted: number;
+  clozeCorrect: number;
+  sentenceCompleted: number;
+  allDone: boolean;
+}
+
+export function useHubSessionProgress() {
+  return useQuery({
+    queryKey: ["hub-session-progress", "today"],
+    queryFn: async (): Promise<HubSessionProgress> => {
+      const userId = await getUserId();
+      const today = todayStr();
+
+      const { data: session } = await supabase
+        .from("review_sessions")
+        .select("id,status,target_count")
+        .eq("user_id", userId)
+        .eq("session_date", today)
+        .limit(1)
+        .single();
+
+      if (!session) {
+        return {
+          hasSession: false,
+          sessionId: null,
+          totalExpressions: 0,
+          recallCompleted: 0,
+          recallPassed: 0,
+          clozeCompleted: 0,
+          clozeCorrect: 0,
+          sentenceCompleted: 0,
+          allDone: false,
+        };
+      }
+
+      const { data: items } = await supabase
+        .from("review_session_items")
+        .select("id,expression_id,status,recall_score,user_sentence")
+        .eq("session_id", session.id);
+
+      const sessionItems = items || [];
+      const recallCompleted = sessionItems.filter((i) => i.recall_score !== null).length;
+      const recallPassed = sessionItems.filter((i) => i.recall_score !== null && i.recall_score >= 3).length;
+
+      const { data: clozeLogs } = await supabase
+        .from("expression_practice_logs")
+        .select("expression_id,score,created_at")
+        .eq("user_id", userId)
+        .eq("session_id", session.id)
+        .eq("mode", "cloze")
+        .order("created_at", { ascending: true });
+
+      // Dedupe by expression_id: latest attempt wins
+      const clozeMap = new Map<string, number>();
+      for (const l of (clozeLogs || [])) {
+        clozeMap.set(l.expression_id as string, l.score as number);
+      }
+      const clozeSet = new Set(clozeMap.keys());
+      const clozeCorrect = [...clozeMap.values()].filter((s) => s >= 3).length;
+
+      const sentenceCompleted = sessionItems.filter((i) => i.user_sentence !== null).length;
+
+      return {
+        hasSession: true,
+        sessionId: session.id,
+        totalExpressions: sessionItems.length,
+        recallCompleted,
+        recallPassed,
+        clozeCompleted: clozeSet.size,
+        clozeCorrect,
+        sentenceCompleted,
+        allDone: sessionItems.every((i) =>
+          i.status === "passed" || i.status === "completed",
+        ),
+      };
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// ═══════════════════════════════════════
+// V3.5: Historical AI Summaries
+// ═══════════════════════════════════════
+
+export interface HistoricalSummary {
+  id: string;
+  date: string;
+  summary: Record<string, unknown>;
+  expressionCount: number;
+  createdAt: string;
+}
+
+export function useHistoricalSummaries(days: number = 14) {
+  return useQuery({
+    queryKey: ["historical-summaries", days],
+    queryFn: async (): Promise<HistoricalSummary[]> => {
+      const userId = await getUserId();
+      const since = new Date();
+      since.setDate(since.getDate() - days);
+
+      const { data, error } = await supabase
+        .from("agent_logs")
+        .select("id, input_data, output_data, created_at")
+        .eq("user_id", userId)
+        .eq("agent_type", "english_coach")
+        .eq("action", "daily_summary")
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      return (data || []).map((log: Record<string, unknown>) => {
+        const inputData = log.input_data as Record<string, unknown> || {};
+        const outputData = log.output_data as Record<string, unknown> || {};
+        return {
+          id: log.id as string,
+          date: (log.created_at as string).split("T")[0],
+          summary: (outputData.summary || {}) as Record<string, unknown>,
+          expressionCount: inputData.expression_count as number || 0,
+          createdAt: log.created_at as string,
+        };
+      });
+    },
+    staleTime: 120_000,
+  });
+}
+
+// ═══════════════════════════════════════
 // V3.2: Detailed Session History (per-round breakdown)
 // ═══════════════════════════════════════
 
@@ -1050,17 +1188,22 @@ export function useSessionDetail() {
         (i) => (i.reinforcement_round || 0) > 0 && (i.recall_score || 0) >= 3,
       ).length;
 
-      // Round 2: Cloze from practice logs
+      // Round 2: Cloze from practice logs (latest attempt wins)
       const { data: clozeLogs } = await supabase
         .from("expression_practice_logs")
-        .select("expression_id,score")
+        .select("expression_id,score,created_at")
         .eq("user_id", userId)
         .eq("session_id", session.id)
-        .eq("mode", "cloze");
+        .eq("mode", "cloze")
+        .order("created_at", { ascending: true });
 
-      const clozeSet = new Set((clozeLogs || []).map((l) => l.expression_id));
+      const clozeMap = new Map<string, number>();
+      for (const l of (clozeLogs || [])) {
+        clozeMap.set(l.expression_id as string, l.score as number);
+      }
+      const clozeSet = new Set(clozeMap.keys());
       const round2Total = round1Total;
-      const round2Passed = (clozeLogs || []).filter((l) => l.score >= 3).length;
+      const round2Passed = [...clozeMap.values()].filter((s) => s >= 3).length;
 
       // Round 3: Sentence
       const sentenceItems = sessionItems.filter((i) => i.user_sentence !== null);
@@ -1076,13 +1219,13 @@ export function useSessionDetail() {
         completedAt: i.last_practice_at || null,
       }));
 
-      // V3.5: Per-expression progress across all modes
+      // V3.5: Per-expression progress across all modes (latest attempt via clozeMap)
       const expressionDetails: ExpressionProgressDetail[] = sessionItems.map((i) => {
-        const exprClozeLogs = (clozeLogs || []).filter((l) => l.expression_id === i.expression_id);
-        const latestCloze = exprClozeLogs.length > 0 ? exprClozeLogs[exprClozeLogs.length - 1] : null;
-        const clozeResult: "correct" | "partially_correct" | "incorrect" | null = latestCloze
-          ? (latestCloze.score as number) >= 2 ? "correct" : (latestCloze.score as number) >= 1 ? "partially_correct" : "incorrect"
-          : null;
+        const latestScore = clozeMap.get(i.expression_id);
+        const clozeResult: "correct" | "partially_correct" | "incorrect" | null =
+          latestScore !== undefined
+            ? latestScore >= 2 ? "correct" : latestScore >= 1 ? "partially_correct" : "incorrect"
+            : null;
 
         return {
           english: i.expression?.english || "unknown",

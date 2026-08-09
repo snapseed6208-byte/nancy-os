@@ -926,7 +926,28 @@ function buildFallbackSummary(
 
   const passedItems = allItems.filter((i) => i.recallScore !== null && i.recallScore >= 3);
   const failedItems = allItems.filter((i) => i.recallScore !== null && i.recallScore < 3);
-  const expressions = allItems.map((i) => i.expression?.english || "unknown");
+
+  // V3.5: Build expression-level data from dailySet
+  const exprData = (_dailySet || []) as Array<{
+    expression_id?: string;
+    english?: string;
+    recall?: { completed?: boolean; initial_rating?: number | null; final_status?: string };
+    cloze?: { completed?: boolean; correct?: boolean };
+    sentence?: { completed?: boolean };
+  }>;
+
+  const activatedExpressions = exprData
+    .filter((e) => e.recall?.completed && e.cloze?.correct && e.sentence?.completed)
+    .map((e) => e.english || "");
+  const recallOnlyExpressions = exprData
+    .filter((e) => e.recall?.completed && !e.cloze?.completed && !e.sentence?.completed)
+    .map((e) => e.english || "");
+  const contextWeakExpressions = exprData
+    .filter((e) => e.cloze?.completed && !e.cloze?.correct)
+    .map((e) => e.english || "");
+  const productionWeakExpressions = exprData
+    .filter((e) => e.recall?.completed && (e.recall?.initial_rating || 0) < 3)
+    .map((e) => e.english || "");
 
   const totalDone = recall.completed_count + cloze.completed_count + sentence.completed_count;
   const totalPossible = allItems.length * 3;
@@ -949,7 +970,7 @@ function buildFallbackSummary(
     cloze_analysis: cloze.completed_count > 0
       ? {
           summary: `${cloze.completed_count} 个表达完成语境填空，正确率 ${cloze.total > 0 ? Math.round((cloze.correct_count / cloze.total) * 100) : 0}%。`,
-          common_errors: [],
+          common_errors: contextWeakExpressions.slice(0, 5),
         }
       : undefined,
     sentence_analysis: sentence.completed_count > 0
@@ -958,6 +979,13 @@ function buildFallbackSummary(
           good_outputs: allItems.filter((i) => i.userSentence).slice(0, 3).map((i) => i.userSentence || ""),
           needs_improvement: [],
         }
+      : undefined,
+    activated_expressions: activatedExpressions.slice(0, 5),
+    recall_only_expressions: recallOnlyExpressions.slice(0, 5),
+    context_weak_expressions: contextWeakExpressions.slice(0, 5),
+    production_weak_expressions: productionWeakExpressions.slice(0, 5),
+    error_patterns: contextWeakExpressions.length > 0
+      ? [{ pattern: "语境理解薄弱", expressions: contextWeakExpressions.slice(0, 3), suggestion: "建议在更多例句中熟悉这些表达的用法" }]
       : undefined,
     strongest_expressions: passedItems.slice(0, 5).map((i) => i.expression?.english || "unknown"),
     weakest_expressions: failedItems.slice(0, 5).map((i) => i.expression?.english || "unknown"),
@@ -973,6 +1001,11 @@ interface DailySummaryData {
   recall_analysis?: { summary: string; difficult_expressions: string[] };
   cloze_analysis?: { summary: string; common_errors: string[] };
   sentence_analysis?: { summary: string; good_outputs: string[]; needs_improvement: string[] };
+  activated_expressions?: string[];
+  recall_only_expressions?: string[];
+  context_weak_expressions?: string[];
+  production_weak_expressions?: string[];
+  error_patterns?: Array<{ pattern: string; expressions: string[]; suggestion: string }>;
   strongest_expressions: string[];
   weakest_expressions: string[];
   tomorrow_focus: string;
@@ -1067,6 +1100,69 @@ function AISummaryCard({
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* V3.5: Expression categories */}
+      {summary.activated_expressions && summary.activated_expressions.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-medium text-sage-deep">已全面激活 (3项全部完成)</p>
+          <div className="flex flex-wrap gap-1">
+            {summary.activated_expressions.map((e, i) => (
+              <span key={i} className="text-[10px] bg-sage-light/50 text-sage-deep px-1.5 py-0.5 rounded">{e}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(summary.recall_only_expressions && summary.recall_only_expressions.length > 0) && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-medium text-ink-lighter">仅完成回忆 (需填空+造句)</p>
+          <div className="flex flex-wrap gap-1">
+            {summary.recall_only_expressions.map((e, i) => (
+              <span key={i} className="text-[10px] bg-ink/5 text-ink-light px-1.5 py-0.5 rounded">{e}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(summary.context_weak_expressions && summary.context_weak_expressions.length > 0) && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-medium text-orange-600">语境薄弱 (填空错误)</p>
+          <div className="flex flex-wrap gap-1">
+            {summary.context_weak_expressions.map((e, i) => (
+              <span key={i} className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">{e}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(summary.production_weak_expressions && summary.production_weak_expressions.length > 0) && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-medium text-accent-warm">输出薄弱 (主动回忆&lt;3分)</p>
+          <div className="flex flex-wrap gap-1">
+            {summary.production_weak_expressions.map((e, i) => (
+              <span key={i} className="text-[10px] bg-red-50 text-red-500 px-1.5 py-0.5 rounded">{e}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* V3.5: Error patterns */}
+      {summary.error_patterns && summary.error_patterns.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-ink">常见错误模式</p>
+          {summary.error_patterns.map((ep, i) => (
+            <div key={i} className="bg-warm-cream rounded-xl p-3 space-y-1">
+              <p className="text-xs text-ink font-medium">{ep.pattern}</p>
+              <div className="flex flex-wrap gap-1">
+                {ep.expressions.map((e, j) => (
+                  <span key={j} className="text-[10px] bg-white text-ink-light px-1.5 py-0.5 rounded border border-border/60">{e}</span>
+                ))}
+              </div>
+              <p className="text-[11px] text-sage-deep">{ep.suggestion}</p>
+            </div>
+          ))}
         </div>
       )}
 
