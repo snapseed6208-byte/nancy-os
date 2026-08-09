@@ -204,9 +204,10 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
       .or("ai_review_status.is.null,ai_review_status.neq.pending")
       .order("priority", { ascending: true })
       .limit(20),
-    // Tasks completed today
+    // One-time tasks completed today (recurring tasks tracked via task_completion_records)
     supabase.from("tasks")
       .select("id,title,status,priority,module,completed_at,task_type,completed_count,target_count")
+      .eq("task_type", "one_time")
       .eq("status", "done")
       .gte("completed_at", today)
       .lte("completed_at", `${today}T23:59:59`)
@@ -394,42 +395,59 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
   }
 
   // In-progress tasks
-  const inProgressTasks = (tasks || []).filter((t: Record<string, unknown>) => t.status === "in_progress");
+  const inProgressTasks = (tasks || []).filter((t: Record<string, unknown>) => {
+    if (t.status === "in_progress") return true;
+    // Recurring tasks with completed_count > 0 but status === "pending" are actually in progress
+    if ((t.task_type as string) === "recurring" && (t.completed_count as number || 0) > 0 && t.status === "pending") return true;
+    return false;
+  });
   for (const t of inProgressTasks as Array<Record<string, unknown>>) {
     const isRecurring = (t.task_type as string) === "recurring";
+    const compCount = (t.completed_count as number) || 0;
+    const tgtCount = (t.target_count as number) || 1;
+    const status: TimelineItem["status"] = isRecurring && compCount >= tgtCount ? "completed"
+      : isRecurring && compCount > 0 ? "in_progress"
+      : "in_progress";
     timelineInProgress.push({
       id: t.id as string,
       type: "task",
       title: t.title as string,
       subtitle: isRecurring
-        ? `${(t.completed_count as number) || 0}/${(t.target_count as number) || 1}`
+        ? `${compCount}/${tgtCount}`
         : (t.module as string) || undefined,
-      status: "in_progress",
+      status,
       path: "/plan",
       taskType: t.task_type as string,
-      completedCount: (t.completed_count as number) || 0,
-      targetCount: (t.target_count as number) || 1,
+      completedCount: compCount,
+      targetCount: tgtCount,
       frequencyType: t.frequency_type as string,
       displayType: "individual",
     });
   }
 
-  // Pending tasks
-  const pendingOnly = (tasks || []).filter((t: Record<string, unknown>) => t.status === "pending");
+  // Pending tasks (recurring with 0 completions)
+  const pendingOnly = (tasks || []).filter((t: Record<string, unknown>) => {
+    if ((t.task_type as string) === "recurring") {
+      return (t.completed_count as number || 0) === 0 && t.status !== "done";
+    }
+    return t.status === "pending";
+  });
   for (const t of pendingOnly as Array<Record<string, unknown>>) {
     const isRecurring = (t.task_type as string) === "recurring";
+    const compCount = (t.completed_count as number) || 0;
+    const tgtCount = (t.target_count as number) || 1;
     timelinePending.push({
       id: t.id as string,
       type: "task",
       title: t.title as string,
       subtitle: isRecurring
-        ? `0/${(t.target_count as number) || 1}`
+        ? `${compCount}/${tgtCount}`
         : `${t.priority === "high" ? "高优先" : t.priority === "medium" ? "中优先" : "低优先"}`,
       status: "pending",
       path: "/plan",
       taskType: t.task_type as string,
-      completedCount: 0,
-      targetCount: (t.target_count as number) || 1,
+      completedCount: compCount,
+      targetCount: tgtCount,
       frequencyType: t.frequency_type as string,
       displayType: "individual",
     });

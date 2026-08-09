@@ -14,7 +14,9 @@ import {
   useTasks, useTodayTasks, useCreateTask, useUpdateTask, useToggleTaskComplete, useDeleteTask,
   useTaskBreakdown, useBatchCreateTasks, useAiReviewTasks, useReviewAiTask, useBatchReviewAiTasks,
   useWeeklyThemes, useCreateWeeklyTheme, useUpdateWeeklyTheme, useGoalProgress,
-  type GoalRow, type TaskRow, type TaskBreakdownItem, type GoalWithProgress,
+  getTaskPeriodState, useRecurringPeriodStates,
+  type GoalRow, type TaskRow, type TaskBreakdownItem, type GoalWithProgress, type TaskPeriodState,
+  type TaskCompletionRecord,
 } from "@/lib/hooks/usePlan";
 import {
   useHabitsWithToday, useCreateHabit, useToggleHabitRecord,
@@ -132,6 +134,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
 
   const taskList = (tasks || []) as TaskRow[];
+  const { data: periodRecordsMap } = useRecurringPeriodStates(taskList);
   const goals = (goalsData || []) as GoalRow[];
   const highTasks = taskList.filter((t) => t.priority === "high");
   const medTasks = taskList.filter((t) => t.priority === "medium");
@@ -201,6 +204,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               label="优先完成"
               color="text-accent-rose"
               tasks={highTasks}
+              periodRecordsMap={periodRecordsMap}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
@@ -215,6 +219,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               label="计划推进"
               color="text-accent-sky"
               tasks={medTasks}
+              periodRecordsMap={periodRecordsMap}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
@@ -229,6 +234,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               label="有空再做"
               color="text-sage-deep"
               tasks={lowTasks}
+              periodRecordsMap={periodRecordsMap}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
@@ -267,12 +273,13 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
 }
 
 function TaskSection({
-  icon: Icon, label, color, tasks, onToggle, onDelete, onEdit, onEditFull, defaultCollapsed,
+  icon: Icon, label, color, tasks, periodRecordsMap, onToggle, onDelete, onEdit, onEditFull, defaultCollapsed,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   color: string;
   tasks: TaskRow[];
+  periodRecordsMap?: Map<string, TaskCompletionRecord[]>;
   onToggle: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, updates: { title?: string; priority?: string }) => void;
@@ -283,6 +290,12 @@ function TaskSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const isRecurring = (t: TaskRow) => t.task_type === "recurring";
+
+  const getPeriodState = (t: TaskRow): TaskPeriodState | null => {
+    if (!isRecurring(t)) return null;
+    const records = periodRecordsMap?.get(t.id) || [];
+    return getTaskPeriodState(t, records);
+  };
 
   const startEdit = (t: TaskRow) => {
     setEditingId(t.id);
@@ -309,21 +322,32 @@ function TaskSection({
       </button>
       {!collapsed && (
         <div className="space-y-1.5">
-          {tasks.map((t) => (
+          {tasks.map((t) => {
+            const periodState = getPeriodState(t);
+            const displayStatus = periodState?.displayStatus ?? (
+              t.status === "done" ? "period_completed"
+              : t.status === "in_progress" ? "in_progress"
+              : "pending"
+            );
+            const isComplete = displayStatus === "period_completed";
+            const isInProgress = displayStatus === "in_progress";
+            const completedCount = periodState?.completedCount ?? t.completed_count;
+            const targetCount = periodState?.targetCount ?? (t.target_count || 1);
+            return (
             <div
               key={t.id}
               className={cn(
                 "flex items-center gap-2.5 rounded-xl px-3 py-2 bg-card border border-border/50 transition-colors",
-                t.status === "done" && "opacity-60",
+                isComplete && "opacity-60",
               )}
             >
               <button
                 onClick={() => onToggle(t.id, t.status)}
                 className="shrink-0"
               >
-                {t.status === "done"
+                {isComplete
                   ? <CheckCircle2 size={16} className="text-emerald-500" />
-                  : t.status === "in_progress"
+                  : isInProgress
                     ? <CircleDot size={16} className="text-accent-sky" />
                     : <Circle size={16} className="text-ink-lighter" />}
               </button>
@@ -344,7 +368,7 @@ function TaskSection({
                   />
                 ) : (
                   <p
-                    className={cn("text-xs text-ink truncate cursor-pointer hover:text-sage-deep transition-colors", t.status === "done" && "line-through")}
+                    className={cn("text-xs text-ink truncate cursor-pointer hover:text-sage-deep transition-colors", isComplete && "line-through")}
                     onClick={() => startEdit(t)}
                     title="点击编辑标题"
                   >
@@ -354,12 +378,12 @@ function TaskSection({
                 {isRecurring(t) ? (
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[10px] text-ink-lighter">
-                      {t.completed_count}/{t.target_count}
+                      {completedCount}/{targetCount}
                     </span>
                     <div className="w-12 bg-ink/10 rounded-full h-1 overflow-hidden">
                       <div
                         className="bg-accent-sky h-full rounded-full transition-all"
-                        style={{ width: `${Math.min((t.completed_count / (t.target_count || 1)) * 100, 100)}%` }}
+                        style={{ width: `${Math.min((completedCount / (targetCount || 1)) * 100, 100)}%` }}
                       />
                     </div>
                     <span className="text-[9px] text-ink-lighter">
@@ -413,7 +437,7 @@ function TaskSection({
                 <Trash2 size={12} />
               </button>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>
@@ -1132,8 +1156,11 @@ function GoalCard({
 
 function TaskList() {
   const [statusFilter, setStatusFilter] = useState<string>("");
+  // For recurring tasks, "done" means period_completed — we need to fetch all
+  // recurring tasks regardless and filter client-side with period state.
+  const dbFilter = statusFilter === "done" ? "" : statusFilter;
   const { data: tasks, isLoading } = useTasks(
-    statusFilter ? { status: statusFilter } : { all: true },
+    dbFilter ? { status: dbFilter } : { all: true },
   );
   const toggleComplete = useToggleTaskComplete();
   const deleteTask = useDeleteTask();
@@ -1147,6 +1174,7 @@ function TaskList() {
   const today = new Date().toISOString().split("T")[0];
 
   const taskList = (tasks || []) as TaskRow[];
+  const { data: periodRecordsMap } = useRecurringPeriodStates(taskList);
 
   const startEdit = (t: TaskRow) => {
     setEditingId(t.id);
@@ -1198,20 +1226,42 @@ function TaskList() {
         </div>
       ) : (
         <div className="space-y-1.5">
-          {taskList.map((t) => {
+          {taskList.filter((t) => {
+            // Client-side filter for recurring tasks with statusFilter
+            if (!statusFilter) return true;
+            if (t.task_type === "one_time") return true; // already DB-filtered for one_time
+            // For recurring: filter by period state
+            const records = periodRecordsMap?.get(t.id) || [];
+            const ps = getTaskPeriodState(t, records);
+            if (statusFilter === "done") return ps.isPeriodCompleted;
+            if (statusFilter === "pending") return ps.displayStatus === "pending";
+            if (statusFilter === "in_progress") return ps.displayStatus === "in_progress";
+            return true;
+          }).map((t) => {
             const isRecurring = t.task_type === "recurring";
+            const records = periodRecordsMap?.get(t.id) || [];
+            const ps = isRecurring ? getTaskPeriodState(t, records) : null;
+            const displayStatus = ps?.displayStatus ?? (
+              t.status === "done" ? "period_completed"
+              : t.status === "in_progress" ? "in_progress"
+              : "pending"
+            );
+            const isComplete = displayStatus === "period_completed";
+            const isInProgress = displayStatus === "in_progress";
+            const completedCount = ps?.completedCount ?? t.completed_count;
+            const targetCount = ps?.targetCount ?? (t.target_count || 1);
             return (
             <div
               key={t.id}
               className={cn(
                 "flex items-center gap-2.5 rounded-xl px-3 py-2.5 bg-card border border-border/50",
-                t.status === "done" && "opacity-60",
+                isComplete && "opacity-60",
               )}
             >
               <button onClick={() => toggleComplete.mutate({ id: t.id, currentStatus: t.status })} className="shrink-0">
-                {t.status === "done"
+                {isComplete
                   ? <CheckCircle2 size={16} className="text-emerald-500" />
-                  : t.status === "in_progress"
+                  : isInProgress
                     ? <CircleDot size={16} className="text-accent-sky" />
                     : <Circle size={16} className="text-ink-lighter" />}
               </button>
@@ -1233,7 +1283,7 @@ function TaskList() {
                     />
                   ) : (
                     <p
-                      className={cn("text-xs text-ink truncate cursor-pointer hover:text-sage-deep transition-colors", t.status === "done" && "line-through")}
+                      className={cn("text-xs text-ink truncate cursor-pointer hover:text-sage-deep transition-colors", isComplete && "line-through")}
                       onClick={() => startEdit(t)}
                       title="点击编辑标题"
                     >
@@ -1248,12 +1298,12 @@ function TaskList() {
                   {isRecurring ? (
                     <>
                       <span className="text-[10px] text-ink-lighter">
-                        {t.completed_count}/{t.target_count}
+                        {completedCount}/{targetCount}
                       </span>
                       <div className="w-10 bg-ink/10 rounded-full h-1 overflow-hidden">
                         <div
                           className="bg-accent-sky h-full rounded-full transition-all"
-                          style={{ width: `${Math.min((t.completed_count / (t.target_count || 1)) * 100, 100)}%` }}
+                          style={{ width: `${Math.min((completedCount / (targetCount || 1)) * 100, 100)}%` }}
                         />
                       </div>
                       <span className="text-[9px] text-ink-lighter">

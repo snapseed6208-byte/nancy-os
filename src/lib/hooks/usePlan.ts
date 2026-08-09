@@ -7,6 +7,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
+import {
+  getBeijingDateString,
+  getBeijingPeriodStart,
+  getBeijingPeriodEnd,
+} from "@/lib/date";
 
 // ── Types ──
 
@@ -88,20 +93,147 @@ export type TaskCompletionRecord = {
   completion_date: string;
 };
 
-/** Get the start date of the current cycle for a frequency type */
+// ── Period State (recurring task unified display logic) ──
+
+export type TaskDisplayStatus = "pending" | "in_progress" | "period_completed";
+
+export type TaskPeriodState = {
+  /** "one_time" | "daily" | "weekly" | "monthly" */
+  periodType: string;
+  /** YYYY-MM-DD — period start (inclusive) */
+  periodStart: string;
+  /** YYYY-MM-DD — period end (exclusive) */
+  periodEnd: string;
+  targetCount: number;
+  completedCount: number;
+  remainingCount: number;
+  /** Unified display status for all UI components */
+  displayStatus: TaskDisplayStatus;
+  isPeriodCompleted: boolean;
+};
+
+/**
+ * Unified pure function: compute display state for ANY task type.
+ *
+ * For one_time tasks:
+ *   - periodType = "one_time"
+ *   - displayStatus maps from task.status directly
+ *
+ * For recurring tasks:
+ *   - periodType from task.frequency_type
+ *   - completedCount = number of completionRecords in the current Beijing-time period
+ *   - displayStatus derived from completedCount vs targetCount
+ *
+ * ALL recurring task UI MUST use this selector.
+ */
+export function getTaskPeriodState(
+  task: TaskRow,
+  completionRecords: TaskCompletionRecord[],
+): TaskPeriodState {
+  const taskType = task.task_type || "one_time";
+
+  // ── One-time tasks: map status directly ──
+  if (taskType === "one_time") {
+    const displayStatus: TaskDisplayStatus =
+      task.status === "done" ? "period_completed"
+      : task.status === "in_progress" ? "in_progress"
+      : "pending";
+    return {
+      periodType: "one_time",
+      periodStart: "",
+      periodEnd: "",
+      targetCount: 1,
+      completedCount: task.status === "done" ? 1 : 0,
+      remainingCount: task.status === "done" ? 0 : 1,
+      displayStatus,
+      isPeriodCompleted: task.status === "done",
+    };
+  }
+
+  // ── Recurring tasks: compute from completion records ──
+  const freqType = task.frequency_type || "daily";
+  const targetCount = task.target_count || 1;
+  const periodStart = getBeijingPeriodStart(freqType);
+  const periodEnd = getBeijingPeriodEnd(freqType);
+
+  // Count records within the current period
+  const completedCount = completionRecords.filter((r) => {
+    return r.completion_date >= periodStart && r.completion_date < periodEnd;
+  }).length;
+
+  const isPeriodCompleted = completedCount >= targetCount;
+  const displayStatus: TaskDisplayStatus =
+    isPeriodCompleted ? "period_completed"
+    : completedCount > 0 ? "in_progress"
+    : "pending";
+
+  return {
+    periodType: freqType,
+    periodStart,
+    periodEnd,
+    targetCount,
+    completedCount,
+    remainingCount: Math.max(0, targetCount - completedCount),
+    displayStatus,
+    isPeriodCompleted,
+  };
+}
+
+/**
+ * Fetch completion records for a list of recurring task IDs
+ * within their current periods. Returns a Map of taskId → records.
+ */
+export function useRecurringPeriodStates(tasks: TaskRow[]) {
+  const recurringTasks = tasks.filter((t) => t.task_type === "recurring");
+  const taskIds = recurringTasks.map((t) => t.id);
+
+  return useQuery({
+    queryKey: ["task-completion-records", "period", taskIds],
+    queryFn: async () => {
+      if (taskIds.length === 0) return new Map<string, TaskCompletionRecord[]>();
+
+      // Get the earliest period start across all recurring tasks
+      // and the latest period end — fetch all potentially relevant records
+      let minStart = getBeijingDateString();
+      let maxEnd = getBeijingDateString();
+      for (const t of recurringTasks) {
+        const freq = t.frequency_type || "daily";
+        const start = getBeijingPeriodStart(freq);
+        const end = getBeijingPeriodEnd(freq);
+        if (start < minStart) minStart = start;
+        if (end > maxEnd) maxEnd = end;
+      }
+
+      const { data, error } = await supabase
+        .from("task_completion_records")
+        .select("id,task_id,user_id,completed_at,completion_date")
+        .in("task_id", taskIds)
+        .gte("completion_date", minStart)
+        .lt("completion_date", maxEnd)
+        .order("completion_date", { ascending: false });
+
+      if (error) throw error;
+
+      const map = new Map<string, TaskCompletionRecord[]>();
+      for (const r of (data || []) as TaskCompletionRecord[]) {
+        const existing = map.get(r.task_id) || [];
+        existing.push(r);
+        map.set(r.task_id, existing);
+      }
+      // Ensure every taskId has at least an empty array
+      for (const id of taskIds) {
+        if (!map.has(id)) map.set(id, []);
+      }
+      return map;
+    },
+    enabled: taskIds.length > 0,
+    staleTime: 30 * 1000,
+  });
+}
+
+/** Legacy alias — use getBeijingPeriodStart from @/lib/date instead */
 export function getCycleStart(frequencyType: string): string {
-  const now = new Date();
-  if (frequencyType === "daily") {
-    return now.toISOString().split("T")[0];
-  }
-  if (frequencyType === "weekly") {
-    const dow = now.getDay();
-    const mon = new Date(now);
-    mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
-    return mon.toISOString().split("T")[0];
-  }
-  // monthly
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  return getBeijingPeriodStart(frequencyType);
 }
 
 // ── Goals ──
@@ -458,60 +590,76 @@ export function useToggleTaskComplete() {
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
       const { data: task } = await supabase
         .from("tasks")
-        .select("task_type")
+        .select("task_type,frequency_type,target_count")
         .eq("id", id)
         .single();
 
-      const taskType = (task as Record<string, unknown> | null)?.task_type as string || "one_time";
+      const t = task as Record<string, unknown> | null;
+      const taskType = t?.task_type as string || "one_time";
 
       if (taskType === "recurring") {
-        const today = new Date().toISOString().split("T")[0];
+        const today = getBeijingDateString();
         const userId = (await supabase.auth.getUser()).data.user?.id;
 
-        const { data: rt } = await supabase
-          .from("tasks")
-          .select("frequency_type,target_count,completed_count,cycle_start_date")
-          .eq("id", id)
-          .single();
+        const freqType = t?.frequency_type as string || "daily";
+        const targetCount = (t?.target_count as number) || 1;
+        const periodStart = getBeijingPeriodStart(freqType);
+        const periodEnd = getBeijingPeriodEnd(freqType);
 
-        if (!rt) throw new Error("Task not found");
+        // Check if today already has a completion record
+        const { data: todayRecord } = await supabase
+          .from("task_completion_records")
+          .select("id")
+          .eq("task_id", id)
+          .eq("completion_date", today)
+          .maybeSingle();
 
-        const freqType = (rt as Record<string, unknown>).frequency_type as string || "daily";
-        const targetCount = (rt as Record<string, unknown>).target_count as number || 1;
-        const cycleStart = getCycleStart(freqType);
+        if (todayRecord) {
+          // ── UNDO: delete today's record ──
+          const { error: delErr } = await supabase
+            .from("task_completion_records")
+            .delete()
+            .eq("id", (todayRecord as Record<string, unknown>).id as string);
 
-        const { count: recordCount, error: countErr } = await supabase
+          if (delErr) throw delErr;
+        } else {
+          // ── COMPLETE: insert today's record ──
+          const { error: insertErr } = await supabase
+            .from("task_completion_records")
+            .insert({ task_id: id, user_id: userId, completion_date: today });
+
+          if (insertErr) throw insertErr;
+        }
+
+        // Re-count actual records in current period (source of truth)
+        const { count: newCount, error: countErr } = await supabase
           .from("task_completion_records")
           .select("id", { count: "exact", head: true })
           .eq("task_id", id)
-          .gte("completion_date", cycleStart);
+          .gte("completion_date", periodStart)
+          .lt("completion_date", periodEnd);
 
         if (countErr) throw countErr;
 
-        const currentCount = (recordCount ?? 0);
-        if (currentCount >= targetCount) return;
+        const completedCount = newCount ?? 0;
+        const isComplete = completedCount >= targetCount;
 
-        const newCount = currentCount + 1;
-        const isComplete = newCount >= targetCount;
-
+        // Sync denormalized counters on tasks row
         const { error: updateErr } = await supabase
           .from("tasks")
           .update({
-            completed_count: newCount,
-            cycle_start_date: cycleStart,
-            status: isComplete ? "done" : "in_progress",
+            completed_count: completedCount,
+            cycle_start_date: periodStart,
+            status: isComplete ? "done" : completedCount > 0 ? "in_progress" : "pending",
             updated_at: new Date().toISOString(),
           })
           .eq("id", id);
 
         if (updateErr) throw updateErr;
 
-        const { error: insertErr } = await supabase
-          .from("task_completion_records")
-          .insert({ task_id: id, user_id: userId, completion_date: today });
-
-        if (insertErr) throw insertErr;
+        return { taskType: "recurring", completedCount, isComplete };
       } else {
+        // ── One-time task: toggle done/pending ──
         const isDone = currentStatus === "done";
         const { error } = await supabase
           .from("tasks")
@@ -523,11 +671,67 @@ export function useToggleTaskComplete() {
           .eq("id", id);
 
         if (error) throw error;
+
+        return { taskType: "one_time", isDone: !isDone };
       }
     },
     onMutate: async ({ id, currentStatus }) => {
+      // Snapshot for rollback
+      const tasksQueries = qc.getQueriesData({ queryKey: ["tasks"] });
+
+      // Determine task type from cache to apply correct optimistic update
+      let taskType = "one_time";
+      let completedCount = 0;
+      let targetCount = 1;
+      for (const [, data] of tasksQueries) {
+        if (!Array.isArray(data)) continue;
+        const found = data.find((t: TaskRow) => t.id === id);
+        if (found) {
+          taskType = found.task_type || "one_time";
+          completedCount = found.completed_count || 0;
+          targetCount = found.target_count || 1;
+          break;
+        }
+      }
+
       await qc.cancelQueries({ queryKey: ["tasks"] });
-      // Optimistic toggle
+
+      if (taskType === "recurring") {
+        // Check if today already has a record from the cache
+        const today = getBeijingDateString();
+        const periodRecordsQueries = qc.getQueriesData({ queryKey: ["task-completion-records"] });
+        let hasTodayRecord = false;
+        for (const [, data] of periodRecordsQueries) {
+          if (data instanceof Map) {
+            const records = data.get(id) as TaskCompletionRecord[] | undefined;
+            if (records?.some((r) => r.completion_date === today)) {
+              hasTodayRecord = true;
+              break;
+            }
+          }
+        }
+
+        const newCompletedCount = hasTodayRecord
+          ? Math.max(0, completedCount - 1)
+          : completedCount + 1;
+        const isComplete = newCompletedCount >= targetCount;
+        const newStatus = isComplete ? "done" : newCompletedCount > 0 ? "in_progress" : "pending";
+
+        const patch = {
+          id,
+          completed_count: newCompletedCount,
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        };
+        qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
+          if (!old || !Array.isArray(old)) return old;
+          return old.map((t: TaskRow) => t.id === id ? { ...t, ...patch } : t);
+        });
+
+        return { taskType: "recurring", patch, previousTasks: tasksQueries };
+      }
+
+      // One-time: status toggle
       const isDone = currentStatus === "done";
       const patch = isDone
         ? { id, status: "pending", completed_at: null, updated_at: new Date().toISOString() }
@@ -536,11 +740,12 @@ export function useToggleTaskComplete() {
         if (!old || !Array.isArray(old)) return old;
         return old.map((t: TaskRow) => t.id === id ? { ...t, ...patch } : t);
       });
-      return { patch };
+      return { taskType: "one_time", patch, previousTasks: tasksQueries };
     },
     onSuccess: async (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["tasks", "today"] });
+      qc.invalidateQueries({ queryKey: ["task-completion-records"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
 
       try {
@@ -586,13 +791,14 @@ export function useToggleTaskComplete() {
       }
     },
     onError: (_err, { id }, context) => {
-      if (context?.patch) {
-        qc.setQueriesData({ queryKey: ["tasks"] }, (old: unknown) => {
-          if (!old || !Array.isArray(old)) return old;
-          return old.map((t: TaskRow) => t.id === id ? { ...t } : t);
-        });
+      // Rollback: restore previous task cache
+      if (context?.previousTasks) {
+        for (const [key, data] of context.previousTasks as [unknown[], unknown][]) {
+          qc.setQueryData(key, data);
+        }
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["task-completion-records"] });
     },
   });
 }
