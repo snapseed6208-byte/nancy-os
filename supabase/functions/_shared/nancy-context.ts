@@ -17,6 +17,7 @@
 // ============================================
 
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { callDeepSeek } from "./ai.ts";
 
 // ── Types ──
 
@@ -1773,4 +1774,190 @@ export function buildNancyPersonalProfileContextWithGrowth(
   }
 
   return base + "\n" + growthLines.join("\n");
+}
+
+// ── 14. Asset Auto Mining ──
+
+export interface AssetCandidate {
+  /** Asset type */
+  asset_type: "personal_story" | "experience_case" | "viewpoint" | "quality_expression";
+  /** Short descriptive title */
+  title: string;
+  /** Why this is worth saving as an asset */
+  reason: string;
+  /** Source module that produced this text */
+  source: string;
+  /** AI confidence in this extraction (0-1) */
+  confidence: number;
+  /** Structured asset data matching the asset_type schema */
+  asset_data: Record<string, unknown>;
+  /** Direct quote from source text that proves this asset is real */
+  evidence_quote: string;
+  /** Suggested tags for retrieval */
+  tags: string[];
+}
+
+export interface MineAssetCandidatesOptions {
+  /** Source module label (chinese_speaking, english_coach, reflection, journal, manual) */
+  sourceType: string;
+  /** Reference ID to the source record */
+  sourceRefId?: string;
+  /** Max candidates to return (default 3) */
+  maxCandidates?: number;
+}
+
+const MINE_ASSETS_SYSTEM_PROMPT = `你是一个个人知识资产管理助手。你的任务是从用户生成的文本中识别值得长期保存的"表达资产"。
+
+你会收到一段用户产生的文本（可能来自口语训练转录、英语练习回答、反思内容、日记等）。
+
+请从中提取可以作为表达资产的内容。表达资产是用户未来在口语表达、写作、面试等场景中可以复用的真实个人素材。
+
+━━━━━━━━━━━━━━━━━━━━
+四种资产类型
+━━━━━━━━━━━━━━━━━━━━
+
+1. **personal_story（个人故事）**：用户讲述的一段有起承转合的真实经历。
+   需要提取：background（背景）、challenge（挑战/困难）、action（行动）、result（结果）、reflection（反思）
+
+2. **experience_case（经验案例）**：用户从工作或生活中总结的、有方法论价值的经验。
+   需要提取：situation（情境）、task（任务）、action_taken（采取的行动）、result（结果）、learning（学到的经验）
+
+3. **viewpoint（观点立场）**：用户对某个话题的明确观点和论证。
+   需要提取：topic（话题）、my_position（立场）、reasoning（推理）、example（举例）、boundary（适用边界）、counter_argument（反面思考）
+
+4. **quality_expression（优质表达）**：用户一段表达质量较高的原文，值得保存为参考范例。
+   需要提取：original_question（原问题/语境）、my_original_answer（用户原文）、why_good（为什么好）、skill_tags（体现的技能标签）
+
+━━━━━━━━━━━━━━━━━━━━
+提取原则
+━━━━━━━━━━━━━━━━━━━━
+
+1. **宁缺毋滥**。只有真正有价值的内容才提取。如果文本中没有值得长期保存的内容，返回空数组。
+2. **必须基于原文**。所有提取的内容必须来自用户提供的文本，不得编造或补充用户没有说的内容。
+3. **evidence_quote 不可或缺**。每个候选必须包含原文中的直接引用作为证据。没有明确原文支持的候选是无效的。
+4. **区分类型**。同一段文本可能同时包含故事和观点，需要分别提取。
+5. **confidence 要诚实**：
+   - 0.7-0.9：文本中有清晰完整的结构，明确属于某个类型
+   - 0.5-0.7：文本中有部分结构，但不够完整
+   - 0.3-0.5：文本中有暗示或碎片化的相关内容
+   低于0.5的不要提取。
+6. **如果文本太短（少于100字），只提取 quality_expression 类型的优质句子，不要尝试提取完整的故事或观点。**
+
+━━━━━━━━━━━━━━━━━━━━
+输出格式
+━━━━━━━━━━━━━━━━━━━━
+
+只输出合法JSON，不得使用Markdown代码围栏。
+
+{
+  "candidates": [
+    {
+      "asset_type": "personal_story",
+      "title": "简短标题（15字以内）",
+      "reason": "为什么值得保存（1-2句话，说明这个故事/观点/经验的独特价值）",
+      "confidence": 0.75,
+      "asset_data": {
+        "background": "原文中用户描述的背景",
+        "challenge": "原文中用户面对的挑战",
+        "action": "原文中用户采取的行动",
+        "result": "原文中的结果",
+        "reflection": "原文中用户的反思（如果有）"
+      },
+      "evidence_quote": "原文中能证明这个资产真实存在的最关键一句引用（直接复制原文）",
+      "tags": ["标签1", "标签2", "标签3"]
+    }
+  ]
+}
+
+如果文本中没有值得提取的内容，返回：{"candidates": []}`;
+
+/**
+ * Mine expression asset candidates from user-generated text.
+ *
+ * Uses AI to identify extractable assets (personal_story, experience_case,
+ * viewpoint, quality_expression) from any text source.
+ *
+ * DOES NOT insert into the database. Returns candidates for user review.
+ * The caller (or frontend) decides which candidates to save.
+ *
+ * Sources supported:
+ * - Chinese speaking transcripts
+ * - English coach answers
+ * - Reflection content
+ * - Journal entries
+ *
+ * Usage:
+ *   const candidates = await mineAssetCandidates(supabase, userId, text, {
+ *     sourceType: "journal",
+ *     sourceRefId: journalEntry.id,
+ *   });
+ */
+export async function mineAssetCandidates(
+  supabase: SupabaseClient,
+  userId: string,
+  text: string,
+  options: MineAssetCandidatesOptions,
+): Promise<AssetCandidate[]> {
+  if (!text || text.trim().length < 30) return [];
+
+  const maxCandidates = options.maxCandidates || 3;
+  const truncatedText = text.length > 6000 ? text.slice(0, 6000) + "\n\n[文本已截断...]" : text;
+
+  const userMessage = [
+    `## 来源类型：${options.sourceType}`,
+    options.sourceRefId ? `## 来源引用：${options.sourceRefId}` : "",
+    `## 用户文本`,
+    ``,
+    truncatedText,
+    ``,
+    `请从以上文本中提取最多${maxCandidates}个表达资产候选。宁缺毋滥。`,
+  ].filter(Boolean).join("\n");
+
+  try {
+    const result = await callDeepSeek([
+      { role: "system", content: MINE_ASSETS_SYSTEM_PROMPT },
+      { role: "user", content: userMessage },
+    ], {
+      temperature: 0.3,
+      maxTokens: 3072,
+      timeout: 90_000,
+    });
+
+    if (!result.success) {
+      console.error(`[mineAssetCandidates] AI call failed: ${result.error}`);
+      return [];
+    }
+
+    const raw = result.data as string;
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error(`[mineAssetCandidates] no JSON found in AI response`);
+      return [];
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const candidates = (parsed.candidates || []) as Array<Record<string, unknown>>;
+
+    return candidates
+      .filter((c) =>
+        c.asset_type &&
+        c.title &&
+        c.evidence_quote &&
+        (c.confidence as number) >= 0.5
+      )
+      .map((c) => ({
+        asset_type: c.asset_type as AssetCandidate["asset_type"],
+        title: String(c.title).slice(0, 100),
+        reason: String(c.reason || "").slice(0, 200),
+        source: options.sourceType,
+        confidence: Math.min(1, Math.max(0, Number(c.confidence) || 0.5)),
+        asset_data: (c.asset_data || {}) as Record<string, unknown>,
+        evidence_quote: String(c.evidence_quote).slice(0, 500),
+        tags: (Array.isArray(c.tags) ? c.tags : []) as string[],
+      }))
+      .slice(0, maxCandidates);
+  } catch (err) {
+    console.error(`[mineAssetCandidates] error:`, (err as Error).message);
+    return [];
+  }
 }
