@@ -656,6 +656,7 @@ export default function EnglishReviewV3() {
   const [roundOrder, setRoundOrder] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
+  const roundInitializedRef = useRef(false);
   const [roundComplete, setRoundComplete] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [roundStats, setRoundStats] = useState({ passed: 0, failed: 0 });
@@ -663,14 +664,15 @@ export default function EnglishReviewV3() {
   const session = data?.session;
   const allItems = data?.items || [];
 
-  // ── Derive round order when round changes or items load ──
+  // ── Derive round order once per round (guard against allItems refetch invalidation) ──
   useEffect(() => {
     if (allItems.length === 0) return;
     if (sessionComplete) return;
+    if (roundInitializedRef.current) return; // already initialized this round — don't reshuffle
 
     let order: string[];
     if (round === 1) {
-      // Round 1: all items in the session
+      // Round 1: all items in the session (initial state = pending)
       order = allItems.filter((i) => i.status === "pending").map((i) => i.id);
       if (order.length === 0) {
         // All items already processed — session is stale, skip
@@ -693,6 +695,7 @@ export default function EnglishReviewV3() {
     setCurrentIndex(0);
     currentIndexRef.current = 0;
     setRoundComplete(false);
+    roundInitializedRef.current = true;
   }, [round, allItems, sessionComplete]);
 
   const currentItemId = roundOrder[currentIndex] || null;
@@ -836,6 +839,7 @@ export default function EnglishReviewV3() {
   // ── Start next round ──
   const handleContinueToNextRound = useCallback(async () => {
     const nextRound = (round + 1) as 1 | 2 | 3;
+    roundInitializedRef.current = false; // allow effect to reinitialize for new round
     setRound(nextRound);
     setRoundStats({ passed: 0, failed: 0 });
     if (session?.id && nextRound === 2) {
