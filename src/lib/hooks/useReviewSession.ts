@@ -957,6 +957,15 @@ export interface SentenceDetail {
   completedAt: string | null;
 }
 
+export interface ExpressionProgressDetail {
+  english: string;
+  chinese: string;
+  recallScore: number | null;
+  recallStatus: string;
+  clozeResult: "correct" | "partially_correct" | "incorrect" | null;
+  userSentence: string | null;
+}
+
 export interface SessionDetailData {
   sessionId: string;
   sessionDate: string;
@@ -976,6 +985,8 @@ export interface SessionDetailData {
   round3Total: number;
   round3Completed: number;
   sentenceDetails: SentenceDetail[];
+  // V3.5: Per-expression breakdown across all modes
+  expressionDetails: ExpressionProgressDetail[];
   // Difficult expressions (still failed/reinforcement at session end)
   difficultExpressions: Array<{
     english: string;
@@ -1012,6 +1023,7 @@ export function useSessionDetail() {
 
       const sessionItems = (items || []) as unknown as Array<{
         id: string;
+        expression_id: string;
         status: string;
         recall_score: number | null;
         reinforcement_round: number;
@@ -1064,6 +1076,24 @@ export function useSessionDetail() {
         completedAt: i.last_practice_at || null,
       }));
 
+      // V3.5: Per-expression progress across all modes
+      const expressionDetails: ExpressionProgressDetail[] = sessionItems.map((i) => {
+        const exprClozeLogs = (clozeLogs || []).filter((l) => l.expression_id === i.expression_id);
+        const latestCloze = exprClozeLogs.length > 0 ? exprClozeLogs[exprClozeLogs.length - 1] : null;
+        const clozeResult: "correct" | "partially_correct" | "incorrect" | null = latestCloze
+          ? (latestCloze.score as number) >= 2 ? "correct" : (latestCloze.score as number) >= 1 ? "partially_correct" : "incorrect"
+          : null;
+
+        return {
+          english: i.expression?.english || "unknown",
+          chinese: i.expression?.chinese || "",
+          recallScore: i.recall_score,
+          recallStatus: i.status,
+          clozeResult,
+          userSentence: i.user_sentence || null,
+        };
+      });
+
       // Difficult expressions
       const difficultExpressions = sessionItems
         .filter((i) => i.status === "failed" || i.status === "reinforcement")
@@ -1089,6 +1119,7 @@ export function useSessionDetail() {
         round3Total,
         round3Completed,
         sentenceDetails,
+        expressionDetails,
         difficultExpressions,
       };
     },
