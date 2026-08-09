@@ -42,9 +42,9 @@ serve(async (req: Request) => {
   }
 
   try {
-    const auth = await authenticateRequest(req, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    if (!auth.ok) {
-      return new Response(JSON.stringify({ error: auth.error }), {
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return new Response(JSON.stringify({ error: "需要登录" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

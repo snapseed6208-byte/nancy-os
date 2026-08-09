@@ -1,11 +1,15 @@
 // ============================================
-// Nancy OS — Nancy AI Dashboard
+// Nancy OS — Nancy AI Dashboard (v2)
 // Phase 3.6: Personal AI capability cockpit.
-// Read-only — no new tables, no writes.
+//
+// v2: Graceful degradation — each section independently
+// handles loading/error/empty states. DB sections render
+// even when the AI agent is unavailable.
 // ============================================
 
 import { useNancyAIDashboard } from "@/lib/hooks/useNancyAIDashboard";
 import type {
+  DashboardSectionState,
   IdentityCard,
   GrowthTimeline,
   AssetOverview,
@@ -28,13 +32,59 @@ import {
 } from "lucide-react";
 
 // ═══════════════════════════════════════
+// Section error card
+// ═══════════════════════════════════════
+
+function SectionErrorCard({
+  icon: Icon,
+  title,
+  message,
+}: {
+  icon: typeof Brain;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div className="bg-white border border-amber-200 rounded-2xl p-6">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center">
+          <AlertTriangle size={18} className="text-amber-500" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-ink text-sm">{title}</h3>
+          <p className="text-xs text-ink-light/60">暂时无法加载</p>
+        </div>
+      </div>
+      <p className="text-xs text-ink-light ml-[52px]">{message}</p>
+    </div>
+  );
+}
+
+function SectionLoadingCard({ title }: { title: string }) {
+  return (
+    <div className="bg-white border border-border/60 rounded-2xl p-6 flex items-center justify-center py-10">
+      <div className="text-center space-y-2">
+        <Loader2 size={24} className="animate-spin text-sage mx-auto" />
+        <p className="text-xs text-ink-light">{title}加载中…</p>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
 // Section 1: AI Identity Card
 // ═══════════════════════════════════════
 
-function IdentityCard({ data }: { data: IdentityCard }) {
+function IdentityCard({ state }: { state: DashboardSectionState<IdentityCard> }) {
   const [, navigate] = useLocation();
 
-  if (!data.hasRealData) {
+  if (state.isLoading) return <SectionLoadingCard title="AI 个人画像" />;
+  if (state.error && !state.data) {
+    return <SectionErrorCard icon={Brain} title="AI 个人画像" message={state.error} />;
+  }
+
+  const data = state.data;
+  if (!data || !data.hasRealData) {
     return (
       <div className="bg-white border border-border/60 rounded-2xl p-6 text-center">
         <Brain size={32} className="mx-auto text-sage mb-3" />
@@ -47,7 +97,6 @@ function IdentityCard({ data }: { data: IdentityCard }) {
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center">
@@ -66,7 +115,6 @@ function IdentityCard({ data }: { data: IdentityCard }) {
         </button>
       </div>
 
-      {/* Identity fields */}
       <div className="grid grid-cols-2 gap-3">
         <IdentityField label="昵称" value={data.nickname || "—"} />
         <IdentityField label="职业方向" value={data.careerField || data.careerDirection || "—"} />
@@ -74,7 +122,6 @@ function IdentityCard({ data }: { data: IdentityCard }) {
         <IdentityField label="当前阶段" value={data.currentMilestone || "—"} />
       </div>
 
-      {/* Strengths & Weaknesses */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <p className="text-xs font-medium text-ink-light mb-2">优势</p>
@@ -106,7 +153,6 @@ function IdentityCard({ data }: { data: IdentityCard }) {
         </div>
       </div>
 
-      {/* Communication style */}
       {data.communicationStyle && (
         <div className="pt-1 border-t border-border/40">
           <p className="text-xs font-medium text-ink-light mb-1">沟通风格</p>
@@ -144,8 +190,14 @@ const DIRECTION_COLORS: Record<string, string> = {
   insufficient_data: "text-ink-light/60",
 };
 
-function GrowthTimeline({ data }: { data: GrowthTimeline }) {
-  if (data.overallDirection === "insufficient_data" && data.dimensionTrends.length === 0) {
+function GrowthTimelineSection({ state }: { state: DashboardSectionState<GrowthTimeline> }) {
+  if (state.isLoading) return <SectionLoadingCard title="成长趋势" />;
+  if (state.error && !state.data) {
+    return <SectionErrorCard icon={TrendingUp} title="成长趋势" message={state.error} />;
+  }
+
+  const data = state.data;
+  if (!data || (data.overallDirection === "insufficient_data" && data.dimensionTrends.length === 0)) {
     return (
       <div className="bg-white border border-border/60 rounded-2xl p-6 text-center">
         <TrendingUp size={32} className="mx-auto text-sage mb-3" />
@@ -158,7 +210,6 @@ function GrowthTimeline({ data }: { data: GrowthTimeline }) {
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center">
@@ -166,9 +217,7 @@ function GrowthTimeline({ data }: { data: GrowthTimeline }) {
           </div>
           <div>
             <h3 className="font-semibold text-ink">成长趋势</h3>
-            <p className="text-xs text-ink-light">
-              基于过去 60 天的训练数据
-            </p>
+            <p className="text-xs text-ink-light">基于过去 60 天的训练数据</p>
           </div>
         </div>
         <span className={`text-sm font-medium ${DIRECTION_COLORS[data.overallDirection] || "text-ink-light"}`}>
@@ -176,7 +225,6 @@ function GrowthTimeline({ data }: { data: GrowthTimeline }) {
         </span>
       </div>
 
-      {/* Dimension trends — mini bars */}
       {data.dimensionTrends.length > 0 && (
         <div className="space-y-3">
           {data.dimensionTrends.map((d) => (
@@ -209,7 +257,6 @@ function GrowthTimeline({ data }: { data: GrowthTimeline }) {
         </div>
       )}
 
-      {/* Summary text */}
       {(data.recentProgress || data.currentFocus) && (
         <div className="space-y-2 pt-1">
           {data.recentProgress && (
@@ -228,7 +275,6 @@ function GrowthTimeline({ data }: { data: GrowthTimeline }) {
         </div>
       )}
 
-      {/* Milestones */}
       {data.recentMilestones.length > 0 && (
         <div className="pt-1 border-t border-border/40">
           <p className="text-xs font-medium text-ink-light mb-2">近期里程碑</p>
@@ -250,10 +296,16 @@ function GrowthTimeline({ data }: { data: GrowthTimeline }) {
 // Section 3: Expression Asset Overview
 // ═══════════════════════════════════════
 
-function AssetOverview({ data }: { data: AssetOverview }) {
+function AssetOverviewSection({ state }: { state: DashboardSectionState<AssetOverview> }) {
   const [, navigate] = useLocation();
 
-  if (data.total === 0) {
+  if (state.isLoading) return <SectionLoadingCard title="表达资产库" />;
+  if (state.error && !state.data) {
+    return <SectionErrorCard icon={Library} title="表达资产库" message={state.error} />;
+  }
+
+  const data = state.data;
+  if (!data || data.total === 0) {
     return (
       <div className="bg-white border border-border/60 rounded-2xl p-6 text-center">
         <Library size={32} className="mx-auto text-sage mb-3" />
@@ -268,7 +320,6 @@ function AssetOverview({ data }: { data: AssetOverview }) {
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center">
@@ -287,7 +338,6 @@ function AssetOverview({ data }: { data: AssetOverview }) {
         </button>
       </div>
 
-      {/* Type stat cards */}
       <div className="grid grid-cols-5 gap-2">
         {typeOrder.map((type) => {
           const count = data.byType[type] || 0;
@@ -308,7 +358,6 @@ function AssetOverview({ data }: { data: AssetOverview }) {
         })}
       </div>
 
-      {/* Top 5 assets */}
       {data.topAssets.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-medium text-ink-light">Top 5 资产</p>
@@ -338,19 +387,24 @@ function AssetOverview({ data }: { data: AssetOverview }) {
 // Section 4: Career Asset Card
 // ═══════════════════════════════════════
 
-function CareerCard({ data }: { data: CareerCard }) {
-  const hasData = data.careerField || data.targetDirection !== "待探索";
+function CareerCardSection({ state }: { state: DashboardSectionState<CareerCard> }) {
+  if (state.isLoading) return <SectionLoadingCard title="职业优势" />;
+  if (state.error && !state.data) {
+    return <SectionErrorCard icon={Briefcase} title="职业优势" message={state.error} />;
+  }
+
+  const data = state.data;
+  const hasData = data ? (data.careerField || data.targetDirection !== "待探索") : false;
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-4">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center">
           <Briefcase size={20} className="text-sage-deep" />
         </div>
         <div>
           <h3 className="font-semibold text-ink">职业优势</h3>
-          {hasData && (
+          {hasData && data && (
             <p className="text-xs text-ink-light">目标方向：{data.targetDirection}</p>
           )}
         </div>
@@ -364,12 +418,11 @@ function CareerCard({ data }: { data: CareerCard }) {
         </div>
       ) : (
         <>
-          {/* Strengths */}
-          {data.strengths.length > 0 && (
+          {data!.strengths.length > 0 && (
             <div>
               <p className="text-xs font-medium text-ink-light mb-2">核心优势</p>
               <div className="flex flex-wrap gap-1.5">
-                {data.strengths.map((s) => (
+                {data!.strengths.map((s) => (
                   <span
                     key={s}
                     className="text-xs px-2.5 py-1 rounded-full bg-sage-light text-sage-deep font-medium"
@@ -381,12 +434,11 @@ function CareerCard({ data }: { data: CareerCard }) {
             </div>
           )}
 
-          {/* Skill tags cloud */}
-          {data.skillTags.length > 0 && (
+          {data!.skillTags.length > 0 && (
             <div>
               <p className="text-xs font-medium text-ink-light mb-2">能力标签</p>
               <div className="flex flex-wrap gap-1.5">
-                {data.skillTags.map((t) => (
+                {data!.skillTags.map((t) => (
                   <span
                     key={t}
                     className="text-[11px] px-2 py-0.5 rounded-full bg-warm-cream text-ink border border-border/30"
@@ -398,12 +450,11 @@ function CareerCard({ data }: { data: CareerCard }) {
             </div>
           )}
 
-          {/* Learning patterns */}
-          {data.learningPatterns.length > 0 && (
+          {data!.learningPatterns.length > 0 && (
             <div className="pt-1 border-t border-border/40">
               <p className="text-xs font-medium text-ink-light mb-2">学习模式</p>
               <div className="space-y-1">
-                {data.learningPatterns.slice(0, 3).map((p, i) => (
+                {data!.learningPatterns.slice(0, 3).map((p, i) => (
                   <p key={i} className="text-xs text-ink-light">{p}</p>
                 ))}
               </div>
@@ -425,10 +476,24 @@ const RECOMMENDATION_ICONS: Record<string, typeof Lightbulb> = {
   GraduationCap,
 };
 
-function AIRecommendations({ data }: { data: AIRecommendation[] }) {
+function AIRecommendationsSection({ state }: { state: DashboardSectionState<AIRecommendation[]> }) {
+  if (state.isLoading) return <SectionLoadingCard title="AI 建议" />;
+  if (state.error && !state.data) {
+    return <SectionErrorCard icon={Lightbulb} title="AI 建议" message={state.error} />;
+  }
+
+  const data = state.data;
+  if (!data || data.length === 0) {
+    return (
+      <div className="bg-white border border-border/60 rounded-2xl p-6 text-center">
+        <Lightbulb size={32} className="mx-auto text-sage mb-3" />
+        <p className="text-ink-light text-sm">完成更多训练后，AI 将生成个性化建议。</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-4">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-xl bg-sage-light flex items-center justify-center">
           <Lightbulb size={20} className="text-sage-deep" />
@@ -443,10 +508,7 @@ function AIRecommendations({ data }: { data: AIRecommendation[] }) {
         {data.map((rec) => {
           const Icon = RECOMMENDATION_ICONS[rec.icon] || Lightbulb;
           return (
-            <div
-              key={rec.area}
-              className="flex items-start gap-3 p-3 rounded-xl bg-warm-cream"
-            >
+            <div key={rec.area} className="flex items-start gap-3 p-3 rounded-xl bg-warm-cream">
               <div className="h-8 w-8 rounded-lg bg-white flex items-center justify-center shrink-0 mt-0.5">
                 <Icon size={14} className="text-sage-deep" />
               </div>
@@ -469,10 +531,26 @@ function AIRecommendations({ data }: { data: AIRecommendation[] }) {
 // ═══════════════════════════════════════
 
 export default function NancyAIDashboard() {
-  const { data, isLoading, error } = useNancyAIDashboard();
+  const {
+    identity,
+    growth,
+    assets,
+    career,
+    recommendations,
+    hasRealData,
+    generatedAt,
+    isAgentDown,
+  } = useNancyAIDashboard();
 
-  // ── Loading state ──
-  if (isLoading) {
+  // Global loading: only when ALL sections are loading (first visit)
+  const allLoading =
+    identity.isLoading &&
+    growth.isLoading &&
+    assets.isLoading &&
+    career.isLoading &&
+    recommendations.isLoading;
+
+  if (allLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="text-center space-y-3">
@@ -483,23 +561,13 @@ export default function NancyAIDashboard() {
     );
   }
 
-  // ── Error state ──
-  if (error || !data) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center space-y-3 max-w-sm">
-          <AlertTriangle size={32} className="text-accent-warm mx-auto" />
-          <p className="text-sm text-ink">仪表盘加载失败</p>
-          <p className="text-xs text-ink-light">
-            {error instanceof Error ? error.message : "请检查网络连接后刷新重试"}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Empty state (new user, no data anywhere)
+  const hasAnyData =
+    hasRealData ||
+    (assets.data && assets.data.total > 0) ||
+    (career.data && career.data.careerField);
 
-  // ── Empty state (new user) ──
-  if (!data._meta.hasRealData) {
+  if (!hasAnyData) {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="text-center py-10">
@@ -514,7 +582,7 @@ export default function NancyAIDashboard() {
             试试：中文表达训练 → 一分钟表达 → 完成几次后回来查看
           </p>
         </div>
-        <IdentityCard data={data.section1_identity} />
+        <IdentityCard state={identity} />
       </div>
     );
   }
@@ -525,11 +593,19 @@ export default function NancyAIDashboard() {
       <div>
         <h2 className="text-lg font-semibold text-ink">AI 仪表盘</h2>
         <p className="text-xs text-ink-light mt-1">
-          个人 AI 能力驾驶舱 · 数据更新于{" "}
-          {new Date(data._meta.generatedAt).toLocaleTimeString("zh-CN", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          个人 AI 能力驾驶舱
+          {generatedAt && (
+            <>
+              {" · 数据更新于 "}
+              {new Date(generatedAt).toLocaleTimeString("zh-CN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </>
+          )}
+          {isAgentDown && (
+            <span className="text-amber-500 ml-2">· AI 分析暂不可用，基础数据正常显示</span>
+          )}
         </p>
       </div>
 
@@ -537,15 +613,15 @@ export default function NancyAIDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Identity + Growth + Career */}
         <div className="lg:col-span-2 space-y-6">
-          <IdentityCard data={data.section1_identity} />
-          <GrowthTimeline data={data.section2_growth} />
-          <CareerCard data={data.section4_career} />
+          <IdentityCard state={identity} />
+          <GrowthTimelineSection state={growth} />
+          <CareerCardSection state={career} />
         </div>
 
         {/* Right: Assets + Recommendations */}
         <div className="space-y-6">
-          <AssetOverview data={data.section3_assets} />
-          <AIRecommendations data={data.section5_recommendations} />
+          <AssetOverviewSection state={assets} />
+          <AIRecommendationsSection state={recommendations} />
         </div>
       </div>
     </div>
