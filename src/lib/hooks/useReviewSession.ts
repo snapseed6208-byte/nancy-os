@@ -6,6 +6,7 @@
 // Supports same-day reinforcement (up to 3 rounds).
 // ============================================
 
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
@@ -810,6 +811,127 @@ export function useTodayPracticeLogs(sessionId?: string | null) {
     enabled: !!sessionId,
     staleTime: 30_000,
   });
+}
+
+// ═══════════════════════════════════════
+// V3.5: Unified daily review progress (single source of truth)
+//
+// Used by Review page, AI summary, and Hub to compute
+// per-expression daily state consistently.
+// ═══════════════════════════════════════
+
+export interface DailyExpressionProgress {
+  expressionId: string;
+  english: string;
+  chinese: string;
+  recall: {
+    completed: boolean;
+    score: number | null;
+    rating: "again" | "hard" | "good" | "easy" | null;
+    status: string;
+    reinforcementRound: number;
+  };
+  cloze: {
+    completed: boolean;
+    result: "correct" | "partially_correct" | "incorrect" | null;
+    userAnswer: string | null;
+  };
+  sentence: {
+    completed: boolean;
+    userSentence: string | null;
+    aiFeedback: string | null;
+  };
+}
+
+export interface DailyReviewProgress {
+  sessionId: string;
+  date: string;
+  expressions: DailyExpressionProgress[];
+  totalExpressions: number;
+  recallCompleted: number;
+  recallCorrect: number;
+  clozeCompleted: number;
+  clozeCorrect: number;
+  sentenceCompleted: number;
+}
+
+/**
+ * Pure function: compute per-expression daily progress from session items + practice logs.
+ * This is the SINGLE source of truth for daily review progress computation.
+ */
+export function getDailyReviewProgress(
+  sessionId: string,
+  items: SessionItem[],
+  practiceLogs: TodayPracticeLogs,
+): DailyReviewProgress {
+  const expressions: DailyExpressionProgress[] = items.map((item) => {
+    const expr = item.expression;
+    const recallScore = item.recallScore;
+    const recallCompleted = recallScore !== null;
+    const rating: "again" | "hard" | "good" | "easy" | null =
+      recallScore !== null
+        ? recallScore >= 4
+          ? "good"
+          : "hard"
+        : null;
+
+    const clozeResult = practiceLogs.clozeResults.get(item.expressionId) || null;
+
+    return {
+      expressionId: item.expressionId,
+      english: expr?.english || "unknown",
+      chinese: expr?.chinese || "",
+      recall: {
+        completed: recallCompleted,
+        score: recallScore,
+        rating,
+        status: item.status,
+        reinforcementRound: item.reinforcementRound || 0,
+      },
+      cloze: {
+        completed: practiceLogs.clozeIds.has(item.expressionId),
+        result: clozeResult?.result || null,
+        userAnswer: clozeResult?.userAnswer || null,
+      },
+      sentence: {
+        completed: practiceLogs.sentenceIds.has(item.expressionId) || item.userSentence !== null,
+        userSentence: item.userSentence || practiceLogs.sentenceResults.get(item.expressionId)?.sentence || null,
+        aiFeedback: item.aiFeedback || null,
+      },
+    };
+  });
+
+  return {
+    sessionId,
+    date: todayStr(),
+    expressions,
+    totalExpressions: items.length,
+    recallCompleted: items.filter((i) => i.recallScore !== null).length,
+    recallCorrect: items.filter((i) => i.recallScore !== null && i.recallScore >= 3).length,
+    clozeCompleted: practiceLogs.clozeIds.size,
+    clozeCorrect: [...practiceLogs.clozeResults.values()].filter((r) => r.result === "correct").length,
+    sentenceCompleted: practiceLogs.sentenceIds.size,
+  };
+}
+
+/**
+ * Hook: fetch and compute unified daily review progress.
+ * Used by Review page to replace inline aggregation.
+ */
+export function useDailyReviewProgress(
+  sessionId: string | undefined | null,
+  items: SessionItem[],
+) {
+  const { data: practiceLogs } = useTodayPracticeLogs(sessionId);
+
+  return useMemo(() => {
+    if (!sessionId || items.length === 0) return null;
+    return getDailyReviewProgress(
+      sessionId,
+      items,
+      practiceLogs || { clozeIds: new Set(), sentenceIds: new Set(), clozeResults: new Map(), sentenceResults: new Map() },
+    );
+  }, [sessionId, items, practiceLogs]);
 }
 
 export function getSessionStats(items: SessionItem[]) {

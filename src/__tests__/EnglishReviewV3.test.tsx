@@ -1302,7 +1302,7 @@ describe("V3.5 ClozeQuestion Structural Integrity", () => {
     expect(q.chineseHint).toBe("迎难而上");
     expect(q.sourceSentence).toBeUndefined();
     // No more 'scenario' field
-    expect((q as Record<string, unknown>).scenario).toBeUndefined();
+    expect((q as unknown as Record<string, unknown>).scenario).toBeUndefined();
   });
 
   it("N17. fallback with no sources has valid=false", () => {
@@ -1331,7 +1331,7 @@ describe("V3.5 ClozeQuestion Structural Integrity", () => {
       undefined,
     );
     // V3.5: no scenario field at all
-    const qAny = q as Record<string, unknown>;
+    const qAny = q as unknown as Record<string, unknown>;
     expect(qAny.scenario).toBeUndefined();
     // sourceSentence is stored but for post-submit only
     expect(q.sourceSentence).toBe("I've lost touch with most of my classmates.");
