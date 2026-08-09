@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Flag, Calendar, ListChecks, TrendingUp, Loader2, Plus, Check, X,
   RefreshCw, Brain,
@@ -140,25 +140,25 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
   const medTasks = taskList.filter((t) => t.priority === "medium");
   const lowTasks = taskList.filter((t) => t.priority === "low");
 
-  console.log("[TodayPlan component] taskList total =", taskList.length);
-  console.log("[TodayPlan component] taskList items =", taskList.map(t => ({ id: t.id, title: t.title, status: t.status, due_date: t.due_date, is_today_focus: t.is_today_focus, task_type: t.task_type, priority: t.priority })));
-  console.log("[TodayPlan component] high/med/low =", highTasks.length, medTasks.length, lowTasks.length);
-  console.log("[TodayPlan component] unaccounted =", taskList.filter(t => !["high", "medium", "low"].includes(t.priority)).length);
+  // Compute summary counters from period state (single source of truth)
+  const summary = useMemo(() => {
+    let pending = 0;
+    let completed = 0;
+    for (const t of taskList) {
+      if (t.task_type === "recurring") {
+        const records = periodRecordsMap?.get(t.id) || [];
+        const ps = getTaskPeriodState(t, records);
+        if (ps.isPeriodCompleted) completed++;
+        else pending++;
+      } else {
+        if (t.status === "done") completed++;
+        else pending++;
+      }
+    }
+    return { pending, completed, total: pending + completed };
+  }, [taskList, periodRecordsMap]);
 
-  // Separate lightweight query for today's completed count
-  const { data: doneToday } = useQuery({
-    queryKey: ["tasks", "today", "doneCount"],
-    queryFn: async () => {
-      const { count } = await supabase
-        .from("tasks")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "done")
-        .gte("completed_at", today)
-        .lte("completed_at", `${today}T23:59:59`);
-      return count ?? 0;
-    },
-    staleTime: 30 * 1000,
-  });
+  const isToggling = toggleComplete.isPending;
 
   if (isLoading) {
     return (
@@ -170,18 +170,18 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
 
   return (
     <div className="space-y-4">
-      {/* Summary */}
+      {/* Summary — uses period state for recurring tasks */}
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-accent-rose/5 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-accent-rose">{highTasks.length + medTasks.length + lowTasks.length}</p>
+          <p className="text-lg font-bold text-accent-rose">{summary.pending}</p>
           <p className="text-[10px] text-ink-lighter">待完成</p>
         </div>
         <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-emerald-500">{doneToday ?? 0}</p>
+          <p className="text-lg font-bold text-emerald-500">{summary.completed}</p>
           <p className="text-[10px] text-ink-lighter">已完成</p>
         </div>
         <div className="bg-sage-light/30 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-sage-deep">{(highTasks.length + medTasks.length + lowTasks.length) + (doneToday ?? 0)}</p>
+          <p className="text-lg font-bold text-sage-deep">{summary.total}</p>
           <p className="text-[10px] text-ink-lighter">总计</p>
         </div>
       </div>
@@ -205,6 +205,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               color="text-accent-rose"
               tasks={highTasks}
               periodRecordsMap={periodRecordsMap}
+              isToggling={isToggling}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
@@ -220,6 +221,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               color="text-accent-sky"
               tasks={medTasks}
               periodRecordsMap={periodRecordsMap}
+              isToggling={isToggling}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
@@ -235,6 +237,7 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
               color="text-sage-deep"
               tasks={lowTasks}
               periodRecordsMap={periodRecordsMap}
+              isToggling={isToggling}
               onToggle={(id, status) => toggleComplete.mutate({ id, currentStatus: status })}
               onDelete={(id) => deleteTask.mutate(id)}
               onEdit={(id, updates) => updateTask.mutate({ id, ...updates })}
@@ -243,9 +246,9 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
           )}
 
           {/* Completed summary */}
-          {(doneToday ?? 0) > 0 && (
+          {summary.completed > 0 && (
             <p className="text-center text-[11px] text-ink-lighter py-2">
-              今日已完成 {doneToday} 项 ·
+              今日已完成 {summary.completed} 项 ·
               <button
                 onClick={() => onTabChange("tasks")}
                 className="text-sage-deep underline ml-1"
@@ -273,13 +276,14 @@ function TodayPlan({ onTabChange }: { onTabChange: (tab: Tab) => void }) {
 }
 
 function TaskSection({
-  icon: Icon, label, color, tasks, periodRecordsMap, onToggle, onDelete, onEdit, onEditFull, defaultCollapsed,
+  icon: Icon, label, color, tasks, periodRecordsMap, isToggling, onToggle, onDelete, onEdit, onEditFull, defaultCollapsed,
 }: {
   icon: React.ComponentType<{ size?: number; className?: string }>;
   label: string;
   color: string;
   tasks: TaskRow[];
   periodRecordsMap?: Map<string, TaskCompletionRecord[]>;
+  isToggling?: boolean;
   onToggle: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string, updates: { title?: string; priority?: string }) => void;
@@ -343,7 +347,8 @@ function TaskSection({
             >
               <button
                 onClick={() => onToggle(t.id, t.status)}
-                className="shrink-0"
+                disabled={isToggling}
+                className={cn("shrink-0", isToggling && "opacity-50 cursor-not-allowed")}
               >
                 {isComplete
                   ? <CheckCircle2 size={16} className="text-emerald-500" />
@@ -378,7 +383,7 @@ function TaskSection({
                 {isRecurring(t) ? (
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[10px] text-ink-lighter">
-                      {completedCount}/{targetCount}
+                      {Math.min(completedCount, targetCount)}/{targetCount}
                     </span>
                     <div className="w-12 bg-ink/10 rounded-full h-1 overflow-hidden">
                       <div
@@ -1175,6 +1180,7 @@ function TaskList() {
 
   const taskList = (tasks || []) as TaskRow[];
   const { data: periodRecordsMap } = useRecurringPeriodStates(taskList);
+  const isToggling = toggleComplete.isPending;
 
   const startEdit = (t: TaskRow) => {
     setEditingId(t.id);
@@ -1258,7 +1264,7 @@ function TaskList() {
                 isComplete && "opacity-60",
               )}
             >
-              <button onClick={() => toggleComplete.mutate({ id: t.id, currentStatus: t.status })} className="shrink-0">
+              <button onClick={() => toggleComplete.mutate({ id: t.id, currentStatus: t.status })} disabled={isToggling} className={cn("shrink-0", isToggling && "opacity-50 cursor-not-allowed")}>
                 {isComplete
                   ? <CheckCircle2 size={16} className="text-emerald-500" />
                   : isInProgress
@@ -1298,7 +1304,7 @@ function TaskList() {
                   {isRecurring ? (
                     <>
                       <span className="text-[10px] text-ink-lighter">
-                        {completedCount}/{targetCount}
+                        {Math.min(completedCount, targetCount)}/{targetCount}
                       </span>
                       <div className="w-10 bg-ink/10 rounded-full h-1 overflow-hidden">
                         <div

@@ -29,8 +29,9 @@ export function TodaySchedule({ tasks, onToggleTask, isToggling }: TodaySchedule
         {visible.map((task) => {
           const isRecurring = task.task_type === "recurring";
           const taskStatus = task.status === "in_progress" ? "in_progress" : "pending";
-          const compCount = isRecurring ? (task.completed_count || 0) : 0;
+          const rawCount = isRecurring ? (task.completed_count || 0) : 0;
           const tgtCount = isRecurring ? (task.target_count || 1) : 1;
+          const compCount = Math.min(rawCount, tgtCount);
           const pct = Math.round((compCount / tgtCount) * 100);
           const priorityLabel =
             task.priority === "high" ? "高优先" : task.priority === "medium" ? "中优先" : "低优先";

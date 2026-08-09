@@ -606,6 +606,18 @@ export function useToggleTaskComplete() {
         const periodStart = getBeijingPeriodStart(freqType);
         const periodEnd = getBeijingPeriodEnd(freqType);
 
+        // Count current period records BEFORE any mutation
+        const { count: preCount, error: preCountErr } = await supabase
+          .from("task_completion_records")
+          .select("id", { count: "exact", head: true })
+          .eq("task_id", id)
+          .gte("completion_date", periodStart)
+          .lt("completion_date", periodEnd);
+
+        if (preCountErr) throw preCountErr;
+
+        const currentCount = preCount ?? 0;
+
         // Check if today already has a completion record
         const { data: todayRecord } = await supabase
           .from("task_completion_records")
@@ -615,15 +627,20 @@ export function useToggleTaskComplete() {
           .maybeSingle();
 
         if (todayRecord) {
-          // ── UNDO: delete today's record ──
+          // ── UNDO: always allow deleting today's record ──
           const { error: delErr } = await supabase
             .from("task_completion_records")
             .delete()
             .eq("id", (todayRecord as Record<string, unknown>).id as string);
 
           if (delErr) throw delErr;
+        } else if (currentCount >= targetCount) {
+          // ── HARD GUARD: already at/above target, reject new INSERT ──
+          // Only undo is allowed at this point. Since today has no record,
+          // there's nothing to undo — silently return current state.
+          return { taskType: "recurring", completedCount: currentCount, isComplete: true, blocked: true };
         } else {
-          // ── COMPLETE: insert today's record ──
+          // ── COMPLETE: insert today's record (count < target) ──
           const { error: insertErr } = await supabase
             .from("task_completion_records")
             .insert({ task_id: id, user_id: userId, completion_date: today });
@@ -631,7 +648,7 @@ export function useToggleTaskComplete() {
           if (insertErr) throw insertErr;
         }
 
-        // Re-count actual records in current period (source of truth)
+        // Re-count actual records after mutation
         const { count: newCount, error: countErr } = await supabase
           .from("task_completion_records")
           .select("id", { count: "exact", head: true })
@@ -678,6 +695,7 @@ export function useToggleTaskComplete() {
     onMutate: async ({ id, currentStatus }) => {
       // Snapshot for rollback
       const tasksQueries = qc.getQueriesData({ queryKey: ["tasks"] });
+      const recordsQueries = qc.getQueriesData({ queryKey: ["task-completion-records"] });
 
       // Determine task type from cache to apply correct optimistic update
       let taskType = "one_time";
@@ -695,13 +713,12 @@ export function useToggleTaskComplete() {
       }
 
       await qc.cancelQueries({ queryKey: ["tasks"] });
+      await qc.cancelQueries({ queryKey: ["task-completion-records"] });
 
       if (taskType === "recurring") {
-        // Check if today already has a record from the cache
         const today = getBeijingDateString();
-        const periodRecordsQueries = qc.getQueriesData({ queryKey: ["task-completion-records"] });
         let hasTodayRecord = false;
-        for (const [, data] of periodRecordsQueries) {
+        for (const [, data] of recordsQueries) {
           if (data instanceof Map) {
             const records = data.get(id) as TaskCompletionRecord[] | undefined;
             if (records?.some((r) => r.completion_date === today)) {
@@ -711,9 +728,18 @@ export function useToggleTaskComplete() {
           }
         }
 
-        const newCompletedCount = hasTodayRecord
-          ? Math.max(0, completedCount - 1)
-          : completedCount + 1;
+        // HARD INVARIANT: don't optimistically go above target on insert
+        const effectiveCompletedCount = Math.min(completedCount, targetCount);
+        const wouldExceedTarget = !hasTodayRecord && effectiveCompletedCount >= targetCount;
+
+        let newCompletedCount: number;
+        if (wouldExceedTarget) {
+          newCompletedCount = effectiveCompletedCount;
+        } else {
+          newCompletedCount = hasTodayRecord
+            ? Math.max(0, effectiveCompletedCount - 1)
+            : effectiveCompletedCount + 1;
+        }
         const isComplete = newCompletedCount >= targetCount;
         const newStatus = isComplete ? "done" : newCompletedCount > 0 ? "in_progress" : "pending";
 
@@ -728,7 +754,27 @@ export function useToggleTaskComplete() {
           return old.map((t: TaskRow) => t.id === id ? { ...t, ...patch } : t);
         });
 
-        return { taskType: "recurring", patch, previousTasks: tasksQueries };
+        // Also patch periodRecordsMap so getTaskPeriodState() picks it up immediately
+        qc.setQueriesData({ queryKey: ["task-completion-records"] }, (old: unknown) => {
+          if (!(old instanceof Map)) return old;
+          const next = new Map(old);
+          const existing = (next.get(id) || []) as TaskCompletionRecord[];
+          if (hasTodayRecord) {
+            next.set(id, existing.filter((r) => r.completion_date !== today));
+          } else if (!wouldExceedTarget) {
+            const optimisticRecord: TaskCompletionRecord = {
+              id: `optimistic-${id}-${today}`,
+              task_id: id,
+              user_id: "",
+              completed_at: new Date().toISOString(),
+              completion_date: today,
+            };
+            next.set(id, [optimisticRecord, ...existing]);
+          }
+          return next;
+        });
+
+        return { taskType: "recurring", patch, previousTasks: tasksQueries, previousRecords: recordsQueries, wouldExceedTarget };
       }
 
       // One-time: status toggle
@@ -791,9 +837,14 @@ export function useToggleTaskComplete() {
       }
     },
     onError: (_err, { id }, context) => {
-      // Rollback: restore previous task cache
+      // Rollback: restore previous task and records cache
       if (context?.previousTasks) {
         for (const [key, data] of context.previousTasks as [unknown[], unknown][]) {
+          qc.setQueryData(key, data);
+        }
+      }
+      if (context?.previousRecords) {
+        for (const [key, data] of (context as Record<string, unknown>).previousRecords as [unknown[], unknown][]) {
           qc.setQueryData(key, data);
         }
       }
