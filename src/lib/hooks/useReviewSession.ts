@@ -409,6 +409,70 @@ export function useDiagnoseItem() {
   });
 }
 
+// ═══════════════════════════════════════
+// V3.1: Personal Practice Context
+// ═══════════════════════════════════════
+
+export interface PersonalPracticeContext {
+  asset_id?: string;
+  asset_title?: string;
+  scenario: string;
+  prompt: string;
+  matched_assets: Array<{
+    asset_id: string;
+    title: string;
+    asset_type: string;
+    match_score: number;
+  }>;
+}
+
+export function usePersonalPracticePrompt() {
+  return useMutation({
+    mutationFn: async ({
+      itemId,
+      expressionEnglish,
+      expressionChinese,
+      expressionExample,
+      expressionType,
+      sessionId,
+    }: {
+      itemId: string;
+      expressionEnglish: string;
+      expressionChinese: string;
+      expressionExample?: string;
+      expressionType?: string;
+      sessionId?: string;
+    }): Promise<PersonalPracticeContext> => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/personal-practice-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            expressionEnglish,
+            expressionChinese,
+            expressionExample,
+            expressionType,
+            itemId,
+            sessionId,
+          }),
+        },
+      );
+
+      if (!res.ok) throw new Error(`Personal practice failed: ${res.status}`);
+      const data = await res.json();
+      return data.context as PersonalPracticeContext;
+    },
+  });
+}
+
 export function getSessionStats(items: SessionItem[]) {
   const total = items.length;
   const passed = items.filter((i) => i.status === "passed" || i.status === "completed").length;

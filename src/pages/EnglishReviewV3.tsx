@@ -13,10 +13,12 @@ import {
   useRecordPracticeLog,
   useUpdateSessionStage,
   useDiagnoseItem,
+  usePersonalPracticePrompt,
   getReinforcementItems,
   getSessionStats,
   type SessionItem,
   type DifficultyDiagnosis,
+  type PersonalPracticeContext,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
 import { cn } from "@/lib/utils";
@@ -276,9 +278,11 @@ function RecallCard({
 
 function SentenceCard({
   item,
+  personalContext,
   onResult,
 }: {
   item: SessionItem;
+  personalContext?: PersonalPracticeContext | null;
   onResult: (itemId: string, sentence: string, score: number) => void;
 }) {
   const [sentence, setSentence] = useState(item.userSentence || "");
@@ -304,13 +308,34 @@ function SentenceCard({
         <p className="text-xs text-ink-light mt-0.5">{item.expression?.chinese}</p>
       </div>
 
+      {/* V3.1: Personalized practice prompt */}
+      {personalContext && personalContext.scenario !== "日常场景" && (
+        <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <BookOpen size={12} className="text-blue-500" />
+            <span className="text-[11px] font-medium text-blue-600">个性化场景</span>
+          </div>
+          <p className="text-xs text-blue-700">{personalContext.scenario}</p>
+          <p className="text-xs text-blue-600/80 leading-relaxed">{personalContext.prompt}</p>
+          {personalContext.asset_title && (
+            <p className="text-[10px] text-blue-400">
+              关联素材：{personalContext.asset_title}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Sentence input */}
       <div>
         <textarea
           value={sentence}
           onChange={(e) => setSentence(e.target.value)}
           disabled={submitted}
-          placeholder="用这个表达写一个句子..."
+          placeholder={
+            personalContext?.prompt
+              ? personalContext.prompt
+              : "用这个表达写一个句子..."
+          }
           rows={3}
           className={cn(
             "w-full px-4 py-3 rounded-xl border text-sm resize-none transition-colors",
@@ -414,6 +439,7 @@ export default function EnglishReviewV3() {
   const submitReview = useSubmitReview();
   const updateStage = useUpdateSessionStage();
   const diagnoseItem = useDiagnoseItem();
+  const personalPractice = usePersonalPracticePrompt();
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [roundComplete, setRoundComplete] = useState(false);
@@ -423,6 +449,9 @@ export default function EnglishReviewV3() {
   // V3.1: Diagnosis state
   const [diagnoses, setDiagnoses] = useState<Record<string, DifficultyDiagnosis>>({});
   const [diagnosingIds, setDiagnosingIds] = useState<Set<string>>(new Set());
+
+  // V3.1: Personal practice contexts (loaded when entering sentence stage)
+  const [personalContexts, setPersonalContexts] = useState<Record<string, PersonalPracticeContext>>({});
 
   const session = data?.session;
   const allItems = data?.items || [];
@@ -593,7 +622,28 @@ export default function EnglishReviewV3() {
     if (session?.id) {
       await updateStage.mutateAsync({ sessionId: session.id, stage: "sentence" });
     }
-  }, [session?.id, updateStage]);
+
+    // V3.1: Preload personal practice contexts for sentence items
+    const sentenceItems = allItems.filter(
+      (i) => i.status === "passed" || i.status === "completed" || i.recallScore !== null,
+    );
+    for (const item of sentenceItems.slice(0, 5)) {
+      if (!item.expression) continue;
+      try {
+        const ctx = await personalPractice.mutateAsync({
+          itemId: item.id,
+          expressionEnglish: item.expression.english,
+          expressionChinese: item.expression.chinese,
+          expressionExample: item.expression.example_sentence,
+          expressionType: item.expression.type,
+          sessionId: session?.id,
+        });
+        setPersonalContexts((prev) => ({ ...prev, [item.id]: ctx }));
+      } catch {
+        // Non-blocking
+      }
+    }
+  }, [session?.id, updateStage, allItems, personalPractice]);
 
   // Done
   const handleDone = useCallback(async () => {
@@ -687,7 +737,11 @@ export default function EnglishReviewV3() {
               isDiagnosing={diagnosingIds.has(currentItem.id)}
             />
           ) : (
-            <SentenceCard item={currentItem} onResult={handleSentenceResult} />
+            <SentenceCard
+              item={currentItem}
+              personalContext={personalContexts[currentItem.id]}
+              onResult={handleSentenceResult}
+            />
           )}
         </div>
       ) : null}
