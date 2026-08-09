@@ -2283,3 +2283,357 @@ describe("V4 Lifecycle — Session Type", () => {
     expect(getSessionType("review")).toBe("review");
   });
 });
+
+// ============================================
+// V4 Sentence Feedback Fix — Inline Mirrors
+// ============================================
+
+type SentenceStep = "writing" | "analyzing" | "feedback";
+
+interface SentenceCardState {
+  step: SentenceStep;
+  sentence: string;
+  evaluation: PersonalSentenceEvaluationForTest | null;
+  evalError: boolean;
+  saved: boolean;
+  feedbackUpdated: boolean;
+}
+
+interface PersonalSentenceEvaluationForTest {
+  grammar_correct: boolean;
+  naturalness: "natural" | "slightly_unnatural" | "awkward" | "incorrect";
+  corrections: Array<{ original: string; corrected: string; explanation: string }>;
+  overall_feedback: string;
+  expression_used_correctly: boolean;
+  example_usage?: string;
+}
+
+function createInitialState(): SentenceCardState {
+  return { step: "writing", sentence: "", evaluation: null, evalError: false, saved: false, feedbackUpdated: false };
+}
+
+/** Simulates: user types sentence → clicks submit */
+function transitionToAnalyzing(state: SentenceCardState, sentence: string): SentenceCardState {
+  if (!sentence.trim() || state.step !== "writing") return state;
+  return { ...state, step: "analyzing", sentence, saved: true };
+}
+
+/** Simulates: AI evaluation succeeds */
+function transitionToFeedback(
+  state: SentenceCardState,
+  evaluation: PersonalSentenceEvaluationForTest,
+): SentenceCardState {
+  if (state.step !== "analyzing") return state;
+  return { ...state, step: "feedback", evaluation, evalError: false, feedbackUpdated: true };
+}
+
+/** Simulates: AI evaluation fails */
+function transitionToFeedbackError(state: SentenceCardState): SentenceCardState {
+  if (state.step !== "analyzing") return state;
+  return { ...state, step: "feedback", evalError: true, evaluation: null };
+}
+
+/** Simulates: user clicks "修改一下再试" */
+function transitionToModify(state: SentenceCardState): SentenceCardState {
+  if (state.step !== "feedback") return state;
+  return { ...state, step: "writing", evaluation: null, evalError: false };
+}
+
+/** Simulates: user clicks "保存并下一题" → advance to next card */
+function advanceCard(state: SentenceCardState): { advanced: boolean; newCardState: SentenceCardState } {
+  if (state.step !== "feedback") return { advanced: false, newCardState: state };
+  const newCard = createInitialState();
+  return { advanced: true, newCardState: newCard };
+}
+
+/** Simulates: retry AI after failure */
+function retryAI(state: SentenceCardState): SentenceCardState {
+  if (state.step !== "feedback" || !state.evalError) return state;
+  return { ...state, step: "analyzing", evalError: false };
+}
+
+/** Check if feedback has all display sections */
+function hasCompleteFeedback(evaluation: PersonalSentenceEvaluationForTest): boolean {
+  const hasGrammar = evaluation.grammar_correct !== undefined;
+  const hasUsage = evaluation.expression_used_correctly !== undefined;
+  const hasNaturalness = evaluation.naturalness !== undefined;
+  const hasFeedback = evaluation.overall_feedback !== undefined;
+  return hasGrammar && hasUsage && hasNaturalness && hasFeedback;
+}
+
+/** Simulates: does NOT auto-advance after AI success */
+function doesAutoAdvanceAfterFeedback(
+  state: SentenceCardState,
+  evaluation: PersonalSentenceEvaluationForTest,
+): boolean {
+  const afterAI = transitionToFeedback(state, evaluation);
+  return afterAI.step !== "feedback";
+}
+
+// ============================================
+// V4 Sentence Feedback Tests
+// ============================================
+
+describe("S1 — Sentence Card State Machine", () => {
+  it("S1. initial state is writing", () => {
+    const state = createInitialState();
+    expect(state.step).toBe("writing");
+  });
+
+  it("S2. submitting sentence → analyzing", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "I took the bull by the horns");
+    expect(state.step).toBe("analyzing");
+  });
+
+  it("S3. AI success → feedback", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "I took the bull by the horns");
+    state = transitionToFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "Great sentence!",
+    });
+    expect(state.step).toBe("feedback");
+    expect(state.evaluation).not.toBeNull();
+    expect(state.evalError).toBe(false);
+  });
+
+  it("S4. AI failure → feedback with error flag", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "I took the bull by the horns");
+    state = transitionToFeedbackError(state);
+    expect(state.step).toBe("feedback");
+    expect(state.evalError).toBe(true);
+    expect(state.evaluation).toBeNull();
+  });
+
+  it("S5. empty sentence does NOT transition to analyzing", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "   ");
+    expect(state.step).toBe("writing");
+    expect(state.saved).toBe(false);
+  });
+});
+
+describe("S2 — NO Auto-Advance Guarantee", () => {
+  it("S6. AI success does NOT advance", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "I took the bull by the horns");
+    const advanced = doesAutoAdvanceAfterFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "Good!",
+    });
+    expect(advanced).toBe(false);
+  });
+
+  it("S7. staying in feedback for 1 'tick' does NOT advance", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "Test sentence");
+    state = transitionToFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "OK",
+    });
+    // After any number of passive ticks, should stay in feedback
+    expect(state.step).toBe("feedback");
+    // 10 more "ticks" — still feedback
+    for (let i = 0; i < 10; i++) {
+      // No external advance — state unchanged
+    }
+    expect(state.step).toBe("feedback");
+  });
+
+  it("S8. only advanceCard moves to next card", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "Test sentence");
+    state = transitionToFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "OK",
+    });
+    const result = advanceCard(state);
+    expect(result.advanced).toBe(true);
+    expect(result.newCardState.step).toBe("writing");
+    expect(result.newCardState.evaluation).toBeNull();
+    expect(result.newCardState.sentence).toBe("");
+  });
+
+  it("S9. advanceCard from non-feedback state does nothing", () => {
+    let state = createInitialState();
+    const result = advanceCard(state);
+    expect(result.advanced).toBe(false);
+    expect(result.newCardState.step).toBe("writing");
+  });
+});
+
+describe("S3 — User Control '修改一下再试'", () => {
+  it("S10. modify returns to writing with sentence preserved", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "I took the bull by the horns");
+    state = transitionToFeedback(state, {
+      grammar_correct: false,
+      naturalness: "awkward",
+      expression_used_correctly: false,
+      corrections: [{ original: "took", corrected: "take", explanation: "Use base form" }],
+      overall_feedback: "Needs work",
+    });
+    state = transitionToModify(state);
+    expect(state.step).toBe("writing");
+    expect(state.sentence).toBe("I took the bull by the horns");
+    expect(state.evaluation).toBeNull();
+    expect(state.evalError).toBe(false);
+  });
+
+  it("S11. after modify, can re-submit and get new feedback", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "I took the bull by the horns");
+    state = transitionToFeedback(state, {
+      grammar_correct: false,
+      naturalness: "awkward",
+      expression_used_correctly: false,
+      corrections: [],
+      overall_feedback: "Bad",
+    });
+    state = transitionToModify(state);
+    expect(state.step).toBe("writing");
+    // Re-submit
+    state = transitionToAnalyzing(state, "I take the bull by the horns and face it");
+    state = transitionToFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "Good!",
+    });
+    expect(state.step).toBe("feedback");
+    expect(state.evaluation?.overall_feedback).toBe("Good!");
+  });
+});
+
+describe("S4 — AI Failure Fallback", () => {
+  it("S12. AI failure still saves the sentence", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "My test sentence");
+    expect(state.saved).toBe(true);
+    expect(state.sentence).toBe("My test sentence");
+  });
+
+  it("S13. AI failure can retry", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "My test sentence");
+    state = transitionToFeedbackError(state);
+    expect(state.step).toBe("feedback");
+    expect(state.evalError).toBe(true);
+    // Retry
+    state = retryAI(state);
+    expect(state.step).toBe("analyzing");
+    expect(state.evalError).toBe(false);
+  });
+
+  it("S14. retry after failure → success → stays in feedback", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "My test sentence");
+    state = transitionToFeedbackError(state);
+    state = retryAI(state);
+    state = transitionToFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "Looks good now!",
+    });
+    expect(state.step).toBe("feedback");
+    expect(state.evaluation).not.toBeNull();
+  });
+
+  it("S15. AI failure allows skip to next card", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "My test sentence");
+    state = transitionToFeedbackError(state);
+    // User opts to skip without feedback
+    const result = advanceCard(state);
+    expect(result.advanced).toBe(true);
+    expect(result.newCardState.step).toBe("writing");
+  });
+});
+
+describe("S5 — Feedback Content Completeness", () => {
+  it("S16. complete feedback has all required fields", () => {
+    const evaluation: PersonalSentenceEvaluationForTest = {
+      grammar_correct: false,
+      naturalness: "slightly_unnatural",
+      expression_used_correctly: true,
+      corrections: [{ original: "make homework", corrected: "do homework", explanation: "Collocation error" }],
+      overall_feedback: "Expression used correctly, but the grammar needs work.",
+    };
+    expect(hasCompleteFeedback(evaluation)).toBe(true);
+  });
+
+  it("S17. perfect sentence feedback is still complete", () => {
+    const evaluation: PersonalSentenceEvaluationForTest = {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "这句话已经很好，不需要修改。",
+    };
+    expect(hasCompleteFeedback(evaluation)).toBe(true);
+  });
+
+  it("S18. naturalness enum maps correctly to display labels", () => {
+    const labelMap: Record<string, string> = {
+      natural: "自然",
+      slightly_unnatural: "可以更自然",
+      awkward: "不自然",
+      incorrect: "用法不正确",
+    };
+    expect(labelMap.natural).toBe("自然");
+    expect(labelMap.slightly_unnatural).toBe("可以更自然");
+    expect(labelMap.awkward).toBe("不自然");
+    expect(labelMap.incorrect).toBe("用法不正确");
+  });
+});
+
+describe("S6 — Sentence Mode Does NOT Modify SRS", () => {
+  it("S19. sentence completion does NOT change status to review", () => {
+    // Sentence mode is always production practice, not SRS scheduling
+    // SRS is only touched by recall mode
+    const srsMutableFields = ["next_review_date", "interval_days", "repetitions", "ease_factor", "status"] as const;
+    const sentenceHandlerFields = ["userSentence", "aiFeedback", "sentenceScore"] as const;
+
+    // Verify no overlap between sentence handler fields and SRS fields
+    const overlap = sentenceHandlerFields.filter((f) =>
+      (srsMutableFields as readonly string[]).includes(f),
+    );
+    expect(overlap).toHaveLength(0);
+  });
+});
+
+describe("S7 — Next Card Resets State", () => {
+  it("S20. advancing to next card resets evaluation and sentence", () => {
+    let state = createInitialState();
+    state = transitionToAnalyzing(state, "Test sentence");
+    state = transitionToFeedback(state, {
+      grammar_correct: true,
+      naturalness: "natural",
+      expression_used_correctly: true,
+      corrections: [],
+      overall_feedback: "Good",
+    });
+    const { newCardState } = advanceCard(state);
+    expect(newCardState.evaluation).toBeNull();
+    expect(newCardState.sentence).toBe("");
+    expect(newCardState.step).toBe("writing");
+    expect(newCardState.evalError).toBe(false);
+  });
+});

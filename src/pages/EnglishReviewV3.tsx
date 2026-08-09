@@ -815,28 +815,40 @@ function ClozeCard({
 // Sentence Card
 // ═══════════════════════════════════════
 
+// ── Sentence Card state machine ──
+type SentenceStep = "writing" | "analyzing" | "feedback";
+
 function SentenceCard({
   item,
-  onResult,
+  onSaveSentence,
+  onUpdateFeedback,
+  onAdvance,
 }: {
   item: SessionItem;
-  onResult: (itemId: string, sentence: string, aiScore: number, aiFeedback: string) => void;
+  onSaveSentence: (itemId: string, sentence: string) => void;
+  onUpdateFeedback: (itemId: string, aiScore: number, aiFeedback: string) => void;
+  onAdvance: () => void;
 }) {
+  const [step, setStep] = useState<SentenceStep>("writing");
   const [sentence, setSentence] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [evaluating, setEvaluating] = useState(false);
   const [evaluation, setEvaluation] = useState<PersonalSentenceEvaluation | null>(null);
   const [evalError, setEvalError] = useState(false);
   const [showChinese, setShowChinese] = useState(false);
+  const sentenceRef = useRef(sentence);
+  sentenceRef.current = sentence;
 
   const expr = item.expression;
   const safeContext = [expr?.context, expr?.situation].filter(Boolean).join(" · ") || undefined;
 
   const handleSubmit = async () => {
     if (!sentence.trim()) return;
-    setSubmitted(true);
-    setEvaluating(true);
+    setStep("analyzing");
+    setEvalError(false);
 
+    // Step 1: Save sentence immediately (before AI)
+    onSaveSentence(item.id, sentence);
+
+    // Step 2: AI evaluation
     try {
       const result = await evaluatePersonalSentence(
         expr?.english || "",
@@ -846,24 +858,64 @@ function SentenceCard({
 
       if (result.success && result.data) {
         setEvaluation(result.data);
+        setStep("feedback");
         const score = deriveSentenceScore(result.data);
-        onResult(item.id, sentence, score, JSON.stringify(result.data));
+        onUpdateFeedback(item.id, score, JSON.stringify(result.data));
       } else {
         setEvalError(true);
-        // Fallback: save with score 1
-        onResult(item.id, sentence, 1, JSON.stringify({ error: "AI unavailable" }));
+        setStep("feedback");
+        onUpdateFeedback(item.id, 1, JSON.stringify({ error: "AI unavailable" }));
       }
     } catch {
       setEvalError(true);
-      onResult(item.id, sentence, 1, JSON.stringify({ error: "AI unavailable" }));
-    } finally {
-      setEvaluating(false);
+      setStep("feedback");
+      onUpdateFeedback(item.id, 1, JSON.stringify({ error: "AI unavailable" }));
     }
+  };
+
+  const handleRetryAI = async () => {
+    setStep("analyzing");
+    setEvalError(false);
+
+    try {
+      const result = await evaluatePersonalSentence(
+        expr?.english || "",
+        sentenceRef.current,
+        safeContext,
+      );
+
+      if (result.success && result.data) {
+        setEvaluation(result.data);
+        setStep("feedback");
+        const score = deriveSentenceScore(result.data);
+        onUpdateFeedback(item.id, score, JSON.stringify(result.data));
+      } else {
+        setEvalError(true);
+        setStep("feedback");
+      }
+    } catch {
+      setEvalError(true);
+      setStep("feedback");
+    }
+  };
+
+  const handleModify = () => {
+    setStep("writing");
+    setEvaluation(null);
+    setEvalError(false);
+  };
+
+  const handleSaveAndNext = () => {
+    onAdvance();
+  };
+
+  const handleSkipWithoutFeedback = () => {
+    onAdvance();
   };
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-4">
-      {/* Expression display — English prominent, Chinese hidden */}
+      {/* Expression display — always visible */}
       <div>
         <p className="text-[11px] text-ink-lighter mb-1">Write a sentence using this expression</p>
         <div className="flex items-center gap-2">
@@ -888,8 +940,8 @@ function SentenceCard({
         </div>
       )}
 
-      {/* Not submitted yet */}
-      {!submitted && (
+      {/* ═══ WRITING state ═══ */}
+      {step === "writing" && (
         <>
           <textarea
             value={sentence}
@@ -915,101 +967,191 @@ function SentenceCard({
         </>
       )}
 
-      {/* Evaluating spinner */}
-      {evaluating && (
-        <div className="flex flex-col items-center gap-2 py-4">
-          <Loader2 size={20} className="text-sage-deep animate-spin" />
-          <p className="text-xs text-ink-light">Evaluating your sentence...</p>
+      {/* ═══ ANALYZING state ═══ */}
+      {step === "analyzing" && (
+        <div className="space-y-4">
+          {/* Read-only textarea showing the sentence */}
+          <textarea
+            value={sentence}
+            readOnly
+            rows={3}
+            className="w-full px-4 py-3 rounded-xl border border-sage/30 bg-sage-light/20 text-sm resize-none text-ink"
+          />
+          <div className="flex flex-col items-center gap-2 py-4">
+            <Loader2 size={20} className="text-sage-deep animate-spin" />
+            <p className="text-xs text-ink-light">正在分析你的句子…</p>
+          </div>
         </div>
       )}
 
-      {/* AI failure fallback */}
-      {evalError && !evaluating && !evaluation && (
-        <div className="p-4 bg-sage-light/50 rounded-xl space-y-2">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 size={14} className="text-sage-deep" />
-            <span className="text-xs text-sage-deep font-medium">已保存</span>
-          </div>
-          <p className="text-sm text-ink italic">"{sentence}"</p>
-          <p className="text-[11px] text-ink-lighter">
-            AI feedback is temporarily unavailable, but your sentence has been saved.
-          </p>
-        </div>
-      )}
-
-      {/* Evaluation result card */}
-      {evaluation && !evaluating && (
-        <div className="space-y-3">
-          {/* Grammar status */}
-          <div className={cn(
-            "flex items-center gap-2 px-3 py-2 rounded-lg",
-            evaluation.grammar_correct ? "bg-sage-light/50" : "bg-accent-warm/10",
-          )}>
-            {evaluation.grammar_correct
-              ? <CheckCircle2 size={14} className="text-sage-deep" />
-              : <XCircle size={14} className="text-accent-warm" />
-            }
-            <span className={cn(
-              "text-xs font-medium",
-              evaluation.grammar_correct ? "text-sage-deep" : "text-accent-warm",
-            )}>
-              {evaluation.grammar_correct ? "Grammar: correct" : "Grammar: needs work"}
-            </span>
+      {/* ═══ FEEDBACK state ═══ */}
+      {step === "feedback" && (
+        <div className="space-y-4">
+          {/* User's sentence */}
+          <div className="bg-warm-cream rounded-xl p-3">
+            <p className="text-[10px] text-ink-lighter mb-0.5 uppercase tracking-wider">你的原句</p>
+            <p className="text-sm text-ink italic leading-relaxed">"{sentence}"</p>
           </div>
 
-          {/* Naturalness badge */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg">
-            <Lightbulb size={14} className="text-amber-500" />
-            <span className="text-xs text-amber-700 font-medium">
-              Naturalness: {
-                evaluation.naturalness === "natural" ? "Natural ✓" :
-                evaluation.naturalness === "slightly_unnatural" ? "Slightly unnatural" :
-                evaluation.naturalness === "awkward" ? "Awkward" : "Incorrect usage"
-              }
-            </span>
-          </div>
-
-          {/* Corrections */}
-          {evaluation.corrections && evaluation.corrections.length > 0 && (
-            <div className="bg-warm-cream rounded-xl p-3 space-y-2">
-              <p className="text-[10px] text-ink-lighter">Suggestions</p>
-              {evaluation.corrections.map((c, i) => (
-                <div key={i} className="text-xs space-y-0.5">
-                  <p>
-                    <span className="text-accent-warm line-through">"{c.original}"</span>
-                    {" → "}
-                    <span className="text-sage-deep font-medium">"{c.corrected}"</span>
-                  </p>
-                  <p className="text-ink-lighter">{c.explanation}</p>
+          {/* AI failure fallback */}
+          {evalError && !evaluation && (
+            <div className="space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle2 size={14} className="text-sage-deep" />
+                  <span className="text-xs text-sage-deep font-medium">句子已保存</span>
                 </div>
-              ))}
+                <p className="text-xs text-ink-light leading-relaxed">
+                  AI反馈暂时生成失败。你的句子已经安全保存，可以稍后查看。
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRetryAI}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={14} />
+                  重试 AI 分析
+                </button>
+                <button
+                  onClick={handleSkipWithoutFeedback}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-sage text-white hover:bg-sage-deep transition-colors flex items-center justify-center gap-2"
+                >
+                  下一题
+                  <ArrowRight size={14} />
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Overall feedback */}
-          <div className="bg-sage-light/30 rounded-xl p-3">
-            <p className="text-xs text-ink leading-relaxed">{evaluation.overall_feedback}</p>
-          </div>
+          {/* AI evaluation result */}
+          {evaluation && (
+            <div className="space-y-3">
+              {/* Grammar */}
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-2.5 rounded-lg",
+                evaluation.grammar_correct ? "bg-sage-light/40" : "bg-accent-warm/10",
+              )}>
+                {evaluation.grammar_correct
+                  ? <CheckCircle2 size={14} className="text-sage-deep" />
+                  : <AlertTriangle size={14} className="text-accent-warm" />
+                }
+                <span className={cn(
+                  "text-xs font-medium",
+                  evaluation.grammar_correct ? "text-sage-deep" : "text-accent-warm",
+                )}>
+                  {evaluation.grammar_correct ? "语法 ✓ 正确" : "语法 ⚠️ 需要调整"}
+                </span>
+              </div>
 
-          {/* Example usage */}
-          {evaluation.example_usage && (
-            <div className="bg-sage-light/20 rounded-xl p-3">
-              <p className="text-[10px] text-ink-lighter mb-0.5">Example usage</p>
-              <p className="text-xs text-ink italic">{evaluation.example_usage}</p>
+              {/* Usage */}
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-2.5 rounded-lg",
+                evaluation.expression_used_correctly ? "bg-sage-light/40" : "bg-amber-50",
+              )}>
+                {evaluation.expression_used_correctly
+                  ? <CheckCircle2 size={14} className="text-sage-deep" />
+                  : <AlertTriangle size={14} className="text-amber-500" />
+                }
+                <span className={cn(
+                  "text-xs font-medium",
+                  evaluation.expression_used_correctly ? "text-sage-deep" : "text-amber-600",
+                )}>
+                  {evaluation.expression_used_correctly ? "用法 ✓ 表达使用合适" : "用法 ⚠️ 这个场景不太适合"}
+                </span>
+              </div>
+
+              {/* Naturalness */}
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-2.5 rounded-lg",
+                evaluation.naturalness === "natural" ? "bg-sage-light/40" :
+                evaluation.naturalness === "slightly_unnatural" ? "bg-amber-50" :
+                "bg-accent-warm/10",
+              )}>
+                {evaluation.naturalness === "natural"
+                  ? <CheckCircle2 size={14} className="text-sage-deep" />
+                  : evaluation.naturalness === "slightly_unnatural"
+                    ? <AlertTriangle size={14} className="text-amber-500" />
+                    : <XCircle size={14} className="text-accent-warm" />
+                }
+                <span className={cn(
+                  "text-xs font-medium",
+                  evaluation.naturalness === "natural" ? "text-sage-deep" :
+                  evaluation.naturalness === "slightly_unnatural" ? "text-amber-600" :
+                  "text-accent-warm",
+                )}>
+                  自然度 {
+                    evaluation.naturalness === "natural" ? "✓ 自然" :
+                    evaluation.naturalness === "slightly_unnatural" ? "△ 可以更自然" :
+                    evaluation.naturalness === "awkward" ? "⚠️ 不自然" :
+                    "✗ 用法不正确"
+                  }
+                </span>
+              </div>
+
+              {/* All-good message */}
+              {evaluation.grammar_correct && evaluation.expression_used_correctly && evaluation.naturalness === "natural" && (
+                <div className="bg-sage-light/30 rounded-xl p-3">
+                  <p className="text-xs text-sage-deep leading-relaxed">
+                    这句话已经很好，不需要修改。
+                  </p>
+                </div>
+              )}
+
+              {/* Overall feedback */}
+              {evaluation.overall_feedback && (
+                <div className="bg-purple-50/50 rounded-xl p-3">
+                  <p className="text-[10px] text-purple-500 mb-0.5 uppercase tracking-wider">主要反馈</p>
+                  <p className="text-xs text-ink leading-relaxed">{evaluation.overall_feedback}</p>
+                </div>
+              )}
+
+              {/* Corrected version (only if grammar/usage issues) */}
+              {evaluation.corrections && evaluation.corrections.length > 0 && (
+                <div className="bg-warm-cream rounded-xl p-3 space-y-2">
+                  <p className="text-[10px] text-ink-lighter uppercase tracking-wider">纠正版</p>
+                  {evaluation.corrections.map((c, i) => (
+                    <div key={i} className="text-xs space-y-1">
+                      <p>
+                        <span className="text-accent-warm line-through">"{c.original}"</span>
+                        {" → "}
+                        <span className="text-sage-deep font-medium">"{c.corrected}"</span>
+                      </p>
+                      {c.explanation && (
+                        <p className="text-ink-lighter">{c.explanation}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Example usage */}
+              {evaluation.example_usage && (
+                <div className="bg-sage-light/20 rounded-xl p-3">
+                  <p className="text-[10px] text-ink-lighter mb-0.5 uppercase tracking-wider">更自然的说法</p>
+                  <p className="text-xs text-ink italic leading-relaxed">{evaluation.example_usage}</p>
+                </div>
+              )}
+
+              {/* User controls */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleModify}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-warm-cream text-ink hover:bg-warm-cream/70 transition-colors flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={14} />
+                  修改一下再试
+                </button>
+                <button
+                  onClick={handleSaveAndNext}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-sage text-white hover:bg-sage-deep transition-colors flex items-center justify-center gap-2"
+                >
+                  保存并下一题
+                  <ArrowRight size={14} />
+                </button>
+              </div>
             </div>
           )}
-
-          {/* Score badge */}
-          <div className="text-center">
-            <span className={cn(
-              "inline-block px-3 py-1 rounded-full text-[10px] font-medium",
-              deriveSentenceScore(evaluation) >= 4 ? "bg-sage-light text-sage-deep" :
-              deriveSentenceScore(evaluation) >= 3 ? "bg-amber-50 text-amber-600" :
-              "bg-accent-warm/10 text-accent-warm",
-            )}>
-              Score: {deriveSentenceScore(evaluation)}/5
-            </span>
-          </div>
         </div>
       )}
     </div>
@@ -1713,27 +1855,52 @@ export default function EnglishReviewV3() {
     [allItems, session, updateItem, recordLog],
   );
 
-  // ── Sentence handler (NO SRS) ──
-  const handleSentenceResult = useCallback(
-    async (itemId: string, sentence: string, aiScore: number, aiFeedback: string) => {
+  // ── Sentence handlers (NO SRS, NO auto-advance) ──
+  const sentenceStoreRef = useRef<Map<string, string>>(new Map());
+
+  // Save sentence immediately (before AI evaluation)
+  const handleSaveSentence = useCallback(
+    async (itemId: string, sentence: string) => {
       const item = allItems.find((i) => i.id === itemId);
       if (!item || !session) return;
 
+      sentenceStoreRef.current.set(itemId, sentence);
+
+      // Persist sentence as-is (placeholder feedback until AI returns)
       await updateItem.mutateAsync({
         itemId,
         updates: {
           userSentence: sentence,
-          aiFeedback,
-          sentenceScore: aiScore,
           status: "completed",
           attemptCount: item.attemptCount + 1,
         },
       });
+    },
+    [allItems, session, updateItem],
+  );
 
+  // Update with AI feedback (after evaluation completes)
+  const handleUpdateFeedback = useCallback(
+    async (itemId: string, aiScore: number, aiFeedback: string) => {
+      const item = allItems.find((i) => i.id === itemId);
+      if (!item || !session) return;
+
+      const savedSentence = sentenceStoreRef.current.get(itemId) || item.userSentence || "";
+
+      // Update with AI feedback
+      await updateItem.mutateAsync({
+        itemId,
+        updates: {
+          aiFeedback,
+          sentenceScore: aiScore,
+        },
+      });
+
+      // Record practice log
       recordLog.mutate({
         expressionId: item.expressionId,
         mode: "sentence",
-        answer: sentence,
+        answer: savedSentence,
         feedback: aiFeedback,
         score: aiScore,
         sessionId: session.id,
@@ -1748,13 +1915,16 @@ export default function EnglishReviewV3() {
           completed: prev.sentence.completed + 1,
         },
       }));
-
-      const nextIdx = currentIndexRef.current + 1;
-      currentIndexRef.current = nextIdx;
-      setCurrentIndex(nextIdx);
     },
     [allItems, session, updateItem, recordLog],
   );
+
+  // Advance to next card — only called by explicit user action
+  const advanceCard = useCallback(() => {
+    const nextIdx = currentIndexRef.current + 1;
+    currentIndexRef.current = nextIdx;
+    setCurrentIndex(nextIdx);
+  }, []);
 
   // ── Check mode completion ──
   useEffect(() => {
@@ -1999,7 +2169,9 @@ export default function EnglishReviewV3() {
             <SentenceCard
               key={currentItem.id}
               item={currentItem}
-              onResult={handleSentenceResult}
+              onSaveSentence={handleSaveSentence}
+              onUpdateFeedback={handleUpdateFeedback}
+              onAdvance={advanceCard}
             />
           )}
         </div>
