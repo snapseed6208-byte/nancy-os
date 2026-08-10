@@ -25,17 +25,14 @@ import {
   SessionErrorCode,
   type SessionType,
 } from "@/lib/english/sessionRepository";
+import { toProgressJSON } from "@/lib/english/learningProgress";
 
 // ═══════════════════════════════════════
 // Types
 // ═══════════════════════════════════════
 
-export type LearnStage = "understand" | "contextUsage" | "recall" | "production";
-
-export interface LearnProgress {
-  expressionIndex: number;
-  stage: LearnStage;
-}
+import type { LearnStage, LearningItemProgress } from "@/lib/english/learningProgress";
+export type { LearnStage, LearningItemProgress };
 
 export interface ReviewSession {
   id: string;
@@ -47,7 +44,7 @@ export interface ReviewSession {
   sessionType: "learn" | "review";
   createdAt: string;
   completedAt: string | null;
-  learnProgress?: LearnProgress | null;
+  learnProgress?: LearningItemProgress | null;
 }
 
 export interface SessionItem {
@@ -402,7 +399,7 @@ export function useRecordPracticeLog() {
   });
 }
 
-/** V4: Persist learn-session resume progress (expression index + stage). */
+/** V4.2: Persist learn-session progress (expression index + stage + stage-completion flags + recall/sentence evidence). */
 export function useUpdateLearnProgress() {
   const qc = useQueryClient();
 
@@ -412,15 +409,12 @@ export function useUpdateLearnProgress() {
       progress,
     }: {
       sessionId: string;
-      progress: LearnProgress;
+      progress: LearningItemProgress;
     }) => {
       const { error } = await supabase
         .from("review_sessions")
         .update({
-          learn_progress: {
-            expression_index: progress.expressionIndex,
-            stage: progress.stage,
-          },
+          learn_progress: toProgressJSON(progress),
         })
         .eq("id", sessionId);
 

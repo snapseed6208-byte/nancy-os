@@ -22,6 +22,19 @@ import {
   type SessionItem,
   type LearnStage,
 } from "@/lib/hooks/useReviewSession";
+import {
+  STAGE_ORDER,
+  STAGE_LABELS,
+  DEFAULT_LEARN_PROGRESS,
+  PAGE_BOTTOM_PADDING_CLASS,
+  FOOTER_SAFE_AREA_CLASS,
+  normalizeLearningProgress,
+  progressForStage,
+  progressForNavigation,
+  completionGuard,
+  advanceAfterComplete,
+  type LearningItemProgress,
+} from "@/lib/english/learningProgress";
 import { supabase } from "@/lib/supabase";
 import { scheduleExpressionReview } from "@/lib/srs/expressionSrs";
 import {
@@ -55,17 +68,10 @@ import {
 // Constants
 // ═══════════════════════════════════════
 
-const STAGE_ORDER: LearnStage[] = ["understand", "contextUsage", "recall", "production"];
-
-const STAGE_LABELS: Record<LearnStage, string> = {
-  understand: "理解表达",
-  contextUsage: "场景与用法",
-  recall: "主动回忆",
-  production: "个人造句",
-};
-
 type RecallPhase = "idle" | "checking" | "result";
 type SentencePhase = "writing" | "submitting" | "feedback" | "aiFailed";
+
+type ErrorAction = "none" | "retry" | { redirectTo: LearnStage };
 
 interface RecallOutcome {
   result: "correct" | "partial" | "incorrect";
@@ -141,6 +147,9 @@ export default function EnglishLearn() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stage, setStage] = useState<LearnStage>("understand");
+  /** Canonical per-item progress (single source of truth for stage completion). */
+  const [progress, setProgress] = useState<LearningItemProgress>({ ...DEFAULT_LEARN_PROGRESS });
+  const [saving, setSaving] = useState(false);
   const [recallInput, setRecallInput] = useState("");
   const [recallPhase, setRecallPhase] = useState<RecallPhase>("idle");
   const [recallOutcome, setRecallOutcome] = useState<RecallOutcome | null>(null);
@@ -150,8 +159,8 @@ export default function EnglishLearn() {
   const [completedSet, setCompletedSet] = useState<Set<string>>(new Set());
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Only completion failures offer a [重试] path; other hints are dismiss-only. */
-  const [errorAction, setErrorAction] = useState<"none" | "retry">("none");
+  /** Completion failures offer [重试]; stage-redirect hints offer [返回X] (never a dead-end). */
+  const [errorAction, setErrorAction] = useState<ErrorAction>("none");
   const [showSummary, setShowSummary] = useState(false);
 
   const session = data?.session;
@@ -163,11 +172,21 @@ export default function EnglishLearn() {
 
   useEffect(() => { indexRef.current = currentIndex; }, [currentIndex]);
 
+  const progressRef = useRef(progress);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+  const sentenceInputRef = useRef(sentenceInput);
+  useEffect(() => { sentenceInputRef.current = sentenceInput; }, [sentenceInput]);
+  const savingRef = useRef(saving);
+  useEffect(() => { savingRef.current = saving; }, [saving]);
+
   const currentItem = items.length > 0 ? items[currentIndex] : null;
   const expr = currentItem?.expression ?? null;
   const material: LearningMaterial | null = expr ? buildLearningMaterial(expr) : null;
 
-  // ═══ Resume: initialize index + stage from saved progress, skip finished ═══
+  // ═══ Resume: restore expression + stage, then NORMALIZE the state machine.
+  // Recalled evidence is restored into the recall view; an unreachable stage
+  // (e.g. production persisted but recall never completed) redirects back
+  // instead of dead-ending.  V4.2 PART 5/6.
   useEffect(() => {
     if (!data || data.items.length === 0 || initializedRef.current) return;
     initializedRef.current = true;
@@ -184,8 +203,35 @@ export default function EnglishLearn() {
       return;
     }
     setCurrentIndex(idx);
-    if (saved && STAGE_ORDER.includes(saved.stage)) {
-      setStage(saved.stage);
+
+    // Flags only describe the expression the user actually left off on.
+    const fromSameIndex = saved && saved.expressionIndex === idx;
+    const raw: Partial<LearningItemProgress> = fromSameIndex
+      ? saved ?? {}
+      : { stage: "understand" };
+
+    const normalized = normalizeLearningProgress({ ...raw, expressionIndex: idx });
+    setProgress(normalized.progress);
+    setStage(normalized.progress.stage);
+
+    // Restore the recall result view from persisted evidence so completion /
+    // the production back-arrow work right after a refresh.
+    if (normalized.progress.recall_completed && normalized.progress.recall_score != null) {
+      setRecallPhase("result");
+      setRecallOutcome({
+        result: normalized.progress.recall_result ?? "correct",
+        score: normalized.progress.recall_score,
+        feedback: normalized.progress.recall_feedback ?? "",
+      });
+      setRecallInput(normalized.progress.recall_input ?? "");
+    }
+    if (normalized.progress.sentence_draft) {
+      setSentenceInput(normalized.progress.sentence_draft);
+    }
+
+    if (normalized.kind === "redirect") {
+      setError(normalized.message);
+      setErrorAction({ redirectTo: normalized.stage });
     }
   }, [data]);
 
@@ -199,19 +245,43 @@ export default function EnglishLearn() {
     setError(null);
     setErrorAction("none");
     practiceLogIdRef.current = null;
+    setProgress({ ...DEFAULT_LEARN_PROGRESS, expressionIndex: indexRef.current });
   }, []);
 
-  const persistProgress = useCallback((index: number, s: LearnStage) => {
-    if (!session) return;
-    saveProgress.mutate({ sessionId: session.id, progress: { expressionIndex: index, stage: s } });
+  /** Persist-first navigation: DB write confirms BEFORE the view changes (PART 3/13). */
+  const persistProgress = useCallback((p: LearningItemProgress) => {
+    if (!session) return Promise.resolve();
+    return saveProgress.mutateAsync({ sessionId: session.id, progress: p });
   }, [session, saveProgress]);
 
-  const goToStage = useCallback((s: LearnStage) => {
-    setStage(s);
-    persistProgress(indexRef.current, s);
-  }, [persistProgress]);
+  const goToStage = useCallback(async (s: LearnStage) => {
+    if (!session || savingRef.current) return;
+    const prev = progressRef.current;
+    const next = progressForNavigation(prev, s, sentenceInputRef.current);
+
+    setSaving(true);
+    try {
+      await persistProgress(next);
+      setProgress(next);
+      setStage(s);
+      // Restore a persisted sentence draft when returning to production (PART 12).
+      if (s === "production" && next.sentence_draft && !sentenceInputRef.current.trim()) {
+        setSentenceInput(next.sentence_draft);
+      }
+      setError(null);
+      setErrorAction("none");
+    } catch {
+      // Mutation failure keeps the current stage — never advance early (PART 13/14).
+      setError("进度保存失败，请重试。");
+    } finally {
+      setSaving(false);
+    }
+  }, [session, persistProgress]);
 
   // ═══ Recall check ═══
+  // Persists recall_completed + evidence so a refresh / re-entry never loses the
+  // proof that recall ran (V4.2 PART 3/5). Optimistic write: the production
+  // transition re-asserts recall_completed anyway.
   const handleRecallCheck = useCallback(() => {
     if (!expr || !recallInput.trim() || recallPhase === "result") return;
     setRecallPhase("checking");
@@ -226,12 +296,34 @@ export default function EnglishLearn() {
 
     setRecallOutcome({ result, score, feedback });
     setRecallPhase("result");
-  }, [expr, recallInput, recallPhase]);
 
+    const next: LearningItemProgress = {
+      ...progressForStage(progressRef.current, "recall"),
+      recall_completed: true,
+      recall_result: result,
+      recall_score: score,
+      recall_feedback: feedback,
+      recall_input: recallInput.trim(),
+    };
+    setProgress(next);
+    if (session) saveProgress.mutate({ sessionId: session.id, progress: next });
+  }, [expr, recallInput, recallPhase, session, saveProgress]);
+
+  // Re-doing recall clears the persisted evidence; the stage stays at recall.
   const handleRetryRecall = useCallback(() => {
     setRecallPhase("idle");
     setRecallOutcome(null);
-  }, []);
+    const next: LearningItemProgress = {
+      ...progressRef.current,
+      recall_completed: false,
+      recall_result: undefined,
+      recall_score: undefined,
+      recall_feedback: undefined,
+      recall_input: undefined,
+    };
+    setProgress(next);
+    if (session) saveProgress.mutate({ sessionId: session.id, progress: next });
+  }, [session, saveProgress]);
 
   // ═══ Sentence submission (save-before-AI, non-blocking) ═══
   const runSentenceAI = useCallback(async (sentence: string) => {
@@ -329,12 +421,16 @@ export default function EnglishLearn() {
 
   // ═══ Completion (only reachable from Stage 4) ═══
   const completeCurrent = useCallback(async () => {
-    if (!currentItem || !session || completing) return;
+    if (!currentItem || !session || completing || savingRef.current) return;
     if (completedSet.has(currentItem.expressionId)) return;
 
-    // Hard rule: recall must be checked before completing
-    if (recallPhase !== "result" || !recallOutcome) {
-      setError("请先完成「主动回忆」检查");
+    // Canonical prerequisite: recall_completed from the state machine — NOT the
+    // transient recallPhase (which is local-only and lost on refresh). A missing
+    // recall never dead-ends: it normalizes and offers a return path (PART 15/16).
+    const guard = completionGuard(progressRef.current);
+    if (!guard.allowed) {
+      setError(guard.message);
+      setErrorAction({ redirectTo: guard.redirectTo });
       return;
     }
 
@@ -343,6 +439,8 @@ export default function EnglishLearn() {
 
     try {
       const sentence = sentenceInput.trim();
+      // Recall score from canonical evidence, falling back to the live result view.
+      const recallScore = recallOutcome?.score ?? progressRef.current.recall_score ?? 5;
 
       // STEP A — Ensure personal sentence is saved (CORE)
       if (sentence && !currentItem.userSentence) {
@@ -350,7 +448,7 @@ export default function EnglishLearn() {
       }
 
       // STEP B — Compute SRS schedule in TS (single source = expressionSrs.ts)
-      const rating = recallOutcome.score >= 3 ? "good" : "hard";
+      const rating = recallScore >= 3 ? "good" : "hard";
       const srs = scheduleExpressionReview(rating, {
         ease_factor: 2.5,
         repetitions: 0,
@@ -373,7 +471,7 @@ export default function EnglishLearn() {
       const { error: rpcError } = await supabase.rpc("complete_expression_learning", {
         p_session_id: session.id,
         p_item_id: currentItem.id,
-        p_recall_score: recallOutcome.score,
+        p_recall_score: recallScore,
         p_sentence_score: sentenceEvaluation ? sentenceScoreOf(sentenceEvaluation) : (sentence ? 1 : null),
         p_srs: srsJson,
       });
@@ -392,8 +490,8 @@ export default function EnglishLearn() {
             sessionId: session.id,
             mode: "learn",
             answer: recallInput || null,
-            feedback: recallOutcome.feedback,
-            score: recallOutcome.score,
+            feedback: recallOutcome?.feedback ?? progressRef.current.recall_feedback ?? "",
+            score: recallScore,
             metadata: { source: "learning", learn_completed: true, learn_stage: "recall_only", sentence: null },
           });
         }
@@ -401,18 +499,18 @@ export default function EnglishLearn() {
         /* enrichment only — completion already persisted atomically */
       }
 
-      // STEP E — Mark done + advance (ONLY after core success)
+      // STEP E — Mark done + advance (ONLY after core success; exactly one step)
       setCompletedSet((prev) => new Set(prev).add(currentItem.expressionId));
-
-      if (currentIndex < items.length - 1) {
-        const nextIdx = currentIndex + 1;
-        setCurrentIndex(nextIdx);
+      const advance = advanceAfterComplete(currentIndex, items.length);
+      if (advance.nextIndex != null) {
+        setCurrentIndex(advance.nextIndex);
         resetExpressionState();
         setStage("understand");
-        persistProgress(nextIdx, "understand");
+        setProgress(advance.nextProgress);
+        saveProgress.mutate({ sessionId: session.id, progress: advance.nextProgress });
       } else {
         setShowSummary(true);
-        if (session) saveProgress.mutate({ sessionId: session.id, progress: { expressionIndex: 0, stage: "understand" } });
+        saveProgress.mutate({ sessionId: session.id, progress: advance.nextProgress });
       }
 
       // STEP F — Refresh dependent queries
@@ -424,9 +522,9 @@ export default function EnglishLearn() {
       setCompleting(false);
     }
   }, [
-    currentItem, session, completing, completedSet, recallPhase, recallOutcome,
+    currentItem, session, completing, completedSet, recallOutcome,
     sentenceInput, sentenceEvaluation, recallInput, currentIndex, items.length,
-    updateItem, resetExpressionState, persistProgress, saveProgress, invalidateCompletionQueries,
+    updateItem, resetExpressionState, saveProgress, invalidateCompletionQueries,
   ]);
 
   // ═══ Render: loading / error / summary / empty ═══
@@ -473,11 +571,11 @@ export default function EnglishLearn() {
   }
 
   const stageIndex = STAGE_ORDER.indexOf(stage);
-  const progress = `${currentIndex + 1} / ${items.length}`;
-  const busy = completing || sentencePhase === "submitting" || recallPhase === "checking";
+  const progressLabel = `${currentIndex + 1} / ${items.length}`;
+  const busy = completing || saving || sentencePhase === "submitting" || recallPhase === "checking";
 
   return (
-    <div className="space-y-4 max-w-2xl mx-auto px-4 pb-24">
+    <div className={`space-y-4 max-w-2xl mx-auto px-4 ${PAGE_BOTTOM_PADDING_CLASS}`}>
       {/* Header */}
       <header className="flex items-center justify-between pt-2">
         <div>
@@ -485,14 +583,14 @@ export default function EnglishLearn() {
           <h1 className="text-lg font-semibold tracking-tight">学习新表达</h1>
         </div>
         <div className="flex items-center gap-3 text-sm text-ink-light">
-          <span className="font-medium">{progress}</span>
+          <span className="font-medium">{progressLabel}</span>
           <button onClick={() => navigate("/english")} className="text-ink-lighter hover:text-ink text-xs">
             返回
           </button>
         </div>
       </header>
 
-      <StageIndicator stageIndex={stageIndex} />
+      <StageIndicator stageIndex={stageIndex} onGoToStage={goToStage} />
 
       {error && (
         <div className="flex items-center justify-between gap-2 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-sm text-rose-700">
@@ -506,6 +604,14 @@ export default function EnglishLearn() {
               >
                 <RefreshCw className="w-3 h-3 inline mr-0.5" />
                 重试
+              </button>
+            )}
+            {typeof errorAction === "object" && (
+              <button
+                onClick={() => goToStage(errorAction.redirectTo)}
+                className="text-rose-600 text-xs font-medium hover:text-rose-800"
+              >
+                ← 返回{STAGE_LABELS[errorAction.redirectTo]}
               </button>
             )}
             <button onClick={() => setError(null)} className="text-rose-500 text-xs hover:text-rose-700">关闭</button>
@@ -534,7 +640,6 @@ export default function EnglishLearn() {
             onInputChange={setSentenceInput}
             phase={sentencePhase}
             evaluation={sentenceEvaluation}
-            onSubmit={handleSubmitSentence}
             onRetryAI={handleRetryAI}
             onModify={handleModifySentence}
           />
@@ -545,13 +650,14 @@ export default function EnglishLearn() {
       <StageNav
         stage={stage}
         recallPhase={recallPhase}
+        sentencePhase={sentencePhase}
+        sentenceInput={sentenceInput}
         busy={busy}
+        saving={saving}
         completing={completing}
-        onNext={() => goToStage("contextUsage")}
-        onPrev={() => goToStage(STAGE_ORDER[Math.max(0, stageIndex - 1)])}
-        onStartRecall={() => goToStage("recall")}
+        onGoToStage={goToStage}
         onRetryRecall={handleRetryRecall}
-        onContinueToProduction={() => goToStage("production")}
+        onSubmitSentence={handleSubmitSentence}
         onComplete={completeCurrent}
       />
     </div>
@@ -562,35 +668,69 @@ export default function EnglishLearn() {
 // Stage Indicator
 // ═══════════════════════════════════════
 
-function StageIndicator({ stageIndex }: { stageIndex: number }) {
+function StageIndicator({
+  stageIndex,
+  onGoToStage,
+}: {
+  stageIndex: number;
+  onGoToStage: (s: LearnStage) => void;
+}) {
   return (
     <div>
       {/* Desktop: full pills */}
       <div className="hidden sm:flex items-center gap-1">
-        {STAGE_ORDER.map((s, i) => (
-          <div key={s} className="flex items-center gap-1 flex-1">
-            <span className={cn(
-              "flex-1 text-[11px] py-1.5 rounded-full text-center transition-colors",
-              i < stageIndex ? "bg-sage-light text-sage-deep"
-              : i === stageIndex ? "bg-ink text-white"
-              : "bg-muted text-ink-lighter",
-            )}>
-              {i < stageIndex ? `✓ ${STAGE_LABELS[s]}` : STAGE_LABELS[s]}
-            </span>
-            {i < STAGE_ORDER.length - 1 && <ChevronRight className="w-3 h-3 text-ink-lighter shrink-0" />}
-          </div>
-        ))}
+        {STAGE_ORDER.map((s, i) => {
+          const completed = i < stageIndex;
+          const current = i === stageIndex;
+          const future = i > stageIndex;
+          return (
+            <div key={s} className="flex items-center gap-1 flex-1">
+              <button
+                type="button"
+                onClick={() => completed && onGoToStage(s)}
+                disabled={!completed}
+                aria-label={`${STAGE_LABELS[s]}${completed ? "（点击返回）" : ""}`}
+                className={cn(
+                  "flex-1 text-[11px] py-1.5 rounded-full text-center transition-colors",
+                  completed && "bg-sage-light text-sage-deep cursor-pointer hover:bg-sage/20",
+                  current && "bg-ink text-white",
+                  future && "bg-muted text-ink-lighter cursor-not-allowed",
+                )}
+              >
+                {completed ? `✓ ${STAGE_LABELS[s]}` : STAGE_LABELS[s]}
+              </button>
+              {i < STAGE_ORDER.length - 1 && <ChevronRight className="w-3 h-3 text-ink-lighter shrink-0" />}
+            </div>
+          );
+        })}
       </div>
-      {/* Mobile: compact */}
+      {/* Mobile: compact (completed segments clickable) */}
       <div className="sm:hidden space-y-1.5">
         <div className="flex items-center justify-between text-xs text-ink-light">
           <span className="font-medium">阶段 {stageIndex + 1}/{STAGE_ORDER.length}</span>
           <span>{STAGE_LABELS[STAGE_ORDER[stageIndex]]}</span>
         </div>
         <div className="flex gap-1">
-          {STAGE_ORDER.map((s, i) => (
-            <div key={s} className={cn("h-1 flex-1 rounded-full", i <= stageIndex ? "bg-ink" : "bg-muted")} />
-          ))}
+          {STAGE_ORDER.map((s, i) => {
+            const completed = i < stageIndex;
+            const current = i === stageIndex;
+            const future = i > stageIndex;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => completed && onGoToStage(s)}
+                disabled={!completed}
+                aria-label={`${STAGE_LABELS[s]}${completed ? "（点击返回）" : ""}`}
+                className={cn(
+                  "h-3 flex-1 rounded-full transition-colors",
+                  completed && "bg-ink cursor-pointer",
+                  current && "bg-ink",
+                  future && "bg-muted cursor-not-allowed",
+                )}
+              />
+            );
+          })}
         </div>
       </div>
     </div>
@@ -766,7 +906,6 @@ function ProductionStage({
   onInputChange,
   phase,
   evaluation,
-  onSubmit,
   onRetryAI,
   onModify,
 }: {
@@ -775,7 +914,6 @@ function ProductionStage({
   onInputChange: (v: string) => void;
   phase: SentencePhase;
   evaluation: PersonalSentenceEvaluation | null;
-  onSubmit: () => void;
   onRetryAI: () => void;
   onModify: () => void;
 }) {
@@ -787,38 +925,18 @@ function ProductionStage({
         <p className="text-sm text-ink-light">{material.core.chinese}</p>
       </div>
       <p className="text-xs text-ink-lighter">
-        用这个表达造一个与你自己有关的句子。
+        用这个表达造一个与你自己有关的句子。写完点击下方「提交造句」。
       </p>
 
       {(phase === "writing" || phase === "submitting") && (
-        <>
-          <textarea
-            value={input}
-            onChange={(e) => onInputChange(e.target.value)}
-            placeholder="Write a sentence using this expression..."
-            rows={3}
-            disabled={phase === "submitting"}
-            className="w-full px-4 py-3 rounded-xl border border-border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ink/10 disabled:opacity-60"
-          />
-          {phase === "writing" && (
-            <button
-              onClick={onSubmit}
-              disabled={!input.trim()}
-              className={cn(
-                "w-full py-2.5 rounded-xl text-sm font-medium transition-colors",
-                input.trim() ? "bg-ink text-white hover:bg-ink/90" : "bg-muted text-ink-lighter cursor-not-allowed",
-              )}
-            >
-              提交造句
-            </button>
-          )}
-          {phase === "submitting" && (
-            <div className="flex items-center justify-center gap-2 py-3 text-sm text-ink-light">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              分析中…
-            </div>
-          )}
-        </>
+        <textarea
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          placeholder="Write a sentence using this expression..."
+          rows={3}
+          disabled={phase === "submitting"}
+          className="w-full px-4 py-3 rounded-xl border border-border text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ink/10 disabled:opacity-60"
+        />
       )}
 
       {phase === "feedback" && evaluation && <SentenceFeedback evaluation={evaluation} />}
@@ -893,113 +1011,137 @@ function SentenceFeedback({ evaluation }: { evaluation: PersonalSentenceEvaluati
 function StageNav({
   stage,
   recallPhase,
+  sentencePhase,
+  sentenceInput,
   busy,
+  saving,
   completing,
-  onNext,
-  onPrev,
-  onStartRecall,
+  onGoToStage,
   onRetryRecall,
-  onContinueToProduction,
+  onSubmitSentence,
   onComplete,
 }: {
   stage: LearnStage;
   recallPhase: RecallPhase;
+  sentencePhase: SentencePhase;
+  sentenceInput: string;
   busy: boolean;
+  saving: boolean;
   completing: boolean;
-  onNext: () => void;
-  onPrev: () => void;
-  onStartRecall: () => void;
+  onGoToStage: (s: LearnStage) => void;
   onRetryRecall: () => void;
-  onContinueToProduction: () => void;
+  onSubmitSentence: () => void;
   onComplete: () => void;
 }) {
+  const back = (target: LearnStage) => (
+    <button
+      onClick={() => onGoToStage(target)}
+      disabled={busy}
+      className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors disabled:opacity-50"
+    >
+      <ArrowLeft className="w-4 h-4 inline mr-1" />
+      上一步
+    </button>
+  );
+
   return (
-    <div className="fixed bottom-0 left-0 right-0 border-t border-border bg-white/95 backdrop-blur z-20">
+    <div className={`fixed bottom-0 left-0 right-0 border-t border-border bg-white/95 backdrop-blur z-20 ${FOOTER_SAFE_AREA_CLASS}`}>
       <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
-        {stage === "understand" && (
+        {saving ? (
+          <div className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm text-ink-light">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            正在保存…
+          </div>
+        ) : stage === "understand" ? (
           <button
-            onClick={onNext}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
+            onClick={() => onGoToStage("contextUsage")}
+            disabled={busy}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors disabled:opacity-50"
           >
             下一步
             <ArrowRight className="w-4 h-4 inline ml-1" />
           </button>
-        )}
-
-        {stage === "contextUsage" && (
+        ) : stage === "contextUsage" ? (
           <>
+            {back("understand")}
             <button
-              onClick={onPrev}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4 inline mr-1" />
-              上一步
-            </button>
-            <button
-              onClick={onStartRecall}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
+              onClick={() => onGoToStage("recall")}
+              disabled={busy}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors disabled:opacity-50"
             >
               开始主动回忆
               <ArrowRight className="w-4 h-4 inline ml-1" />
             </button>
           </>
-        )}
-
-        {stage === "recall" && recallPhase === "idle" && (
-          <button
-            onClick={onPrev}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4 inline mr-1" />
-            上一步
-          </button>
-        )}
-
-        {stage === "recall" && recallPhase === "result" && (
+        ) : stage === "recall" && recallPhase !== "result" ? (
+          // Back is ALWAYS available from recall — never trap the user (PART 7).
+          back("contextUsage")
+        ) : stage === "recall" && recallPhase === "result" ? (
           <>
             <button
               onClick={onRetryRecall}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors"
+              disabled={busy}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors disabled:opacity-50"
             >
               <RefreshCw className="w-4 h-4 inline mr-1" />
               重新想一次
             </button>
             <button
-              onClick={onContinueToProduction}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
+              onClick={() => onGoToStage("production")}
+              disabled={busy}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors disabled:opacity-50"
             >
               继续个人造句
               <ArrowRight className="w-4 h-4 inline ml-1" />
             </button>
           </>
-        )}
-
-        {stage === "production" && (
+        ) : stage === "production" ? (
           <>
-            {recallPhase === "result" && (
+            <button
+              onClick={() => onGoToStage("recall")}
+              disabled={busy}
+              aria-label="返回主动回忆"
+              className="py-2.5 px-4 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              <ArrowLeft className="w-4 h-4 inline" />
+            </button>
+            {/* Contextual CTA: writing → 提交造句; feedback → 完成本条学习 (PART 10/11). */}
+            {sentencePhase === "writing" && (
               <button
-                onClick={onPrev}
-                className="py-2.5 px-4 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors"
+                onClick={onSubmitSentence}
+                disabled={busy || !sentenceInput.trim()}
+                className={cn(
+                  "flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors",
+                  busy || !sentenceInput.trim() ? "bg-muted text-ink-lighter cursor-not-allowed" : "bg-ink text-white hover:bg-ink/90",
+                )}
               >
-                <ArrowLeft className="w-4 h-4 inline mr-1" />
+                提交造句
               </button>
             )}
-            <button
-              onClick={onComplete}
-              disabled={busy}
-              className={cn(
-                "flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors",
-                busy ? "bg-muted text-ink-lighter cursor-not-allowed" : "bg-ink text-white hover:bg-ink/90",
-              )}
-            >
-              {completing ? (
-                <><Loader2 className="w-4 h-4 inline mr-1 animate-spin" />完成中…</>
-              ) : (
-                <><CheckCircle2 className="w-4 h-4 inline mr-1" />完成本条学习</>
-              )}
-            </button>
+            {sentencePhase === "submitting" && (
+              <div className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm text-ink-light">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                分析中…
+              </div>
+            )}
+            {(sentencePhase === "feedback" || sentencePhase === "aiFailed") && (
+              <button
+                onClick={onComplete}
+                disabled={busy}
+                className={cn(
+                  "flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors",
+                  busy ? "bg-muted text-ink-lighter cursor-not-allowed" : "bg-ink text-white hover:bg-ink/90",
+                )}
+              >
+                {completing ? (
+                  <><Loader2 className="w-4 h-4 inline mr-1 animate-spin" />完成中…</>
+                ) : (
+                  <><CheckCircle2 className="w-4 h-4 inline mr-1" />完成本条学习</>
+                )}
+              </button>
+            )}
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

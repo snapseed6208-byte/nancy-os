@@ -9,7 +9,8 @@
 
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
-import type { ReviewSession, SessionItem, ExpressionCard, LearnProgress } from "@/lib/hooks/useReviewSession";
+import type { ReviewSession, SessionItem, ExpressionCard } from "@/lib/hooks/useReviewSession";
+import { parseProgressJSON } from "@/lib/english/learningProgress";
 
 // ═══════════════════════════════════════
 // Date Utilities
@@ -302,7 +303,6 @@ export async function completeSession(sessionId: string): Promise<void> {
 // ═══════════════════════════════════════
 
 function mapRowToSession(row: Record<string, unknown>): ReviewSession {
-  const progress = row.learn_progress as Record<string, unknown> | null;
   return {
     id: row.id as string,
     userId: row.user_id as string,
@@ -313,12 +313,7 @@ function mapRowToSession(row: Record<string, unknown>): ReviewSession {
     sessionType: (row.session_type as SessionType) || "review",
     createdAt: row.created_at as string,
     completedAt: row.completed_at as string | null,
-    learnProgress: progress && typeof progress === "object"
-      ? {
-          expressionIndex: Number(progress.expression_index) || 0,
-          stage: (progress.stage as LearnProgress["stage"]) || "understand",
-        }
-      : null,
+    learnProgress: parseProgressJSON(row.learn_progress as Record<string, unknown> | null),
   };
 }
 
