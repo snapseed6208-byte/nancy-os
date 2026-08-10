@@ -19,11 +19,18 @@ import {
   getShanghaiDateKey,
   getShanghaiISO,
   getOrCreateEnglishSession,
+  findEnglishSession,
   fetchSessionItems,
   createSessionItems,
+  createLearnSessionWithTarget,
+  appendLearnItems,
+  countAvailableLearnExpressions,
+  MAX_LEARN_TARGET,
   classifySessionError,
   SessionErrorCode,
   type SessionType,
+  type CreateLearnSessionResult,
+  type AppendLearnItemsResult,
 } from "@/lib/english/sessionRepository";
 import { toProgressJSON } from "@/lib/english/learningProgress";
 
@@ -182,71 +189,67 @@ async function fetchOrCreateSession(): Promise<{
 }
 
 // ═══════════════════════════════════════
-// V4: Learning Session
+// V4.3: Adaptive Daily Learning Target
+//
+// Learning workload = the user decides. Review timing = SRS decides. Never bind.
+// The user can learn 5 today, 20 tomorrow, 0 the day after — all valid.
 // ═══════════════════════════════════════
 
-const DEFAULT_LEARN_TARGET = 5;
+export const LEARN_TARGET_PRESETS = [
+  { value: 5, label: "轻松" },
+  { value: 10, label: "标准" },
+  { value: 15, label: "专注" },
+  { value: 20, label: "冲刺" },
+] as const;
 
-async function fetchOrCreateLearnSession(): Promise<{
-  session: ReviewSession;
+export const DEFAULT_LEARN_TARGET = 10;
+export { MAX_LEARN_TARGET };
+
+const LEARN_TARGET_STORAGE_KEY = "english_learning_target";
+
+/** Remember the user's last choice (PART 10) — highlight it tomorrow, never auto-create a session. */
+export function getSavedLearnTarget(): number {
+  try {
+    const raw = localStorage.getItem(LEARN_TARGET_STORAGE_KEY);
+    const n = raw ? Number.parseInt(raw, 10) : NaN;
+    if (Number.isFinite(n) && n >= 1 && n <= MAX_LEARN_TARGET) return n;
+  } catch {
+    /* storage unavailable — fall back to default */
+  }
+  return DEFAULT_LEARN_TARGET;
+}
+
+export function saveLearnTarget(target: number): void {
+  try {
+    const n = Math.min(Math.max(1, Math.floor(target)), MAX_LEARN_TARGET);
+    localStorage.setItem(LEARN_TARGET_STORAGE_KEY, String(n));
+  } catch {
+    /* preference is best-effort — never blocks learning */
+  }
+}
+
+/** A learning item counts as finished once its item row OR its expression reached the review cycle. */
+export function isLearnItemFinished(item: SessionItem): boolean {
+  if (item.status === "completed") return true;
+  const st = item.expression?.status;
+  return st === "review" || st === "mastered";
+}
+
+/**
+ * FETCH-ONLY. Loading the Learn page must NEVER auto-create a session — otherwise
+ * a 5-item session would be locked in before the user picks a daily target.
+ * Returns { session: null } when the user hasn't started learning today.
+ */
+async function fetchTodayLearnSession(): Promise<{
+  session: ReviewSession | null;
   items: SessionItem[];
-  isNew: boolean;
 }> {
   const userId = await getUserId();
   const today = todayStr();
-
-  // Idempotent get-or-create (handles 406/409 via sessionRepository)
-  const { session: sessionData, isNew } = await getOrCreateEnglishSession({
-    userId,
-    date: today,
-    sessionType: "learn",
-  });
-
-  if (!isNew) {
-    const items = await fetchSessionItems(sessionData.id);
-    return { session: sessionData, items, isNew: false };
-  }
-
-  // New session: select collected/learning expressions
-  // Priority: "learning" status first (resume in-progress), then "collected" by created_at
-  const { data: learnData } = await supabase
-    .from("expressions")
-    .select(EXPRESSION_SELECT)
-    .eq("user_id", userId)
-    .eq("archived", false)
-    .in("status", ["collected", "learning"])
-    .order("status", { ascending: true })
-    .order("created_at", { ascending: true })
-    .limit(Math.min(DEFAULT_LEARN_TARGET, MAX_DAILY_CARDS));
-
-  const selectedCards = ((learnData || []) as unknown as Record<string, unknown>[]).sort((a, b) => {
-    if (a.status === "learning" && b.status !== "learning") return -1;
-    if (a.status !== "learning" && b.status === "learning") return 1;
-    return 0;
-  });
-
-  // Update target count
-  if (selectedCards.length !== sessionData.targetCount) {
-    await supabase
-      .from("review_sessions")
-      .update({ target_count: selectedCards.length })
-      .eq("id", sessionData.id);
-  }
-
-  // Create session items
-  await createSessionItems(
-    sessionData.id,
-    selectedCards.map((c) => c.id as string),
-  );
-
-  // Reload with expressions
-  const items = await fetchSessionItems(sessionData.id);
-
-  return {
-    session: { ...sessionData, targetCount: selectedCards.length },
-    items,
-    isNew: true,
-  };
+  const session = await findEnglishSession(userId, today, "learn");
+  if (!session) return { session: null, items: [] };
+  const items = await fetchSessionItems(session.id);
+  return { session, items };
 }
 
 function formatSessionItem(raw: Record<string, unknown>): SessionItem {
@@ -305,12 +308,61 @@ export function useTodaySession() {
   });
 }
 
+/** V4.3: Fetch-only today's learn session (never auto-creates). session is null until the user picks a target. */
 export function useTodayLearnSession() {
   return useQuery({
     queryKey: ["learn-session", "today"],
-    queryFn: fetchOrCreateLearnSession,
+    queryFn: fetchTodayLearnSession,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+/** V4.3: Create today's learn session with an explicit target (idempotent — re-runs return the same session). */
+export function useCreateLearnSession() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ target }: { target: number }): Promise<CreateLearnSessionResult> => {
+      const userId = await getUserId();
+      return createLearnSessionWithTarget(userId, todayStr(), target);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["learn-session"] });
+      qc.invalidateQueries({ queryKey: ["learn-queue-count"] });
+      qc.invalidateQueries({ queryKey: ["learn-more-available"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
+  });
+}
+
+/** V4.3: Extend today's session ("今天再学一些") — appends new collected expressions, never a second session. */
+export function useAppendLearnItems() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ count }: { count: number }): Promise<AppendLearnItemsResult> => {
+      const userId = await getUserId();
+      return appendLearnItems(userId, todayStr(), count);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["learn-session"] });
+      qc.invalidateQueries({ queryKey: ["learn-queue-count"] });
+      qc.invalidateQueries({ queryKey: ["learn-more-available"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
+    },
+  });
+}
+
+/** V4.3: How many collected/learning expressions remain OUTSIDE today's learn session (今天再学一些 availability). */
+export function useLearnMoreAvailable() {
+  return useQuery({
+    queryKey: ["learn-more-available"],
+    queryFn: async (): Promise<number> => {
+      const userId = await getUserId();
+      return countAvailableLearnExpressions(userId, todayStr());
+    },
+    staleTime: 60_000,
   });
 }
 

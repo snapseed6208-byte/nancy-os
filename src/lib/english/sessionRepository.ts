@@ -45,6 +45,12 @@ export function getShanghaiISO(): string {
 
 export type SessionType = "learn" | "review";
 
+/** Hard daily cap for a SINGLE learning session (PART 17). Users can still append more afterwards. */
+export const MAX_LEARN_TARGET = 30;
+
+/** Statuses that belong in the learning queue (COLLECT → LEARN → REVIEW lifecycle). */
+const LEARN_QUEUE_STATUSES = ["collected", "learning"] as const;
+
 export interface CreateSessionParams {
   userId: string;
   date: string;
@@ -134,10 +140,15 @@ export function classifySessionError(err: unknown): SessionError {
 }
 
 // ═══════════════════════════════════════
-// Query: Find existing session
+// Query: Find existing session (FETCH-ONLY — never creates)
 // ═══════════════════════════════════════
 
-async function findSession(
+/**
+ * Fetch an existing session without creating one. Returns null when absent.
+ * The Learning page relies on this: loading it must NEVER auto-create a session,
+ * otherwise the user never gets a chance to pick a daily target.
+ */
+export async function findEnglishSession(
   userId: string,
   date: string,
   sessionType: SessionType,
@@ -196,7 +207,7 @@ export async function getOrCreateEnglishSession(
   params: CreateSessionParams,
 ): Promise<GetOrCreateResult> {
   // Optimistic fast path: check if session already exists
-  const existing = await findSession(params.userId, params.date, params.sessionType);
+  const existing = await findEnglishSession(params.userId, params.date, params.sessionType);
   if (existing) return { session: existing, isNew: false };
 
   // Try to create
@@ -206,7 +217,7 @@ export async function getOrCreateEnglishSession(
   } catch (err) {
     // Race condition: another request created it between our check and insert
     if (err instanceof SessionError && err.code === SessionErrorCode.DUPLICATE) {
-      const concurrent = await findSession(params.userId, params.date, params.sessionType);
+      const concurrent = await findEnglishSession(params.userId, params.date, params.sessionType);
       if (concurrent) return { session: concurrent, isNew: false };
 
       throw new SessionError(
@@ -243,6 +254,205 @@ export async function getOrCreateTodayLearnSession() {
     date: getShanghaiDateKey(),
     sessionType: "learn",
   });
+}
+
+// ═══════════════════════════════════════
+// V4.3: Adaptive Daily Learning Target
+//
+// Learning workload = the user decides (5/10/15/20/custom, up to 30).
+// Review timing = SRS decides. The two NEVER bind.
+// ═══════════════════════════════════════
+
+/**
+ * Select the learning queue for a user.
+ *
+ * Order (PART 13): created_at ASC so the oldest-collected expressions are
+ * learned first. `learning` status (a resumed in-progress item) jumps ahead of
+ * `collected` — the stable JS sort preserves created_at order within each group.
+ *
+ * @param excludeExpressionIds expressions already in today's session (append must skip them).
+ * @returns the selected rows plus how many more remain available after selection.
+ */
+async function selectLearnQueue(
+  userId: string,
+  limit: number,
+  excludeExpressionIds: string[] = [],
+): Promise<{ rows: Record<string, unknown>[]; remaining: number }> {
+  let query = supabase
+    .from("expressions")
+    .select(EXPRESSION_SELECT, { count: "exact" })
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
+    .order("created_at", { ascending: true });
+
+  if (excludeExpressionIds.length > 0) {
+    query = query.not(
+      "id",
+      "in",
+      `(${excludeExpressionIds.map((id) => `"${id}"`).join(",")})`,
+    );
+  }
+
+  const { data, count, error } = await query.limit(limit);
+  if (error) throw classifySessionError(error);
+
+  const dataRows = (data || []) as unknown as Record<string, unknown>[];
+  const rows = [...dataRows].sort((a, b) => {
+    if (a.status === "learning" && b.status !== "learning") return -1;
+    if (a.status !== "learning" && b.status === "learning") return 1;
+    return 0;
+  });
+
+  const total = count ?? 0;
+  return { rows, remaining: Math.max(0, total - rows.length) };
+}
+
+export interface CreateLearnSessionResult {
+  session: ReviewSession | null;
+  items: SessionItem[];
+  isNew: boolean;
+  /** Actual expressions selected — less than requestedTarget when the queue is short (PART 2). */
+  selectedCount: number;
+  /** What the user asked for (before the 30-cap / insufficiency clamp). */
+  requestedTarget: number;
+  /** How many collected/learning remain AFTER this selection (for 今天再学一些). */
+  remaining: number;
+  /** True when there are no expressions to learn — no session is created (PART 14). */
+  empty: boolean;
+}
+
+/**
+ * Create today's learn session with an explicit target, or return the existing
+ * one unchanged (idempotent — PART 3/5: refresh / re-entry / device change must
+ * restore the SAME items, never re-draw).
+ *
+ * Selection happens BEFORE session creation so an empty queue never creates an
+ * empty session. When the queue is short the session target collapses to the
+ * actual count (e.g. pick 20 but only 13 remain → session of 13).
+ */
+export async function createLearnSessionWithTarget(
+  userId: string,
+  date: string,
+  requestedTarget: number,
+): Promise<CreateLearnSessionResult> {
+  const target = Math.min(Math.max(1, Math.floor(requestedTarget) || 1), MAX_LEARN_TARGET);
+
+  // Never re-create: an existing session is authoritative (session immutability).
+  const existing = await findEnglishSession(userId, date, "learn");
+  if (existing) {
+    const items = await fetchSessionItems(existing.id);
+    return {
+      session: existing,
+      items,
+      isNew: false,
+      selectedCount: items.length,
+      requestedTarget: target,
+      remaining: 0,
+      empty: items.length === 0,
+    };
+  }
+
+  // Select BEFORE creating so we never leave an empty session behind.
+  const { rows, remaining } = await selectLearnQueue(userId, target);
+  if (rows.length === 0) {
+    return { session: null, items: [], isNew: false, selectedCount: 0, requestedTarget: target, remaining: 0, empty: true };
+  }
+
+  // Get-or-create (handles the concurrent-create race) with the ACTUAL count.
+  const { session, isNew } = await getOrCreateEnglishSession({
+    userId,
+    date,
+    sessionType: "learn",
+    targetCount: rows.length,
+  });
+
+  if (!isNew) {
+    // A concurrent request created it first — its items are authoritative.
+    const items = await fetchSessionItems(session.id);
+    return { session, items, isNew: false, selectedCount: items.length, requestedTarget: target, remaining: 0, empty: items.length === 0 };
+  }
+
+  await createSessionItems(session.id, rows.map((r) => r.id as string));
+  const items = await fetchSessionItems(session.id);
+
+  return { session, items, isNew: true, selectedCount: rows.length, requestedTarget: target, remaining, empty: false };
+}
+
+export interface AppendLearnItemsResult {
+  session: ReviewSession;
+  items: SessionItem[];
+  /** How many new expressions were appended this call. */
+  addedCount: number;
+  /** How many collected/learning still remain outside the session. */
+  remaining: number;
+}
+
+/**
+ * Extend TODAY'S learn session ("今天再学一些" — PART 7/8).
+ *
+ * Appends `count` brand-new COLLECTED expressions onto the same session (never a
+ * second session), keeping the original completed items intact. No duplicates:
+ * items already in the session are excluded by the (session_id, expression_id)
+ * unique constraint AND by the explicit exclusion filter here.
+ */
+export async function appendLearnItems(
+  userId: string,
+  date: string,
+  count: number,
+): Promise<AppendLearnItemsResult> {
+  const session = await findEnglishSession(userId, date, "learn");
+  if (!session) {
+    throw new SessionError(SessionErrorCode.NOT_FOUND, "No learn session to extend");
+  }
+
+  const existingItems = await fetchSessionItems(session.id);
+  const excludeIds = existingItems.map((i) => i.expressionId);
+  const target = Math.min(Math.max(1, Math.floor(count) || 1), MAX_LEARN_TARGET);
+
+  const { rows, remaining } = await selectLearnQueue(userId, target, excludeIds);
+  if (rows.length === 0) {
+    return { session, items: existingItems, addedCount: 0, remaining };
+  }
+
+  await createSessionItems(session.id, rows.map((r) => r.id as string));
+
+  const newTotal = existingItems.length + rows.length;
+  const { error } = await supabase
+    .from("review_sessions")
+    .update({ target_count: newTotal })
+    .eq("id", session.id);
+  if (error) throw classifySessionError(error);
+
+  const items = await fetchSessionItems(session.id);
+  return { session: { ...session, targetCount: newTotal }, items, addedCount: rows.length, remaining };
+}
+
+/**
+ * Count expressions that are still learnable (collected/learning, not archived,
+ * not already in today's session). Used to decide whether "今天再学一些" is shown.
+ */
+export async function countAvailableLearnExpressions(
+  userId: string,
+  date: string,
+): Promise<number> {
+  const session = await findEnglishSession(userId, date, "learn");
+  if (!session) return 0;
+
+  const items = await fetchSessionItems(session.id);
+  const ids = items.map((i) => i.expressionId);
+  if (ids.length === 0) return 0;
+
+  const { count, error } = await supabase
+    .from("expressions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
+    .not("id", "in", `(${ids.map((id) => `"${id}"`).join(",")})`);
+
+  if (error) throw classifySessionError(error);
+  return count ?? 0;
 }
 
 // ═══════════════════════════════════════

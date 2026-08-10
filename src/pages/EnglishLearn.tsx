@@ -19,9 +19,15 @@ import {
   useTodayLearnSession,
   useUpdateSessionItem,
   useUpdateLearnProgress,
+  useCreateLearnSession,
+  useAppendLearnItems,
+  useLearnMoreAvailable,
+  useLearnQueueCount,
+  isLearnItemFinished,
   type SessionItem,
   type LearnStage,
 } from "@/lib/hooks/useReviewSession";
+import LearnTargetSelector from "@/components/english/LearnTargetSelector";
 import {
   STAGE_ORDER,
   STAGE_LABELS,
@@ -88,12 +94,6 @@ function sentenceScoreOf(evaluation: PersonalSentenceEvaluation): number {
   return 3;
 }
 
-function isItemFinished(item: SessionItem): boolean {
-  if (item.status === "completed") return true;
-  const st = item.expression?.status;
-  return st === "review" || st === "mastered";
-}
-
 /**
  * Categorize PostgREST / DB / network errors into a friendly, actionable
  * message. No more generic "完成失败：未知错误" — the user gets a clear
@@ -141,8 +141,12 @@ export function classifyCompletionError(err: unknown): string {
 export default function EnglishLearn() {
   const [, navigate] = useLocation();
   const { data, isLoading, isError } = useTodayLearnSession();
+  const { data: moreAvailable = 0 } = useLearnMoreAvailable();
+  const { data: queueCount = 0 } = useLearnQueueCount();
   const updateItem = useUpdateSessionItem();
   const saveProgress = useUpdateLearnProgress();
+  const createSession = useCreateLearnSession();
+  const append = useAppendLearnItems();
   const qc = useQueryClient();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -162,6 +166,7 @@ export default function EnglishLearn() {
   /** Completion failures offer [重试]; stage-redirect hints offer [返回X] (never a dead-end). */
   const [errorAction, setErrorAction] = useState<ErrorAction>("none");
   const [showSummary, setShowSummary] = useState(false);
+  const [showAppendSelector, setShowAppendSelector] = useState(false);
 
   const session = data?.session;
   const items = data?.items || [];
@@ -188,7 +193,7 @@ export default function EnglishLearn() {
   // (e.g. production persisted but recall never completed) redirects back
   // instead of dead-ending.  V4.2 PART 5/6.
   useEffect(() => {
-    if (!data || data.items.length === 0 || initializedRef.current) return;
+    if (!data || !data.session || data.items.length === 0 || initializedRef.current) return;
     initializedRef.current = true;
 
     const saved = data.session.learnProgress;
@@ -196,7 +201,7 @@ export default function EnglishLearn() {
     if (saved && saved.expressionIndex >= 0 && saved.expressionIndex < data.items.length) {
       idx = saved.expressionIndex;
     }
-    while (idx < data.items.length && isItemFinished(data.items[idx])) idx++;
+    while (idx < data.items.length && isLearnItemFinished(data.items[idx])) idx++;
 
     if (idx >= data.items.length) {
       setShowSummary(true);
@@ -527,6 +532,29 @@ export default function EnglishLearn() {
     updateItem, resetExpressionState, saveProgress, invalidateCompletionQueries,
   ]);
 
+  // ═══ "今天再学一些": extend the SAME session, then re-enter the flow at the
+  // first appended (unfinished) item. The resume effect re-positions correctly
+  // once the refetched item list arrives. ═══
+  const handleLearnMore = useCallback(
+    (count: number) => {
+      append.mutate(
+        { count },
+        {
+          onSuccess: () => {
+            setShowSummary(false);
+            setShowAppendSelector(false);
+            initializedRef.current = false; // let the resume effect re-run on the new items
+            resetExpressionState();
+            setCurrentIndex(0);
+            setStage("understand");
+            setProgress({ ...DEFAULT_LEARN_PROGRESS, expressionIndex: 0 });
+          },
+        },
+      );
+    },
+    [append, resetExpressionState],
+  );
+
   // ═══ Render: loading / error / summary / empty ═══
   if (isLoading) {
     return (
@@ -536,7 +564,7 @@ export default function EnglishLearn() {
     );
   }
 
-  if (isError || !session) {
+  if (isError) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <AlertTriangle className="w-8 h-8 text-amber-500" />
@@ -551,8 +579,62 @@ export default function EnglishLearn() {
     );
   }
 
+  // No session today → the user picks a daily target first (PART 1). Never auto-create.
+  if (!session) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+        <header className="flex items-center justify-between pt-2">
+          <div>
+            <p className="text-xs text-ink-light">Learn</p>
+            <h1 className="text-lg font-semibold tracking-tight">学习新表达</h1>
+          </div>
+          <button onClick={() => navigate("/english")} className="text-ink-lighter hover:text-ink text-xs">
+            返回
+          </button>
+        </header>
+        <div className="bg-card rounded-2xl border border-border p-4 sm:p-6">
+          {queueCount === 0 && (
+            <div className="space-y-4">
+              <p className="text-sm text-ink-light">表达库里暂时没有待学习的新表达。</p>
+              <button
+                onClick={() => navigate("/english/expressions")}
+                className="w-full py-3 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
+              >
+                去表达库
+              </button>
+            </div>
+          )}
+          {queueCount > 0 && (
+            <LearnTargetSelector
+              mode="create"
+              availableCount={queueCount}
+              busy={createSession.isPending}
+              onSubmit={(target) =>
+                createSession.mutate(
+                  { target },
+                  { onSuccess: (res) => { if (res.empty) return; /* invalidate refetches → resume effect takes over */ } },
+                )
+              }
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (showSummary) {
-    return <LearningSummary items={items} completedSet={completedSet} onBack={() => navigate("/english")} />;
+    return (
+      <LearningSummary
+        items={items}
+        completedSet={completedSet}
+        moreAvailable={moreAvailable}
+        appendBusy={append.isPending}
+        showAppendSelector={showAppendSelector}
+        onOpenAppend={() => setShowAppendSelector(true)}
+        onLearnMore={handleLearnMore}
+        onBack={() => navigate("/english")}
+      />
+    );
   }
 
   if (items.length === 0 || !currentItem || !material) {
@@ -1203,13 +1285,23 @@ function InfoBlock({ tone, title, content }: { tone: keyof typeof INFO_TONES; ti
 function LearningSummary({
   items,
   completedSet,
+  moreAvailable,
+  appendBusy,
+  showAppendSelector,
+  onOpenAppend,
+  onLearnMore,
   onBack,
 }: {
   items: SessionItem[];
   completedSet: Set<string>;
+  moreAvailable: number;
+  appendBusy: boolean;
+  showAppendSelector: boolean;
+  onOpenAppend: () => void;
+  onLearnMore: (count: number) => void;
   onBack: () => void;
 }) {
-  const doneCount = items.filter((i) => isItemFinished(i) || completedSet.has(i.expressionId)).length;
+  const doneCount = items.filter((i) => isLearnItemFinished(i) || completedSet.has(i.expressionId)).length;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
@@ -1223,7 +1315,7 @@ function LearningSummary({
 
       <div className="bg-white rounded-2xl border border-border divide-y divide-border">
         {items.map((item) => {
-          const done = isItemFinished(item) || completedSet.has(item.expressionId);
+          const done = isLearnItemFinished(item) || completedSet.has(item.expressionId);
           const recallDone = item.recallScore !== null;
           const sentenceDone = !!item.userSentence;
           return (
@@ -1249,6 +1341,25 @@ function LearningSummary({
           );
         })}
       </div>
+
+      {/* V4.3: append flow (PART 16) — extends the SAME session, never a second one. */}
+      {showAppendSelector && moreAvailable > 0 ? (
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+          <LearnTargetSelector
+            mode="append"
+            availableCount={moreAvailable}
+            busy={appendBusy}
+            onSubmit={onLearnMore}
+          />
+        </div>
+      ) : moreAvailable > 0 ? (
+        <button
+          onClick={onOpenAppend}
+          className="w-full py-3 rounded-xl text-sm font-medium border border-sage-deep/40 text-sage-deep hover:bg-sage-light/40 transition-colors"
+        >
+          今天再学一些
+        </button>
+      ) : null}
 
       <button
         onClick={onBack}

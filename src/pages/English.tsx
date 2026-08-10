@@ -2,10 +2,19 @@ import { useLocation } from "wouter";
 import {
   BookOpen, Mic, Library, Brain, Eye, Edit3,
   ChevronRight, Zap, Upload, TrendingUp, FileUp,
-  Sparkles, CheckCircle2, GraduationCap, Settings,
+  Sparkles, CheckCircle2, GraduationCap,
 } from "lucide-react";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
-import { useHubSessionProgress, useLearnQueueCount } from "@/lib/hooks/useReviewSession";
+import {
+  useHubSessionProgress,
+  useLearnQueueCount,
+  useTodayLearnSession,
+  useCreateLearnSession,
+  useAppendLearnItems,
+  useLearnMoreAvailable,
+  isLearnItemFinished,
+} from "@/lib/hooks/useReviewSession";
+import LearnTargetSelector from "@/components/english/LearnTargetSelector";
 import { cn } from "@/lib/utils";
 
 export default function English() {
@@ -32,17 +41,9 @@ export default function English() {
         <StatCard label="已掌握" value={isLoading ? "-" : stats?.mastered ?? 0} color="sage" />
       </div>
 
-      {/* Primary actions: Learn + Review */}
+      {/* Primary actions: Adaptive Learn + Review */}
       <div className="space-y-3">
-        <ActionCard
-          icon={GraduationCap}
-          label="学习新表达"
-          desc={toLearnCount ? `${toLearnCount} 条待学习` : "暂无待学习的表达"}
-          highlight={toLearnCount > 0}
-          color="blue"
-          onClick={() => navigate("/english/learn")}
-          extra={toLearnCount > 0 ? "开始学习今日新表达" : undefined}
-        />
+        <TodayLearningCard />
         <ActionCard
           icon={Brain}
           label="SRS 复习"
@@ -155,20 +156,126 @@ export default function English() {
         />
       </div>
 
-      {/* Bottom: Learning intensity */}
-      <div className="bg-card rounded-2xl border border-border p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Settings size={14} className="text-ink-light" />
-          <span className="text-xs font-medium text-ink">每日学习设置</span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// V4.3: Today's Learning Card — three states
+//
+// No session  → "今天想学多少？" target selector (轻松5/标准10/专注15/冲刺20/自定义)
+// In progress → 3/10 [继续学习]
+// Completed   → 10/10 ✓ + [今天再学一些] (extends the SAME session, never a second one)
+// ═══════════════════════════════════════
+
+function TodayLearningCard() {
+  const [, navigate] = useLocation();
+  const { data } = useTodayLearnSession();
+  const { data: queueCount = 0 } = useLearnQueueCount();
+  const { data: moreAvailable = 0 } = useLearnMoreAvailable();
+  const createSession = useCreateLearnSession();
+  const append = useAppendLearnItems();
+
+  const session = data?.session ?? null;
+  const items = data?.items ?? [];
+  const doneCount = items.filter(isLearnItemFinished).length;
+  const started = session !== null;
+  const allDone = started && items.length > 0 && doneCount >= items.length;
+
+  const handleCreate = (target: number) => {
+    createSession.mutate(
+      { target },
+      { onSuccess: (res) => { if (!res.empty) navigate("/english/learn"); } },
+    );
+  };
+
+  const handleAppend = (count: number) => {
+    append.mutate(
+      { count },
+      { onSuccess: () => navigate("/english/learn") },
+    );
+  };
+
+  const header = (
+    <div className="flex items-center gap-2">
+      <GraduationCap size={14} className={started ? "text-sage-deep" : "text-blue-600"} />
+      <span className="text-sm font-medium text-ink">今日学习</span>
+      {started && allDone && (
+        <span className="text-[10px] font-medium text-sage-deep bg-sage-light/50 px-2 py-0.5 rounded-full ml-auto">
+          全部完成
+        </span>
+      )}
+    </div>
+  );
+
+  // State A — no session yet: target selector (or empty state)
+  if (!started) {
+    if (queueCount === 0) {
+      return (
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+          {header}
+          <p className="text-sm text-ink-light">表达库里暂时没有待学习的新表达。</p>
+          <button
+            onClick={() => navigate("/english/expressions")}
+            className="w-full py-3 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
+          >
+            去表达库
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-ink-lighter">每日学习新表达:</span>
-          <span className="text-sm font-semibold text-ink">5 条</span>
-        </div>
-        <p className="text-[11px] text-ink-lighter mt-2">
-          收集表达 → 学习 → SRS 复习 → 掌握，四步建立长期记忆。
-        </p>
+      );
+    }
+    return (
+      <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
+        {header}
+        <LearnTargetSelector
+          mode="create"
+          availableCount={queueCount}
+          busy={createSession.isPending}
+          onSubmit={handleCreate}
+        />
       </div>
+    );
+  }
+
+  // State B — in progress: continue
+  if (!allDone) {
+    return (
+      <div className="bg-card rounded-2xl border border-border p-4 flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          {header}
+          <p className="text-sm text-ink-light mt-1">
+            {doneCount} / {items.length} 条已完成
+          </p>
+        </div>
+        <button
+          onClick={() => navigate("/english/learn")}
+          className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
+        >
+          继续学习
+        </button>
+      </div>
+    );
+  }
+
+  // State C — completed: today's recap + 今天再学一些
+  return (
+    <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
+      {header}
+      <p className="text-sm text-ink-light">
+        今天新学 <span className="font-semibold text-ink">{doneCount}</span> 条表达 ✓
+      </p>
+      {moreAvailable > 0 ? (
+        <LearnTargetSelector
+          mode="append"
+          availableCount={moreAvailable}
+          busy={append.isPending}
+          onSubmit={handleAppend}
+        />
+      ) : (
+        <p className="text-xs text-ink-lighter">
+          表达库里没有更多待学习的表达啦，去复习今天的 SRS 卡片吧。
+        </p>
+      )}
     </div>
   );
 }

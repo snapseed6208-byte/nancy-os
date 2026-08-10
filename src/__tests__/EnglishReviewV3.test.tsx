@@ -3614,3 +3614,487 @@ function scheduleSrsForTest(
   const intervalDays = reps === 1 ? 1 : Math.min(365, Math.round(current.intervalDays * 2));
   return { status: reps >= 8 ? "mastered" : "review", repetitions: reps, intervalDays };
 }
+
+// ═════════════════════════════════════════════════════════════════════════
+// V4.3 — Adaptive Daily Learning Target (T-series)
+//
+// Learning workload = user decides (5/10/15/20/custom, ≤30/session).
+// Review timing = SRS decides. The two never bind.
+// Mirrors the pure logic in src/lib/english/sessionRepository.ts.
+// ═════════════════════════════════════════════════════════════════════════
+
+const LEARN_PRESETS_FOR_TEST = [
+  { value: 5, label: "轻松" },
+  { value: 10, label: "标准" },
+  { value: 15, label: "专注" },
+  { value: 20, label: "冲刺" },
+] as const;
+const DEFAULT_LEARN_TARGET_FOR_TEST = 10;
+const MAX_LEARN_TARGET_FOR_TEST = 30;
+
+interface LearnExprForTest {
+  id: string;
+  userId: string;
+  status: string;
+  archived: boolean;
+  createdAt: string;
+}
+
+interface LearnItemForTest {
+  sessionId: string;
+  expressionId: string;
+}
+
+interface LearnTestState {
+  expressions: LearnExprForTest[];
+  sessions: Map<string, ReviewSessionForTest>;
+  items: LearnItemForTest[];
+}
+
+function makeLearnExpr(
+  id: string,
+  userId: string,
+  status: string,
+  createdAt: string,
+  archived = false,
+): LearnExprForTest {
+  return { id, userId, status, archived, createdAt };
+}
+
+function makeLearnState(): LearnTestState {
+  return { expressions: [], sessions: new Map(), items: [] };
+}
+
+/** Mirror of selectLearnQueue: created_at ASC, learning-first stable sort, exclusion, cap, remaining. */
+function selectLearnQueueForTest(
+  state: LearnTestState,
+  userId: string,
+  limit: number,
+  excludeIds: string[],
+): { rows: LearnExprForTest[]; remaining: number } {
+  const pool = state.expressions
+    .filter(
+      (e) =>
+        e.userId === userId &&
+        !e.archived &&
+        (e.status === "collected" || e.status === "learning") &&
+        !excludeIds.includes(e.id),
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  const rows = [...pool].sort((a, b) => {
+    if (a.status === "learning" && b.status !== "learning") return -1;
+    if (a.status !== "learning" && b.status === "learning") return 1;
+    return 0;
+  });
+
+  const selected = rows.slice(0, limit);
+  return { rows: selected, remaining: Math.max(0, pool.length - selected.length) };
+}
+
+/** Mirror of createLearnSessionWithTarget. */
+function createLearnSessionForTest(
+  state: LearnTestState,
+  userId: string,
+  date: string,
+  requestedTarget: number,
+): {
+  session: ReviewSessionForTest | null;
+  items: LearnItemForTest[];
+  isNew: boolean;
+  selectedCount: number;
+  requestedTarget: number;
+  remaining: number;
+  empty: boolean;
+} {
+  const key = `${userId}|${date}|learn`;
+  const target = Math.min(Math.max(1, Math.floor(requestedTarget) || 1), MAX_LEARN_TARGET_FOR_TEST);
+
+  if (state.sessions.has(key)) {
+    const existing = state.sessions.get(key)!;
+    const items = state.items.filter((i) => i.sessionId === existing.id);
+    return { session: existing, items, isNew: false, selectedCount: items.length, requestedTarget: target, remaining: 0, empty: items.length === 0 };
+  }
+
+  const { rows, remaining } = selectLearnQueueForTest(state, userId, target, []);
+  if (rows.length === 0) {
+    return { session: null, items: [], isNew: false, selectedCount: 0, requestedTarget: target, remaining: 0, empty: true };
+  }
+
+  const session: ReviewSessionForTest = {
+    id: `learn-${key}`,
+    userId,
+    sessionDate: date,
+    targetCount: rows.length,
+    status: "active",
+    currentStage: "recall",
+    sessionType: "learn",
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  };
+  state.sessions.set(key, session);
+  for (const r of rows) state.items.push({ sessionId: session.id, expressionId: r.id });
+
+  return { session, items: state.items.filter((i) => i.sessionId === session.id), isNew: true, selectedCount: rows.length, requestedTarget: target, remaining, empty: false };
+}
+
+/** Mirror of appendLearnItems. */
+function appendLearnItemsForTest(
+  state: LearnTestState,
+  userId: string,
+  date: string,
+  count: number,
+): { session: ReviewSessionForTest; items: LearnItemForTest[]; addedCount: number; remaining: number } {
+  const key = `${userId}|${date}|learn`;
+  const session = state.sessions.get(key);
+  if (!session) throw new Error("No learn session to extend");
+
+  const existing = state.items.filter((i) => i.sessionId === session.id);
+  const exclude = existing.map((i) => i.expressionId);
+  const target = Math.min(Math.max(1, Math.floor(count) || 1), MAX_LEARN_TARGET_FOR_TEST);
+
+  const { rows, remaining } = selectLearnQueueForTest(state, userId, target, exclude);
+  if (rows.length === 0) return { session, items: existing, addedCount: 0, remaining };
+
+  for (const r of rows) state.items.push({ sessionId: session.id, expressionId: r.id });
+  session.targetCount = existing.length + rows.length;
+  const items = state.items.filter((i) => i.sessionId === session.id);
+  return { session, items, addedCount: rows.length, remaining };
+}
+
+/** Mirror of countAvailableLearnExpressions. */
+function countAvailableForTest(state: LearnTestState, userId: string, date: string): number {
+  const key = `${userId}|${date}|learn`;
+  const session = state.sessions.get(key);
+  if (!session) return 0;
+  const ids = state.items.filter((i) => i.sessionId === session.id).map((i) => i.expressionId);
+  if (ids.length === 0) return 0;
+  return state.expressions.filter(
+    (e) => e.userId === userId && !e.archived && (e.status === "collected" || e.status === "learning") && !ids.includes(e.id),
+  ).length;
+}
+
+function isLearnItemFinishedForTest(item: { status: string; expressionStatus: string }): boolean {
+  if (item.status === "completed") return true;
+  return item.expressionStatus === "review" || item.expressionStatus === "mastered";
+}
+
+describe("T1 — Target presets, default & hard cap (PART 1/10/17)", () => {
+  it("T1.1 default recommend is 标准 10", () => {
+    expect(DEFAULT_LEARN_TARGET_FOR_TEST).toBe(10);
+    expect(LEARN_PRESETS_FOR_TEST.find((p) => p.value === 10)?.label).toBe("标准");
+  });
+
+  it("T1.2 presets are 轻松5/标准10/专注15/冲刺20", () => {
+    expect(LEARN_PRESETS_FOR_TEST.map((p) => p.value)).toEqual([5, 10, 15, 20]);
+    expect(LEARN_PRESETS_FOR_TEST.map((p) => p.label)).toEqual(["轻松", "标准", "专注", "冲刺"]);
+  });
+
+  it("T1.3 single-session hard cap is 30", () => {
+    expect(MAX_LEARN_TARGET_FOR_TEST).toBe(30);
+  });
+
+  it("T1.4 custom 100 is clamped to 30", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 40; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 100);
+    expect(res.selectedCount).toBe(30);
+    expect(res.session!.targetCount).toBe(30);
+  });
+
+  it("T1.5 custom below 1 is raised to 1", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z"));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 0);
+    expect(res.selectedCount).toBe(1);
+  });
+});
+
+describe("T2 — Session immutability & idempotency (PART 3/5)", () => {
+  it("T2.1 creating with target 10 selects exactly 10 items", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 15; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.isNew).toBe(true);
+    expect(res.selectedCount).toBe(10);
+    expect(res.items).toHaveLength(10);
+  });
+
+  it("T2.2 re-creating returns the SAME session and items — never re-draws", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 12; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const first = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const second = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const third = createLearnSessionForTest(state, "u1", "2026-08-10", 15); // preference changed — must NOT re-draw
+
+    expect(second.isNew).toBe(false);
+    expect(second.session!.id).toBe(first.session!.id);
+    expect(second.items.map((i) => i.expressionId)).toEqual(first.items.map((i) => i.expressionId));
+    // Immutability: a later preference change still returns the original 10.
+    expect(third.items.map((i) => i.expressionId)).toEqual(first.items.map((i) => i.expressionId));
+    expect(state.items).toHaveLength(10);
+  });
+
+  it("T2.3 session target_count records the ACTUAL selected count", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 7; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.session!.targetCount).toBe(7);
+  });
+});
+
+describe("T3 — Insufficiency collapses to available (PART 2)", () => {
+  it("T3.1 target 20 with only 13 collected → session of 13, no error", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 13; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 20);
+    expect(res.empty).toBe(false);
+    expect(res.selectedCount).toBe(13);
+    expect(res.remaining).toBe(0);
+    expect(res.items).toHaveLength(13);
+  });
+
+  it("T3.2 target 5 with 13 available → 5 items, 8 remain", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 13; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 5);
+    expect(res.selectedCount).toBe(5);
+    expect(res.remaining).toBe(8);
+  });
+});
+
+describe("T4 — Empty queue never creates a session (PART 14)", () => {
+  it("T4.1 no collected/learning expressions → empty:true, no session row", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "review", "2026-08-01T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("e2", "u1", "mastered", "2026-08-01T00:00:01Z"));
+    state.expressions.push(makeLearnExpr("e3", "u1", "collected", "2026-08-01T00:00:02Z", true)); // archived
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.empty).toBe(true);
+    expect(res.session).toBeNull();
+    expect(state.sessions.size).toBe(0);
+  });
+});
+
+describe("T5 — Learning queue ordering (PART 12/13)", () => {
+  it("T5.1 created_at ASC — oldest collected first", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("newer", "u1", "collected", "2026-08-05T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("older", "u1", "collected", "2026-08-01T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("middle", "u1", "collected", "2026-08-03T00:00:00Z"));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 3);
+    expect(res.items.map((i) => i.expressionId)).toEqual(["older", "middle", "newer"]);
+  });
+
+  it("T5.2 learning (resume) jumps ahead of collected", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("c1", "u1", "collected", "2026-08-01T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("l1", "u1", "learning", "2026-08-09T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("c2", "u1", "collected", "2026-08-02T00:00:00Z"));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 3);
+    expect(res.items[0].expressionId).toBe("l1");
+  });
+
+  it("T5.3 review/mastered/archived never enter the learning queue", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("r1", "u1", "review", "2026-08-01T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("m1", "u1", "mastered", "2026-08-01T00:00:01Z"));
+    state.expressions.push(makeLearnExpr("a1", "u1", "collected", "2026-08-01T00:00:02Z", true));
+    state.expressions.push(makeLearnExpr("c1", "u1", "collected", "2026-08-01T00:00:03Z"));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.selectedCount).toBe(1);
+    expect(res.items[0].expressionId).toBe("c1");
+  });
+});
+
+describe("T6 — 今天再学一些 appends onto the SAME session (PART 7/8/9)", () => {
+  it("T6.1 append 5 to a 10-session → same session, target 15, addedCount 5", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 20; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const sessionId = created.session!.id;
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+
+    expect(appended.session.id).toBe(sessionId); // NOT a second session
+    expect(appended.addedCount).toBe(5);
+    expect(appended.session.targetCount).toBe(15);
+    expect(appended.items).toHaveLength(15);
+  });
+
+  it("T6.2 append never duplicates items already in the session", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 20; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const first = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    const second = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+
+    const ids = second.items.map((i) => i.expressionId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(second.addedCount).toBe(5);
+    expect(second.session.targetCount).toBe(20);
+  });
+
+  it("T6.3 append beyond the available pool → addedCount = remaining, then 0", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 12; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const exhausted = appendLearnItemsForTest(state, "u1", "2026-08-10", 10);
+    const nothing = appendLearnItemsForTest(state, "u1", "2026-08-10", 10);
+
+    expect(exhausted.addedCount).toBe(2); // only 2 remain outside the session
+    expect(exhausted.remaining).toBe(0);
+    expect(nothing.addedCount).toBe(0);
+    expect(nothing.session.targetCount).toBe(12);
+  });
+
+  it("T6.4 append keeps the original completed items intact", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 18; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const originalIds = created.items.map((i) => i.expressionId);
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+
+    const appendedIds = appended.items.map((i) => i.expressionId);
+    expect(appendedIds.slice(0, 10)).toEqual(originalIds); // original 10 stay in order
+    expect(appended.session.targetCount).toBe(15);
+  });
+
+  it("T6.5 append with no session throws (guards the create-only path)", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z"));
+    expect(() => appendLearnItemsForTest(state, "u1", "2026-08-10", 5)).toThrow("No learn session to extend");
+  });
+});
+
+describe("T7 — countAvailableLearnExpressions (今天再学一些 visibility)", () => {
+  it("T7.1 no session today → 0", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z"));
+    expect(countAvailableForTest(state, "u1", "2026-08-10")).toBe(0);
+  });
+
+  it("T7.2 with session → counts only expressions OUTSIDE the session", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 15; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(countAvailableForTest(state, "u1", "2026-08-10")).toBe(5);
+  });
+});
+
+describe("T8 — Learning target NEVER binds the review due pool (PART 11)", () => {
+  it("T8.1 collected/learning expressions stay out of the review queue regardless of target", () => {
+    // isExpressionDueForReview already covers the review predicate; this asserts
+    // a big learning target does not leak new expressions into the due pool.
+    const due = (s: string, d: string | null) => isExpressionDueForReview(s, d);
+    expect(due("collected", new Date(Date.now() - 86400000).toISOString())).toBe(false);
+    expect(due("learning", new Date(Date.now() - 86400000).toISOString())).toBe(false);
+    expect(due("review", new Date(Date.now() - 86400000).toISOString())).toBe(true);
+  });
+
+  it("T8.2 learning 20 today does not raise tomorrow's review count", () => {
+    // SRS init moves a learned expression into review with a FUTURE date, so the
+    // due count today is unaffected. Mirror the predicate + a 1-day interval.
+    const srs = scheduleSrsForTest("good", { repetitions: 0, intervalDays: 0 });
+    expect(srs.status).toBe("review");
+    expect(srs.intervalDays).toBe(1);
+    // A freshly learned expression is due only AFTER intervalDays — not immediately.
+    expect(isExpressionDueForReview("review", null)).toBe(false);
+  });
+});
+
+describe("T9 — isLearnItemFinished (completed count for summary/hub)", () => {
+  it("T9.1 item row 'completed' → finished", () => {
+    expect(isLearnItemFinishedForTest({ status: "completed", expressionStatus: "collected" })).toBe(true);
+  });
+
+  it("T9.2 expression reached review/mastered → finished", () => {
+    expect(isLearnItemFinishedForTest({ status: "pending", expressionStatus: "review" })).toBe(true);
+    expect(isLearnItemFinishedForTest({ status: "pending", expressionStatus: "mastered" })).toBe(true);
+  });
+
+  it("T9.3 pending + collected → not finished", () => {
+    expect(isLearnItemFinishedForTest({ status: "pending", expressionStatus: "collected" })).toBe(false);
+    expect(isLearnItemFinishedForTest({ status: "in_progress", expressionStatus: "learning" })).toBe(false);
+  });
+});
+
+describe("T10 — Fetch-only session load never auto-creates (PART 4/5)", () => {
+  it("T10.1 loading with no session returns { session: null, items: [] } and creates NOTHING", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z"));
+    // Simulate the fetch-only path: look up, do not create.
+    const key = "u1|2026-08-10|learn";
+    const found = state.sessions.get(key) ?? null;
+    expect(found).toBeNull();
+    expect(state.sessions.size).toBe(0); // no auto-create on load
+    // The user can still create explicitly afterwards.
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(created.isNew).toBe(true);
+  });
+});
+
+describe("T11 — localStorage preference roundtrip (PART 10)", () => {
+  const KEY = "english_learning_target";
+
+  function readStored(): number {
+    try {
+      const raw = localStorage.getItem(KEY);
+      const n = raw ? Number.parseInt(raw, 10) : NaN;
+      if (Number.isFinite(n) && n >= 1 && n <= 30) return n;
+    } catch {
+      /* ignore */
+    }
+    return 10;
+  }
+  function writeStored(target: number): void {
+    const n = Math.min(Math.max(1, Math.floor(target)), 30);
+    localStorage.setItem(KEY, String(n));
+  }
+
+  it("T11.1 save then load returns the saved value", () => {
+    localStorage.clear();
+    writeStored(15); // 专注 yesterday
+    expect(readStored()).toBe(15); // highlighted today
+  });
+
+  it("T11.2 nothing stored → default 10", () => {
+    localStorage.clear();
+    expect(readStored()).toBe(10);
+  });
+
+  it("T11.3 corrupted / out-of-range stored value falls back to 10", () => {
+    localStorage.clear();
+    localStorage.setItem(KEY, "not-a-number");
+    expect(readStored()).toBe(10);
+    localStorage.setItem(KEY, "999");
+    expect(readStored()).toBe(10);
+  });
+
+  it("T11.4 writing >30 clamps to 30", () => {
+    localStorage.clear();
+    writeStored(100);
+    expect(readStored()).toBe(30);
+  });
+});
