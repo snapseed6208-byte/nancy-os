@@ -11,6 +11,8 @@ import {
   useLearningHistory,
   useSessionDetail,
   useHistoricalSummaries,
+  useTodayLearnSession,
+  isLearnItemFinished,
   type SentenceDetail,
   type ExpressionProgressDetail,
   type HistoricalSummary,
@@ -33,6 +35,7 @@ import {
   RotateCcw,
   ChevronRight,
   Sparkles,
+  GraduationCap,
 } from "lucide-react";
 
 // ═══════════════════════════════════════
@@ -271,6 +274,12 @@ export default function EnglishLearningHistory() {
   const { data, isLoading, error } = useLearningHistory();
   const { data: sessionDetail, isLoading: detailLoading } = useSessionDetail();
   const { data: historicalSummaries } = useHistoricalSummaries(14);
+  const { data: learnData } = useTodayLearnSession();
+
+  // PART 19: actual completed learning count (not the initial session target).
+  const learnItems = learnData?.items ?? [];
+  const learnedToday = learnItems.filter(isLearnItemFinished).length;
+  const learnSessionStarted = learnData?.session != null;
 
   if (isLoading) {
     return (
@@ -308,6 +317,49 @@ export default function EnglishLearningHistory() {
         </button>
         <h2 className="text-lg font-semibold text-ink">学习历史</h2>
       </div>
+
+      {/* ═══════════════════════════════════════ */}
+      {/* V4.3: Today's Learning (PART 19)      */}
+      {/* Records ACTUAL completed count, not   */}
+      {/* the initial session target.           */}
+      {/* ═══════════════════════════════════════ */}
+
+      {learnSessionStarted && (
+        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <GraduationCap size={16} className="text-sage-deep" />
+            <h3 className="text-sm font-semibold text-ink">今日学习</h3>
+            <span className="text-[11px] text-ink-lighter ml-auto">
+              {learnData?.session?.targetCount ?? 0} 条目标 · {learnedToday} 条已完成
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-2 bg-ink/5 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-sage transition-all"
+                style={{
+                  width: `${learnItems.length > 0 ? Math.round((learnedToday / learnItems.length) * 100) : 0}%`,
+                }}
+              />
+            </div>
+            <span className="text-sm font-bold text-sage-deep shrink-0">
+              新学 {learnedToday} 条
+            </span>
+          </div>
+          {learnedToday > 0 ? (
+            <button
+              onClick={() => navigate("/english/learn")}
+              className="w-full py-2.5 bg-ink text-white text-sm font-medium rounded-xl hover:bg-ink/90 transition-colors"
+            >
+              继续学习
+            </button>
+          ) : (
+            <p className="text-xs text-ink-light">
+              今天的学习进度还没有完成，去继续学习吧。
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════ */}
       {/* Today's Detailed Session Breakdown    */}
