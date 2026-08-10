@@ -47,6 +47,21 @@ import { useUpdateExpressionProfile, type ProfileSignalInput } from "@/lib/hooks
 // ── Constants ──
 const MIN_TRANSCRIPT_LENGTH = 5;
 
+// ── AI demo scenario notice (V4.3) ──
+// Shown (light info style, not a warning) when the reference answer uses an
+// AI-generated demo scenario that must not be mistaken for the user's own story.
+export const EXAMPLE_NOTICE_TEXT =
+  "其中的案例为帮助展示论证方式而生成的示范场景，不代表用户的真实经历。你可以替换成自己的经历，也可以直接学习这种举例方式。";
+
+function ExampleNotice({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <div className="bg-sky-50/70 border border-sky-100 rounded-lg px-3 py-2">
+      <p className="text-[11px] text-sky-700 leading-relaxed">{EXAMPLE_NOTICE_TEXT}</p>
+    </div>
+  );
+}
+
 // ── Step type ──
 
 type Step =
@@ -523,13 +538,14 @@ export default function ChineseSpeakingSession() {
       session.topic,
       transcript,
       diagnosis as unknown as Record<string, unknown>,
+      { topicType: session.topic_type, timeLimitSeconds: session.time_limit_seconds },
     );
 
     if (result.success) {
       if (round === 1) {
         setRound1Reference(result.data.reference);
         setRound1GeneratingReference(false);
-        // Update attempt with reference data
+        // Update attempt with reference data (V4.3: include example meta for the detail page)
         if (round1AttemptId) {
           await updateAttempt.mutateAsync({
             id: round1AttemptId,
@@ -537,6 +553,10 @@ export default function ChineseSpeakingSession() {
             updates: {
               final_improved_speech: result.data.reference.improved_speech,
               key_improvements: result.data.reference.key_upgrades as unknown as Record<string, unknown>[],
+              reference_meta: {
+                example_source: result.data.reference.example_source,
+                example_notice: result.data.reference.example_notice,
+              },
             },
           });
         }
@@ -1517,14 +1537,14 @@ export default function ChineseSpeakingSession() {
             </div>
           )}
 
-          {/* AI 优化参考 — V3: on-demand reference */}
+          {/* AI 高质量示范答案 — V3: on-demand reference */}
           <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles size={16} className="text-sage-deep" />
-              <p className="text-sm font-medium text-ink">AI 优化参考</p>
+              <p className="text-sm font-medium text-ink">AI 高质量示范答案</p>
             </div>
             <p className="text-[10px] text-ink-lighter/70 -mt-1">
-              仅用于学习结构与思路，不代表唯一正确答案。
+              观点表达题没有唯一标准答案，本示范用于学习论证结构与深度。
             </p>
 
             {round1Reference ? (
@@ -1550,6 +1570,8 @@ export default function ChineseSpeakingSession() {
                       {round1Reference.improved_speech}
                     </p>
                   </details>
+
+                  <ExampleNotice show={round1Reference.example_source === "ai_scenario"} />
 
                   {round1Reference.thought_features && round1Reference.thought_features.length > 0 && (
                     <div className="space-y-1 pt-2 border-t border-border/50">
@@ -1969,9 +1991,10 @@ export default function ChineseSpeakingSession() {
             <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-sage-deep" />
-                <p className="text-sm font-medium text-ink">你的第二次表达 · AI 参考</p>
+                <p className="text-sm font-medium text-ink">你的第二次表达 · AI 高质量示范答案</p>
               </div>
               <p className="text-sm text-ink leading-relaxed">{round2Reference.improved_speech}</p>
+              <ExampleNotice show={round2Reference.example_source === "ai_scenario"} />
               {round2Reference.thought_features && round2Reference.thought_features.length > 0 && (
                 <div className="pt-2 border-t border-border/50 space-y-1">
                   {round2Reference.thought_features.map((tf, i) => (

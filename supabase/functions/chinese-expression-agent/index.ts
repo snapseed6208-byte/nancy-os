@@ -3,7 +3,9 @@
 //
 // Architecture:
 //   analyze_expression    — single AI call: diagnosis + optional material_understanding
-//   generate_reference    — on-demand: full improved speech (user explicitly requests)
+//   generate_reference    — on-demand: high-quality demo speech rebuilt from the
+//                           full diagnosis (not a transcript polish); labels
+//                           example_source user_real|user_vague|ai_scenario
 //   compare_rounds        — evidence-based Round 1 vs Round 2 comparison
 //   generate_topics       — generate 3 candidate topics
 //   extract_material      — V2: expression-focused material analysis
@@ -119,74 +121,82 @@ function computeDeliveryMetrics(transcript: string, durationSeconds: number, tar
 
 // ── D. Rewrite Prompt (for generate_reference) ──
 
-const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达编辑。
+const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达示范教练。
 
-你将收到：原始题目、用户真实转录、思辨诊断结果（含 content_deepening 内容深度分析）、推荐结构、可以使用的用户真实信息。
+你将收到：原始题目（含题型）、用户真实转录、思辨诊断结果（含 content_deepening 内容深度分析、thinking_or_deepening 思考升级、key_upgrades 关键提升点、推荐结构、答案大纲）。
 
-请生成唯一一份"优化表达参考"。
-
-这不是标准作文，也不是替用户创造一个更正确的立场，而是帮助用户用更清晰、更有深度、更真实的方式表达自己的想法。
+你的任务不是润色用户的原文，而是吸收前面所有诊断分析，修复用户回答中的主要逻辑缺陷，补充用户遗漏的论证维度，重新组织成一份真正更成熟、更完整、更值得模仿的高质量示范答案。
 
 ━━━━━━━━━━━━━━━━━━
-核心原则：80/20 内容增强
+核心任务：让分析指出的"深度"真正落进答案
 ━━━━━━━━━━━━━━━━━━
 
-80% 保留用户的原始内容：
-- 用户的立场和核心观点
-- 用户的真实经历（如已提供）
-- 用户的表达风格和语言习惯
-- 用户自己的判断和价值观
-
-20% 内容增强，基于诊断中 content_deepening 的 missing_elements：
-- 补充缺失的信息类型（证据、因果链、场景细节等）
-- 强化薄弱的推理环节
-- 增加必要的具体性
-
-禁止：
-- 生成与用户原始表达完全不同的内容
-- 编造用户没有提供的经历
-- 把回答变成通用励志演讲
-- 突然拔高到与用户身份不符的哲学高度
-- 用AI式的排比和金句替代真实表达
+诊断里指出的每一个关键问题，都必须真的写进答案，而不是只出现在分析里：
+- 如果诊断指出用户"停留在个人感受"、缺少具体证据 → 答案必须加入具体、可感知的证据或场景，不能再只写泛泛的感受。
+- 如果诊断指出用户"没有回应反方观点" → 答案要用一两句简洁回应一个最有力的反方观点，例如："有人可能认为……但个人自由应以不明显干扰他人为边界。" 反方观点必须真实合理，不能是稻草人。
+- 如果诊断指出"缺少边界条件"或观点过于绝对 → 答案要主动补充边界或例外，例如："人员密集、他人无法回避的场合应严格限制，空旷且无人受影响的场合可以适当放宽。"
+- 如果诊断给出 abstraction_analysis / upgrade_direction（思考升级方向）→ 答案必须真的出现这一层论证。例如诊断建议从"外放让我烦躁"上升到"公共空间的权利分配"，答案就必须包含这一层，不能仍停留在"别人外放会影响我休息"。
 
 ━━━━━━━━━━━━━━━━━━
-写作要求
+观点题结构（自然融入，不要机械标注）
 ━━━━━━━━━━━━━━━━━━
 
-1. 保留用户核心立场。可以让立场更准确、更有边界，但不得无理由改成相反观点。
+观点表达题（opinion）优先按以下逻辑组织，但不要在文字里出现"第一/第二"或结构标签：
+1. 明确立场，避免无必要的绝对化（如"我倾向于……但不主张对所有情况一刀切"）。
+2. 给出一个底层核心理由（为什么这个立场成立）。
+3. 用真实经历或典型示范案例支撑。
+4. 回应一个最有力的反方观点。
+5. 补充适用边界或例外情况。
+6. 回扣立场，用一句有总结力的话结尾。
 
-2. 内容增强（基于 content_deepening 分析）。
-优先补充诊断中指出的缺失元素：
-- 如果缺少证据 → 加入用户可能经历过的具体场景（用一般性假设，不编造个人经历）
-- 如果缺少因果链 → 补充从原因到结论的中间推理步骤
-- 如果缺少边界条件 → 加入观点成立的前提条件
-- 如果缺少场景细节 → 加入让听众能"看见"的具体描述
-- 如果缺少冲突 → 加入决策中的犹豫和选择过程
+其他题型（经历/概念/感悟/面试/故事）遵循诊断中 recommended_structure 的结构，同样不要机械堆砌"首先、其次、最后"。
 
-3. 禁止编造经历。
-不得增加用户没有提供的：朋友、公司、学校、城市、工作、证书、家庭事件、明确的个人经历。
-用户没有提供真实例子时，可以使用一般性假设："比如，一个人如果……""假设你面对……"
-不能写："我有一位朋友……""我曾在……"
+━━━━━━━━━━━━━━━━━━
+案例处理：三种情况，绝不伪装成用户经历
+━━━━━━━━━━━━━━━━━━
 
-4. 自然口语。整段必须像一个真实的人在面试或讨论中说话。
-避免：首先其次最后的机械重复、综上所述、我坚信、随着社会的发展、在当今社会、空泛口号、过度工整的AI式排比。
+A. 用户明确提供了真实经历：优先保留并优化这段经历。不得改变关键事实，不得擅自补充具体时间、地点、人物和结果。
+B. 用户只提供了模糊经历：可以补全场景逻辑和表达细节，但不得编造用户没有说过的关键事实。
+C. 用户没有提供真实经历，或明确使用的是假设场景：你可以主动生成一个合理、典型、具体的示范案例，帮助用户理解如何论证。
 
-5. 结构清晰但不僵硬。听众应能感受到：核心观点、理由、支撑、思辨层次、收束。不需要显式标注每个结构名称。
+但 C 情况的示范案例绝不能伪装成用户的真实经历。禁止写："我上周下班坐地铁时遇到……""有一次我亲眼看到……"。
+必须使用中性、非自传式的表达，例如：
+- "比如在晚高峰的地铁里……"
+- "以医院候诊区为例……"
+- "设想一个比较常见的场景……"
+- "现实中比较典型的情况是……"
 
-6. 长度控制。控制在180—260个汉字左右，适合正常语速下约一分钟表达。
+必须输出 example_source：
+- "user_real" — 用户提供了真实经历，答案直接使用
+- "user_vague" — 用户只提供了模糊经历，答案做了补全
+- "ai_scenario" — 答案使用了 AI 生成的示范案例
+当 example_source 为 "ai_scenario" 时，example_notice 必须为 true。
 
-7. 不替用户装成熟。内容可以更深入，但不要使用明显超出用户身份和真实经验的专业论断。
+━━━━━━━━━━━━━━━━━━
+语言要求
+━━━━━━━━━━━━━━━━━━
 
-8. 内容增强比修辞润色更重要。宁可语言稍显朴素但内容充实，也不要语言华丽但内容空洞。
+1. 自然、清楚、有逻辑的中文口语，像一个思考成熟的人在现场回答，而不是写政策文件。
+2. 避免空话、套话和重复；避免机械堆砌"首先、其次、最后"。
+3. 每句话都要推动观点；不要为了显得有深度而使用生硬术语。
+4. 保留用户的核心立场和已经给出的有效理由；不照抄用户的口头禅和病句。
+5. 不替用户编造与其身份不符的专业论断；示范案例要典型、可迁移。
+6. 内容深度优先于修辞华丽。
 
-9. 只输出合法JSON，不得使用Markdown。
+━━━━━━━━━━━━━━━━━━
+长度控制
+━━━━━━━━━━━━━━━━━━
+
+目标时长由 time_limit_seconds 给出（默认 60—90 秒）。答案长度必须匹配该时长，不要明显更长。正常语速约 240—260 字/分钟。
 
 ━━━━━━━━━━━━━━━━━━
 输出结构
 ━━━━━━━━━━━━━━━━━━
 
+只输出合法 JSON，不得使用 Markdown。
+
 {
-  "improved_speech": "唯一一份内容增强版口语参考答案",
+  "improved_speech": "完整的高质量示范答案",
   "content_additions": [
     { "type": "evidence|causality|boundary|scene|conflict|example|definition", "what_was_added": "新增了什么内容元素", "why_added": "为什么对当前题型需要这个元素" }
   ],
@@ -204,8 +214,12 @@ const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达编辑。
     "fabricated_details": false,
     "general_hypothetical_used": true,
     "missing_real_detail_slots": ["下一次可以补充的真实经历"]
-  }
-}`;
+  },
+  "example_source": "user_real|user_vague|ai_scenario",
+  "example_notice": true
+}
+
+注：authenticity.fabricated_details 只在"把虚构事实伪装成用户真实经历且未通过 example_source 标注"时为 true。正常标注为 ai_scenario 的示范案例不算虚构。`;
 
 // ── E. Comparison Prompt (unchanged) ──
 
@@ -531,6 +545,11 @@ serve(async (req: Request) => {
         const topic = (body.topic as string) || "";
         const transcript = (body.transcript as string) || "";
         const diagnosis = (body.diagnosis as Record<string, unknown>) || {};
+        const topicType = (body.topic_type as string) || (diagnosis.topic_type as string) || "opinion";
+        const timeLimitSeconds =
+          typeof body.time_limit_seconds === "number" ? body.time_limit_seconds
+          : typeof diagnosis.time_limit_seconds === "number" ? diagnosis.time_limit_seconds
+          : 60;
 
         if (!topic || !transcript || !diagnosis || Object.keys(diagnosis).length === 0) {
           return jsonResponse(req, {
@@ -538,15 +557,21 @@ serve(async (req: Request) => {
           }, 400);
         }
 
-        // Extract relevant diagnosis fields for rewrite context (V4 format)
+        // Extract relevant diagnosis fields for rewrite context (V4 format).
+        // MUST include content_deepening / thinking_or_deepening / key_upgrades —
+        // the reference answer is rebuilt from these, not from the transcript alone.
         const overall = diagnosis.overall as Record<string, unknown> | undefined;
         const rewriteContext = {
+          topic_type: topicType,
+          time_limit_seconds: timeLimitSeconds,
           overall_score: overall?.score,
           overall_judgment: overall?.summary,
           top_issues: diagnosis.top_issues,
           recommended_structure: diagnosis.recommended_structure,
           thinking_or_deepening: diagnosis.thinking_or_deepening,
           answer_outline: diagnosis.answer_outline,
+          key_upgrades: diagnosis.key_upgrades,
+          content_deepening: diagnosis.content_deepening,
         };
 
         const userMessage = [
@@ -586,9 +611,12 @@ serve(async (req: Request) => {
 
         const rewrite = result.data;
 
-        // Integrity check
+        // Integrity check. A labeled AI demo scenario (example_source=ai_scenario)
+        // is legitimate — the UI shows a notice so it is not mistaken for the
+        // user's real experience. Only flag fabrication that is NOT disclosed.
         const rewriteAuth = rewrite.authenticity as Record<string, unknown> | undefined;
-        if (rewriteAuth?.fabricated_details === true) {
+        const exampleSource = rewrite.example_source as string | undefined;
+        if (rewriteAuth?.fabricated_details === true && exampleSource !== "ai_scenario") {
           console.warn(`[chinese-expression-agent] ${requestId} generate_reference: fabrication detected, flagging`);
           rewrite.integrity_failed = true;
         }

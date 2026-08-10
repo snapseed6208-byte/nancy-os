@@ -675,6 +675,17 @@ export interface V4Reference {
   thinking_lenses_used: string[];
   authenticity: V2Authenticity;
   integrity_failed?: boolean;
+  /** How the examples in the reference answer were sourced (V4.3). */
+  example_source?: ReferenceExampleSource;
+  /** True when the answer uses an AI-generated demo scenario needing a notice. */
+  example_notice?: boolean;
+}
+
+export type ReferenceExampleSource = "user_real" | "user_vague" | "ai_scenario";
+
+export interface ReferenceMeta {
+  example_source?: ReferenceExampleSource;
+  example_notice?: boolean;
 }
 
 export interface ChineseReferenceResultV4 {
@@ -727,6 +738,8 @@ export interface ChineseSpeakingAttempt {
   ai_model: string | null;
   ai_prompt_version: string | null;
   material_understanding: MaterialUnderstanding | null;
+  /** V4.3: reference answer metadata (example_source / example_notice). NULL for legacy rows. */
+  reference_meta: ReferenceMeta | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -1073,13 +1086,17 @@ export async function generateChineseReference(
   topic: string,
   transcript: string,
   diagnosis: Record<string, unknown>,
+  options?: { topicType?: string | null; timeLimitSeconds?: number },
 ): Promise<{ success: true; data: ChineseReferenceResultV4 } | { success: false; error: string }> {
-  return invokeAI<ChineseReferenceResultV4>("chinese-expression-agent", {
+  const payload: Record<string, unknown> = {
     action: "generate_reference",
     topic,
     transcript,
     diagnosis,
-  }, {
+  };
+  if (options?.topicType) payload.topic_type = options.topicType;
+  if (options?.timeLimitSeconds != null) payload.time_limit_seconds = options.timeLimitSeconds;
+  return invokeAI<ChineseReferenceResultV4>("chinese-expression-agent", payload, {
     timeout: 90_000,
     retries: 1,
   });

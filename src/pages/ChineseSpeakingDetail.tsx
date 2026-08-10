@@ -400,6 +400,7 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
   const outline = attempt.answer_outline as Record<string, unknown>[] | null;
   const speech = attempt.final_improved_speech;
   const metrics = attempt.delivery_metrics as DeliveryMetrics | null;
+  const referenceMeta = attempt.reference_meta;
 
   const isV4 = isV4Diagnosis(attempt.diagnosis);
   const isV2 = !isV4 && scores && typeof scores.overall_score === "number";
@@ -454,7 +455,7 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
         <div className="pt-2 border-t border-border/50">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles size={14} className="text-sage-deep" />
-            <p className="text-xs font-medium text-ink">AI 优化参考</p>
+            <p className="text-xs font-medium text-ink">AI 高质量示范答案</p>
           </div>
           <details className="group">
             <summary className="text-sm text-ink leading-relaxed cursor-pointer list-none [&::-webkit-details-marker]:hidden">
@@ -469,6 +470,13 @@ function AttemptSection({ attempt, label }: { attempt: ChineseSpeakingAttempt; l
               {speech}
             </p>
           </details>
+          {referenceMeta?.example_source === "ai_scenario" && (
+            <div className="mt-2 bg-sky-50/70 border border-sky-100 rounded-lg px-3 py-2">
+              <p className="text-[11px] text-sky-700 leading-relaxed">
+                其中的案例为帮助展示论证方式而生成的示范场景，不代表用户的真实经历。你可以替换成自己的经历，也可以直接学习这种举例方式。
+              </p>
+            </div>
+          )}
         </div>
       )}
 
