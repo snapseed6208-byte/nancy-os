@@ -156,15 +156,20 @@ const REWRITE_SYSTEM_PROMPT = `你是一名中文口语表达示范教练。
 ━━━━━━━━━━━━━━━━━━
 
 A. 用户明确提供了真实经历：优先保留并优化这段经历。不得改变关键事实，不得擅自补充具体时间、地点、人物和结果。
-B. 用户只提供了模糊经历：可以补全场景逻辑和表达细节，但不得编造用户没有说过的关键事实。
+B. 用户只提供了模糊经历：可以补全场景逻辑和表达细节，但不得编造用户没有说过的关键事实。不要为了生动而虚构一次具体的第一人称事件（禁止"上周我坐公交，亲眼看到……""昨天我在地铁上遇到……"这类编造的一次性经历）。补全时优先用概括性表达（"在公交车上常能看到……""不少人会……"），或直接沿用用户原本的模糊表述。
 C. 用户没有提供真实经历，或明确使用的是假设场景：你可以主动生成一个合理、典型、具体的示范案例，帮助用户理解如何论证。
 
-但 C 情况的示范案例绝不能伪装成用户的真实经历。禁止写："我上周下班坐地铁时遇到……""有一次我亲眼看到……"。
-必须使用中性、非自传式的表达，例如：
+当示范案例中的具体人物、时间、地点是 AI 补充或构造的，一律使用中性、非自传式的表达，整段案例不得以第一人称"我"叙述（禁止"我印象很深的一次""我记得有一次""有一次我""我上周"等说法），例如：
 - "比如在晚高峰的地铁里……"
 - "以医院候诊区为例……"
 - "设想一个比较常见的场景……"
 - "现实中比较典型的情况是……"
+第一人称"我记得/有一次我"只能用于用户真实说过、确实属于自己的经历。当 example_source 为 "ai_scenario" 时，答案中不得出现任何以"我"为主语叙述虚构案例的句子。
+
+示范案例表达的正误对照：
+❌ 错误（第一人称伪装记忆）："我记得有一次坐地铁，一个老太太扶着栏杆站都站不稳，旁边的年轻人却一直低头刷手机……"
+✅ 正确（中性、非自传式）："比如在晚高峰的地铁里，一位老人扶着栏杆站都站不稳，旁边的年轻人却一直低头刷手机，头都没抬……"
+当示范案例是你（AI）生成的，必须采用 ✅ 这种"比如/以……为例"的表达。
 
 必须输出 example_source：
 - "user_real" — 用户提供了真实经历，答案直接使用
@@ -187,7 +192,7 @@ C. 用户没有提供真实经历，或明确使用的是假设场景：你可�
 长度控制
 ━━━━━━━━━━━━━━━━━━
 
-目标时长由 time_limit_seconds 给出（默认 60—90 秒）。答案长度必须匹配该时长，不要明显更长。正常语速约 240—260 字/分钟。
+目标时长由 time_limit_seconds 给出（默认 60—90 秒）。答案长度必须匹配该时长，不要明显更长。正常语速约 240—260 字/分钟。用户消息中的"目标长度"一栏给出了本次具体的字数区间，答案正文必须落在该区间内。
 
 ━━━━━━━━━━━━━━━━━━
 输出结构
@@ -574,6 +579,12 @@ serve(async (req: Request) => {
           content_deepening: diagnosis.content_deepening,
         };
 
+        // Concrete length target so the model doesn't have to convert
+        // seconds→characters itself (it consistently overshoots).
+        const targetChars = Math.round((timeLimitSeconds / 60) * 250);
+        const minChars = Math.round(targetChars * 0.85);
+        const maxChars = Math.round(targetChars * 1.15);
+
         const userMessage = [
           `## 原始题目`,
           topic,
@@ -583,6 +594,9 @@ serve(async (req: Request) => {
           ``,
           `## 思辨诊断结果`,
           JSON.stringify(rewriteContext, null, 2),
+          ``,
+          `## 目标长度`,
+          `限时 ${timeLimitSeconds} 秒，参考答案正文应约 ${minChars}—${maxChars} 个汉字（口语语速约 240—260 字/分钟）。超出上限时压缩次要修饰、保留论证结构，不要写成书面长文。`,
           ``,
           `请生成优化表达参考。`,
         ].join("\n");
@@ -619,6 +633,36 @@ serve(async (req: Request) => {
         if (rewriteAuth?.fabricated_details === true && exampleSource !== "ai_scenario") {
           console.warn(`[chinese-expression-agent] ${requestId} generate_reference: fabrication detected, flagging`);
           rewrite.integrity_failed = true;
+        }
+
+        // Length enforcement: the model follows the soft length instruction
+        // inconsistently, so verify the answer against the concrete target and
+        // make ONE bounded compression pass when it overshoots.
+        const speech = (rewrite.improved_speech as string) || "";
+        const hanCount = (speech.match(/[一-鿿]/g) || []).length;
+        if (hanCount > maxChars && speech.length > 0) {
+          console.log(`[chinese-expression-agent] ${requestId} generate_reference length han=${hanCount} max=${maxChars} → compressing`);
+          const compressMessages: DeepSeekMessage[] = [
+            {
+              role: "system",
+              content: `你是一名中文口语表达教练。下面是一段示范答案，它超过了目标时长对应的字数。请压缩到 ${minChars}—${maxChars} 个汉字：保留立场、论证结构、反方回应和边界条件，删去重复和次要修饰，保持自然口语。只输出 JSON：{"compressed_speech": "压缩后的正文"}。`,
+            },
+            { role: "user", content: speech },
+          ];
+          const compressed = await aiRuntime<Record<string, unknown>>(compressMessages, {
+            agentName: "chinese-expression-agent",
+            maxTokens: 1024,
+            temperature: 0.3,
+            timeout: 40_000,
+          });
+          const cSpeech = (compressed.data?.compressed_speech as string) || "";
+          if (compressed.success && cSpeech.length > 0) {
+            const cHan = (cSpeech.match(/[一-鿿]/g) || []).length;
+            if (cHan > 0) {
+              rewrite.improved_speech = cSpeech;
+              console.log(`[chinese-expression-agent] ${requestId} generate_reference compressed han=${cHan}`);
+            }
+          }
         }
 
         console.log(`[chinese-expression-agent] ${requestId} stage=generate_reference_done`);
