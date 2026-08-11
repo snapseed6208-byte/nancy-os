@@ -574,6 +574,7 @@ export async function evaluatePersonalSentence(
 // ── 14. Context Cloze Generation (V3.4) ──
 
 export interface ContextClozeAIResult {
+  expression_id: string;
   scenario_zh: string;
   sentence_full: string;
   answer_form: string;
@@ -582,6 +583,7 @@ export interface ContextClozeAIResult {
 }
 
 export interface ContextClozeGenerationInput {
+  expression_id: string;
   english: string;
   chinese: string;
   type?: string;
@@ -595,18 +597,20 @@ export interface ContextClozeGenerationInput {
 
 /**
  * Generate context cloze cards for a batch of expressions using the AI edge function.
- * Sends up to batchSize expressions per request. Returns a Map<expression_id, AI data>.
+ * V3.5: Single batch request with full ContextClozeCard generation.
+ * Returns a Map<expression_id, AI data>.
  */
 export async function generateContextClozeBatch(
   expressions: ContextClozeGenerationInput[],
 ): Promise<Map<string, ContextClozeAIResult>> {
   if (expressions.length === 0) return new Map();
 
-  const result = await invokeAI<Record<string, ContextClozeAIResult>>("english-coach", {
+  const result = await invokeAI<{ cards: ContextClozeAIResult[]; missing_ids?: string[] }>("english-coach", {
     action: "generate_context_cloze",
     expressions: expressions.map((e) => ({
-      expression: e.english,
-      chinese_meaning: e.chinese,
+      expression_id: e.expression_id,
+      english: e.english,
+      chinese: e.chinese,
       type: e.type,
       example_sentence: e.example_sentence,
       usage_note: e.usage_note,
@@ -622,10 +626,11 @@ export async function generateContextClozeBatch(
 
   const map = new Map<string, ContextClozeAIResult>();
 
-  if (result.success && result.data) {
-    for (const [key, value] of Object.entries(result.data)) {
-      if (value && typeof value === "object" && "sentence_full" in value && "answer_form" in value) {
-        map.set(key, value as ContextClozeAIResult);
+  if (result.success && result.data?.cards) {
+    for (const card of result.data.cards) {
+      if (card && typeof card === "object" && "sentence_full" in card && "answer_form" in card && "expression_id" in card) {
+        const typed = card as ContextClozeAIResult;
+        map.set(typed.expression_id, typed);
       }
     }
   }
@@ -635,26 +640,10 @@ export async function generateContextClozeBatch(
 
 /**
  * Generate a single context cloze card via AI.
- * Used for retry of individual invalid cards.
+ * V3.5: Uses the same generate_context_cloze batch contract for consistency.
  */
 export async function generateSingleContextCloze(
   expression: ContextClozeGenerationInput,
-): Promise<AIResult<ContextClozeAIResult>> {
-  return invokeAI<ContextClozeAIResult>("english-coach", {
-    action: "generate_context_cloze",
-    expressions: [{
-      expression: expression.english,
-      chinese_meaning: expression.chinese,
-      type: expression.type,
-      example_sentence: expression.example_sentence,
-      usage_note: expression.usage_note,
-      native_usage: expression.native_usage,
-      context: expression.context,
-      situation: expression.situation,
-      common_patterns: expression.common_patterns,
-    }],
-  }, {
-    timeout: 60_000,
-    retries: 1,
-  });
+): Promise<Map<string, ContextClozeAIResult>> {
+  return generateContextClozeBatch([expression]);
 }

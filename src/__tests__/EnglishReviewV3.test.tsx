@@ -5165,6 +5165,7 @@ function buildCard(material: InlineClozeGenerationMaterial, aiData?: InlineAIGen
 
 function buildAIClozeInput(material: InlineClozeGenerationMaterial) {
   return {
+    expression_id: material.expression_id,
     english: material.english,
     chinese: material.chinese,
     type: material.type || undefined,
@@ -5463,6 +5464,7 @@ describe("V3.4 buildAIClozeInput (CC24-CC25)", () => {
   it("CC24. maps material fields correctly for AI", () => {
     const material = makeMaterial();
     const input = buildAIClozeInput(material);
+    expect(input.expression_id).toBe("expr-test-1");
     expect(input.english).toBe("take the bull by the horns");
     expect(input.chinese).toBe("迎难而上");
     expect(input.type).toBe("idiom");
@@ -5486,6 +5488,7 @@ describe("V3.4 buildAIClozeInput (CC24-CC25)", () => {
       common_patterns: null,
     });
     const input = buildAIClozeInput(material);
+    expect(input.expression_id).toBe("expr-minimal");
     expect(input.english).toBe("hello");
     expect(input.chinese).toBe("你好");
     expect(input.type).toBeUndefined();

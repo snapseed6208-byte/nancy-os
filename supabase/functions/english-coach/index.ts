@@ -308,6 +308,170 @@ Expressions:`;
   }
 }
 
+// ── Action: generate_context_cloze (V3.5) ──
+// Batch generation of full ContextClozeCards.
+// Lightweight — does NOT load personal profile, growth engine, or assets.
+// Each input expression gets one card. Response keys on expression_id.
+
+interface ContextClozeInput {
+  id?: string;
+  expression_id?: string;
+  english: string;
+  chinese: string;
+  type?: string;
+  example_sentence?: string;
+  usage_note?: string;
+  native_usage?: string;
+  context?: string;
+  situation?: string;
+  common_patterns?: string;
+}
+
+interface ContextClozeCardResponse {
+  expression_id: string;
+  scenario_zh: string;
+  sentence_full: string;
+  answer_form: string;
+  explanation_zh: string;
+  semantic_hint_zh: string;
+}
+
+async function handleGenerateContextCloze(
+  req: Request,
+  body: Record<string, unknown>,
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<Response> {
+  const expressions = body.expressions as ContextClozeInput[] | undefined;
+
+  if (!expressions || !Array.isArray(expressions) || expressions.length === 0) {
+    return jsonResponse(req, { error: "expressions array is required" }, 400);
+  }
+
+  if (expressions.length > 10) {
+    return jsonResponse(req, { error: "max 10 expressions per batch" }, 400);
+  }
+
+  // Build a deterministic id for each input — prefer expression_id, fall back to english
+  const exprList = expressions.map((e) => {
+    const id = e.expression_id || e.id || e.english;
+    const parts: string[] = [`- id: ${id}`, `  expression: "${e.english}"`, `  chinese: ${e.chinese}`];
+    if (e.type) parts.push(`  type: ${e.type}`);
+    if (e.example_sentence) parts.push(`  example: "${e.example_sentence}"`);
+    if (e.usage_note) parts.push(`  usage: ${e.usage_note}`);
+    if (e.native_usage) parts.push(`  native_usage: ${e.native_usage}`);
+    if (e.context) parts.push(`  context: ${e.context}`);
+    if (e.situation) parts.push(`  situation: ${e.situation}`);
+    if (e.common_patterns) parts.push(`  patterns: ${e.common_patterns}`);
+    return parts.join("\n");
+  }).join("\n\n");
+
+  const batchPrompt = `你是一名专业 ESL 情境练习设计师。
+
+为以下每一个 Target Expression 分别生成一题 Contextual Retrieval Cloze。
+每一个 item 必须独立。
+
+返回严格 JSON：
+{
+  "cards": [
+    {
+      "expression_id": "...",
+      "scenario_zh": "...",
+      "sentence_full": "...",
+      "answer_form": "...",
+      "explanation_zh": "...",
+      "semantic_hint_zh": "..."
+    }
+  ]
+}
+
+规则：
+- 每个 expression_id 必须返回一次，不可遗漏，不可新增 id
+- scenario_zh 用中文写，描述一个具体场景，不能出现目标英文表达本身
+- sentence_full 必须是自然英文句子，必须包含 answer_form（不能是空白）
+- answer_form 是目标表达在句子中出现的真实语法形式（可能是原形也可能是变形）
+- explanation_zh 用中文解释为什么这个语境下用这个表达
+- semantic_hint_zh 用中文给出含义提示（不要直接给答案）
+- 适合中级英语学习者
+- 不要输出 markdown
+
+--- 以下为需要生成的目标表达 ---
+
+${exprList}`;
+
+  try {
+    const aiResult = await aiRuntime<{ cards: ContextClozeCardResponse[] }>(
+      [{ role: "user", content: batchPrompt }],
+      {
+        agentName: "english-coach-context-cloze",
+        maxTokens: Math.min(expressions.length * 256, 3072),
+        temperature: 0.6,
+        parseJson: true,
+        dynamicTokens: false,
+      },
+    );
+
+    if (!aiResult.success) {
+      return jsonResponse(req, {
+        success: false,
+        stage: aiResult.stage,
+        error: aiResult.error,
+        detail: aiResult.detail,
+      }, aiResult.stage === "deepseek" ? 502 : 500);
+    }
+
+    // Validate each card
+    const cards: ContextClozeCardResponse[] = [];
+    if (aiResult.data?.cards && Array.isArray(aiResult.data.cards)) {
+      for (const card of aiResult.data.cards) {
+        if (
+          card.expression_id &&
+          card.scenario_zh?.trim() &&
+          card.sentence_full?.trim() &&
+          card.answer_form?.trim() &&
+          card.explanation_zh?.trim() &&
+          card.semantic_hint_zh?.trim() &&
+          card.sentence_full.toLowerCase().includes(card.answer_form.toLowerCase()) &&
+          !card.scenario_zh.toLowerCase().includes(card.answer_form.toLowerCase())
+        ) {
+          cards.push(card);
+        }
+      }
+    }
+
+    // Map input expression_ids to track which were covered
+    const inputIds = expressions.map((e) => e.expression_id || e.id || e.english);
+    const returnedIds = new Set(cards.map((c) => c.expression_id));
+    const missing = inputIds.filter((id) => !returnedIds.has(id));
+
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "generate_context_cloze",
+      input_data: { expression_count: expressions.length },
+      output_data: {
+        generated_count: cards.length,
+        missing_ids: missing.length > 0 ? missing : undefined,
+      },
+      model: "deepseek-chat",
+      tokens_used: aiResult.usage?.totalTokens || 0,
+    });
+
+    return jsonResponse(req, {
+      success: true,
+      data: {
+        cards,
+        missing_ids: missing.length > 0 ? missing : undefined,
+      },
+    });
+  } catch (err) {
+    return jsonResponse(req, {
+      success: false,
+      error: err instanceof Error ? err.message : "Context cloze batch generation failed",
+    }, 500);
+  }
+}
+
 // ── Action: evaluate_personal_sentence (V3.6) ──
 
 async function handleEvaluatePersonalSentence(
@@ -412,9 +576,14 @@ serve(async (req: Request) => {
       return handleSummarizeDailyReview(req, body, supabase, userId);
     }
 
-    // ── Action: generate_cloze_batch (V3.6) ──
+    // ── Action: generate_cloze_batch (V3.6 legacy — simple cloze sentences) ──
     if (action === "generate_cloze_batch") {
       return handleGenerateClozeBatch(req, body, supabase, userId);
+    }
+
+    // ── Action: generate_context_cloze (V3.5 — full ContextClozeCards) ──
+    if (action === "generate_context_cloze") {
+      return handleGenerateContextCloze(req, body, supabase, userId);
     }
 
     // ── Action: evaluate_personal_sentence (V3.6) ──

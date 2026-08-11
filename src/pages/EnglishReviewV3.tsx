@@ -1567,11 +1567,19 @@ export default function EnglishReviewV3() {
   });
   const clozePrepRef = useRef(clozePrep);
   clozePrepRef.current = clozePrep;
+  const generationInFlightRef = useRef(false);
+  const generationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Cloze preparation effect: runs when entering cloze mode ──
+  // V3.5: Dedup via inFlightRef, 45s watchdog timeout, correct expression_id keys.
   useEffect(() => {
     if (mode !== "cloze" || allItems.length === 0) return;
-    if (clozePrep.phase === "ready" || clozePrep.phase === "generating") return;
+
+    // Use ref to avoid stale closure issues
+    const currentPhase = clozePrepRef.current.phase;
+    if (currentPhase === "ready") return;
+    if (currentPhase === "generating" && generationInFlightRef.current) return;
+    if (generationInFlightRef.current) return;
 
     const materials: ClozeGenerationMaterial[] = allItems
       .filter((item) => !!item.expression)
@@ -1602,7 +1610,6 @@ export default function EnglishReviewV3() {
     }
 
     if (needsAI.length === 0) {
-      // All cards ready from stored sources
       setClozePrep({
         total: allItems.length,
         prepared: cards.size,
@@ -1615,6 +1622,8 @@ export default function EnglishReviewV3() {
 
     // Need AI generation for remaining
     const pendingIds = needsAI.map((m) => m.expression_id);
+    generationInFlightRef.current = true;
+
     setClozePrep({
       total: allItems.length,
       prepared: cards.size,
@@ -1625,8 +1634,25 @@ export default function EnglishReviewV3() {
 
     let cancelled = false;
 
+    // 45-second overall preparation watchdog
+    generationTimeoutRef.current = setTimeout(() => {
+      if (!cancelled) {
+        cancelled = true;
+        const snapshot = clozePrepRef.current;
+        const stillMissing = materials.filter((m) => !snapshot.cards.has(m.expression_id));
+        setClozePrep({
+          ...snapshot,
+          phase: "error",
+          error: stillMissing.length > 0
+            ? `准备超时，还有 ${stillMissing.length} 道题未生成，请重试`
+            : "准备超时，请重试",
+        });
+        generationInFlightRef.current = false;
+      }
+    }, 45_000);
+
     (async () => {
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 10;
       const currentCards = new Map(cards);
       const remaining = [...needsAI];
 
@@ -1640,7 +1666,8 @@ export default function EnglishReviewV3() {
 
           for (const m of batch) {
             if (cancelled) return;
-            const aiData = aiResults.get(m.english);
+            // V3.5: Map keyed by expression_id
+            const aiData = aiResults.get(m.expression_id);
             if (aiData) {
               const validation = validateAIData(aiData);
               if (validation.valid) {
@@ -1670,22 +1697,23 @@ export default function EnglishReviewV3() {
         // Retry any remaining invalid ones (max 1 retry per item)
         const stillMissing = needsAI.filter((m) => !currentCards.has(m.expression_id));
         if (stillMissing.length > 0 && !cancelled) {
+          const retryInputs = stillMissing.map((m) => buildAIClozeInput(m));
+          const retryResults = await generateContextClozeBatch(retryInputs);
           for (const m of stillMissing) {
             if (cancelled) return;
-            try {
-              const aiResults = await generateContextClozeBatch([buildAIClozeInput(m)]);
-              const aiData = aiResults.get(m.english);
-              if (aiData) {
-                const validation = validateAIData(aiData);
-                if (validation.valid) {
+            const aiData = retryResults.get(m.expression_id);
+            if (aiData) {
+              const validation = validateAIData(aiData);
+              if (validation.valid) {
+                try {
                   const card = buildCardFromAIResponse(m, aiData);
                   const cardValidation = validateContextClozeCard(card);
                   if (cardValidation.valid) {
                     currentCards.set(m.expression_id, card);
                   }
-                }
+                } catch { /* retry failed */ }
               }
-            } catch { /* retry failed — will show error for this item */ }
+            }
           }
         }
 
@@ -1697,7 +1725,7 @@ export default function EnglishReviewV3() {
           pendingIds: finalStillMissing.map((m) => m.expression_id),
           phase: finalStillMissing.length > 0 ? "error" : "ready",
           error: finalStillMissing.length > 0
-            ? `${finalStillMissing.length} 道题生成失败，请点击重新生成`
+            ? `${currentCards.size} / ${allItems.length} 已准备，${finalStillMissing.length} 题生成失败`
             : undefined,
         });
 
@@ -1720,15 +1748,30 @@ export default function EnglishReviewV3() {
       } catch {
         if (!cancelled) {
           setClozePrep((prev) => ({
-            ...prev,
+            total: prev.total,
+            prepared: prev.prepared,
+            cards: prev.cards,
+            pendingIds: prev.pendingIds,
             phase: "error",
             error: "AI 服务暂时不可用，请稍后重试",
           }));
         }
+      } finally {
+        generationInFlightRef.current = false;
+        if (generationTimeoutRef.current) {
+          clearTimeout(generationTimeoutRef.current);
+          generationTimeoutRef.current = null;
+        }
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (generationTimeoutRef.current) {
+        clearTimeout(generationTimeoutRef.current);
+        generationTimeoutRef.current = null;
+      }
+    };
   }, [mode, allItems]);
 
   // Also load cards from existing session items (previously persisted)

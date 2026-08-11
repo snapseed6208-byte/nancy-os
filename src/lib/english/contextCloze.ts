@@ -144,6 +144,7 @@ function tryExampleSentence(material: ClozeGenerationMaterial): ContextClozeCard
 
 export function buildAIClozeInput(material: ClozeGenerationMaterial) {
   return {
+    expression_id: material.expression_id,
     english: material.english,
     chinese: material.chinese,
     type: material.type || undefined,
