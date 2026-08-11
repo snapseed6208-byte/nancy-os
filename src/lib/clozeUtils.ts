@@ -175,7 +175,7 @@ function toStem(word: string): string {
   return lower;
 }
 
-function detectSurfaceForm(
+export function detectSurfaceForm(
   sentence: string,
   expression: string,
 ): { surfaceForm: string; matchType: "exact" | "inflected" } | null {

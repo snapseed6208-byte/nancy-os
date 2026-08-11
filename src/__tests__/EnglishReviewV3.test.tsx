@@ -4397,3 +4397,495 @@ describe("R-series — Review Due Pool Invariants", () => {
     expect(dueCount).toBe(2); // canonical, independent of session items
   });
 });
+
+// ═══════════════════════════════════════
+// C-Series: Cloze Eligibility Engine Tests (V3.3)
+// Inline mirrors of clozeEligibility.ts logic
+// ═══════════════════════════════════════
+
+describe("English SRS V3.3 — Cloze Eligibility Engine (C-series)", () => {
+  // ── Inline mirror types ──
+  type ClozeSource = "stored_cloze" | "example_sentence" | "generated_context" | "unavailable";
+
+  interface ClozeEligibility {
+    eligible: boolean;
+    source: ClozeSource;
+    scenario: string | null;
+    fullSentence: string | null;
+    maskedSentence: string | null;
+    answer: string;
+    reason?: string;
+  }
+
+  function escapeRegexForElig(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // ── Inline mirror of buildClozeEligibility ──
+  function buildClozeEligibility(
+    english: string,
+    chinese: string,
+    clozeSentence?: string | null,
+    exampleSentence?: string | null,
+    context?: string | null,
+    situation?: string | null,
+    aiClozeSentence?: string | null,
+  ): ClozeEligibility {
+    // P1: stored cloze_sentence
+    const stored = clozeSentence || aiClozeSentence || null;
+    if (stored) {
+      const blanks = (stored.match(/_{2,}|\[blank\]/gi) || []).length;
+      if (blanks >= 1 && !hasExpressionLeakage(stored, english)) {
+        const scene = [context, situation].filter(Boolean).join(" · ") || null;
+        return {
+          eligible: true,
+          source: "stored_cloze",
+          scenario: scene,
+          fullSentence: stored,
+          maskedSentence: stored,
+          answer: english,
+        };
+      }
+    }
+
+    const scenario = [context, situation].filter(Boolean).join(" · ") || null;
+
+    // P2: example_sentence containing the target
+    if (exampleSentence) {
+      const surfaceInfo = detectSurfaceForm(exampleSentence, english);
+      if (surfaceInfo) {
+        const escaped = escapeRegexForElig(surfaceInfo.surfaceForm);
+        const regex = new RegExp(escaped, "gi");
+        const masked = exampleSentence.replace(regex, "_____");
+        if (masked !== exampleSentence && !hasExpressionLeakage(masked, english)) {
+          return {
+            eligible: true,
+            source: "example_sentence",
+            scenario,
+            fullSentence: exampleSentence,
+            maskedSentence: masked,
+            answer: english,
+          };
+        }
+      }
+    }
+
+    // P3: context available but no stored/example — AI generation slot
+    if (scenario || context || situation) {
+      return {
+        eligible: false,
+        source: "generated_context",
+        scenario,
+        fullSentence: null,
+        maskedSentence: null,
+        answer: english,
+        reason: "needs_ai_generation",
+      };
+    }
+
+    // P4: unavailable
+    return {
+      eligible: false,
+      source: "unavailable",
+      scenario: null,
+      fullSentence: null,
+      maskedSentence: null,
+      answer: english,
+      reason: "no_source_material",
+    };
+  }
+
+  function computeClozeEligibleQueue(
+    items: Array<{
+      id: string;
+      expression?: {
+        english: string;
+        chinese?: string | null;
+        cloze_sentence?: string | null;
+        example_sentence?: string | null;
+        context?: string | null;
+        situation?: string | null;
+      } | null;
+    }>,
+    aiClozeMap?: Map<string, string>,
+  ): { eligibleIds: string[]; unavailableIds: string[]; eligibilityMap: Map<string, ClozeEligibility> } {
+    const eligibleIds: string[] = [];
+    const unavailableIds: string[] = [];
+    const eligibilityMap = new Map<string, ClozeEligibility>();
+
+    for (const item of items) {
+      const expr = item.expression;
+      if (!expr) {
+        unavailableIds.push(item.id);
+        continue;
+      }
+
+      const aiGenerated = aiClozeMap?.get(expr.english);
+      const eligibility = buildClozeEligibility(
+        expr.english,
+        expr.chinese || "",
+        expr.cloze_sentence,
+        expr.example_sentence,
+        expr.context,
+        expr.situation,
+        aiGenerated || null,
+      );
+
+      eligibilityMap.set(item.id, eligibility);
+
+      if (eligibility.eligible) {
+        eligibleIds.push(item.id);
+      } else {
+        unavailableIds.push(item.id);
+      }
+    }
+
+    return { eligibleIds, unavailableIds, eligibilityMap };
+  }
+
+  // ── P1: stored_cloze ──
+
+  it("C1. stored cloze_sentence with blank → eligible (P1)", () => {
+    const result = buildClozeEligibility(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to _____ and fix the problem.",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("stored_cloze");
+    expect(result.answer).toBe("take the bull by the horns");
+  });
+
+  it("C1a. stored cloze_sentence that leaks answer → REJECTED", () => {
+    const result = buildClozeEligibility(
+      "take the bull by the horns",
+      "迎难而上",
+      "Sometimes you just have to take the bull by the horns and fix the problem.",
+    );
+    expect(result.eligible).toBe(false);
+    expect(result.source).not.toBe("stored_cloze");
+  });
+
+  it("C1b. stored cloze_sentence with no blank → REJECTED", () => {
+    const result = buildClozeEligibility(
+      "hello",
+      "你好",
+      "Just say hello to everyone.",
+    );
+    // No blank → P1 fails, but may fall through to P2/P3/P4
+    expect(result.source).not.toBe("stored_cloze");
+  });
+
+  it("C1c. AI-generated cloze sentence acts as P1 (stored_cloze)", () => {
+    const result = buildClozeEligibility(
+      "break the ice",
+      "打破沉默",
+      null, // no DB cloze_sentence
+      undefined,
+      "social gathering",
+      undefined,
+      "At the party, he told a joke to _____.", // AI-generated
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("stored_cloze");
+    expect(result.fullSentence).toBe("At the party, he told a joke to _____.");
+  });
+
+  // ── P2: example_sentence ──
+
+  it("C2. example_sentence containing target → eligible (P2)", () => {
+    const result = buildClozeEligibility(
+      "take the bull by the horns",
+      "迎难而上",
+      null,
+      "Sometimes you just have to take the bull by the horns and fix the problem.",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("example_sentence");
+    expect(result.fullSentence).toContain("take the bull by the horns");
+    expect(result.maskedSentence).not.toContain("take the bull by the horns");
+    expect(result.maskedSentence).toContain("_____");
+  });
+
+  it("C2a. example_sentence WITHOUT target expression → falls through", () => {
+    const result = buildClozeEligibility(
+      "break the ice",
+      "打破沉默",
+      null,
+      "He walked into the room and sat down quietly.", // unrelated
+    );
+    // Target not in example → P2 fails, falls to P3 or P4
+    expect(result.source).not.toBe("example_sentence");
+  });
+
+  it("C2b. masked sentence must not leak answer after replacement", () => {
+    const result = buildClozeEligibility(
+      "hello world",
+      "你好世界",
+      null,
+      "Say hello world to everyone hello world please.",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("example_sentence");
+    // All instances of "hello world" should be replaced
+    expect(result.maskedSentence).not.toMatch(/hello world/i);
+    expect((result.maskedSentence!.match(/_____/g) || []).length).toBe(2);
+  });
+
+  // ── P3: generated_context ──
+
+  it("C3. context/situation available but no stored/example → needs_ai_generation (P3)", () => {
+    const result = buildClozeEligibility(
+      "negotiate a deal",
+      "谈判",
+      null,
+      null,
+      "business meeting",
+      "client negotiation",
+    );
+    expect(result.eligible).toBe(false);
+    expect(result.source).toBe("generated_context");
+    expect(result.reason).toBe("needs_ai_generation");
+  });
+
+  it("C3a. context only (no situation) still triggers P3", () => {
+    const result = buildClozeEligibility(
+      "sign a contract",
+      "签合同",
+      null,
+      null,
+      "legal department",
+    );
+    expect(result.source).toBe("generated_context");
+    expect(result.reason).toBe("needs_ai_generation");
+  });
+
+  it("C3b. situation only (no context) still triggers P3", () => {
+    const result = buildClozeEligibility(
+      "submit a report",
+      "提交报告",
+      null,
+      null,
+      null,
+      "end of quarter",
+    );
+    expect(result.source).toBe("generated_context");
+    expect(result.reason).toBe("needs_ai_generation");
+  });
+
+  // ── P4: unavailable ──
+
+  it("C4. no sources at all → unavailable (P4)", () => {
+    const result = buildClozeEligibility(
+      "esoteric word",
+      "生僻词",
+      null,
+      null,
+      null,
+      null,
+    );
+    expect(result.eligible).toBe(false);
+    expect(result.source).toBe("unavailable");
+    expect(result.reason).toBe("no_source_material");
+  });
+
+  // ── Priority order ──
+
+  it("C5. stored_cloze (P1) beats example_sentence (P2)", () => {
+    const result = buildClozeEligibility(
+      "take the bull by the horns",
+      "迎难而上",
+      "You need to _____ and face the challenge.", // P1
+      "Sometimes you just have to take the bull by the horns.", // P2 would work too
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("stored_cloze");
+    expect(result.fullSentence).toBe("You need to _____ and face the challenge.");
+  });
+
+  it("C5a. example_sentence (P2) beats generated_context (P3)", () => {
+    const result = buildClozeEligibility(
+      "take the bull by the horns",
+      "迎难而上",
+      null,
+      "Sometimes you just have to take the bull by the horns.",
+      "workplace scenario",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("example_sentence");
+  });
+
+  it("C5b. generated_context (P3) beats unavailable (P4)", () => {
+    const result = buildClozeEligibility(
+      "take the bull by the horns",
+      "迎难而上",
+      null,
+      null,
+      "workplace scenario",
+    );
+    expect(result.source).toBe("generated_context");
+    // P3 is not eligible, but at least it tells the caller to generate AI cloze
+    expect(result.reason).toBe("needs_ai_generation");
+  });
+
+  // ── computeClozeEligibleQueue ──
+
+  it("C6. queue: mixed eligible + ineligible items", () => {
+    const items = [
+      {
+        id: "a",
+        expression: {
+          english: "break the ice",
+          cloze_sentence: "He told a joke to _____.", // P1 → eligible
+        },
+      },
+      {
+        id: "b",
+        expression: {
+          english: "take the bull by the horns",
+          example_sentence: "You must take the bull by the horns now.", // P2 → eligible
+        },
+      },
+      {
+        id: "c",
+        expression: {
+          english: "obscure term",
+          // No source → P4 → unavailable
+        },
+      },
+    ];
+
+    const { eligibleIds, unavailableIds } = computeClozeEligibleQueue(items);
+    expect(eligibleIds).toEqual(["a", "b"]);
+    expect(unavailableIds).toEqual(["c"]);
+  });
+
+  it("C7. queue: all eligible", () => {
+    const items = [
+      {
+        id: "a",
+        expression: {
+          english: "hello",
+          cloze_sentence: "Say _____ to everyone.",
+        },
+      },
+    ];
+    const { eligibleIds, unavailableIds } = computeClozeEligibleQueue(items);
+    expect(eligibleIds).toEqual(["a"]);
+    expect(unavailableIds).toEqual([]);
+  });
+
+  it("C8. queue: all unavailable", () => {
+    const items = [
+      {
+        id: "a",
+        expression: { english: "rare word" },
+      },
+      {
+        id: "b",
+        expression: { english: "another rare word" },
+      },
+    ];
+    const { eligibleIds, unavailableIds } = computeClozeEligibleQueue(items);
+    expect(eligibleIds).toEqual([]);
+    expect(unavailableIds).toEqual(["a", "b"]);
+  });
+
+  it("C9. queue: empty input → empty output", () => {
+    const { eligibleIds, unavailableIds } = computeClozeEligibleQueue([]);
+    expect(eligibleIds).toEqual([]);
+    expect(unavailableIds).toEqual([]);
+  });
+
+  it("C10. queue: null expression → unavailable", () => {
+    const items = [
+      { id: "a", expression: null },
+      { id: "b", expression: { english: "hello", cloze_sentence: "Say _____." } },
+    ];
+    const { eligibleIds, unavailableIds } = computeClozeEligibleQueue(items);
+    expect(eligibleIds).toEqual(["b"]);
+    expect(unavailableIds).toEqual(["a"]);
+  });
+
+  it("C11. queue: AI cloze map elevates P3 to P1 eligible", () => {
+    const aiMap = new Map<string, string>();
+    aiMap.set("negotiate a deal", "We managed to _____ after hours of discussion.");
+
+    const items = [
+      {
+        id: "a",
+        expression: {
+          english: "negotiate a deal",
+          context: "business meeting",
+          // No cloze_sentence, no example_sentence → would be P3
+        },
+      },
+    ];
+
+    const { eligibleIds, unavailableIds } = computeClozeEligibleQueue(items, aiMap);
+    expect(eligibleIds).toEqual(["a"]);
+    expect(unavailableIds).toEqual([]);
+  });
+
+  // ── Edge cases ──
+
+  it("C12. special regex characters in expression don't break masking", () => {
+    // Expression with parentheses and dots
+    const result = buildClozeEligibility(
+      "a.m. (morning)",
+      "上午",
+      null,
+      "The meeting is at 10 a.m. (morning) every day.",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("example_sentence");
+    expect(result.maskedSentence).toContain("_____");
+  });
+
+  it("C13. Chinese characters in example don't affect detection", () => {
+    const result = buildClozeEligibility(
+      "你好",
+      "hello",
+      null,
+      "Say 你好 to your friends when you meet them.",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("example_sentence");
+  });
+
+  it("C14. single-word expression eligibility", () => {
+    const result = buildClozeEligibility(
+      "serendipity",
+      "意外发现",
+      "The discovery was pure _____.", // P1
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.source).toBe("stored_cloze");
+  });
+
+  it("C15. scenario is built from context + situation", () => {
+    const result = buildClozeEligibility(
+      "call it a day",
+      "收工",
+      "Let's _____ and go home.",
+      undefined,
+      "office",
+      "end of workday",
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.scenario).toBe("office · end of workday");
+  });
+
+  it("C16. scenario is null when both context and situation are null", () => {
+    const result = buildClozeEligibility(
+      "hello",
+      "你好",
+      "Say _____.", // P1
+      undefined,
+      null,
+      null,
+    );
+    expect(result.eligible).toBe(true);
+    expect(result.scenario).toBeNull();
+  });
+});

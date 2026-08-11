@@ -22,10 +22,11 @@ import {
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
-import { buildClozeQuestion, validateClozeResult, validateClozeQuestion, promptIntegrityCheck, buildProgressiveHint } from "@/lib/clozeUtils";
+import { buildClozeQuestion, validateClozeResult, validateClozeQuestion, promptIntegrityCheck, buildProgressiveHint, detectSurfaceForm } from "@/lib/clozeUtils";
 import type { ClozeResult } from "@/lib/clozeUtils";
 import { invokeAI } from "@/lib/ai/aiService";
 import { generateClozeBatchViaEdge, evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
+import { computeClozeEligibleQueue, type ClozeEligibility } from "@/lib/english/clozeEligibility";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -191,11 +192,12 @@ interface ModeStats {
   incorrect?: number;
 }
 
-function ModeStatsBar({ mode, stats, currentIndex, roundOrderLength }: {
+function ModeStatsBar({ mode, stats, currentIndex, roundOrderLength, unavailableCount }: {
   mode: ReviewMode;
   stats: ModeStats;
   currentIndex: number;
   roundOrderLength: number;
+  unavailableCount?: number;
 }) {
   if (mode === "recall") {
     const passed = stats.correct || stats.completed;
@@ -240,6 +242,12 @@ function ModeStatsBar({ mode, stats, currentIndex, roundOrderLength }: {
           <div className="h-2 w-2 rounded-full bg-ink-lighter/30" />
           待练 {pending}
         </span>
+        {unavailableCount !== undefined && unavailableCount > 0 && (
+          <span className="flex items-center gap-1 text-[10px]" title="暂无可靠语境题素材">
+            <div className="h-2 w-2 rounded-full bg-accent-warm/30" />
+            {unavailableCount} 条暂不适合
+          </span>
+        )}
         <span className="ml-auto text-[10px]">
           {Math.min(currentIndex + 1, roundOrderLength)}/{roundOrderLength}
         </span>
@@ -498,48 +506,30 @@ function ClozeCard({
   );
   const questionValid = question.valid && qualityResult.valid;
 
-  // ── Quality gate failed: show skip card ──
-  if (!questionValid) {
-    const reason = qualityResult.reason || "blank_only";
-    return (
-      <div className="bg-white border border-accent-warm/30 rounded-2xl p-6 space-y-4">
-        <div className="flex items-center gap-2 text-accent-warm">
-          <AlertTriangle size={16} />
-          <p className="text-sm font-medium">这条表达暂无可靠语境题</p>
-        </div>
-        <p className="text-xs text-ink-light">
-          {reason === "blank_only" && "该表达缺少可用的填空句子来源，无法生成有效语境题。"}
-          {reason === "no_safe_context" && "该表达缺少场景上下文，无法提供语境提示。"}
-          {reason === "no_accepted_answer" && "该表达缺少可用的答案数据。"}
-        </p>
-        <button
-          onClick={() => onResult(item.id, "incorrect", "", question.expectedAnswer, 0)}
-          className="w-full py-2.5 bg-warm-cream text-ink rounded-xl text-sm font-medium hover:bg-warm-cream/70 transition-colors"
-        >
-          已自动跳过
-        </button>
-      </div>
-    );
-  }
-
   // V3.5: Prompt integrity check (leakage + format) — secondary gate
   const promptOk = useMemo(() => promptIntegrityCheck(question), [question]);
 
-  // ── Integrity check failed: show skip card (leakage/format error) ──
-  if (!promptOk) {
+  // ── Defensive fallback: if question is invalid despite pre-filtering, auto-advance ──
+  // This should never fire in normal operation (eligibility pre-filters the queue).
+  // If it does, auto-advance after a brief toast to prevent dead-end.
+  useEffect(() => {
+    if (!questionValid || !promptOk) {
+      const timer = setTimeout(() => {
+        onResult(item.id, "incorrect", "", question.expectedAnswer, 0);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [questionValid, promptOk, item.id, question.expectedAnswer, onResult]);
+
+  if (!questionValid || !promptOk) {
+    const msg = !questionValid
+      ? (qualityResult.reason === "blank_only" ? "该表达缺少可用填空句子" : "该表达暂无可靠语境题")
+      : "题目数据异常，自动跳过";
     return (
-      <div className="bg-white border border-accent-warm/30 rounded-2xl p-6 space-y-4">
-        <div className="flex items-center gap-2 text-accent-warm">
-          <AlertTriangle size={16} />
-          <p className="text-sm font-medium">题目数据异常</p>
-        </div>
-        <p className="text-xs text-ink-light">该填空题的题目数据存在问题（答案泄漏或格式错误），请跳过此题。</p>
-        <button
-          onClick={() => onResult(item.id, "incorrect", "", question.expectedAnswer, 0)}
-          className="w-full py-2.5 bg-warm-cream text-ink rounded-xl text-sm font-medium hover:bg-warm-cream/70 transition-colors"
-        >
-          跳过此题
-        </button>
+      <div className="bg-white border border-accent-warm/30 rounded-2xl p-6 text-center space-y-3">
+        <AlertTriangle size={20} className="text-accent-warm mx-auto" />
+        <p className="text-sm text-ink-light">{msg}</p>
+        <p className="text-xs text-ink-lighter">自动跳过中...</p>
       </div>
     );
   }
@@ -1636,19 +1626,21 @@ export default function EnglishReviewV3() {
     if (aiClozeFetched) return;
 
     // Find expressions that need AI cloze generation:
-    // Missing cloz_sentence AND no usable example_sentence with surface form match
+    // Missing cloze_sentence AND no usable example_sentence (target not found in it)
     const needsGeneration = allItems
       .filter((item) => {
         const expr = item.expression;
         if (!expr) return false;
         if (expr.cloze_sentence) return false;
-        if (expr.example_sentence) return false; // P2 handles example_sentence
+        // Only skip example_sentence if it actually contains the target expression
+        if (expr.example_sentence && detectSurfaceForm(expr.example_sentence, expr.english)) return false;
         return true;
       })
       .map((item) => ({
         english: item.expression!.english,
         chinese: item.expression!.chinese,
         context: item.expression!.context,
+        situation: item.expression!.situation,
       }));
 
     if (needsGeneration.length === 0) {
@@ -1673,6 +1665,15 @@ export default function EnglishReviewV3() {
 
   // ── dailySetIds ──
   const dailySetIds = useMemo(() => allItems.map((i) => i.id), [allItems]);
+
+  // ── Cloze eligibility queue (pre-filtered, no per-card skip) ──
+  const clozeEligibility = useMemo(() => {
+    if (!aiClozeFetched || allItems.length === 0) return null;
+    return computeClozeEligibleQueue(allItems, aiClozeMap);
+  }, [allItems, aiClozeMap, aiClozeFetched]);
+
+  const clozeEligibleIds: string[] = clozeEligibility?.eligibleIds ?? [];
+  const clozeUnavailableCount: number = clozeEligibility?.unavailableIds.length ?? 0;
 
   // ── Initialize/restore mode progress ──
   const resumeIndex = useMemo(() => {
@@ -1707,12 +1708,20 @@ export default function EnglishReviewV3() {
   useEffect(() => {
     if (allItems.length === 0) return;
     if (initializedRef.current) return;
+    // For cloze mode, wait until AI batch generation completes
+    if (mode === "cloze" && !aiClozeFetched) return;
 
-    setRoundOrder([...dailySetIds]);
+    const order = mode === "cloze" ? [...clozeEligibleIds] : [...dailySetIds];
+    if (order.length === 0) {
+      // No eligible items — still mark initialized so empty state renders
+      initializedRef.current = true;
+      return;
+    }
+    setRoundOrder(order);
     setCurrentIndex(resumeIndex);
     currentIndexRef.current = resumeIndex;
     initializedRef.current = true;
-  }, [allItems, dailySetIds, resumeIndex]);
+  }, [allItems, dailySetIds, clozeEligibleIds, resumeIndex, mode, aiClozeFetched]);
 
   // ── Reset initialization when mode changes ──
   useEffect(() => {
@@ -1720,6 +1729,10 @@ export default function EnglishReviewV3() {
     setModeComplete(false);
     setCurrentIndex(0);
     currentIndexRef.current = 0;
+    // Re-trigger AI cloze generation when entering cloze mode
+    if (mode === "cloze") {
+      setAiClozeFetched(false);
+    }
   }, [mode]);
 
   const currentItemId = roundOrder[currentIndex] || null;
@@ -1796,29 +1809,15 @@ export default function EnglishReviewV3() {
   const handleClozeResult = useCallback(
     async (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string, hintCount: number) => {
       const item = allItems.find((i) => i.id === itemId);
-      if (!item || !session) return;
+      if (!item || !session) {
+        // Defensive: advance anyway so user doesn't get stuck
+        const nextIdx = currentIndexRef.current + 1;
+        currentIndexRef.current = nextIdx;
+        setCurrentIndex(nextIdx);
+        return;
+      }
 
-      const isSkip = !userAnswer.trim() && result === "incorrect" && hintCount === 0;
-
-      if (isSkip) {
-        // Quality gate skip — no practice log, mark status as skipped
-        await updateItem.mutateAsync({
-          itemId,
-          updates: {
-            status: "skipped_no_question",
-            attemptCount: item.attemptCount + 1,
-          },
-        });
-
-        setModeStats((prev) => ({
-          ...prev,
-          cloze: {
-            completed: prev.cloze.completed + 1,
-            correct: prev.cloze.correct,
-            incorrect: prev.cloze.incorrect + 1,
-          },
-        }));
-      } else {
+      try {
         const isCorrect = result === "correct";
         const score = result === "correct" ? 2 : result === "partially_correct" ? 1 : 0;
 
@@ -1846,13 +1845,16 @@ export default function EnglishReviewV3() {
             incorrect: prev.cloze.incorrect + (result !== "correct" ? 1 : 0),
           },
         }));
+      } catch {
+        // DB mutation failed — still advance to prevent dead-end
+        // User progress is tracked in local state anyway
       }
 
       const nextIdx = currentIndexRef.current + 1;
       currentIndexRef.current = nextIdx;
       setCurrentIndex(nextIdx);
     },
-    [allItems, session, updateItem, recordLog],
+    [allItems, session, recordLog],
   );
 
   // ── Sentence handlers (NO SRS, NO auto-advance) ──
@@ -2094,6 +2096,55 @@ export default function EnglishReviewV3() {
     );
   }
 
+  // ── Cloze mode: 0 eligible empty state ──
+  if (mode === "cloze" && aiClozeFetched && clozeEligibleIds.length === 0 && !modeComplete) {
+    return (
+      <div className="space-y-4">
+        <ModeHeader
+          currentMode={mode}
+          stats={{
+            recall: { completed: recallCompleted, total: allItems.length, correct: recallPassed, incorrect: recallFailed },
+            cloze: { completed: 0, total: 0, correct: 0, incorrect: 0 },
+            sentence: { completed: sentenceCompleted, total: allItems.length },
+          }}
+          onModeChange={switchMode}
+          onBack={handleBack}
+          onViewHistory={handleViewHistory}
+        />
+        <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-4">
+          <div className="h-14 w-14 rounded-2xl bg-warm-cream flex items-center justify-center mx-auto">
+            <Pencil size={28} className="text-ink-lighter" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-ink">暂无适合的语境填空题</h3>
+            <p className="text-sm text-ink-light mt-1">
+              今天这组表达暂时没有适合生成语境填空的素材
+              {clozeUnavailableCount > 0 && `（${clozeUnavailableCount} 条暂无可靠语境题）`}
+            </p>
+            <p className="text-xs text-ink-lighter mt-2">
+              可以尝试切换到主动回忆或个人造句模式继续学习
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3">
+            {MODE_ORDER.filter((m) => m !== "cloze").map((m) => {
+              const Icon = MODE_ICONS[m];
+              return (
+                <button
+                  key={m}
+                  onClick={() => switchMode(m)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-warm-cream text-ink rounded-xl text-sm font-medium hover:bg-warm-cream/70 transition-colors"
+                >
+                  <Icon size={14} />
+                  {MODE_LABELS[m]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Derived display stats ──
   const displayStats = {
     recall: {
@@ -2104,7 +2155,7 @@ export default function EnglishReviewV3() {
     },
     cloze: {
       completed: clozeCompleted,
-      total: allItems.length,
+      total: clozeEligibleIds.length || allItems.length,
       correct: clozeCorrect,
       incorrect: clozeIncorrect,
     },
@@ -2153,6 +2204,7 @@ export default function EnglishReviewV3() {
           stats={displayStats[mode]}
           currentIndex={currentIndex}
           roundOrderLength={roundOrder.length}
+          unavailableCount={mode === "cloze" ? clozeUnavailableCount : undefined}
         />
       </div>
 
