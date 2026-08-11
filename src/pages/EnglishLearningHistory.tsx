@@ -13,10 +13,12 @@ import {
   useHistoricalSummaries,
   useTodayLearnSession,
   isLearnItemFinished,
-  type SentenceDetail,
   type ExpressionProgressDetail,
   type HistoricalSummary,
 } from "@/lib/hooks/useReviewSession";
+import SentencePracticeHistory, {
+  type SentencePracticeRecord,
+} from "@/components/english/SentencePracticeHistory";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -98,25 +100,6 @@ function StatBox({ label, value, color }: { label: string; value: number; color?
     <div className="text-center">
       <p className={cn("text-2xl font-bold", color || "text-ink")}>{value}</p>
       <p className="text-[11px] text-ink-lighter">{label}</p>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════
-// Sentence practice detail card
-// ═══════════════════════════════════════
-
-function SentenceDetailCard({ detail }: { detail: SentenceDetail }) {
-  return (
-    <div className="bg-warm-cream rounded-xl p-3 space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-sage-deep">{detail.expressionEnglish}</span>
-        <span className="text-xs text-ink-lighter">{detail.expressionChinese}</span>
-      </div>
-      <p className="text-sm text-ink italic">"{detail.userSentence}"</p>
-      {detail.aiFeedback && (
-        <p className="text-xs text-ink-light leading-relaxed">{detail.aiFeedback}</p>
-      )}
     </div>
   );
 }
@@ -529,12 +512,12 @@ export default function EnglishLearningHistory() {
       )}
 
       {/* ═══════════════════════════════════════ */}
-      {/* Sentence Practice Details             */}
+      {/* Sentence Practice History             */}
       {/* ═══════════════════════════════════════ */}
 
-      {sessionDetail && sessionDetail.sentenceDetails.length > 0 && (
-        <div className="bg-white border border-border/60 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2">
+      {sessionDetail && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 px-1">
             <MessageCircle size={16} className="text-sage-deep" />
             <h3 className="text-sm font-semibold text-ink">
               今日造句记录
@@ -543,11 +526,16 @@ export default function EnglishLearningHistory() {
               {sessionDetail.sentenceDetails.length} 条
             </span>
           </div>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {sessionDetail.sentenceDetails.map((d, idx) => (
-              <SentenceDetailCard key={idx} detail={d} />
-            ))}
-          </div>
+          <SentencePracticeHistory
+            records={sessionDetail.sentenceDetails.map((d): SentencePracticeRecord => ({
+              expressionId: d.expressionId,
+              expressionEnglish: d.expressionEnglish,
+              expressionChinese: d.expressionChinese,
+              userSentence: d.userSentence,
+              aiFeedback: d.aiFeedback,
+              completedAt: d.completedAt,
+            }))}
+          />
         </div>
       )}
 

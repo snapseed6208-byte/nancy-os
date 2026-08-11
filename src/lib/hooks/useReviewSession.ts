@@ -1326,6 +1326,7 @@ export function useHistoricalSummaries(days: number = 14) {
 // ═══════════════════════════════════════
 
 export interface SentenceDetail {
+  expressionId: string;
   expressionEnglish: string;
   expressionChinese: string;
   userSentence: string;
@@ -1451,6 +1452,7 @@ export function useSessionDetail() {
 
       // Sentence details
       const sentenceDetails: SentenceDetail[] = sentenceItems.map((i) => ({
+        expressionId: i.expression_id,
         expressionEnglish: i.expression?.english || "unknown",
         expressionChinese: i.expression?.chinese || "",
         userSentence: i.user_sentence || "",
