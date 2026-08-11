@@ -3640,6 +3640,7 @@ interface LearnExprForTest {
   status: string;
   archived: boolean;
   createdAt: string;
+  learnedAt: string | null;
 }
 
 interface LearnItemForTest {
@@ -3659,8 +3660,9 @@ function makeLearnExpr(
   status: string,
   createdAt: string,
   archived = false,
+  learnedAt: string | null = null,
 ): LearnExprForTest {
-  return { id, userId, status, archived, createdAt };
+  return { id, userId, status, archived, createdAt, learnedAt };
 }
 
 function makeLearnState(): LearnTestState {
@@ -3680,6 +3682,7 @@ function selectLearnQueueForTest(
         e.userId === userId &&
         !e.archived &&
         (e.status === "collected" || e.status === "learning") &&
+        e.learnedAt === null &&
         !excludeIds.includes(e.id),
     )
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -3772,7 +3775,7 @@ function countAvailableForTest(state: LearnTestState, userId: string, date: stri
   const ids = state.items.filter((i) => i.sessionId === session.id).map((i) => i.expressionId);
   if (ids.length === 0) return 0;
   return state.expressions.filter(
-    (e) => e.userId === userId && !e.archived && (e.status === "collected" || e.status === "learning") && !ids.includes(e.id),
+    (e) => e.userId === userId && !e.archived && (e.status === "collected" || e.status === "learning") && e.learnedAt === null && !ids.includes(e.id),
   ).length;
 }
 
@@ -4223,6 +4226,416 @@ describe("T11 — localStorage preference roundtrip (PART 10)", () => {
     localStorage.clear();
     writeStored(100);
     expect(readStored()).toBe(30);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// V3.7 — Learn / Review Pool Separation (T12-series, PART 23)
+//
+// Core invariant: LearnPool ∩ ReviewPool = ∅
+// Learn Pool  = never learned (learnedAt IS NULL)
+// Review Pool = already learned (learnedAt IS NOT NULL) + due today
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("T12 — V3.7 Learn/Review Pool Separation", () => {
+  // ── T12.1: Never-learned → Learn Pool ──
+  it("T12.1 brand new expression (learnedAt=null) → selected in Learn Pool", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z", false, null));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.empty).toBe(false);
+    expect(res.selectedCount).toBe(1);
+    expect(res.items[0].expressionId).toBe("e1");
+  });
+
+  // ── T12.2: Completed Learn yesterday → NOT Learn Pool today ──
+  it("T12.2 completed Learn yesterday → NOT in today's Learn Pool", () => {
+    const state = makeLearnState();
+    // e1 was learned yesterday (learnedAt set to yesterday)
+    state.expressions.push(makeLearnExpr("e1", "u1", "learning", "2026-08-01T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+    // e2 is never-learned
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.selectedCount).toBe(1);
+    expect(res.items[0].expressionId).toBe("e2");
+    // e1 (already learned) must NOT be in the session
+    const ids = res.items.map((i) => i.expressionId);
+    expect(ids).not.toContain("e1");
+  });
+
+  // ── T12.3: Completed Learn yesterday + due → Review Pool only ──
+  it("T12.3 learned yesterday + due today → only in Review Pool, not Learn Pool", () => {
+    const state = makeLearnState();
+    // e1: learned yesterday, review status, due today
+    state.expressions.push(makeLearnExpr("e1", "u1", "review", "2026-08-01T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+    // e2: never-learned
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    // Learn Pool MUST NOT contain e1
+    const ids = res.items.map((i) => i.expressionId);
+    expect(ids).not.toContain("e1");
+    expect(ids).toContain("e2");
+    // Even if e1 has status=review, the status filter in selectLearnQueue
+    // (collected/learning) already excludes it — double defense.
+  });
+
+  // ── T12.4: Learn ∩ Review = ∅ (disjoint invariant) ──
+  it("T12.4 LearnPool ∩ ReviewPool = ∅ — no expression in both pools", () => {
+    const state = makeLearnState();
+    // Mix of learned and unlearned
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e3", "u1", "learning", "2026-08-03T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e4", "u1", "review", "2026-08-04T00:00:00Z", false, "2026-08-05T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e5", "u1", "review", "2026-08-05T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+
+    // Learn Pool: the verified selectLearnQueue result
+    const { rows: learnRows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const learnIds = new Set(learnRows.map((r) => r.id));
+    // e1, e2 (never-learned) should be in Learn Pool; e3, e4, e5 should NOT
+    expect(learnIds.has("e1")).toBe(true);
+    expect(learnIds.has("e2")).toBe(true);
+    expect(learnIds.has("e3")).toBe(false);
+    expect(learnIds.has("e4")).toBe(false); // review status already excludes
+    expect(learnIds.has("e5")).toBe(false);
+
+    // Review Pool = learned + not archived (learnedAt IS NOT NULL)
+    const reviewPoolIds = new Set(
+      state.expressions
+        .filter((e) => e.learnedAt !== null && !e.archived && e.userId === "u1")
+        .map((e) => e.id),
+    );
+    // e3, e4, e5 should be in Review Pool (all have learnedAt set)
+    expect(reviewPoolIds.has("e3")).toBe(true);
+    expect(reviewPoolIds.has("e4")).toBe(true);
+    expect(reviewPoolIds.has("e5")).toBe(true);
+
+    // THE INVARIANT: zero overlap
+    const overlap = [...learnIds].filter((id) => reviewPoolIds.has(id));
+    expect(overlap).toEqual([]);
+  });
+
+  // ── T12.5: Bug repro — status=learning + learnedAt set → NOT Learn Pool ──
+  it("T12.5 status=learning + learnedAt set → NOT in Learn Pool (V3.6 bug repro)", () => {
+    // This is the exact V3.6 bug: after completing learning, expression has
+    // status='learning' (SRS stage) and learned_at set. The old query included
+    // it because it only checked status IN ('collected','learning').
+    const state = makeLearnState();
+    // Simulate yesterday's learned expression (the 5 reported overlap cases)
+    state.expressions.push(makeLearnExpr("e-pass_away", "u1", "learning", "2026-08-01T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e-condolences", "u1", "learning", "2026-08-02T00:00:00Z", false, "2026-08-09T11:00:00Z"));
+    // A truly never-learned expression
+    state.expressions.push(makeLearnExpr("e-new", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    // Before V3.7 fix: pass_away and condolences WOULD be here (status=learning matched)
+    // After V3.7 fix: they are excluded by learnedAt === null
+    expect(ids).not.toContain("e-pass_away");
+    expect(ids).not.toContain("e-condolences");
+    expect(ids).toContain("e-new");
+    expect(ids).toHaveLength(1);
+  });
+
+  // ── T12.6: status=learning + learnedAt=null → IS in Learn Pool (unfinished resume) ──
+  it("T12.6 status=learning + learnedAt=null → IS in Learn Pool (unfinished resume)", () => {
+    // An expression that started learning but was interrupted — still eligible
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e-unfinished", "u1", "learning", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e-collected", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain("e-unfinished");
+    expect(ids).toContain("e-collected");
+    // learning status (unfinished) sorts before collected
+    expect(ids[0]).toBe("e-unfinished");
+  });
+
+  // ── T12.7: Append never returns globally learned ──
+  it("T12.7 append 5 never returns globally learned expressions", () => {
+    const state = makeLearnState();
+    // Create initial session with 2 never-learned expressions
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+    // Already learned — should NOT be appendable
+    state.expressions.push(makeLearnExpr("e3", "u1", "learning", "2026-08-03T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+    // More never-learned for appending
+    state.expressions.push(makeLearnExpr("e4", "u1", "collected", "2026-08-04T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e5", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e6", "u1", "collected", "2026-08-06T00:00:00Z", false, null));
+
+    const first = createLearnSessionForTest(state, "u1", "2026-08-10", 2);
+    expect(first.items).toHaveLength(2);
+
+    // Append 5 more — should get e4, e5, e6 only (3 available, e3 is learned)
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    expect(appended.addedCount).toBe(3); // Only 3 never-learned remaining
+    const allIds = appended.items.map((i) => i.expressionId);
+    expect(allIds).toContain("e4");
+    expect(allIds).toContain("e5");
+    expect(allIds).toContain("e6");
+    expect(allIds).not.toContain("e3"); // globally learned — excluded
+    expect(appended.remaining).toBe(0);
+  });
+
+  // ── T12.8: Same-day dedup still works with learnedAt filter ──
+  it("T12.8 same-day dedup still works with learnedAt filter", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 15; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`, false, null));
+    }
+    // Create session with 10
+    const first = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(first.items).toHaveLength(10);
+
+    // Re-create: must return same 10, not 10 new ones
+    const second = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(second.isNew).toBe(false);
+    expect(second.items.map((i) => i.expressionId)).toEqual(first.items.map((i) => i.expressionId));
+    expect(state.items).toHaveLength(10); // no duplicates
+  });
+
+  // ── T12.9: Yesterday learned exclusion — real-world overlap scenario ──
+  it("T12.9 yesterday's 5 learned expressions excluded from today's Learn Pool", () => {
+    const state = makeLearnState();
+    // Simulate the 5 real-world overlap cases from production
+    const yesterdayLearned = [
+      "the very first thing",
+      "pass away",
+      "I wish you many more",
+      "how are you holding up?",
+      "my condolences",
+    ];
+    const today = "2026-08-11";
+    const yesterday = "2026-08-10";
+
+    // Create yesterday's session with 5 expressions being learned
+    yesterdayLearned.forEach((name, i) => {
+      state.expressions.push(makeLearnExpr(name, "u1", "learning", `2026-08-0${i + 1}T00:00:00Z`, false, `2026-08-10T1${i}:00:00Z`));
+    });
+    // Plus 8 never-learned expressions available for today
+    for (let i = 1; i <= 8; i++) {
+      state.expressions.push(makeLearnExpr(`new-${i}`, "u1", "collected", `2026-08-0${i + 1}T00:00:00Z`, false, null));
+    }
+
+    const todaySession = createLearnSessionForTest(state, "u1", today, 10);
+    const todayIds = todaySession.items.map((i) => i.expressionId);
+
+    // Yesterday's learned expressions MUST NOT appear in today's Learn Pool
+    for (const name of yesterdayLearned) {
+      expect(todayIds).not.toContain(name);
+    }
+    // All 8 never-learned should be in today's session
+    expect(todaySession.selectedCount).toBe(8);
+    for (let i = 1; i <= 8; i++) {
+      expect(todayIds).toContain(`new-${i}`);
+    }
+  });
+
+  // ── T12.10: Unfinished yesterday → resume (not re-counted as new) ──
+  it("T12.10 unfinished learning expressions remain eligible for resume", () => {
+    const state = makeLearnState();
+    // Expression e1: in learning but NOT completed (learnedAt=null)
+    // This means the user started learning it but didn't finish
+    state.expressions.push(makeLearnExpr("e1", "u1", "learning", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const ids = res.items.map((i) => i.expressionId);
+    // Both should be selectable — e1 is unfinished, e2 is never-started
+    expect(ids).toContain("e1");
+    expect(ids).toContain("e2");
+    expect(res.items).toHaveLength(2);
+  });
+
+  // ── T12.11: countAvailableLearnExpressions uses never-learned ──
+  it("T12.11 countAvailableLearnExpressions excludes learned expressions", () => {
+    const state = makeLearnState();
+    // Create initial session with 2 items
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+    // Already learned — should NOT count as available
+    state.expressions.push(makeLearnExpr("e3", "u1", "learning", "2026-08-03T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+    // Never-learned but not in session
+    state.expressions.push(makeLearnExpr("e4", "u1", "collected", "2026-08-04T00:00:00Z", false, null));
+
+    // Create session to register it in state
+    createLearnSessionForTest(state, "u1", "2026-08-10", 2);
+    const available = countAvailableForTest(state, "u1", "2026-08-10");
+    // Only e4 is never-learned + not in session. e3 is learned, excluded.
+    expect(available).toBe(1);
+  });
+
+  // ── T12.12: Homepage review count = learned + due ──
+  it("T12.12 homepage 待复习 count only includes learned expressions", () => {
+    const state = makeLearnState();
+    // Never-learned expressions (should NOT count as "待复习")
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-02T00:00:00Z", false, null));
+    // Learned expressions (these ARE the review pool)
+    state.expressions.push(makeLearnExpr("e3", "u1", "review", "2026-08-03T00:00:00Z", false, "2026-08-05T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e4", "u1", "mastered", "2026-08-04T00:00:00Z", false, "2026-08-06T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e5", "u1", "review", "2026-08-05T00:00:00Z", false, "2026-08-09T10:00:00Z"));
+
+    // 待学习 (never-learned) = e1 + e2 = 2
+    const neverLearnedCount = state.expressions.filter(
+      (e) => e.userId === "u1" && !e.archived && e.learnedAt === null,
+    ).length;
+    expect(neverLearnedCount).toBe(2);
+
+    // 待复习 (learned, not archived) = e3 + e4 + e5 = 3
+    const learnedCount = state.expressions.filter(
+      (e) => e.userId === "u1" && !e.archived && e.learnedAt !== null,
+    ).length;
+    expect(learnedCount).toBe(3);
+
+    // The two counts must be disjoint and sum to total
+    const total = state.expressions.filter((e) => e.userId === "u1" && !e.archived).length;
+    expect(neverLearnedCount + learnedCount).toBe(total);
+  });
+
+  // ── T12.13: Asia/Shanghai boundary — date key does not affect pool logic ──
+  it("T12.13 pool separation is independent of timezone date key", () => {
+    // The learnedAt filter is a simple IS NULL check — it does not depend
+    // on the session date or timezone. This test verifies that invariant.
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z", false, null));
+    state.expressions.push(makeLearnExpr("e2", "u1", "learning", "2026-08-02T00:00:00Z", false, "2026-08-10T02:00:00Z"));
+
+    // Test across multiple "dates" — the pool should be the same
+    for (const date of ["2026-08-10", "2026-08-11", "2026-08-12"]) {
+      const fresh = makeLearnState();
+      fresh.expressions = [...state.expressions];
+      const res = createLearnSessionForTest(fresh, "u1", date, 10);
+      const ids = res.items.map((i) => i.expressionId);
+      // e1 (never-learned) always in; e2 (learned) always out
+      expect(ids).toContain("e1");
+      expect(ids).not.toContain("e2");
+    }
+  });
+
+  // ── T12.14: Historical backfill — completed learn session → learnedAt set ──
+  it("T12.14 backfill: expression in completed learn session is NOT in Learn Pool", () => {
+    // Simulates what migration 099 Step 1 does:
+    // Expressions with completed learn session items get learnedAt backfilled
+    const state = makeLearnState();
+    // This expression was backfilled — it had learnedAt=NULL originally
+    // but now has learnedAt set because of migration Step 1
+    state.expressions.push(makeLearnExpr("e-backfilled", "u1", "learning", "2026-08-01T00:00:00Z", false, "2026-08-10T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("e-never", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    // Backfilled expression excluded; never-learned included
+    expect(ids).not.toContain("e-backfilled");
+    expect(ids).toContain("e-never");
+  });
+
+  // ── T12.15: Historical backfill — review history → learnedAt set ──
+  it("T12.15 backfill: expression with review history is NOT in Learn Pool", () => {
+    // Simulates what migration 099 Step 2 does:
+    // Expressions with review history (expression_reviews) get learnedAt backfilled
+    const state = makeLearnState();
+    // This expression was backfilled from review history (had reviews but no learn session record)
+    state.expressions.push(makeLearnExpr("e-review-backfill", "u1", "learning", "2026-07-01T00:00:00Z", false, "2026-08-10T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("e-never", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    expect(ids).not.toContain("e-review-backfill");
+    expect(ids).toContain("e-never");
+  });
+
+  // ── T12.16: Production duplicated items repaired ──
+  it("T12.16 repair: previously misclassified expressions now excluded from Learn Pool", () => {
+    // Before V3.7: expressions with status=learning + learned_at set would
+    // appear in BOTH today's and yesterday's Learn Pool (duplicated across days)
+    const state = makeLearnState();
+    // Simulate 3 expressions that were misclassified (status=learning, learnedAt set)
+    const misclassified = ["e-mis-1", "e-mis-2", "e-mis-3"];
+    misclassified.forEach((id, i) => {
+      state.expressions.push(makeLearnExpr(id, "u1", "learning", `2026-08-0${i + 1}T00:00:00Z`, false, `2026-08-09T1${i}:00:00Z`));
+    });
+    // Normal never-learned
+    state.expressions.push(makeLearnExpr("e-ok", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    // After repair: misclassified expressions excluded, only e-ok remains
+    for (const mc of misclassified) {
+      expect(ids).not.toContain(mc);
+    }
+    expect(ids).toContain("e-ok");
+    expect(ids).toHaveLength(1);
+  });
+
+  // ── T12.17: Existing user practice history preserved ──
+  it("T12.17 practice history preserved — learnedAt does NOT affect review data", () => {
+    // Setting learnedAt should not alter the expression's review history,
+    // scores, or other user data. Here we verify the expression's identity
+    // and status are preserved when learnedAt is set.
+    const state = makeLearnState();
+    // Simulate an expression that was learned and has review stage data
+    state.expressions.push(makeLearnExpr("e1", "u1", "review", "2026-08-01T00:00:00Z", false, "2026-08-05T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e2", "u1", "mastered", "2026-08-02T00:00:00Z", false, "2026-08-03T10:00:00Z"));
+
+    // Both should be in Review Pool (learnedAt set), not in Learn Pool
+    const { rows: learnRows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const learnIds = learnRows.map((r) => r.id);
+    expect(learnIds).not.toContain("e1");
+    expect(learnIds).not.toContain("e2");
+
+    // Their statuses and data are unchanged by the pool filter
+    const e1 = state.expressions.find((e) => e.id === "e1")!;
+    const e2 = state.expressions.find((e) => e.id === "e2")!;
+    expect(e1.status).toBe("review");
+    expect(e1.learnedAt).toBe("2026-08-05T10:00:00Z");
+    expect(e2.status).toBe("mastered");
+    expect(e2.learnedAt).toBe("2026-08-03T10:00:00Z");
+  });
+
+  // ── T12.18: Mastered expression → NOT in Learn Pool ──
+  it("T12.18 mastered expression → NOT in Learn Pool", () => {
+    const state = makeLearnState();
+    // mastered status — should never appear in Learn Pool
+    state.expressions.push(makeLearnExpr("e-mastered", "u1", "mastered", "2026-08-01T00:00:00Z", false, "2026-08-05T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e-new", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    expect(ids).not.toContain("e-mastered"); // mastered status + learnedAt set = double excluded
+    expect(ids).toContain("e-new");
+  });
+
+  // ── T12.19: Review status expression → NOT in Learn Pool ──
+  it("T12.19 review status expression → NOT in Learn Pool (status filter defense)", () => {
+    // Even without learnedAt, review status is excluded by the status filter.
+    // But if learnedAt is set, it's doubly excluded.
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e-review", "u1", "review", "2026-08-01T00:00:00Z", false, "2026-08-05T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e-new", "u1", "collected", "2026-08-05T00:00:00Z", false, null));
+
+    const { rows } = selectLearnQueueForTest(state, "u1", 20, []);
+    const ids = rows.map((r) => r.id);
+    // review status is excluded by status filter AND by learnedAt filter (defense-in-depth)
+    expect(ids).not.toContain("e-review");
+    expect(ids).toContain("e-new");
+  });
+
+  // ── T12.20: Empty queue — all expressions learned → empty Learn Pool ──
+  it("T12.20 all expressions have learnedAt set → empty Learn Pool", () => {
+    const state = makeLearnState();
+    // All expressions have been learned at some point
+    state.expressions.push(makeLearnExpr("e1", "u1", "review", "2026-08-01T00:00:00Z", false, "2026-08-05T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e2", "u1", "mastered", "2026-08-02T00:00:00Z", false, "2026-08-06T10:00:00Z"));
+    state.expressions.push(makeLearnExpr("e3", "u1", "learning", "2026-08-03T00:00:00Z", false, "2026-08-07T10:00:00Z"));
+
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(res.empty).toBe(true);
+    expect(res.session).toBeNull();
+    expect(res.selectedCount).toBe(0);
+    expect(res.items).toHaveLength(0);
   });
 });
 

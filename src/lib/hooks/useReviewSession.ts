@@ -394,7 +394,8 @@ export function useLearnQueueCount() {
         .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
         .eq("archived", false)
-        .in("status", ["collected", "learning"]);
+        .in("status", ["collected", "learning"])
+        .is("learned_at", null);
       if (error) throw error;
       return count ?? 0;
     },

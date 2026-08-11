@@ -284,6 +284,7 @@ async function selectLearnQueue(
     .eq("user_id", userId)
     .eq("archived", false)
     .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
+    .is("learned_at", null)
     .order("created_at", { ascending: true });
 
   if (excludeExpressionIds.length > 0) {
@@ -450,6 +451,7 @@ export async function countAvailableLearnExpressions(
     .eq("user_id", userId)
     .eq("archived", false)
     .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
+    .is("learned_at", null)
     .not("id", "in", `(${ids.join(",")})`);
 
   if (error) throw classifySessionError(error);
