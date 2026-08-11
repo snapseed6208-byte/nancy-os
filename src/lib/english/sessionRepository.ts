@@ -287,10 +287,11 @@ async function selectLearnQueue(
     .order("created_at", { ascending: true });
 
   if (excludeExpressionIds.length > 0) {
+    // PostgREST in/not.in requires unquoted values: (uuid1,uuid2)
     query = query.not(
       "id",
       "in",
-      `(${excludeExpressionIds.map((id) => `"${id}"`).join(",")})`,
+      `(${excludeExpressionIds.join(",")})`,
     );
   }
 
@@ -449,7 +450,7 @@ export async function countAvailableLearnExpressions(
     .eq("user_id", userId)
     .eq("archived", false)
     .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
-    .not("id", "in", `(${ids.map((id) => `"${id}"`).join(",")})`);
+    .not("id", "in", `(${ids.join(",")})`);
 
   if (error) throw classifySessionError(error);
   return count ?? 0;
@@ -489,6 +490,9 @@ export async function createSessionItems(
   }));
 
   const { error } = await supabase.from("review_session_items").insert(items);
+  // 23505 = unique violation on (session_id, expression_id). When the DB
+  // constraint exists this is a safety net; when it doesn't, duplicate
+  // protection relies solely on the selectLearnQueue exclusion filter.
   if (error) throw classifySessionError(error);
 }
 

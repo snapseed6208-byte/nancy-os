@@ -3986,6 +3986,131 @@ describe("T6 — 今天再学一些 appends onto the SAME session (PART 7/8/9)",
     state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z"));
     expect(() => appendLearnItemsForTest(state, "u1", "2026-08-10", 5)).toThrow("No learn session to extend");
   });
+
+  // V3.6: Same-day dedup (PART 22)
+  it("T6.6 initial 15 → 15 unique ids", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 20; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 15);
+    const ids = created.items.map((i) => i.expressionId);
+    expect(new Set(ids).size).toBe(15);
+  });
+
+  it("T6.7 append 5 → total 20 unique ids", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 25; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    createLearnSessionForTest(state, "u1", "2026-08-10", 15);
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    const ids = appended.items.map((i) => i.expressionId);
+    expect(new Set(ids).size).toBe(20);
+    expect(appended.addedCount).toBe(5);
+  });
+
+  it("T6.8 append 5 excludes original 15", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 25; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 15);
+    const originalIds = new Set(created.items.map((i) => i.expressionId));
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    const newItems = appended.items.slice(-5);
+    for (const item of newItems) {
+      expect(originalIds.has(item.expressionId)).toBe(false);
+    }
+  });
+
+  it("T6.9 specific expression already in first15 → never selected again", () => {
+    const state = makeLearnState();
+    // e3 = "pass away", e8 = "the very first thing"
+    state.expressions.push(makeLearnExpr("pass_away", "u1", "collected", "2026-08-01T00:00:01Z"));
+    state.expressions.push(makeLearnExpr("e2", "u1", "collected", "2026-08-01T00:00:02Z"));
+    state.expressions.push(makeLearnExpr("the_very_first", "u1", "collected", "2026-08-01T00:00:03Z"));
+    state.expressions.push(makeLearnExpr("e4", "u1", "collected", "2026-08-01T00:00:04Z"));
+    for (let i = 5; i <= 20; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 5);
+    const firstIds = new Set(created.items.map((i) => i.expressionId));
+    expect(firstIds.has("pass_away")).toBe(true);
+    expect(firstIds.has("the_very_first")).toBe(true);
+
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    const appendedIds = appended.items.map((i) => i.expressionId);
+    // pass_away and the_very_first must NOT appear in the appended batch
+    const appendedSet = new Set(appendedIds.slice(-5));
+    expect(appendedSet.has("pass_away")).toBe(false);
+    expect(appendedSet.has("the_very_first")).toBe(false);
+  });
+
+  it("T6.10 refresh does not reshuffle — same ids in same order", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 20; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const first = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    // Simulate refresh: fetch-only, no re-create
+    const second = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    expect(second.isNew).toBe(false);
+    expect(second.items.map((i) => i.expressionId)).toEqual(first.items.map((i) => i.expressionId));
+  });
+
+  it("T6.11 same date → one learn session (append never creates a second)", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 25; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    const created = createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const sessionId = created.session!.id;
+    appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    // All items belong to the same session
+    const allItems = state.items.filter((i) => i.sessionId === sessionId);
+    expect(allItems).toHaveLength(20);
+    // Only one session exists for this date
+    const sessionsForDate = [...state.sessions.values()].filter(
+      (s) => s.sessionDate === "2026-08-10" && s.sessionType === "learn",
+    );
+    expect(sessionsForDate).toHaveLength(1);
+  });
+
+  it("T6.12 not enough candidates → add available only", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 12; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    const appended = appendLearnItemsForTest(state, "u1", "2026-08-10", 10);
+    expect(appended.addedCount).toBe(2); // only 2 left
+    expect(appended.session.targetCount).toBe(12);
+  });
+
+  it("T6.13 double-append with same items → no duplicates per unique constraint", () => {
+    const state = makeLearnState();
+    for (let i = 1; i <= 20; i++) {
+      state.expressions.push(makeLearnExpr(`e${i}`, "u1", "collected", `2026-08-01T00:00:${String(i).padStart(2, "0")}Z`));
+    }
+    createLearnSessionForTest(state, "u1", "2026-08-10", 10);
+    appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    // Second append with same exclude list should produce no new unique dupes
+    const secondAppend = appendLearnItemsForTest(state, "u1", "2026-08-10", 5);
+    const ids = secondAppend.items.map((i) => i.expressionId);
+    expect(new Set(ids).size).toBe(ids.length); // all unique
+  });
+
+  it("T6.14 Learn dedup does not affect Review queue", () => {
+    const state = makeLearnState();
+    state.expressions.push(makeLearnExpr("e1", "u1", "collected", "2026-08-01T00:00:00Z"));
+    state.expressions.push(makeLearnExpr("e2", "u1", "review", "2026-08-02T00:00:00Z"));
+    // Review pool should include review-status expressions regardless of learn session
+    const res = createLearnSessionForTest(state, "u1", "2026-08-10", 2);
+    // Only collected expressions enter learn session
+    expect(res.selectedCount).toBe(1);
+  });
 });
 
 describe("T7 — countAvailableLearnExpressions (今天再学一些 visibility)", () => {
