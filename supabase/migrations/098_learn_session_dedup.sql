@@ -23,8 +23,7 @@ BEGIN
   WITH duplicates AS (
     SELECT
       session_id,
-      expression_id,
-      count(*) AS cnt
+      expression_id
     FROM review_session_items
     GROUP BY session_id, expression_id
     HAVING count(*) > 1
@@ -48,11 +47,13 @@ BEGIN
     AND rsi.recall_score IS NULL
     AND rsi.user_sentence IS NULL
     AND rsi.ai_feedback IS NULL
+  ),
+  deleted AS (
+    DELETE FROM review_session_items
+    WHERE id IN (SELECT id FROM to_delete)
+    RETURNING id
   )
-  SELECT count(*) INTO dup_count FROM to_delete;
-
-  DELETE FROM review_session_items
-  WHERE id IN (SELECT id FROM to_delete);
+  SELECT count(*) INTO dup_count FROM deleted;
 
   RAISE NOTICE 'Cleaned up % duplicate learn session items (no user data lost)', dup_count;
 END $$;
