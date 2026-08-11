@@ -32,6 +32,10 @@ import {
   type CreateLearnSessionResult,
   type AppendLearnItemsResult,
 } from "@/lib/english/sessionRepository";
+import {
+  fetchDueExpressionsFull,
+  getDuePoolCount,
+} from "@/lib/english/reviewRepository";
 import { toProgressJSON } from "@/lib/english/learningProgress";
 
 // ═══════════════════════════════════════
@@ -138,51 +142,62 @@ async function fetchOrCreateSession(): Promise<{
 }> {
   const userId = await getUserId();
   const today = todayStr();
+  const reviewLimit = Math.min(DAILY_TARGET, MAX_DAILY_CARDS);
 
-  // Idempotent get-or-create (handles 406/409 via sessionRepository)
   const { session: sessionData, isNew } = await getOrCreateEnglishSession({
     userId,
     date: today,
     sessionType: "review",
   });
 
+  // ── Existing session (resume) ──
   if (!isNew) {
     const items = await fetchSessionItems(sessionData.id);
+
+    // PART 4 case C: session row exists but has 0 items (created when due pool
+    // was 0, e.g. early-morning UTC window). Backfill from live due pool so
+    // the review page never shows "今日无事" when expressions are actually due.
+    if (items.length === 0) {
+      const dueExprs = await fetchDueExpressionsFull(userId, reviewLimit);
+      if (dueExprs.length > 0) {
+        await createSessionItems(
+          sessionData.id,
+          dueExprs.map((e) => e.id as string),
+        );
+        await supabase
+          .from("review_sessions")
+          .update({ target_count: dueExprs.length })
+          .eq("id", sessionData.id);
+
+        const populatedItems = await fetchSessionItems(sessionData.id);
+        return {
+          session: { ...sessionData, targetCount: dueExprs.length },
+          items: populatedItems,
+          isNew: false,
+        };
+      }
+    }
+
     return { session: sessionData, items, isNew: false };
   }
 
-  // New session: select due review expressions
-  const { data: dueCards } = await supabase
-    .from("expressions")
-    .select(EXPRESSION_SELECT)
-    .eq("user_id", userId)
-    .eq("archived", false)
-    .in("status", ["review", "mastered"])
-    .lte("next_review_date", nowISO())
-    .order("next_review_date", { ascending: true, nullsFirst: true })
-    .limit(Math.min(DAILY_TARGET, MAX_DAILY_CARDS));
+  // ── Brand-new session ──
+  const dueExprs = await fetchDueExpressionsFull(userId, reviewLimit);
 
-  const selectedCards = dueCards || [];
+  await supabase
+    .from("review_sessions")
+    .update({ target_count: dueExprs.length })
+    .eq("id", sessionData.id);
 
-  // Update target count
-  if (selectedCards.length !== sessionData.targetCount) {
-    await supabase
-      .from("review_sessions")
-      .update({ target_count: selectedCards.length })
-      .eq("id", sessionData.id);
-  }
-
-  // Create session items
   await createSessionItems(
     sessionData.id,
-    (selectedCards as unknown as Record<string, unknown>[]).map((c) => c.id as string),
+    dueExprs.map((e) => e.id as string),
   );
 
-  // Reload with expressions
   const items = await fetchSessionItems(sessionData.id);
 
   return {
-    session: { ...sessionData, targetCount: selectedCards.length },
+    session: { ...sessionData, targetCount: dueExprs.length },
     items,
     isNew: true,
   };

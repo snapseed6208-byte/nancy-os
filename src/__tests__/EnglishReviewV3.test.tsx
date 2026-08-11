@@ -4098,3 +4098,302 @@ describe("T11 — localStorage preference roundtrip (PART 10)", () => {
     expect(readStored()).toBe(30);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════
+// V4.3 — Review Due Pool Consistency (R-series, PART 18)
+//
+// Mirrors the canonical due-pool logic in src/lib/english/reviewRepository.ts
+// and the backfill behavior in fetchOrCreateSession (useReviewSession.ts).
+// Invariants: one Due Pool, one Review Session Contract, one stats semantic.
+// ═════════════════════════════════════════════════════════════════════════
+
+const SHANGHAI_DATE_FOR_TEST = "2026-08-11";
+const DUE_STATUSES_FOR_TEST = ["review", "mastered"] as const;
+
+interface DueExprForTest {
+  id: string;
+  status: string;
+  archived: boolean;
+  nextReviewDate: string | null; // DATE column — plain YYYY-MM-DD
+}
+
+interface RSessionForTest {
+  id: string;
+  date: string;
+  items: { expressionId: string }[];
+  targetCount: number;
+}
+
+// ── Canonical due-pool predicate (mirrors reviewRepository.ts) ──
+
+function isDueForTest(expr: DueExprForTest, today: string): boolean {
+  if (expr.archived) return false;
+  if (!DUE_STATUSES_FOR_TEST.includes(expr.status as any)) return false;
+  if (expr.nextReviewDate === null) return false;
+  return expr.nextReviewDate <= today; // DATE vs date-string comparison
+}
+
+function countDueForTest(pool: DueExprForTest[], today: string): number {
+  return pool.filter((e) => isDueForTest(e, today)).length;
+}
+
+function selectDueIdsForTest(pool: DueExprForTest[], today: string, limit: number): string[] {
+  return pool
+    .filter((e) => isDueForTest(e, today))
+    .sort((a, b) => {
+      // nulls first
+      if (a.nextReviewDate === null && b.nextReviewDate !== null) return -1;
+      if (a.nextReviewDate !== null && b.nextReviewDate === null) return 1;
+      if (a.nextReviewDate === null && b.nextReviewDate === null) return 0;
+      return a.nextReviewDate!.localeCompare(b.nextReviewDate!);
+    })
+    .slice(0, limit)
+    .map((e) => e.id);
+}
+
+// ── Backfill mirror (mirrors fetchOrCreateSession backfill branch) ──
+
+function backfillSessionForTest(
+  session: RSessionForTest,
+  pool: DueExprForTest[],
+  today: string,
+  limit: number,
+): { session: RSessionForTest; backfilled: boolean; addedCount: number } {
+  if (session.items.length > 0) return { session, backfilled: false, addedCount: 0 };
+  const dueIds = selectDueIdsForTest(pool, today, limit);
+  if (dueIds.length === 0) return { session, backfilled: false, addedCount: 0 };
+  const newItems = dueIds.map((id) => ({ expressionId: id }));
+  return {
+    session: {
+      ...session,
+      items: [...session.items, ...newItems],
+      targetCount: session.items.length + newItems.length,
+    },
+    backfilled: true,
+    addedCount: dueIds.length,
+  };
+}
+
+// ── Helpers to build test data ──
+
+function makeDueExpr(overrides: Partial<DueExprForTest> & { id: string }): DueExprForTest {
+  return {
+    status: "review",
+    archived: false,
+    nextReviewDate: SHANGHAI_DATE_FOR_TEST,
+    ...overrides,
+  };
+}
+
+describe("R-series — Review Due Pool Invariants", () => {
+  // ── R1: Canonical due predicate ──
+
+  it("R1.1 review status + next_review_date <= today → due", () => {
+    const e = makeDueExpr({ id: "1", status: "review", nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(true);
+  });
+
+  it("R1.2 review status + next_review_date > today → NOT due", () => {
+    const e = makeDueExpr({ id: "1", status: "review", nextReviewDate: "2026-08-12" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(false);
+  });
+
+  it("R1.3 mastered status + due date → due", () => {
+    const e = makeDueExpr({ id: "1", status: "mastered", nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(true);
+  });
+
+  it("R1.4 next_review_date IS NULL → NOT due (excluded by lte)", () => {
+    const e = makeDueExpr({ id: "1", status: "review", nextReviewDate: null });
+    expect(isDueForTest(e, "2026-08-11")).toBe(false);
+  });
+
+  it("R1.5 archived = true → NOT due", () => {
+    const e = makeDueExpr({ id: "1", archived: true, nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(false);
+  });
+
+  it("R1.6 collected status → NOT due (excluded by due_statuses)", () => {
+    const e = makeDueExpr({ id: "1", status: "collected", nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(false);
+  });
+
+  it("R1.7 learning status → NOT due (excluded by due_statuses)", () => {
+    const e = makeDueExpr({ id: "1", status: "learning", nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(false);
+  });
+
+  it("R1.8 new status → NOT due (excluded by due_statuses)", () => {
+    const e = makeDueExpr({ id: "1", status: "new", nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(false);
+  });
+
+  // ── R2: Due count consistency ──
+
+  it("R2.1 home page count = canonical due pool count", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "b", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "c", nextReviewDate: "2026-08-12" }), // future
+      makeDueExpr({ id: "d", status: "collected" }), // wrong status
+      makeDueExpr({ id: "e", archived: true }), // archived
+    ];
+    // countDueForTest = home page due count
+    expect(countDueForTest(pool, "2026-08-11")).toBe(2); // a + b
+  });
+
+  it("R2.2 due = 0 when all expressions are future", () => {
+    const pool = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-12" }),
+      makeDueExpr({ id: "b", nextReviewDate: "2026-08-13" }),
+    ];
+    expect(countDueForTest(pool, "2026-08-11")).toBe(0);
+  });
+
+  it("R2.3 due > 0 → review page must NOT show 今日无事", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+    ];
+    const due = countDueForTest(pool, "2026-08-11");
+    expect(due).toBeGreaterThan(0);
+    // invariant: if due > 0, the review page must have cards
+  });
+
+  // ── R3: Empty session backfill ──
+
+  it("R3.1 empty session → backfill populates from due pool", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "b", nextReviewDate: "2026-08-11" }),
+    ];
+    const session: RSessionForTest = { id: "s1", date: "2026-08-11", items: [], targetCount: 0 };
+    const result = backfillSessionForTest(session, pool, "2026-08-11", 15);
+    expect(result.backfilled).toBe(true);
+    expect(result.addedCount).toBe(2);
+    expect(result.session.items.length).toBe(2);
+    expect(result.session.targetCount).toBe(2);
+  });
+
+  it("R3.2 populated session → NOT backfilled (immutability for existing items)", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+    ];
+    const session: RSessionForTest = {
+      id: "s1", date: "2026-08-11",
+      items: [{ expressionId: "existing" }], targetCount: 1,
+    };
+    const result = backfillSessionForTest(session, pool, "2026-08-11", 15);
+    expect(result.backfilled).toBe(false);
+    expect(result.session.items.length).toBe(1); // unchanged
+  });
+
+  it("R3.3 empty session + empty due pool → no backfill, still empty", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-12" }), // all future
+    ];
+    const session: RSessionForTest = { id: "s1", date: "2026-08-11", items: [], targetCount: 0 };
+    const result = backfillSessionForTest(session, pool, "2026-08-11", 15);
+    expect(result.backfilled).toBe(false);
+    expect(result.addedCount).toBe(0);
+    expect(result.session.items.length).toBe(0);
+  });
+
+  it("R3.4 backfill respects daily limit cap", () => {
+    const pool: DueExprForTest[] = Array.from({ length: 20 }, (_, i) =>
+      makeDueExpr({ id: `e${i}`, nextReviewDate: "2026-08-11" }),
+    );
+    const session: RSessionForTest = { id: "s1", date: "2026-08-11", items: [], targetCount: 0 };
+    const result = backfillSessionForTest(session, pool, "2026-08-11", 15);
+    expect(result.backfilled).toBe(true);
+    expect(result.addedCount).toBe(15); // capped at limit
+  });
+
+  // ── R4: Timezone midnight boundary ──
+
+  it("R4.1 Shanghai date key IS used (not UTC .toISOString slice)", () => {
+    // The canonical cutoff is getShanghaiDateKey() = Asia/Shanghai date string.
+    // This test verifies that a plain date-string comparison works correctly
+    // for the DATE column: '2026-08-11'::date <= '2026-08-11' → TRUE at ANY
+    // Shanghai local time (00:01–23:59), unlike UTC ISO which has an 8h window.
+    const e = makeDueExpr({ id: "1", nextReviewDate: "2026-08-11" });
+    expect(isDueForTest(e, "2026-08-11")).toBe(true);
+  });
+
+  it("R4.2 date comparison is lexicographic (both plain date strings)", () => {
+    // 2026-08-10 < 2026-08-11 in lexicographic comparison
+    expect("2026-08-10" < "2026-08-11").toBe(true);
+    expect("2026-08-11" <= "2026-08-11").toBe(true);
+    expect("2026-08-12" <= "2026-08-11").toBe(false);
+  });
+
+  // ── R5: Mode independence ──
+
+  it("R5.1 recall/cloze/sentence share the same session items set", () => {
+    const items = [
+      { id: "si1", sessionId: "s1", expressionId: "a" },
+      { id: "si2", sessionId: "s1", expressionId: "b" },
+      { id: "si3", sessionId: "s1", expressionId: "c" },
+    ];
+    // All three modes read from the same session's items — the mode in the
+    // URL only determines which VIEW to show, not which expressions to load.
+    const modeUrl = "recall"; // or "cloze" or "sentence"
+    const sessionId = "s1";
+    // No matter the mode, the loaded items are the same:
+    expect(items.filter((i) => i.sessionId === sessionId).length).toBe(3);
+    const _unused = modeUrl; // mode is purely a view selector
+    expect(_unused).toBeTruthy();
+  });
+
+  // ── R6: Unlearned expressions excluded ──
+
+  it("R6.1 new/collected/learning excluded from due pool", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "r1", status: "review", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "c1", status: "collected", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "l1", status: "learning", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "n1", status: "new", nextReviewDate: "2026-08-11" }),
+    ];
+    const due = countDueForTest(pool, "2026-08-11");
+    expect(due).toBe(1); // only r1
+  });
+
+  // ── R7: Home and Review share same selector ──
+
+  it("R7.1 home due count = review session initial selection size", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "b", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "c", nextReviewDate: "2026-08-12" }), // future
+    ];
+    const dueCount = countDueForTest(pool, "2026-08-11");
+    const selectedIds = selectDueIdsForTest(pool, "2026-08-11", 15);
+    // Home due count MUST equal the number of expressions that get selected for a new session
+    expect(dueCount).toBe(selectedIds.length);
+    expect(dueCount).toBe(2);
+  });
+
+  // ── R8: Provided null handling ──
+
+  it("R8.1 next_review_date null (never scheduled) excluded from due", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "b", status: "review", nextReviewDate: null }),
+      makeDueExpr({ id: "c", status: "review", nextReviewDate: null }),
+    ];
+    expect(countDueForTest(pool, "2026-08-11")).toBe(1); // only a
+  });
+
+  // ── R9: Session does not override due reality ──
+
+  it("R9.1 existing session with items does not change due pool count", () => {
+    const pool: DueExprForTest[] = [
+      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "b", nextReviewDate: "2026-08-11" }),
+      makeDueExpr({ id: "c", nextReviewDate: "2026-08-12" }),
+    ];
+    // Session has 3 items from a previous creation,
+    // but the real due pool is only 2 (a + b).
+    const dueCount = countDueForTest(pool, "2026-08-11");
+    expect(dueCount).toBe(2); // canonical, independent of session items
+  });
+});

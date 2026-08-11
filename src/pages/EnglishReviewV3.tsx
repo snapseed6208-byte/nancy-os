@@ -2048,21 +2048,48 @@ export default function EnglishReviewV3() {
   }
 
   if (allItems.length === 0) {
+    const hasSession = !!session;
     return (
       <div className="text-center py-16 space-y-4">
-        <div className="h-14 w-14 rounded-2xl bg-sage-light flex items-center justify-center mx-auto">
-          <CheckCircle2 size={28} className="text-sage-deep" />
+        <div className={cn(
+          "h-14 w-14 rounded-2xl flex items-center justify-center mx-auto",
+          hasSession ? "bg-accent-warm/10" : "bg-sage-light",
+        )}>
+          {hasSession ? (
+            <AlertTriangle size={28} className="text-accent-warm" />
+          ) : (
+            <CheckCircle2 size={28} className="text-sage-deep" />
+          )}
         </div>
         <div>
-          <h3 className="font-semibold text-ink">今日无事</h3>
-          <p className="text-sm text-ink-light mt-1">所有表达都在正确的复习间隔中</p>
+          <h3 className="font-semibold text-ink">
+            {hasSession ? "暂无复习卡片" : "今日无事"}
+          </h3>
+          <p className="text-sm text-ink-light mt-1">
+            {hasSession
+              ? "当前复习会话没有可用的卡片，请刷新重试。"
+              : "所有表达都在正确的复习间隔中"}
+          </p>
         </div>
-        <button
-          onClick={() => navigate("/english")}
-          className="px-4 py-2 text-sm text-sage-deep font-medium hover:text-sage transition-colors"
-        >
-          返回 English OS
-        </button>
+        <div className="flex items-center justify-center gap-3">
+          {hasSession && (
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 text-sm font-medium text-white bg-ink rounded-xl hover:bg-ink/90 transition-colors"
+            >
+              重新加载
+            </button>
+          )}
+          <button
+            onClick={() => navigate("/english")}
+            className={cn(
+              "px-4 py-2 text-sm font-medium transition-colors",
+              hasSession ? "text-ink-light hover:text-ink" : "text-sage-deep hover:text-sage",
+            )}
+          >
+            返回 English OS
+          </button>
+        </div>
       </div>
     );
   }

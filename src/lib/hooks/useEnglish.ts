@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
+import { getDuePoolCount, getDueCutoffDate } from "@/lib/english/reviewRepository";
 import {
   scheduleExpressionReview,
   isDue,
@@ -282,7 +283,7 @@ async function fetchDueExpressions() {
     .eq("user_id", userId)
     .eq("archived", false)
     .in("status", ["review", "mastered"])
-    .lte("next_review_date", nowISO())
+    .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(200);
 
@@ -333,7 +334,7 @@ async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
     .eq("user_id", userId)
     .eq("archived", false)
     .in("status", ["review", "mastered"])
-    .lte("next_review_date", nowISO())
+    .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true });
 
   if (dueErr) throw dueErr;
@@ -349,7 +350,7 @@ async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
     .eq("user_id", userId)
     .eq("archived", false)
     .in("status", ["review", "mastered"])
-    .lte("next_review_date", nowISO())
+    .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(limit);
 
@@ -646,18 +647,11 @@ export async function uploadAudio(sessionId: string, blob: Blob): Promise<string
 
 async function fetchEnglishStats() {
   const userId = await getUserId();
-  const now = nowISO();
   const todayStr = today();
 
-  const [totalRes, dueRes, masteredRes, sessionsRes, recentReviewsRes] = await Promise.all([
+  const [totalRes, dueCount, masteredRes, sessionsRes, recentReviewsRes] = await Promise.all([
     supabase.from("expressions").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("archived", false),
-    supabase
-      .from("expressions")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("archived", false)
-      .in("status", ["review", "mastered"])
-      .lte("next_review_date", now),
+    getDuePoolCount(userId),
     supabase
       .from("expressions")
       .select("id", { count: "exact", head: true })
@@ -706,7 +700,7 @@ async function fetchEnglishStats() {
 
   return {
     total: totalRes.count ?? 0,
-    due: dueRes.count ?? 0,
+    due: dueCount ?? 0,
     mastered: masteredRes.count ?? 0,
     totalSessions: sessionsRes.count ?? 0,
     todayReviewed,
