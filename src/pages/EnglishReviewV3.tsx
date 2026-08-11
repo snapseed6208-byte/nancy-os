@@ -22,11 +22,22 @@ import {
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
-import { buildClozeQuestion, validateClozeResult, validateClozeQuestion, promptIntegrityCheck, buildProgressiveHint, detectSurfaceForm } from "@/lib/clozeUtils";
+import { validateClozeResult, buildProgressiveHint } from "@/lib/clozeUtils";
 import type { ClozeResult } from "@/lib/clozeUtils";
 import { invokeAI } from "@/lib/ai/aiService";
-import { generateClozeBatchViaEdge, evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
-import { computeClozeEligibleQueue, type ClozeEligibility } from "@/lib/english/clozeEligibility";
+import { generateContextClozeBatch, evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
+import {
+  type ContextClozeCard,
+  type ClozeGenerationMaterial,
+  type ClozePrepState,
+  buildCard,
+  buildAIClozeInput,
+  buildCardFromAIResponse,
+  validateContextClozeCard,
+  validateAIData,
+  classifyMaterials,
+  maskTargetExpression,
+} from "@/lib/english/contextCloze";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -192,12 +203,11 @@ interface ModeStats {
   incorrect?: number;
 }
 
-function ModeStatsBar({ mode, stats, currentIndex, roundOrderLength, unavailableCount }: {
+function ModeStatsBar({ mode, stats, currentIndex, roundOrderLength }: {
   mode: ReviewMode;
   stats: ModeStats;
   currentIndex: number;
   roundOrderLength: number;
-  unavailableCount?: number;
 }) {
   if (mode === "recall") {
     const passed = stats.correct || stats.completed;
@@ -242,12 +252,6 @@ function ModeStatsBar({ mode, stats, currentIndex, roundOrderLength, unavailable
           <div className="h-2 w-2 rounded-full bg-ink-lighter/30" />
           待练 {pending}
         </span>
-        {unavailableCount !== undefined && unavailableCount > 0 && (
-          <span className="flex items-center gap-1 text-[10px]" title="暂无可靠语境题素材">
-            <div className="h-2 w-2 rounded-full bg-accent-warm/30" />
-            {unavailableCount} 条暂不适合
-          </span>
-        )}
         <span className="ml-auto text-[10px]">
           {Math.min(currentIndex + 1, roundOrderLength)}/{roundOrderLength}
         </span>
@@ -434,49 +438,26 @@ function RecallCard({
 }
 
 // ═══════════════════════════════════════
-// Cloze Card (V3.5 — cloze integrity)
+// Cloze Card (V3.4 — ContextClozeCard contract)
 //
-// V3.5 changes:
-// - safeContext only (no expression leakage from example_sentence)
-// - sourceSentence revealed ONLY after submit
-// - Progressive hint toggle: Level 0→1→2→0 (none / Chinese / structure)
-// - promptIntegrityCheck guard before rendering
-// - hintLevel tracked per question for practice log
+// V3.4: Every expression has a ContextClozeCard.
+// No skip. No auto-incorrect. No "unavailable".
+// Card is pre-generated and passed in, not built on-the-fly.
 // ═══════════════════════════════════════
 
 function ClozeCard({
   item,
+  card,
   onResult,
-  aiClozeMap,
 }: {
   item: SessionItem;
+  card: ContextClozeCard;
   onResult: (itemId: string, result: ClozeResult, userAnswer: string, expectedAnswer: string, hintCount: number) => void;
-  aiClozeMap?: Map<string, string>;
 }) {
-  const expr = item.expression;
-  const english = expr?.english || "";
-  const chinese = expr?.chinese || "";
-
-  // V3.6: Use AI-generated cloze sentence if available (Priority 1.5)
-  const aiClozeSentence = aiClozeMap?.get(english) || null;
-
-  const question = useMemo(
-    () =>
-      buildClozeQuestion(
-        english,
-        chinese,
-        expr?.cloze_sentence || aiClozeSentence,
-        expr?.example_sentence,
-        expr?.context,
-        expr?.situation,
-      ),
-    [english, chinese, expr?.cloze_sentence, expr?.example_sentence, expr?.context, expr?.situation, aiClozeSentence],
-  );
-
   const [answer, setAnswer] = useState("");
-  const [attempt, setAttempt] = useState(0); // 0 = not yet submitted, 1 = first, 2 = second
+  const [attempt, setAttempt] = useState(0);
   const [finalResult, setFinalResult] = useState<ClozeResult | null>(null);
-  const [hintLevel, setHintLevel] = useState(0); // 0=none, 1=Chinese, 2=structure, 3=grammar
+  const [hintLevel, setHintLevel] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   const [showRetryButtons, setShowRetryButtons] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -484,55 +465,6 @@ function ClozeCard({
 
   const MAX_ATTEMPTS = 2;
   const MAX_HINT_LEVEL = 3;
-
-  // V3.6: Grammar hint derived from surfaceForm vs expectedAnswer
-  const grammarHint = useMemo(() => {
-    if (!question.surfaceForm || question.surfaceForm === question.expectedAnswer) return undefined;
-    const sf = question.surfaceForm.toLowerCase();
-    const ea = question.expectedAnswer.toLowerCase();
-    if (sf !== ea) {
-      if (sf.endsWith("ed") && !ea.endsWith("ed")) return "Use past tense form";
-      if (sf.endsWith("ing") && !ea.endsWith("ing")) return "Use continuous/gerund form";
-      if (sf.endsWith("s") && !ea.endsWith("s")) return "Use 3rd person singular or plural";
-      return "Form differs from the base expression";
-    }
-    return undefined;
-  }, [question.surfaceForm, question.expectedAnswer]);
-
-  // V3.6: Quality gate — validateClozeQuestion + question.valid
-  const qualityResult = useMemo(
-    () => validateClozeQuestion(question),
-    [question],
-  );
-  const questionValid = question.valid && qualityResult.valid;
-
-  // V3.5: Prompt integrity check (leakage + format) — secondary gate
-  const promptOk = useMemo(() => promptIntegrityCheck(question), [question]);
-
-  // ── Defensive fallback: if question is invalid despite pre-filtering, auto-advance ──
-  // This should never fire in normal operation (eligibility pre-filters the queue).
-  // If it does, auto-advance after a brief toast to prevent dead-end.
-  useEffect(() => {
-    if (!questionValid || !promptOk) {
-      const timer = setTimeout(() => {
-        onResult(item.id, "incorrect", "", question.expectedAnswer, 0);
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [questionValid, promptOk, item.id, question.expectedAnswer, onResult]);
-
-  if (!questionValid || !promptOk) {
-    const msg = !questionValid
-      ? (qualityResult.reason === "blank_only" ? "该表达缺少可用填空句子" : "该表达暂无可靠语境题")
-      : "题目数据异常，自动跳过";
-    return (
-      <div className="bg-white border border-accent-warm/30 rounded-2xl p-6 text-center space-y-3">
-        <AlertTriangle size={20} className="text-accent-warm mx-auto" />
-        <p className="text-sm text-ink-light">{msg}</p>
-        <p className="text-xs text-ink-lighter">自动跳过中...</p>
-      </div>
-    );
-  }
 
   const advanceHint = () => {
     setHintLevel((prev) => {
@@ -545,7 +477,7 @@ function ClozeCard({
   const handleSubmit = () => {
     if (!answer.trim()) return;
 
-    const result = validateClozeResult(answer, question.acceptedAnswers, question.surfaceForm);
+    const result = validateClozeResult(answer, card.accepted_answers, card.answer_form !== card.canonical_expression ? card.answer_form : undefined);
     const nextAttempt = attempt + 1;
 
     if (result === "correct") {
@@ -556,7 +488,6 @@ function ClozeCard({
       setAttempt(nextAttempt);
       setShowRetryButtons(false);
     } else {
-      // First wrong attempt — show retry / show answer buttons
       setAttempt(nextAttempt);
       setShowRetryButtons(true);
     }
@@ -565,44 +496,51 @@ function ClozeCard({
   const handleRetry = () => {
     setAnswer("");
     setShowRetryButtons(false);
-    // Auto-advance hint on retry to help user
     advanceHint();
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   const handleShowAnswer = () => {
-    const result = validateClozeResult(answer, question.acceptedAnswers, question.surfaceForm);
+    const result = validateClozeResult(answer, card.accepted_answers, card.answer_form !== card.canonical_expression ? card.answer_form : undefined);
     setFinalResult(result);
     setAttempt(attempt + 1);
     setShowRetryButtons(false);
   };
 
   const handleNext = () => {
-    onResult(item.id, finalResult || "incorrect", answer, question.expectedAnswer, maxHintRef.current);
+    onResult(item.id, finalResult || "incorrect", answer, card.answer_form, maxHintRef.current);
   };
 
-  // V3.6: Progressive hint with grammar level
-  const progressiveHint = useMemo(
-    () => buildProgressiveHint(question.chineseHint, question.expectedAnswer, hintLevel, grammarHint),
-    [question.chineseHint, question.expectedAnswer, hintLevel, grammarHint],
-  );
+  // Progressive hints from ContextClozeCard
+  const getHint = (level: number): string | null => {
+    if (level === 0) return null;
+    if (level === 1) return card.semantic_hint_zh;
+    if (level === 2) return card.form_hint || buildProgressiveHint(card.semantic_hint_zh, card.canonical_expression, 2);
+    if (level >= 3) {
+      if (card.answer_form !== card.canonical_expression) {
+        return `注意时态/语法变化（原形: ${card.canonical_expression}）`;
+      }
+      return `${card.answer_form.split(/\s+/).length} 个词`;
+    }
+    return null;
+  };
+
+  const currentHint = getHint(hintLevel);
 
   return (
     <div className="bg-white border border-border/60 rounded-2xl p-6 space-y-5">
-      {/* V3.6: Safe context — prominent, context-first layout */}
-      {question.safeContext && (
-        <div className="bg-warm-cream border border-warm-cream/60 rounded-xl p-4">
-          <p className="text-[10px] text-ink-lighter mb-1 uppercase tracking-wider">Context</p>
-          <p className="text-sm text-ink leading-relaxed">{question.safeContext}</p>
-        </div>
-      )}
-
-      {/* Cloze prompt */}
-      <div className="p-4 bg-ink/5 rounded-xl">
-        <p className="text-base font-medium text-ink leading-relaxed">{question.prompt}</p>
+      {/* Scenario — the contextual anchor */}
+      <div className="bg-warm-cream border border-warm-cream/60 rounded-xl p-4">
+        <p className="text-[10px] text-ink-lighter mb-1 uppercase tracking-wider">Scenario</p>
+        <p className="text-sm text-ink leading-relaxed">{card.scenario_zh}</p>
       </div>
 
-      {/* Input area (before final result) */}
+      {/* Masked sentence */}
+      <div className="p-4 bg-ink/5 rounded-xl">
+        <p className="text-base font-medium text-ink leading-relaxed">{card.sentence_masked}</p>
+      </div>
+
+      {/* Input area */}
       {finalResult === null && !showRetryButtons && (
         <div className="space-y-3">
           <input
@@ -616,11 +554,10 @@ function ClozeCard({
             autoFocus
           />
 
-          {/* V3.6: Progressive hint display */}
-          {hintLevel > 0 && progressiveHint && (
+          {hintLevel > 0 && currentHint && (
             <div className="flex items-start gap-2 bg-amber-50/50 rounded-xl p-3">
               <Lightbulb size={13} className="text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">{progressiveHint}</p>
+              <p className="text-xs text-amber-700">{currentHint}</p>
             </div>
           )}
 
@@ -639,7 +576,7 @@ function ClozeCard({
         </div>
       )}
 
-      {/* V3.6: Retry buttons after 1st wrong attempt */}
+      {/* Retry buttons */}
       {showRetryButtons && (
         <div className="space-y-2">
           <p className="text-xs text-ink-light text-center">不太对，再试一次？</p>
@@ -660,10 +597,9 @@ function ClozeCard({
         </div>
       )}
 
-      {/* Result display (after final result) */}
+      {/* Result display */}
       {finalResult !== null && (
         <div className="space-y-3">
-          {/* Result banner */}
           <div
             className={cn(
               "flex items-center gap-2 px-4 py-3 rounded-xl",
@@ -692,27 +628,33 @@ function ClozeCard({
               )}
             >
               {finalResult === "correct"
-                ? `正确! Correct!`
+                ? "正确! Correct!"
                 : finalResult === "partially_correct"
-                  ? `部分正确 Partially Correct`
-                  : `不正确 Incorrect`}
+                  ? "部分正确 Partially Correct"
+                  : "不正确 Incorrect"}
             </span>
           </div>
 
-          {/* Grammar feedback for all result types */}
+          {/* Correct feedback */}
           {finalResult === "correct" && (
-            question.surfaceForm && question.surfaceForm !== question.expectedAnswer ? (
-              <p className="text-[11px] text-sage-deep bg-sage-light/30 rounded-lg px-3 py-2">
-                注意: 语境中使用的是 "{question.surfaceForm}" (词形变化)，但你正确填入了原形 "{question.expectedAnswer}"。
-              </p>
-            ) : (
-              <p className="text-[11px] text-sage-deep bg-sage-light/30 rounded-lg px-3 py-2">
-                正确使用了表达 "{question.expectedAnswer}"。
-              </p>
-            )
+            <div className="space-y-2">
+              <div className="bg-sage-light/30 rounded-xl p-3">
+                <p className="text-[10px] text-ink-lighter mb-0.5">完整句子</p>
+                <p className="text-sm text-ink italic">{card.sentence_full}</p>
+              </div>
+              <div className="bg-sage-light/20 rounded-xl p-3">
+                <p className="text-[10px] text-ink-lighter mb-0.5">为什么用它</p>
+                <p className="text-xs text-ink-light">{card.explanation_zh}</p>
+              </div>
+              {card.answer_form !== card.canonical_expression && (
+                <p className="text-[11px] text-sage-deep bg-sage-light/30 rounded-lg px-3 py-2">
+                  注意: 语境中使用的是 "{card.answer_form}"（原形: {card.canonical_expression}）
+                </p>
+              )}
+            </div>
           )}
 
-          {/* Show user answer vs correct answer for wrong/partial */}
+          {/* Wrong/partial feedback */}
           {finalResult !== "correct" && (
             <div className="space-y-2">
               <div className="bg-warm-cream rounded-xl p-3">
@@ -721,28 +663,26 @@ function ClozeCard({
               </div>
               <div className="bg-sage-light/30 rounded-xl p-3">
                 <p className="text-[10px] text-ink-lighter mb-0.5">正确答案</p>
-                <p className="text-sm text-sage-deep font-medium">{question.expectedAnswer}</p>
-                {question.surfaceForm && finalResult === "partially_correct" && (
-                  <p className="text-[11px] text-ink-light mt-1 leading-relaxed">
-                    你输入了语境中的词形 "{question.surfaceForm}"，语法正确，但规范形式是 "{question.expectedAnswer}"。
-                    在类似语境中可以使用你的答案，但此处需要填入原形。
+                <p className="text-sm text-sage-deep font-medium">{card.answer_form}</p>
+                {card.answer_form !== card.canonical_expression && (
+                  <p className="text-[11px] text-ink-light mt-1">
+                    原形: {card.canonical_expression}。这里需要 "{card.answer_form}" 因为语境要求这个语法形式。
                   </p>
                 )}
-                {finalResult === "incorrect" && (
-                  <p className="text-[11px] text-ink-light mt-1 leading-relaxed">
-                    提示: "{question.expectedAnswer}" 是{question.expectedAnswer.split(/\s+/).length}个词的表达。
-                    {maxHintRef.current > 0 ? " 试试使用提示功能来帮助你。" : ""}
+                {finalResult === "partially_correct" && (
+                  <p className="text-[11px] text-ink-light mt-1">
+                    表达想对了，但语法形式需要匹配语境。
                   </p>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* V3.5: Source sentence revealed ONLY after submit (NEVER before) */}
-          {question.sourceSentence && (
-            <div className="bg-sage-light/20 rounded-xl p-3">
-              <p className="text-[10px] text-ink-lighter mb-0.5">原句</p>
-              <p className="text-xs text-ink-light italic">{question.sourceSentence}</p>
+              <div className="bg-sage-light/20 rounded-xl p-3">
+                <p className="text-[10px] text-ink-lighter mb-0.5">完整句子</p>
+                <p className="text-sm text-ink italic">{card.sentence_full}</p>
+              </div>
+              <div className="bg-sage-light/20 rounded-xl p-3">
+                <p className="text-[10px] text-ink-lighter mb-0.5">为什么用它</p>
+                <p className="text-xs text-ink-light">{card.explanation_zh}</p>
+              </div>
             </div>
           )}
 
@@ -760,13 +700,13 @@ function ClozeCard({
 
           {showDetails && (
             <div className="space-y-2 bg-warm-cream rounded-xl p-3">
-              <p className="text-sm font-medium text-sage-deep">{english}</p>
-              <p className="text-xs text-ink-light">{chinese}</p>
-              {expr?.example_sentence && (
-                <p className="text-xs text-ink-light italic">{expr.example_sentence}</p>
+              <p className="text-sm font-medium text-sage-deep">{card.canonical_expression}</p>
+              <p className="text-xs text-ink-light">{item.expression?.chinese}</p>
+              {item.expression?.example_sentence && (
+                <p className="text-xs text-ink-light italic">{item.expression.example_sentence}</p>
               )}
-              {expr?.usage_note && (
-                <p className="text-xs text-ink-light">{expr.usage_note}</p>
+              {item.expression?.usage_note && (
+                <p className="text-xs text-ink-light">{item.expression.usage_note}</p>
               )}
             </div>
           )}
@@ -782,7 +722,7 @@ function ClozeCard({
         </div>
       )}
 
-      {/* V3.6: Progressive hint toggle (cycles 0→1→2→3→0) */}
+      {/* Progressive hint toggle */}
       {finalResult === null && !showRetryButtons && (
         <div className="text-center">
           <button
@@ -1617,63 +1557,221 @@ export default function EnglishReviewV3() {
   const clozeLogIds = localClozeIds;
   const sentenceLogIds = localSentenceIds;
 
-  // ── V3.6: AI batch cloze generation for expressions missing sources ──
-  const [aiClozeMap, setAiClozeMap] = useState<Map<string, string>>(new Map());
-  const [aiClozeFetched, setAiClozeFetched] = useState(false);
+  // ── V3.4: Cloze preparation state (all cards ready before entering mode) ──
+  const [clozePrep, setClozePrep] = useState<ClozePrepState>({
+    total: 0,
+    prepared: 0,
+    cards: new Map(),
+    pendingIds: [],
+    phase: "loading",
+  });
+  const clozePrepRef = useRef(clozePrep);
+  clozePrepRef.current = clozePrep;
 
+  // ── Cloze preparation effect: runs when entering cloze mode ──
   useEffect(() => {
-    if (allItems.length === 0) return;
-    if (aiClozeFetched) return;
+    if (mode !== "cloze" || allItems.length === 0) return;
+    if (clozePrep.phase === "ready" || clozePrep.phase === "generating") return;
 
-    // Find expressions that need AI cloze generation:
-    // Missing cloze_sentence AND no usable example_sentence (target not found in it)
-    const needsGeneration = allItems
-      .filter((item) => {
-        const expr = item.expression;
-        if (!expr) return false;
-        if (expr.cloze_sentence) return false;
-        // Only skip example_sentence if it actually contains the target expression
-        if (expr.example_sentence && detectSurfaceForm(expr.example_sentence, expr.english)) return false;
-        return true;
-      })
+    const materials: ClozeGenerationMaterial[] = allItems
+      .filter((item) => !!item.expression)
       .map((item) => ({
+        expression_id: item.expressionId,
         english: item.expression!.english,
-        chinese: item.expression!.chinese,
+        chinese: item.expression!.chinese || "",
+        type: item.expression!.type,
+        example_sentence: item.expression!.example_sentence,
+        usage_note: item.expression!.usage_note,
+        native_usage: item.expression!.native_usage,
         context: item.expression!.context,
         situation: item.expression!.situation,
+        common_patterns: item.expression!.common_patterns,
+        cloze_sentence: item.expression!.cloze_sentence,
+        ai_cloze_sentence: item.expression!.ai_cloze_sentence,
       }));
 
-    if (needsGeneration.length === 0) {
-      setAiClozeFetched(true);
+    const { ready: readyMaterials, needsAI } = classifyMaterials(materials);
+
+    // Build L1/L2 cards immediately
+    const cards = new Map<string, ContextClozeCard>();
+    for (const m of readyMaterials) {
+      try {
+        const card = buildCard(m);
+        cards.set(m.expression_id, card);
+      } catch { /* skip invalid */ }
+    }
+
+    if (needsAI.length === 0) {
+      // All cards ready from stored sources
+      setClozePrep({
+        total: allItems.length,
+        prepared: cards.size,
+        cards,
+        pendingIds: [],
+        phase: "ready",
+      });
       return;
     }
 
-    let cancelled = false;
-    generateClozeBatchViaEdge(needsGeneration).then((result) => {
-      if (!cancelled) {
-        setAiClozeMap(result);
-        setAiClozeFetched(true);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setAiClozeFetched(true); // proceed without AI cloze on failure
-      }
+    // Need AI generation for remaining
+    const pendingIds = needsAI.map((m) => m.expression_id);
+    setClozePrep({
+      total: allItems.length,
+      prepared: cards.size,
+      cards,
+      pendingIds,
+      phase: "generating",
     });
 
+    let cancelled = false;
+
+    (async () => {
+      const BATCH_SIZE = 5;
+      const currentCards = new Map(cards);
+      const remaining = [...needsAI];
+
+      try {
+        for (let i = 0; i < remaining.length; i += BATCH_SIZE) {
+          if (cancelled) return;
+          const batch = remaining.slice(i, i + BATCH_SIZE);
+          const aiResults = await generateContextClozeBatch(
+            batch.map((m) => buildAIClozeInput(m)),
+          );
+
+          for (const m of batch) {
+            if (cancelled) return;
+            const aiData = aiResults.get(m.english);
+            if (aiData) {
+              const validation = validateAIData(aiData);
+              if (validation.valid) {
+                try {
+                  const card = buildCardFromAIResponse(m, aiData);
+                  const cardValidation = validateContextClozeCard(card);
+                  if (cardValidation.valid) {
+                    currentCards.set(m.expression_id, card);
+                  }
+                } catch { /* invalid card — will retry below */ }
+              }
+            }
+          }
+
+          // Update progress
+          const preparedCount = currentCards.size;
+          const stillNeedsAI = needsAI.filter((m) => !currentCards.has(m.expression_id));
+          setClozePrep({
+            total: allItems.length,
+            prepared: preparedCount,
+            cards: new Map(currentCards),
+            pendingIds: stillNeedsAI.map((m) => m.expression_id),
+            phase: "generating",
+          });
+        }
+
+        // Retry any remaining invalid ones (max 1 retry per item)
+        const stillMissing = needsAI.filter((m) => !currentCards.has(m.expression_id));
+        if (stillMissing.length > 0 && !cancelled) {
+          for (const m of stillMissing) {
+            if (cancelled) return;
+            try {
+              const aiResults = await generateContextClozeBatch([buildAIClozeInput(m)]);
+              const aiData = aiResults.get(m.english);
+              if (aiData) {
+                const validation = validateAIData(aiData);
+                if (validation.valid) {
+                  const card = buildCardFromAIResponse(m, aiData);
+                  const cardValidation = validateContextClozeCard(card);
+                  if (cardValidation.valid) {
+                    currentCards.set(m.expression_id, card);
+                  }
+                }
+              }
+            } catch { /* retry failed — will show error for this item */ }
+          }
+        }
+
+        const finalStillMissing = needsAI.filter((m) => !currentCards.has(m.expression_id));
+        setClozePrep({
+          total: allItems.length,
+          prepared: currentCards.size,
+          cards: new Map(currentCards),
+          pendingIds: finalStillMissing.map((m) => m.expression_id),
+          phase: finalStillMissing.length > 0 ? "error" : "ready",
+          error: finalStillMissing.length > 0
+            ? `${finalStillMissing.length} 道题生成失败，请点击重新生成`
+            : undefined,
+        });
+
+        // Persist cards to session items
+        if (!cancelled) {
+          for (const item of allItems) {
+            const card = currentCards.get(item.expressionId);
+            if (card) {
+              try {
+                await updateItem.mutateAsync({
+                  itemId: item.id,
+                  updates: {
+                    modeData: { cloze: card },
+                  },
+                });
+              } catch { /* persistence failure is non-fatal for practice */ }
+            }
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setClozePrep((prev) => ({
+            ...prev,
+            phase: "error",
+            error: "AI 服务暂时不可用，请稍后重试",
+          }));
+        }
+      }
+    })();
+
     return () => { cancelled = true; };
-  }, [allItems, aiClozeFetched]);
+  }, [mode, allItems]);
+
+  // Also load cards from existing session items (previously persisted)
+  useEffect(() => {
+    if (mode !== "cloze" || allItems.length === 0) return;
+    if (clozePrep.phase !== "loading") return;
+
+    // Check if items already have persisted cloze cards
+    const existingCards = new Map<string, ContextClozeCard>();
+    for (const item of allItems) {
+      const modeData = item.modeData as Record<string, unknown> | null | undefined;
+      if (modeData?.cloze) {
+        const card = modeData.cloze as ContextClozeCard;
+        const validation = validateContextClozeCard(card);
+        if (validation.valid) {
+          existingCards.set(item.expressionId, card);
+        }
+      }
+    }
+
+    if (existingCards.size === allItems.length) {
+      // All cards already persisted — use them directly
+      setClozePrep({
+        total: allItems.length,
+        prepared: allItems.length,
+        cards: existingCards,
+        pendingIds: [],
+        phase: "ready",
+      });
+    }
+    // If not all persisted, the generation effect above will handle it
+  }, [mode, allItems, clozePrep.phase]);
 
   // ── dailySetIds ──
   const dailySetIds = useMemo(() => allItems.map((i) => i.id), [allItems]);
 
-  // ── Cloze eligibility queue (pre-filtered, no per-card skip) ──
-  const clozeEligibility = useMemo(() => {
-    if (!aiClozeFetched || allItems.length === 0) return null;
-    return computeClozeEligibleQueue(allItems, aiClozeMap);
-  }, [allItems, aiClozeMap, aiClozeFetched]);
-
-  const clozeEligibleIds: string[] = clozeEligibility?.eligibleIds ?? [];
-  const clozeUnavailableCount: number = clozeEligibility?.unavailableIds.length ?? 0;
+  // ── Cloze eligible IDs from prep state ──
+  const clozeEligibleIds = useMemo(() => {
+    if (clozePrep.phase !== "ready") return [];
+    return allItems
+      .filter((item) => clozePrep.cards.has(item.expressionId))
+      .map((item) => item.id);
+  }, [allItems, clozePrep]);
 
   // ── Initialize/restore mode progress ──
   const resumeIndex = useMemo(() => {
@@ -1708,12 +1806,11 @@ export default function EnglishReviewV3() {
   useEffect(() => {
     if (allItems.length === 0) return;
     if (initializedRef.current) return;
-    // For cloze mode, wait until AI batch generation completes
-    if (mode === "cloze" && !aiClozeFetched) return;
+    // For cloze mode, wait until preparation is complete
+    if (mode === "cloze" && clozePrep.phase !== "ready") return;
 
     const order = mode === "cloze" ? [...clozeEligibleIds] : [...dailySetIds];
     if (order.length === 0) {
-      // No eligible items — still mark initialized so empty state renders
       initializedRef.current = true;
       return;
     }
@@ -1721,7 +1818,7 @@ export default function EnglishReviewV3() {
     setCurrentIndex(resumeIndex);
     currentIndexRef.current = resumeIndex;
     initializedRef.current = true;
-  }, [allItems, dailySetIds, clozeEligibleIds, resumeIndex, mode, aiClozeFetched]);
+  }, [allItems, dailySetIds, clozeEligibleIds, resumeIndex, mode, clozePrep.phase]);
 
   // ── Reset initialization when mode changes ──
   useEffect(() => {
@@ -1729,9 +1826,15 @@ export default function EnglishReviewV3() {
     setModeComplete(false);
     setCurrentIndex(0);
     currentIndexRef.current = 0;
-    // Re-trigger AI cloze generation when entering cloze mode
+    // Reset cloze prep when entering cloze mode
     if (mode === "cloze") {
-      setAiClozeFetched(false);
+      setClozePrep({
+        total: 0,
+        prepared: 0,
+        cards: new Map(),
+        pendingIds: [],
+        phase: "loading",
+      });
     }
   }, [mode]);
 
@@ -2096,15 +2199,15 @@ export default function EnglishReviewV3() {
     );
   }
 
-  // ── Cloze mode: 0 eligible empty state ──
-  if (mode === "cloze" && aiClozeFetched && clozeEligibleIds.length === 0 && !modeComplete) {
+  // ── Cloze mode: preparation loading / generating / error states (V3.4) ──
+  if (mode === "cloze" && clozePrep.phase !== "ready" && !modeComplete) {
     return (
       <div className="space-y-4">
         <ModeHeader
           currentMode={mode}
           stats={{
             recall: { completed: recallCompleted, total: allItems.length, correct: recallPassed, incorrect: recallFailed },
-            cloze: { completed: 0, total: 0, correct: 0, incorrect: 0 },
+            cloze: { completed: 0, total: allItems.length, correct: 0, incorrect: 0 },
             sentence: { completed: sentenceCompleted, total: allItems.length },
           }}
           onModeChange={switchMode}
@@ -2112,34 +2215,48 @@ export default function EnglishReviewV3() {
           onViewHistory={handleViewHistory}
         />
         <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-4">
-          <div className="h-14 w-14 rounded-2xl bg-warm-cream flex items-center justify-center mx-auto">
-            <Pencil size={28} className="text-ink-lighter" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-ink">暂无适合的语境填空题</h3>
-            <p className="text-sm text-ink-light mt-1">
-              今天这组表达暂时没有适合生成语境填空的素材
-              {clozeUnavailableCount > 0 && `（${clozeUnavailableCount} 条暂无可靠语境题）`}
-            </p>
-            <p className="text-xs text-ink-lighter mt-2">
-              可以尝试切换到主动回忆或个人造句模式继续学习
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-3">
-            {MODE_ORDER.filter((m) => m !== "cloze").map((m) => {
-              const Icon = MODE_ICONS[m];
-              return (
-                <button
-                  key={m}
-                  onClick={() => switchMode(m)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-warm-cream text-ink rounded-xl text-sm font-medium hover:bg-warm-cream/70 transition-colors"
-                >
-                  <Icon size={14} />
-                  {MODE_LABELS[m]}
-                </button>
-              );
-            })}
-          </div>
+          {clozePrep.phase === "error" ? (
+            <>
+              <div className="h-14 w-14 rounded-2xl bg-accent-warm/10 flex items-center justify-center mx-auto">
+                <AlertTriangle size={28} className="text-accent-warm" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-ink">语境填空准备失败</h3>
+                <p className="text-sm text-ink-light mt-1">
+                  {clozePrep.error || "部分题目的语境卡片生成失败，请重试"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setClozePrep({
+                    total: 0,
+                    prepared: 0,
+                    cards: new Map(),
+                    pendingIds: [],
+                    phase: "loading",
+                  });
+                }}
+                className="px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors inline-flex items-center gap-2"
+              >
+                <RefreshCw size={14} />
+                重新生成
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="h-14 w-14 rounded-2xl bg-sage-light flex items-center justify-center mx-auto">
+                <Loader2 size={28} className="text-sage-deep animate-spin" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-ink">正在准备今天的语境练习…</h3>
+                <p className="text-sm text-ink-light mt-1">
+                  {clozePrep.phase === "generating"
+                    ? `已准备 ${clozePrep.prepared} / ${clozePrep.total}`
+                    : "正在加载语境卡片…"}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -2204,7 +2321,6 @@ export default function EnglishReviewV3() {
           stats={displayStats[mode]}
           currentIndex={currentIndex}
           roundOrderLength={roundOrder.length}
-          unavailableCount={mode === "cloze" ? clozeUnavailableCount : undefined}
         />
       </div>
 
@@ -2241,8 +2357,8 @@ export default function EnglishReviewV3() {
             <ClozeCard
               key={currentItem.id}
               item={currentItem}
+              card={clozePrep.cards.get(currentItem.expressionId)!}
               onResult={handleClozeResult}
-              aiClozeMap={aiClozeMap}
             />
           ) : (
             <SentenceCard

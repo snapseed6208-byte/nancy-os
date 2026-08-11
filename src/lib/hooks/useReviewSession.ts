@@ -71,6 +71,7 @@ export interface SessionItem {
   attemptCount: number;
   reinforcementRound: number;
   lastPracticeAt: string | null;
+  modeData?: Record<string, unknown> | null;
   // Joined from expressions
   expression?: ExpressionCard;
 }
@@ -93,6 +94,7 @@ export interface ExpressionCard {
   formality?: string;
   notes?: string;
   cloze_sentence?: string;
+  ai_cloze_sentence?: string;
   type: string;
   scene: string;
   status: string;
@@ -120,7 +122,7 @@ const MAX_REINFORCEMENT_ROUNDS = 3;
 const EXPRESSION_SELECT =
   "id,english,chinese,pronunciation,example_sentence," +
   "english_explanation,usage_note,native_usage,context,situation," +
-  "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence," +
+  "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence,ai_cloze_sentence," +
   "type,scene,status,mastery_level";
 
 function todayStr(): string {
@@ -418,6 +420,7 @@ export function useUpdateSessionItem() {
         status: SessionItem["status"];
         attemptCount: number;
         reinforcementRound: number;
+        modeData: Record<string, unknown>;
       }>;
     }) => {
       const payload: Record<string, unknown> = {
@@ -431,6 +434,7 @@ export function useUpdateSessionItem() {
       if (updates.status !== undefined) payload.status = updates.status;
       if (updates.attemptCount !== undefined) payload.attempt_count = updates.attemptCount;
       if (updates.reinforcementRound !== undefined) payload.reinforcement_round = updates.reinforcementRound;
+      if (updates.modeData !== undefined) payload.mode_data = updates.modeData;
 
       const { data, error } = await supabase
         .from("review_session_items")

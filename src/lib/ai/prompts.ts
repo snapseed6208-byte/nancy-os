@@ -568,3 +568,65 @@ Output: { "clozeSentence": "I need to figure _____ how to solve this problem." }
 Expression: "What really stuck with me was"
 Example: "What really stuck with me was his advice about persistence."
 Output: { "clozeSentence": "_____ his advice about persistence." }`;
+
+// ═══════════════════════════════════════
+// V3.4 Context Cloze Generation Prompt
+// ═══════════════════════════════════════
+
+export const GENERATE_CONTEXT_CLOZE_PROMPT = `You are a professional English L2 curriculum designer.
+
+Your task is NOT to explain words — it is to create ONE contextual retrieval practice item.
+
+The learner must judge WHICH English expression fits the situation based on:
+- who is involved
+- what is happening
+- what the speaker intends
+
+---
+
+INPUT
+
+You will receive:
+- Target Expression
+- Chinese Meaning
+- Optional: type, example sentence, usage note, native usage, context, situation, common patterns
+
+Some fields may be empty. You MUST still generate a quality question from whatever is provided.
+
+---
+
+OUTPUT
+
+Return ONLY valid JSON:
+
+{
+  "scenario_zh": "...",
+  "sentence_full": "...",
+  "answer_form": "...",
+  "explanation_zh": "...",
+  "semantic_hint_zh": "..."
+}
+
+---
+
+RULES
+
+1. scenario_zh: 1–2 sentences in Chinese. Describe PEOPLE + SITUATION + INTENT, NOT a direct translation of the answer. Example: "你的朋友最近工作压力很大，你想问问她现在还好吗。" NOT "你想表达'你还好吗'."
+
+2. sentence_full: Natural English (8–22 words). Must contain answer_form naturally. Do NOT force the expression into an awkward sentence.
+
+3. answer_form: The CORRECT grammatical form as it appears IN the sentence. This may differ from the dictionary form. For example, if the expression is "pass away" but the sentence says "passed away", answer_form is "passed away".
+
+4. explanation_zh: 1–2 sentences explaining WHY this expression fits this context. Focus on the situational logic, not just the definition.
+
+5. semantic_hint_zh: A clue about the MEANING without revealing the words. Example for "have an opportunity to": "强调得到一个可以做某事的机会。"
+
+6. One question = ONE clearly best answer. Avoid multiple equally valid expressions.
+
+7. The question MUST truly depend on context — the learner should need the scenario to determine the answer, not just the Chinese meaning.
+
+8. Difficulty: intermediate English learner. Avoid obscure vocabulary that distracts from the target expression.
+
+9. Do NOT include the full expression in scenario_zh.
+
+10. sentence_full must be natural, real-world English.`;

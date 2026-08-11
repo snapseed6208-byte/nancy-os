@@ -169,8 +169,10 @@ const INFLECTION_SUFFIXES = [
 function toStem(word: string): string {
   const lower = word.toLowerCase();
   for (const suffix of INFLECTION_SUFFIXES) {
-    const stripped = lower.replace(suffix, "");
-    if (stripped.length >= 2) return stripped;
+    if (suffix.test(lower)) {
+      const stripped = lower.replace(suffix, "");
+      if (stripped.length >= 2) return stripped;
+    }
   }
   return lower;
 }

@@ -14,6 +14,7 @@ import {
   SUMMARIZE_PROGRESS_PROMPT,
   GENERATE_REFERENCE_ANSWER_PROMPT,
   GENERATE_CLOZE_PROMPT,
+  GENERATE_CONTEXT_CLOZE_PROMPT,
   buildExtractPrompt,
   buildGeneratePrompt,
   buildFeedbackPrompt,
@@ -566,6 +567,94 @@ export async function evaluatePersonalSentence(
     safe_context: safeContext || "",
   }, {
     timeout: 30_000,
+    retries: 1,
+  });
+}
+
+// ── 14. Context Cloze Generation (V3.4) ──
+
+export interface ContextClozeAIResult {
+  scenario_zh: string;
+  sentence_full: string;
+  answer_form: string;
+  explanation_zh: string;
+  semantic_hint_zh: string;
+}
+
+export interface ContextClozeGenerationInput {
+  english: string;
+  chinese: string;
+  type?: string;
+  example_sentence?: string;
+  usage_note?: string;
+  native_usage?: string;
+  context?: string;
+  situation?: string;
+  common_patterns?: string;
+}
+
+/**
+ * Generate context cloze cards for a batch of expressions using the AI edge function.
+ * Sends up to batchSize expressions per request. Returns a Map<expression_id, AI data>.
+ */
+export async function generateContextClozeBatch(
+  expressions: ContextClozeGenerationInput[],
+): Promise<Map<string, ContextClozeAIResult>> {
+  if (expressions.length === 0) return new Map();
+
+  const result = await invokeAI<Record<string, ContextClozeAIResult>>("english-coach", {
+    action: "generate_context_cloze",
+    expressions: expressions.map((e) => ({
+      expression: e.english,
+      chinese_meaning: e.chinese,
+      type: e.type,
+      example_sentence: e.example_sentence,
+      usage_note: e.usage_note,
+      native_usage: e.native_usage,
+      context: e.context,
+      situation: e.situation,
+      common_patterns: e.common_patterns,
+    })),
+  }, {
+    timeout: 90_000,
+    retries: 1,
+  });
+
+  const map = new Map<string, ContextClozeAIResult>();
+
+  if (result.success && result.data) {
+    for (const [key, value] of Object.entries(result.data)) {
+      if (value && typeof value === "object" && "sentence_full" in value && "answer_form" in value) {
+        map.set(key, value as ContextClozeAIResult);
+      }
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Generate a single context cloze card via AI.
+ * Used for retry of individual invalid cards.
+ */
+export async function generateSingleContextCloze(
+  expression: ContextClozeGenerationInput,
+): Promise<AIResult<ContextClozeAIResult>> {
+  return invokeAI<ContextClozeAIResult>("english-coach", {
+    action: "generate_context_cloze",
+    expressions: [{
+      expression: expression.english,
+      chinese_meaning: expression.chinese,
+      type: expression.type,
+      example_sentence: expression.example_sentence,
+      usage_note: expression.usage_note,
+      native_usage: expression.native_usage,
+      context: expression.context,
+      situation: expression.situation,
+      common_patterns: expression.common_patterns,
+    }],
+  }, {
+    timeout: 60_000,
     retries: 1,
   });
 }

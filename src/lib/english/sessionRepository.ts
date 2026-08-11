@@ -542,6 +542,7 @@ function formatSessionItem(raw: Record<string, unknown>): SessionItem {
     attemptCount: (raw.attempt_count as number) || 0,
     reinforcementRound: (raw.reinforcement_round as number) || 0,
     lastPracticeAt: raw.last_practice_at as string | null,
+    modeData: raw.mode_data as Record<string, unknown> | null,
     expression: expr
       ? {
           id: expr.id as string,
@@ -561,6 +562,7 @@ function formatSessionItem(raw: Record<string, unknown>): SessionItem {
           formality: expr.formality as string | undefined,
           notes: expr.notes as string | undefined,
           cloze_sentence: expr.cloze_sentence as string | undefined,
+          ai_cloze_sentence: expr.ai_cloze_sentence as string | undefined,
           type: expr.type as string,
           scene: expr.scene as string,
           status: expr.status as string,

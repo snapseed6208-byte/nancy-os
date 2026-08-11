@@ -78,7 +78,7 @@ function makeExpression(overrides?: Partial<ExpressionCard>): ExpressionCard {
     synonyms: "face the music, grasp the nettle",
     formality: "informal",
     notes: "This is a common business idiom.",
-    cloze_sentence: "Sometimes you just have to _____ and fix the problem.",
+    cloze_sentence: "Sometimes you just have to ______ and fix the problem.",
     type: "idiom",
     scene: "workplace",
     status: "active",
@@ -184,8 +184,10 @@ const INFLECTION_SUFFIXES = [/ed$/i, /ing$/i, /s$/i, /es$/i, /ies$/i, /er$/i, /e
 function toStem(word: string): string {
   const lower = word.toLowerCase();
   for (const suffix of INFLECTION_SUFFIXES) {
-    const stripped = lower.replace(suffix, "");
-    if (stripped.length >= 2) return stripped;
+    if (suffix.test(lower)) {
+      const stripped = lower.replace(suffix, "");
+      if (stripped.length >= 2) return stripped;
+    }
   }
   return lower;
 }
@@ -556,7 +558,7 @@ describe("buildClozeQuestion — V3.4", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
       "迎难而上",
-      "Sometimes you just have to _____ and fix the problem.",
+      "Sometimes you just have to ______ and fix the problem.",
     );
     expect(q.source).toBe("cloze_sentence");
     expect(q.prompt).toContain("_____");
@@ -1156,7 +1158,7 @@ describe("V3.5 ClozeQuestion Fields", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
       "迎难而上",
-      "Sometimes you just have to _____ and fix the problem.",
+      "Sometimes you just have to ______ and fix the problem.",
       undefined,
       "business negotiation",
       "When facing a tough decision",
@@ -1213,7 +1215,7 @@ describe("V3.5 Source Sentence Isolation", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
       "迎难而上",
-      "Sometimes you just have to _____ and fix the problem.",
+      "Sometimes you just have to ______ and fix the problem.",
     );
     expect(q.source).toBe("cloze_sentence");
     expect(q.sourceSentence).toBeUndefined();
@@ -1273,7 +1275,7 @@ describe("V3.5 Prompt Integrity Check", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
       "迎难而上",
-      "Sometimes you just have to _____ and fix the problem.",
+      "Sometimes you just have to ______ and fix the problem.",
     );
     expect(promptIntegrityCheck(q)).toBe(true);
   });
@@ -1379,7 +1381,7 @@ describe("V3.5 ClozeQuestion Structural Integrity", () => {
     const q = buildClozeQuestion(
       "take the bull by the horns",
       "迎难而上",
-      "Sometimes you just have to _____ and fix the problem.",
+      "Sometimes you just have to ______ and fix the problem.",
       undefined,
       "business negotiation",
       "When facing a tough decision",
@@ -4549,7 +4551,7 @@ describe("English SRS V3.3 — Cloze Eligibility Engine (C-series)", () => {
     const result = buildClozeEligibility(
       "take the bull by the horns",
       "迎难而上",
-      "Sometimes you just have to _____ and fix the problem.",
+      "Sometimes you just have to ______ and fix the problem.",
     );
     expect(result.eligible).toBe(true);
     expect(result.source).toBe("stored_cloze");
@@ -4887,5 +4889,635 @@ describe("English SRS V3.3 — Cloze Eligibility Engine (C-series)", () => {
     );
     expect(result.eligible).toBe(true);
     expect(result.scenario).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════
+// V3.4: Context Cloze Generation Engine (26 tests)
+//
+// Tests CC1-CC6:  ContextClozeCard contract & validation
+// Tests CC7-CC9:  maskTargetExpression
+// Tests CC10-CC13: validateContextClozeCard
+// Tests CC14-CC17: validateAIData
+// Tests CC18-CC20: classifyMaterials
+// Tests CC21-CC23: buildCard (L1/L2/L3)
+// Tests CC24-CC25: buildAIClozeInput
+// Test  CC26:      buildCardFromAIResponse
+// ═══════════════════════════════════════
+
+// ── Inline mirrors of contextCloze.ts functions ──
+
+function maskTargetExpression(sentence: string, targetForm: string): string {
+  const escaped = targetForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(escaped, "gi");
+  return sentence.replace(regex, "______");
+}
+
+function buildFormHint(answer: string): string | null {
+  const words = answer.split(/\s+/);
+  return words
+    .map((w) => w.charAt(0) + "_".repeat(Math.max(1, w.length - 1)))
+    .join(" ");
+}
+
+interface InlineContextClozeCard {
+  expression_id: string;
+  canonical_expression: string;
+  answer_form: string;
+  accepted_answers: string[];
+  scenario_zh: string;
+  sentence_full: string;
+  sentence_masked: string;
+  explanation_zh: string;
+  semantic_hint_zh: string;
+  form_hint: string | null;
+  source: "stored_cloze" | "example_sentence" | "ai_generated";
+  quality_version: string;
+}
+
+interface InlineClozeGenerationMaterial {
+  expression_id: string;
+  english: string;
+  chinese: string;
+  type?: string;
+  example_sentence?: string | null;
+  usage_note?: string | null;
+  native_usage?: string | null;
+  context?: string | null;
+  situation?: string | null;
+  common_patterns?: string | null;
+  cloze_sentence?: string | null;
+  ai_cloze_sentence?: string | null;
+}
+
+interface InlineAIGeneratedClozeData {
+  scenario_zh: string;
+  sentence_full: string;
+  answer_form: string;
+  explanation_zh: string;
+  semantic_hint_zh: string;
+}
+
+interface InlineClozeValidationResult {
+  valid: boolean;
+  reasons: string[];
+}
+
+// Reuse hasExpressionLeakage from earlier tests (defined in V3.3 section)
+
+function validateContextClozeCard(card: InlineContextClozeCard): InlineClozeValidationResult {
+  const reasons: string[] = [];
+
+  if (!card.scenario_zh || !card.scenario_zh.trim()) {
+    reasons.push("scenario_zh is empty");
+  }
+  if (!card.sentence_full || !card.sentence_full.trim()) {
+    reasons.push("sentence_full is empty");
+  }
+  if (!card.answer_form || !card.answer_form.trim()) {
+    reasons.push("answer_form is empty");
+  }
+
+  const sentenceNorm = card.sentence_full.toLowerCase();
+  const answerNorm = card.answer_form.toLowerCase();
+  if (!sentenceNorm.includes(answerNorm)) {
+    reasons.push(`sentence_full does not contain answer_form: "${card.answer_form}"`);
+  }
+
+  const exprWords = card.canonical_expression.toLowerCase().split(/\s+/);
+  const scenarioWords = card.scenario_zh.toLowerCase();
+  if (exprWords.length >= 2 && scenarioWords.includes(card.canonical_expression.toLowerCase())) {
+    reasons.push("scenario_zh appears to contain the target expression");
+  }
+
+  if (card.sentence_masked.toLowerCase().includes(answerNorm)) {
+    reasons.push("sentence_masked still contains answer_form");
+  }
+
+  if (!/_{2,}|\[blank\]/i.test(card.sentence_masked)) {
+    reasons.push("sentence_masked has no blank");
+  }
+
+  if (card.accepted_answers.length === 0) {
+    reasons.push("no accepted answers");
+  }
+
+  return { valid: reasons.length === 0, reasons };
+}
+
+function validateAIData(
+  aiData: Partial<InlineAIGeneratedClozeData>,
+): { valid: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+
+  if (!aiData.scenario_zh || !aiData.scenario_zh.trim()) {
+    reasons.push("scenario_zh missing");
+  }
+  if (!aiData.sentence_full || !aiData.sentence_full.trim()) {
+    reasons.push("sentence_full missing");
+  }
+  if (!aiData.answer_form || !aiData.answer_form.trim()) {
+    reasons.push("answer_form missing");
+  }
+  if (!aiData.explanation_zh || !aiData.explanation_zh.trim()) {
+    reasons.push("explanation_zh missing");
+  }
+  if (!aiData.semantic_hint_zh || !aiData.semantic_hint_zh.trim()) {
+    reasons.push("semantic_hint_zh missing");
+  }
+
+  if (reasons.length === 0 && aiData.sentence_full && aiData.answer_form) {
+    if (!aiData.sentence_full.toLowerCase().includes(aiData.answer_form.toLowerCase())) {
+      reasons.push("sentence_full does not contain answer_form");
+    }
+  }
+
+  return { valid: reasons.length === 0, reasons };
+}
+
+function tryStoredCloze(material: InlineClozeGenerationMaterial): InlineContextClozeCard | null {
+  const stored = material.cloze_sentence || material.ai_cloze_sentence || null;
+  if (!stored) return null;
+
+  const blanks = (stored.match(/_{2,}|\[blank\]/gi) || []).length;
+  if (blanks < 1) return null;
+  if (hasExpressionLeakage(stored, material.english)) return null;
+
+  const scenario = [material.context, material.situation].filter(Boolean).join(" · ") || "语境填空";
+
+  // Fill in the blank with the expression for sentence_full
+  const sentenceFull = stored.replace(/_{2,}|\[blank\]/gi, material.english);
+
+  return {
+    expression_id: material.expression_id,
+    canonical_expression: material.english,
+    answer_form: material.english,
+    accepted_answers: [material.english.toLowerCase()],
+    scenario_zh: scenario,
+    sentence_full: sentenceFull,
+    sentence_masked: stored,
+    explanation_zh: `填入表达 "${material.english}"（${material.chinese}）`,
+    semantic_hint_zh: material.chinese,
+    form_hint: buildFormHint(material.english),
+    source: "stored_cloze",
+    quality_version: "v3.4.0",
+  };
+}
+
+function tryExampleSentence(material: InlineClozeGenerationMaterial): InlineContextClozeCard | null {
+  const example = material.example_sentence;
+  if (!example) return null;
+
+  const surfaceInfo = detectSurfaceForm(example, material.english);
+  if (!surfaceInfo) return null;
+
+  const answerForm = surfaceInfo.surfaceForm;
+  const masked = maskTargetExpression(example, answerForm);
+
+  if (masked === example) return null;
+  if (hasExpressionLeakage(masked, material.english)) return null;
+
+  const scenario = [material.context, material.situation].filter(Boolean).join(" · ") || "语境填空";
+
+  return {
+    expression_id: material.expression_id,
+    canonical_expression: material.english,
+    answer_form: answerForm,
+    accepted_answers: [answerForm.toLowerCase(), material.english.toLowerCase()],
+    scenario_zh: scenario,
+    sentence_full: example,
+    sentence_masked: masked,
+    explanation_zh: `在语境中使用 "${answerForm}"（原形: ${material.english}）`,
+    semantic_hint_zh: material.chinese,
+    form_hint: answerForm !== material.english ? buildFormHint(answerForm) : null,
+    source: "example_sentence",
+    quality_version: "v3.4.0",
+  };
+}
+
+function buildCardFromAIResponse(
+  material: InlineClozeGenerationMaterial,
+  aiData: InlineAIGeneratedClozeData,
+): InlineContextClozeCard {
+  const masked = maskTargetExpression(aiData.sentence_full, aiData.answer_form);
+
+  return {
+    expression_id: material.expression_id,
+    canonical_expression: material.english,
+    answer_form: aiData.answer_form,
+    accepted_answers: [
+      aiData.answer_form.toLowerCase(),
+      material.english.toLowerCase(),
+    ],
+    scenario_zh: aiData.scenario_zh,
+    sentence_full: aiData.sentence_full,
+    sentence_masked: masked,
+    explanation_zh: aiData.explanation_zh,
+    semantic_hint_zh: aiData.semantic_hint_zh,
+    form_hint: aiData.answer_form !== material.english
+      ? buildFormHint(aiData.answer_form)
+      : null,
+    source: "ai_generated",
+    quality_version: "v3.4.0",
+  };
+}
+
+function classifyMaterials(
+  materials: InlineClozeGenerationMaterial[],
+): {
+  ready: InlineClozeGenerationMaterial[];
+  needsAI: InlineClozeGenerationMaterial[];
+} {
+  const ready: InlineClozeGenerationMaterial[] = [];
+  const needsAI: InlineClozeGenerationMaterial[] = [];
+
+  for (const m of materials) {
+    if (m.cloze_sentence || m.ai_cloze_sentence) {
+      const card = tryStoredCloze(m);
+      if (card) {
+        ready.push(m);
+        continue;
+      }
+    }
+    if (m.example_sentence && detectSurfaceForm(m.example_sentence, m.english)) {
+      ready.push(m);
+      continue;
+    }
+    needsAI.push(m);
+  }
+
+  return { ready, needsAI };
+}
+
+function buildCard(material: InlineClozeGenerationMaterial, aiData?: InlineAIGeneratedClozeData | null): InlineContextClozeCard {
+  const stored = tryStoredCloze(material);
+  if (stored) return stored;
+
+  const example = tryExampleSentence(material);
+  if (example) return example;
+
+  if (aiData) {
+    return buildCardFromAIResponse(material, aiData);
+  }
+
+  throw new Error(`No cloze source for: ${material.english}. AI data must be provided.`);
+}
+
+function buildAIClozeInput(material: InlineClozeGenerationMaterial) {
+  return {
+    english: material.english,
+    chinese: material.chinese,
+    type: material.type || undefined,
+    example_sentence: material.example_sentence || undefined,
+    usage_note: material.usage_note || undefined,
+    native_usage: material.native_usage || undefined,
+    context: material.context || undefined,
+    situation: material.situation || undefined,
+    common_patterns: material.common_patterns || undefined,
+  };
+}
+
+// ── Test data factory ──
+
+function makeMaterial(overrides?: Partial<InlineClozeGenerationMaterial>): InlineClozeGenerationMaterial {
+  return {
+    expression_id: "expr-test-1",
+    english: "take the bull by the horns",
+    chinese: "迎难而上",
+    type: "idiom",
+    example_sentence: "Sometimes you just have to take the bull by the horns and fix the problem.",
+    usage_note: "Often used in business contexts.",
+    native_usage: "Used to encourage direct action.",
+    context: "business negotiation",
+    situation: "When facing a tough decision",
+    common_patterns: "take the bull by the horns and [verb]",
+    cloze_sentence: "Sometimes you just have to ______ and fix the problem.",
+    ai_cloze_sentence: null,
+    ...overrides,
+  };
+}
+
+describe("V3.4 ContextClozeCard Contract (CC1-CC6)", () => {
+  it("CC1. card has all required fields with correct types", () => {
+    const material = makeMaterial();
+    const card = buildCard(material);
+    expect(card.expression_id).toBe("expr-test-1");
+    expect(card.canonical_expression).toBe("take the bull by the horns");
+    expect(card.answer_form).toBeTruthy();
+    expect(card.accepted_answers.length).toBeGreaterThan(0);
+    expect(card.scenario_zh).toBeTruthy();
+    expect(card.sentence_full).toBeTruthy();
+    expect(card.sentence_masked).toBeTruthy();
+    expect(card.sentence_masked).toContain("______");
+    expect(card.explanation_zh).toBeTruthy();
+    expect(card.semantic_hint_zh).toBeTruthy();
+    expect(card.source).toBeTruthy();
+    expect(card.quality_version).toBe("v3.4.0");
+  });
+
+  it("CC2. answer_form is separate from canonical_expression", () => {
+    // Entry is separate — default case they're the same
+    const card = buildCard(makeMaterial());
+    expect(card).toHaveProperty("answer_form");
+    expect(card).toHaveProperty("canonical_expression");
+    // Both are defined and may be equal for stored_cloze source
+    expect(typeof card.answer_form).toBe("string");
+    expect(typeof card.canonical_expression).toBe("string");
+  });
+
+  it("CC3. accepted_answers includes both answer_form and canonical_expression", () => {
+    const card = buildCard(makeMaterial());
+    expect(card.accepted_answers.map((a) => a.toLowerCase())).toContain(
+      card.answer_form.toLowerCase(),
+    );
+    expect(card.accepted_answers.map((a) => a.toLowerCase())).toContain(
+      card.canonical_expression.toLowerCase(),
+    );
+  });
+
+  it("CC4. stored_cloze source uses canonical form as answer_form", () => {
+    const card = buildCard(makeMaterial({
+      cloze_sentence: "Sometimes you just have to ______ and fix the problem.",
+    }));
+    expect(card.source).toBe("stored_cloze");
+    expect(card.answer_form).toBe(card.canonical_expression);
+  });
+
+  it("CC5. example_sentence source detects surface form", () => {
+    const card = buildCard(makeMaterial({
+      cloze_sentence: null,
+      example_sentence: "He takes the bull by the horns in every crisis.",
+    }));
+    expect(card.source).toBe("example_sentence");
+    // answer_form should be the conjugated form found in the sentence
+    expect(card.answer_form.toLowerCase()).toBe("takes the bull by the horns");
+    expect(card.canonical_expression).toBe("take the bull by the horns");
+    expect(card.answer_form).not.toBe(card.canonical_expression);
+  });
+
+  it("CC6. ai_generated source card has all feedback fields", () => {
+    const aiData: InlineAIGeneratedClozeData = {
+      scenario_zh: "在董事会上，CEO决定直接面对公司最大的问题",
+      sentence_full: "The CEO decided to take the bull by the horns and restructure the entire department.",
+      answer_form: "take the bull by the horns",
+      explanation_zh: "这个习语用于描述勇敢直接地面对困难",
+      semantic_hint_zh: "迎难而上，直接面对困难",
+    };
+    const card = buildCard(makeMaterial({ cloze_sentence: null, example_sentence: null }), aiData);
+    expect(card.source).toBe("ai_generated");
+    expect(card.scenario_zh).toBe(aiData.scenario_zh);
+    expect(card.sentence_full).toBe(aiData.sentence_full);
+    expect(card.explanation_zh).toBe(aiData.explanation_zh);
+    expect(card.semantic_hint_zh).toBe(aiData.semantic_hint_zh);
+  });
+});
+
+describe("V3.4 maskTargetExpression (CC7-CC9)", () => {
+  it("CC7. masks expression at start of sentence", () => {
+    const result = maskTargetExpression(
+      "Take the bull by the horns and face the problem.",
+      "Take the bull by the horns",
+    );
+    expect(result).toBe("______ and face the problem.");
+  });
+
+  it("CC8. masks expression in middle of sentence", () => {
+    const result = maskTargetExpression(
+      "You need to take the bull by the horns today.",
+      "take the bull by the horns",
+    );
+    expect(result).toBe("You need to ______ today.");
+  });
+
+  it("CC9. masking is case-insensitive", () => {
+    const result = maskTargetExpression(
+      "TAKE THE BULL BY THE HORNS is what leaders do.",
+      "take the bull by the horns",
+    );
+    expect(result).toBe("______ is what leaders do.");
+  });
+});
+
+describe("V3.4 validateContextClozeCard (CC10-CC13)", () => {
+  it("CC10. valid card passes validation", () => {
+    const card = buildCard(makeMaterial());
+    const result = validateContextClozeCard(card);
+    expect(result.valid).toBe(true);
+    expect(result.reasons).toHaveLength(0);
+  });
+
+  it("CC11. fails when scenario_zh is empty", () => {
+    const card = buildCard(makeMaterial());
+    card.scenario_zh = "";
+    const result = validateContextClozeCard(card);
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain("scenario_zh is empty");
+  });
+
+  it("CC12. fails when sentence_full does not contain answer_form", () => {
+    const card = buildCard(makeMaterial());
+    card.answer_form = "nonexistent phrase";
+    const result = validateContextClozeCard(card);
+    expect(result.valid).toBe(false);
+    expect(result.reasons.some((r) => r.includes("sentence_full does not contain"))).toBe(true);
+  });
+
+  it("CC13. fails when sentence_masked has no blank", () => {
+    const card = buildCard(makeMaterial());
+    card.sentence_masked = "no blank here";
+    const result = validateContextClozeCard(card);
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain("sentence_masked has no blank");
+  });
+});
+
+describe("V3.4 validateAIData (CC14-CC17)", () => {
+  it("CC14. valid AI data passes", () => {
+    const aiData: InlineAIGeneratedClozeData = {
+      scenario_zh: "在商务谈判中",
+      sentence_full: "She decided to take the bull by the horns.",
+      answer_form: "take the bull by the horns",
+      explanation_zh: "直接面对困难",
+      semantic_hint_zh: "迎难而上",
+    };
+    const result = validateAIData(aiData);
+    expect(result.valid).toBe(true);
+    expect(result.reasons).toHaveLength(0);
+  });
+
+  it("CC15. fails when sentence_full is missing", () => {
+    const result = validateAIData({
+      scenario_zh: "场景",
+      sentence_full: "",
+      answer_form: "test",
+      explanation_zh: "解释",
+      semantic_hint_zh: "提示",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain("sentence_full missing");
+  });
+
+  it("CC16. fails when scenario_zh is missing", () => {
+    const result = validateAIData({
+      scenario_zh: "",
+      sentence_full: "A sentence with test.",
+      answer_form: "test",
+      explanation_zh: "解释",
+      semantic_hint_zh: "提示",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain("scenario_zh missing");
+  });
+
+  it("CC17. fails when sentence_full does not contain answer_form", () => {
+    const result = validateAIData({
+      scenario_zh: "场景",
+      sentence_full: "A completely different sentence here.",
+      answer_form: "nonexistent",
+      explanation_zh: "解释",
+      semantic_hint_zh: "提示",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain("sentence_full does not contain answer_form");
+  });
+});
+
+describe("V3.4 classifyMaterials (CC18-CC20)", () => {
+  it("CC18. stored cloze_sentence → ready", () => {
+    const materials = [makeMaterial({ cloze_sentence: "The answer is _____ today." })];
+    const result = classifyMaterials(materials);
+    expect(result.ready).toHaveLength(1);
+    expect(result.needsAI).toHaveLength(0);
+  });
+
+  it("CC19. example_sentence with found surface form → ready", () => {
+    const materials = [makeMaterial({
+      cloze_sentence: null,
+      example_sentence: "He takes the bull by the horns every time.",
+    })];
+    const result = classifyMaterials(materials);
+    expect(result.ready).toHaveLength(1);
+    expect(result.needsAI).toHaveLength(0);
+  });
+
+  it("CC20. no cloze, no matching example → needsAI", () => {
+    const materials = [makeMaterial({
+      cloze_sentence: null,
+      expression_id: "expr-needs-ai",
+      english: "obfuscate",
+      chinese: "混淆",
+      example_sentence: "This sentence does not contain the target word at all.",
+    })];
+    const result = classifyMaterials(materials);
+    expect(result.ready).toHaveLength(0);
+    expect(result.needsAI).toHaveLength(1);
+  });
+});
+
+describe("V3.4 buildCard — all sources (CC21-CC23)", () => {
+  it("CC21. buildCard prioritizes L1 stored_cloze over L2 example_sentence", () => {
+    const material = makeMaterial({
+      cloze_sentence: "You should _____ and solve the issue.",
+      example_sentence: "He takes the bull by the horns daily.",
+    });
+    const card = buildCard(material);
+    expect(card.source).toBe("stored_cloze");
+    // sentence_full is the filled-in version, sentence_masked is the blanked one
+    expect(card.sentence_full).toBe("You should take the bull by the horns and solve the issue.");
+    expect(card.sentence_masked).toBe("You should _____ and solve the issue.");
+  });
+
+  it("CC22. buildCard uses L2 example_sentence when no stored cloze", () => {
+    const material = makeMaterial({
+      cloze_sentence: null,
+      example_sentence: "He takes the bull by the horns daily.",
+    });
+    const card = buildCard(material);
+    expect(card.source).toBe("example_sentence");
+    expect(card.sentence_full).toBe("He takes the bull by the horns daily.");
+    expect(card.answer_form.toLowerCase()).toBe("takes the bull by the horns");
+  });
+
+  it("CC23. buildCard uses L3 ai_generated when no L1/L2 available", () => {
+    const aiData: InlineAIGeneratedClozeData = {
+      scenario_zh: "AI生成的场景",
+      sentence_full: "The team must take the bull by the horns to succeed.",
+      answer_form: "take the bull by the horns",
+      explanation_zh: "AI生成的解释",
+      semantic_hint_zh: "直接面对",
+    };
+    const material = makeMaterial({
+      cloze_sentence: null,
+      english: "take the bull by the horns",
+      chinese: "迎难而上",
+      example_sentence: "A sentence without the expression.",
+    });
+    const card = buildCard(material, aiData);
+    expect(card.source).toBe("ai_generated");
+    expect(card.sentence_full).toBe(aiData.sentence_full);
+    expect(card.explanation_zh).toBe(aiData.explanation_zh);
+  });
+});
+
+describe("V3.4 buildAIClozeInput (CC24-CC25)", () => {
+  it("CC24. maps material fields correctly for AI", () => {
+    const material = makeMaterial();
+    const input = buildAIClozeInput(material);
+    expect(input.english).toBe("take the bull by the horns");
+    expect(input.chinese).toBe("迎难而上");
+    expect(input.type).toBe("idiom");
+    expect(input.example_sentence).toBeTruthy();
+    expect(input.context).toBe("business negotiation");
+    expect(input.situation).toBe("When facing a tough decision");
+  });
+
+  it("CC25. null and undefined fields are filtered to undefined", () => {
+    const material = makeMaterial({
+      cloze_sentence: null,
+      expression_id: "expr-minimal",
+      english: "hello",
+      chinese: "你好",
+      type: undefined,
+      example_sentence: null,
+      usage_note: null,
+      native_usage: null,
+      context: null,
+      situation: null,
+      common_patterns: null,
+    });
+    const input = buildAIClozeInput(material);
+    expect(input.english).toBe("hello");
+    expect(input.chinese).toBe("你好");
+    expect(input.type).toBeUndefined();
+    expect(input.example_sentence).toBeUndefined();
+    expect(input.context).toBeUndefined();
+  });
+});
+
+describe("V3.4 buildCardFromAIResponse (CC26)", () => {
+  it("CC26. inflected answer_form gets form_hint, canonical doesn't", () => {
+    const aiData: InlineAIGeneratedClozeData = {
+      scenario_zh: "过去发生的事情",
+      sentence_full: "She took the bull by the horns and quit her job.",
+      answer_form: "took the bull by the horns",
+      explanation_zh: "过去时态",
+      semantic_hint_zh: "迎难而上（过去时）",
+    };
+    const material = makeMaterial({
+      english: "take the bull by the horns",
+      chinese: "迎难而上",
+      cloze_sentence: null,
+      example_sentence: null,
+    });
+    const card = buildCardFromAIResponse(material, aiData);
+    expect(card.source).toBe("ai_generated");
+    expect(card.answer_form).toBe("took the bull by the horns");
+    expect(card.canonical_expression).toBe("take the bull by the horns");
+    // Inflected form → should have form_hint
+    expect(card.form_hint).toBeTruthy();
+    expect(card.form_hint).toBe(buildFormHint("took the bull by the horns"));
+    // accepted_answers should include both forms
+    expect(card.accepted_answers.map((a) => a.toLowerCase())).toContain("took the bull by the horns");
+    expect(card.accepted_answers.map((a) => a.toLowerCase())).toContain("take the bull by the horns");
   });
 });
