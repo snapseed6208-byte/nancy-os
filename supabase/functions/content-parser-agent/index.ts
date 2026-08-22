@@ -10,6 +10,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
+import {
+  canonicalEquipmentToDatabase,
+  detectWorkoutFactConflicts,
+  extractWorkoutFactsFromTitle,
+  formatLockedFactsForPrompt,
+  groundWorkoutMetadata,
+  hasAnyLockedWorkoutFacts,
+  lockedFactsToMetadata,
+  type LockedWorkoutFacts,
+  type VideoSourceEvidence,
+} from "../_shared/workout-title-parser.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -33,9 +44,16 @@ function getCorsHeaders(req: Request): Record<string, string> {
 }
 
 function jsonResponse(body: unknown, req: Request, status = 200): Response {
-  return new Response(JSON.stringify(body), {
+  const requestId = req.headers.get("x-request-id") || crypto.randomUUID();
+  const isObject = typeof body === "object" && body !== null && !Array.isArray(body);
+  const objectBody = isObject ? body as Record<string, unknown> : null;
+  const isError = status >= 400 || Boolean(objectBody?.error);
+  const responseBody = isError && objectBody
+    ? { success: false, requestId, ...objectBody }
+    : body;
+  return new Response(JSON.stringify(responseBody), {
     status,
-    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(req), "Content-Type": "application/json", "x-request-id": requestId },
   });
 }
 
@@ -96,110 +114,58 @@ const UNIFIED_PROMPT = `你是一个内容智能分析助手。用户给你一�
 
 ## 类型特定规则
 
-### 如果是 workout 类型，metadata 必须包含:
+### 如果是 workout 类型：执行 Evidence-grounded metadata completion
+
+来源证据中明确写出的事实绝对优先。不得根据博主身份、平台、热度或常见健身套路推断视频没有表达的内容。不得为了填满 schema 编造时长、难度、器械、训练类型、部位或肌肉。
+
+metadata 使用以下结构；证据不足的标量必须返回 null，数组必须返回 []：
 {
-  "difficulty": "初级|中级|高级",
-  "estimated_duration": 数字（分钟）,
-  "target_muscles": ["具体训练肌群名称"],
-  "training_type": "力量训练|塑形训练|有氧燃脂|HIIT|拉伸|瑜伽|康复",
-  "category": "臀腿|背部|肩胸|核心|全身|有氧|拉伸",
-  "equipment": "训练器材（如：哑铃、弹力带、自重、杠铃、瑜伽垫）",
-  "tags": ["标签1", "标签2", "标签3"],
-  "analysis_notes": "一句话解释为什么这样分类（中文）"
+  "difficulty": "初级|中级|高级|null",
+  "estimated_duration": "数字分钟|null",
+  "target_muscles": [],
+  "body_parts": [],
+  "training_type": "力量训练|塑形训练|有氧燃脂|HIIT|拉伸|热身|瑜伽|普拉提|灵活性训练|康复|null",
+  "workout_type": "strength|sculpt|cardio|hiit|stretching|warmup|yoga|pilates|mobility|recovery|null",
+  "category": "臀腿|背部|肩胸|核心|全身|有氧|拉伸|null",
+  "equipment_required": "boolean|null",
+  "equipment": [],
+  "scenarios": [],
+  "tags": [],
+  "analysis_notes": "仅说明有证据支持的判断",
+  "inference_notes": [],
+  "inferred_fields": []
 }
 
-## workout 健身训练领域分类规则（核心）
+### workout 证据规则
 
-你的核心任务不是判断「这个视频有没有燃脂效果」，而是回答：
-**「用户今天想练某个部位时，能不能快速找到这个训练」**。
-
-### category 分类规则 — 最重要
-
-category 代表用户筛选训练库时最期望看到的位置。
-
-分类优先级：**主要训练目标 > 主要目标肌群 > 训练形式**
-
-**禁止规则：**
-- 禁止因为「动作多、涉及多个部位」就归类为「全身」
-- 禁止根据「是否燃脂、是否消耗大」判断分类
-- 禁止因为「包含跳跃动作」就归类为「有氧」
-
-**关键词 → category 映射（高优先级，命中即采用）：**
-
-腰腹类 → category: "核心"
-关键词：沙漏腰、小蛮腰、马甲线、腹肌、瘦腰、收腹、腰腹塑形、练腹、腹部雕刻、核心训练
-target_muscles: ["腹横肌", "腹直肌", "腹斜肌"]
-training_type: "塑形训练"
-
-臀腿类 → category: "臀腿"
-关键词：蜜桃臀、翘臀、臀腿、练臀、臀部激活、瘦腿、美腿、下肢、深蹲、臀推
-target_muscles: ["臀大肌", "臀中肌", "股四头肌", "腘绳肌"]
-
-背部类 → category: "背部"
-关键词：瘦背、薄背、背部线条、改善圆肩、驼背矫正、背阔肌、划船、引体向上、美背
-target_muscles: ["背阔肌", "菱形肌", "斜方肌", "竖脊肌"]
-
-肩胸类 → category: "肩胸"
-关键词：直角肩、肩颈、胸型、练肩、肩部塑形、俯卧撑、卧推、胸部
-target_muscles: ["三角肌", "胸大肌", "肩袖肌群"]
-
-有氧类 → category: "有氧"
-关键词：跑步、跳绳、跳操、燃脂操、有氧操、爬楼、单车、游泳、椭圆机
-注意：必须是明确的纯有氧运动，而非塑形训练中附带的心率提升
-
-拉伸类 → category: "拉伸"
-关键词：拉伸、放松、瑜伽、冥想、柔韧性、筋膜放松、泡沫轴
-
-### training_type 分类规则
-
-可用值：力量训练、塑形训练、有氧燃脂、HIIT、拉伸、瑜伽、康复
-
-**判断规则：**
-
-塑形训练 → category 为核心/臀腿/背部/肩胸，目标是塑形而非增力
-力量训练 → 明确使用大重量、低次数、增力目标
-有氧燃脂 → 持续性中低强度、目标是消耗热量
-HIIT → **必须同时满足**以下条件之一：
-  - 明确标注「间歇」「Tabata」「HIIT」
-  - 工作/休息时间结构（如 30s 训练 + 10s 休息）
-  - 高强度循环训练且明确标注
-
-**重要：普通燃脂操、跳操、居家运动不要标记为 HIIT，标记为「有氧燃脂」**
-
-瑜伽 → 瑜伽体式练习
-拉伸 → 拉伸放松、筋膜放松、泡沫轴
-康复 → 康复训练、物理治疗、产后恢复
+1. LOCKED FACTS 来自标题或 metadata，是不可覆盖的硬事实。
+2. 只补充 LOCKED FACTS 中仍未知的字段。
+3. 标题只写「拉伸」时，可以确认训练类型，但不能编造具体目标肌肉。
+4. 标题没有难度证据时 difficulty 返回 null；短时长不等于初级。
+5. 标题没有时长时 estimated_duration 返回 null。
+6. 标题没有器械信息时 equipment_required 返回 null，equipment 返回 []。
+7. 标题没有部位时 target_muscles 和 body_parts 返回 []。
+8. 只有 transcript/page content 明确描述动作时，才可从动作谨慎补充肌肉。
+9. 推断字段必须列入 inferred_fields，并在 inference_notes 说明证据和不确定性。
+10. url_only 不允许生成 workout metadata，调用方会在 AI 前拒绝该请求。
 
 ### title 生成规则
 
-不要简单复制原标题。生成用户容易理解的训练名称。
-
-规则：
-- 去除博主的名字（如「【欧阳春晓】」）
-- 去除版本号和无意义后缀（如「1.0」「自用」「招头去尾」）
-- 格式：核心训练目标 + 训练类型
-- 例如：「【欧阳春晓】沙漏腰1.0（自用招头去尾）」→ 「沙漏腰塑形训练」
-- 例如：「10分钟蜜桃臀训练」→ 「蜜桃臀塑形训练」
-- 保留时长信息如果有的话
+优先保留来源原标题。不得用更泛化或冲突的 AI 标题覆盖包含明确时长、类型、器械或场景的原标题。
 
 ### tags 规则
 
-3-6 个中文标签，帮助用户搜索。优先使用：
-- 训练目标标签（如：腰腹塑形、蜜桃臀、瘦背）
-- 训练特征标签（如：无器械、居家训练、新手友好、小重量）
-- 避免模糊标签（如：燃脂、减肥、健身）
+只使用证据中出现或可直接等价转换的标签。不得新增未被证据支持的器械、难度、训练目标或肌肉标签。
 
 ### difficulty 规则
 
-- 初级：新手友好、无跳跃、低冲击、短时长（<15分钟）
-- 中级：需要一定基础、中等强度
-- 高级：高强度、复杂动作、长时长（>45分钟）、需要器械基础
+- 只有证据明确出现初级/新手、中级/进阶、高级/高阶时才填写
+- 仅凭时长、博主或平台不得推断难度
+- 无明确证据返回 null
 
 ### analysis_notes 规则
 
-一句话解释分类依据。例如：
-- "视频标题明确包含沙漏腰，主要目标为腰腹塑形，因此归类为核心/塑形训练"
-- "标题含蜜桃臀关键词，训练目标为臀部塑形，归类为臀腿"
+只解释证据明确支持的字段；未知字段应明确保持未知。
 
 ### 如果是 recipe 类型，metadata 必须包含:
 {
@@ -692,7 +658,11 @@ interface VideoSourceMetadata {
   author?: string;
   cover?: string;
   source?: string;
+  source_level?: VideoSourceEvidence["sourceLevel"];
   fetched_at?: string;
+  locked_facts?: Record<string, unknown>;
+  ai_inferred_fields?: string[];
+  fact_conflicts?: Array<Record<string, unknown>>;
 }
 
 interface DatabaseWorkoutSource {
@@ -843,7 +813,7 @@ function extractMeta(html: string, pattern: RegExp): string | null {
 
 // Workout
 const WORKOUT_VALID_DIFFICULTY = ["初级", "中级", "高级"] as const;
-const WORKOUT_VALID_TRAINING_TYPE = ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "瑜伽", "康复"] as const;
+const WORKOUT_VALID_TRAINING_TYPE = ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "热身", "瑜伽", "普拉提", "灵活性训练", "康复"] as const;
 const WORKOUT_VALID_CATEGORY = ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"] as const;
 
 // Recipe
@@ -871,7 +841,8 @@ function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: bo
     "strength": "力量训练", "weight training": "力量训练",
     "bodyweight": "塑形训练", "sculpting": "塑形训练",
     "cardio": "有氧燃脂", "aerobic": "有氧燃脂",
-    "yoga": "瑜伽", "stretching": "拉伸",
+    "yoga": "瑜伽", "stretching": "拉伸", "warmup": "热身", "warm up": "热身",
+    "pilates": "普拉提", "mobility": "灵活性训练",
     "rehab": "康复", "rehabilitation": "康复",
   };
   if (typeof corrected.training_type === "string" && trainingTypeMap[corrected.training_type.toLowerCase()]) {
@@ -891,15 +862,15 @@ function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: bo
   }
 
   // Validate
-  if (!corrected.difficulty || !WORKOUT_VALID_DIFFICULTY.includes(corrected.difficulty as string)) {
+  if (corrected.difficulty && !WORKOUT_VALID_DIFFICULTY.includes(corrected.difficulty as string)) {
     errors.push(`difficulty 值无效: ${corrected.difficulty}，允许: ${WORKOUT_VALID_DIFFICULTY.join("/")}`);
   }
 
-  if (!corrected.training_type || !WORKOUT_VALID_TRAINING_TYPE.includes(corrected.training_type as string)) {
+  if (corrected.training_type && !WORKOUT_VALID_TRAINING_TYPE.includes(corrected.training_type as string)) {
     errors.push(`training_type 值无效: ${corrected.training_type}，允许: ${WORKOUT_VALID_TRAINING_TYPE.join("/")}`);
   }
 
-  if (!corrected.category || !WORKOUT_VALID_CATEGORY.includes(corrected.category as string)) {
+  if (corrected.category && !WORKOUT_VALID_CATEGORY.includes(corrected.category as string)) {
     errors.push(`category 值无效: ${corrected.category}，允许: ${WORKOUT_VALID_CATEGORY.join("/")}`);
   }
 
@@ -909,6 +880,12 @@ function validateWorkoutMetadata(metadata: Record<string, unknown>): { valid: bo
       errors.push(`estimated_duration 超出范围: ${d}，允许 1-300`);
     }
   }
+
+  if (!Array.isArray(corrected.target_muscles)) corrected.target_muscles = [];
+  if (!Array.isArray(corrected.body_parts)) corrected.body_parts = [];
+  if (!Array.isArray(corrected.scenarios)) corrected.scenarios = [];
+  if (!Array.isArray(corrected.inference_notes)) corrected.inference_notes = [];
+  if (!Array.isArray(corrected.inferred_fields)) corrected.inferred_fields = [];
 
   return { valid: errors.length === 0, errors, corrected };
 }
@@ -1085,6 +1062,8 @@ serve(async (req: Request) => {
     let videoAnalysisSource = "url_only";
     let videoSourceTitle = usableWorkoutTitle(preFetchedTitle);
     let videoSourceMetadata: VideoSourceMetadata = {};
+    let videoEvidence: VideoSourceEvidence | null = null;
+    let lockedWorkoutFacts: LockedWorkoutFacts = {};
     let preserveDatabaseTitle = false;
 
     if (isRecipePipeline) {
@@ -1153,7 +1132,15 @@ serve(async (req: Request) => {
       const databaseMetadata = databaseWorkout?.metadata || {};
       const databaseTitle = usableWorkoutTitle(databaseWorkout?.title);
       const databaseMetadataTitle = usableWorkoutTitle(databaseMetadata.title);
+      const suppliedSourceTitle = usableWorkoutTitle(sourceContent?.title);
+      const suppliedSourceDescription = usableString(sourceContent?.description);
       const sourceText = workoutSourceText(sourceContent);
+      const sourceTranscript = sourceContent
+        ? ["subtitle", "transcript"].map((key) => usableString(sourceContent[key])).filter(Boolean).join("\n\n").slice(0, 5000)
+        : "";
+      const sourcePageContent = sourceContent
+        ? ["text", "source_material", "vision_result"].map((key) => usableString(sourceContent[key])).filter(Boolean).join("\n\n").slice(0, 5000)
+        : "";
       preserveDatabaseTitle = databaseWorkout?.analysis_source === "manual" && !!databaseTitle;
 
       let bilibiliMetadata: VideoSourceMetadata | null = null;
@@ -1192,17 +1179,24 @@ serve(async (req: Request) => {
       const freshPlatformCover = usableString(bilibiliMetadata?.cover)
         || usableString(preFetchedCoverUrl)
         || usableString(fetchedContent?.cover);
-      const platformDescription = freshPlatformDescription || usableString(databaseMetadata.description);
+      const platformDescription = freshPlatformDescription
+        || suppliedSourceDescription
+        || usableString(databaseMetadata.description);
       const platformAuthor = freshPlatformAuthor || usableString(databaseMetadata.author) || usableString(databaseWorkout?.author);
       const platformCover = freshPlatformCover || usableString(databaseMetadata.cover) || usableString(databaseWorkout?.thumbnail_url);
 
       videoSourceTitle = preserveDatabaseTitle
         ? databaseTitle
-        : platformTitle || databaseMetadataTitle || databaseTitle;
+        : platformTitle || suppliedSourceTitle || databaseMetadataTitle || databaseTitle;
 
       const directText = !inputIsUrl ? usableString(input) : "";
-      const fullText = sourceText || directText || usableString(fetchedContent?.text);
+      const fetchedPageText = usableString(fetchedContent?.text);
+      const fullText = sourceTranscript || sourcePageContent || sourceText || directText || fetchedPageText;
       const hasFullContent = fullText.length > 50;
+      const hasSubstantivePageContent = sourcePageContent.length > 50
+        || fetchedPageText.length > 50
+        || directText.length > 20
+        || sourceContext.length > 0;
       const hasPlatformMetadata = Boolean(platformTitle || freshPlatformDescription || freshPlatformAuthor || freshPlatformCover);
       const hasDatabaseMetadata = Boolean(
         databaseTitle ||
@@ -1212,25 +1206,35 @@ serve(async (req: Request) => {
         databaseWorkout?.video_id ||
         Object.keys(databaseMetadata).length > 0
       );
-      const hasUsableSource = Boolean(
-        sourceContext ||
-        fullText ||
-        videoSourceTitle ||
-        hasPlatformMetadata ||
-        hasDatabaseMetadata
-      );
+      const hasUsableSource = Boolean(sourceContext || fullText || videoSourceTitle || platformDescription);
 
-      if (hasFullContent) videoAnalysisSource = "full_page";
-      else if (sourceContext || directText) videoAnalysisSource = "user_context";
-      else if (hasPlatformMetadata) videoAnalysisSource = "api_metadata";
-      else if (hasDatabaseMetadata) videoAnalysisSource = "database_metadata";
+      if (sourceTranscript) videoAnalysisSource = "transcript";
+      else if (hasSubstantivePageContent) videoAnalysisSource = "page_content";
+      else if (platformTitle || freshPlatformDescription) videoAnalysisSource = "platform_metadata";
+      else if (databaseTitle || databaseMetadataTitle || usableString(databaseMetadata.description)) videoAnalysisSource = "database_metadata";
+      else if (suppliedSourceTitle || suppliedSourceDescription || videoSourceTitle) videoAnalysisSource = "title_only";
       else videoAnalysisSource = "url_only";
+
+      videoEvidence = {
+        platform: platform === "bilibili" || platform === "douyin" ? platform : "other",
+        url: inputIsUrl ? input : databaseWorkout?.url || "",
+        title: videoSourceTitle || undefined,
+        description: platformDescription || undefined,
+        author: platformAuthor || undefined,
+        coverUrl: platformCover || undefined,
+        transcript: sourceTranscript || undefined,
+        pageText: (sourcePageContent || fetchedPageText || directText) || undefined,
+        userContext: sourceContext || undefined,
+        sourceLevel: videoAnalysisSource as VideoSourceEvidence["sourceLevel"],
+      };
+      lockedWorkoutFacts = extractWorkoutFactsFromTitle(videoEvidence.title || "", videoEvidence.description || "");
 
       const metadataSource = bilibiliMetadata?.source
         || ((usableWorkoutTitle(fetchedContent?.title) || freshPlatformDescription || freshPlatformAuthor || usableString(fetchedContent?.cover))
           ? fetchedContent?.source
           : "")
         || ((usableWorkoutTitle(preFetchedTitle) || usableString(preFetchedCoverUrl)) ? "prefetched" : "")
+        || ((suppliedSourceTitle || suppliedSourceDescription) ? "source_content" : "")
         || (hasDatabaseMetadata ? "database" : "url_only");
       videoSourceMetadata = {
         ...databaseMetadata,
@@ -1239,7 +1243,9 @@ serve(async (req: Request) => {
         author: platformAuthor || undefined,
         cover: platformCover || undefined,
         source: metadataSource,
+        source_level: videoEvidence.sourceLevel,
         fetched_at: metadataSource !== "database" ? new Date().toISOString() : databaseMetadata.fetched_at,
+        locked_facts: lockedFactsToMetadata(lockedWorkoutFacts),
       };
 
       if (workoutVideoId && (videoSourceTitle || platformDescription || platformAuthor || platformCover)) {
@@ -1257,7 +1263,7 @@ serve(async (req: Request) => {
         }
       }
 
-      if (isWorkoutPath && !hasUsableSource && !inputIsUrl) {
+      if (isWorkoutPath && !hasUsableSource) {
         if (workoutVideoId) {
           await supabase
             .from("workout_videos")
@@ -1267,7 +1273,7 @@ serve(async (req: Request) => {
         return jsonResponse({
           success: false,
           stage: "content_fetch",
-          error: "无法获取视频内容",
+          error: "缺少可用于判断训练内容的信息",
         }, req, 200);
       }
 
@@ -1287,10 +1293,9 @@ serve(async (req: Request) => {
         if (platformAuthor) userMessage += `\n作者: ${platformAuthor}`;
         if (platformCover) userMessage += `\n封面: ${platformCover}`;
         if (databaseWorkout?.video_id) userMessage += `\n平台视频ID: ${databaseWorkout.video_id}`;
-        // Tell AI this is expected to be a fitness/training video so it uses workout metadata
-        userMessage += `\n\n注意：这是一个训练视频链接。请使用 workout 类型的 metadata 格式，包含 difficulty（初级/中级/高级）、training_type（力量训练/塑形训练/有氧燃脂/HIIT/拉伸/瑜伽/康复）、category（臀腿/背部/肩胸/核心/全身/有氧/拉伸）、estimated_duration（预估分钟数）、target_muscles（目标肌群数组）。如果无法从页面内容确定这些信息，请根据视频标题合理推断。`;
+        userMessage += `\n\n${formatLockedFactsForPrompt(lockedWorkoutFacts)}`;
+        userMessage += `\n\n任务：仅补全证据支持但 LOCKED FACTS 尚未确定的字段。LOCKED FACTS 绝对不可覆盖；证据不足必须返回 null 或 []。`;
         if (fullText) userMessage += `\n页面文本/字幕片段: ${fullText}`;
-        if (videoAnalysisSource === "url_only") userMessage += `\n\n注意：当前只有URL信息，请进行最低置信度推断。`;
       } else if (inputIsUrl) {
         userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
         if (fetchedContent?.title) userMessage += `\n页面标题: ${fetchedContent.title}`;
@@ -1342,7 +1347,12 @@ serve(async (req: Request) => {
       if (recipeId) {
         await supabase.from("recipes").update({ ai_analysis_status: "failed" }).eq("id", recipeId);
       }
-      return jsonResponse({ stage: aiResult.stage, error: aiResult.error, detail: aiResult.detail }, req, 500);
+      return jsonResponse({
+        stage: "ai_analysis",
+        error: aiResult.error,
+        detail: aiResult.detail,
+        upstream_stage: aiResult.stage,
+      }, req, 500);
     }
 
     // ── Stage: response_parse ──
@@ -1391,9 +1401,19 @@ serve(async (req: Request) => {
     // ── Route to target table ──
     let targetTable = "resources";
     let recordId = "";
+    let responseAnalysisSource: string | null = null;
+    let responseAnalysisConfidence: string | null = null;
+    let responseAnalysisStatus: string | null = null;
 
     if (content_type === "workout") {
       targetTable = "workout_videos";
+
+      const rawAiWorkoutMetadata = { ...metadata };
+      const factConflicts = detectWorkoutFactConflicts(rawAiWorkoutMetadata, lockedWorkoutFacts);
+      const allowsContentInference = videoEvidence?.sourceLevel === "transcript"
+        || videoEvidence?.sourceLevel === "page_content";
+
+      metadata = groundWorkoutMetadata(metadata, lockedWorkoutFacts, allowsContentInference);
 
       // Validate workout metadata against schema (with auto-correction)
       const validation = validateWorkoutMetadata(metadata);
@@ -1410,6 +1430,7 @@ serve(async (req: Request) => {
             .eq("id", workoutVideoId);
         }
         return jsonResponse({
+          stage: "output_validation",
           error: "schema_validation_failed",
           message: "AI 输出不符合 schema",
           validation_errors: validation.errors,
@@ -1422,51 +1443,98 @@ serve(async (req: Request) => {
       // Use corrected metadata
       metadata = validation.corrected;
 
-      // ── Quality assessment (shared by UPDATE and INSERT paths) ──
-      const isGenericTitle = !title || GENERIC_WORKOUT_TITLES.includes(title) || /^[a-zA-Z\s]*$/.test(title);
-
-      // Protect trusted source titles, especially manual database titles.
-      const isSourceTitleGeneric = !videoSourceTitle || GENERIC_WORKOUT_TITLES.includes(videoSourceTitle) || videoSourceTitle.length < 3;
-      if ((preserveDatabaseTitle || isGenericTitle) && !isSourceTitleGeneric && videoSourceTitle) {
-        console.log("[content-parser-agent] stage=title_fallback using source title instead of AI output", {
-          aiTitle: title?.slice(0, 40),
-          sourceTitle: videoSourceTitle.slice(0, 40),
-          preserveDatabaseTitle,
-        });
+      const finalTitle = videoSourceTitle || title;
+      const analysisSource = videoEvidence?.sourceLevel || videoAnalysisSource;
+      const lockedMetadata = lockedFactsToMetadata(lockedWorkoutFacts);
+      const lockedFields = new Set(Object.keys(lockedMetadata));
+      if (lockedWorkoutFacts.durationMinutes) lockedFields.add("estimated_duration");
+      if (lockedWorkoutFacts.trainingType) lockedFields.add("workout_type");
+      if (lockedWorkoutFacts.bodyParts) {
+        lockedFields.add("target_muscles");
+        lockedFields.add("category");
+      } else if (lockedWorkoutFacts.trainingType) {
+        lockedFields.add("category");
       }
-      const finalTitle = (preserveDatabaseTitle || isGenericTitle) && !isSourceTitleGeneric && videoSourceTitle
-        ? videoSourceTitle
-        : title;
-      // Recalculate generic check with the final title
-      const isFinalTitleGeneric = !finalTitle || GENERIC_WORKOUT_TITLES.includes(finalTitle) || /^[a-zA-Z\s]*$/.test(finalTitle);
+      const inferenceCandidates = [
+        "difficulty",
+        "estimated_duration",
+        "training_type",
+        "category",
+        "target_muscles",
+        "equipment",
+        "scenarios",
+      ];
+      const hasValue = (value: unknown): boolean => Array.isArray(value)
+        ? value.length > 0
+        : value !== null && value !== undefined && value !== "";
+      const aiInferredFields = allowsContentInference
+        ? inferenceCandidates.filter((field) => hasValue(metadata[field]) && !lockedFields.has(field))
+        : [];
 
-      const analysisSource = videoAnalysisSource;
+      videoSourceMetadata = {
+        ...videoSourceMetadata,
+        source_level: analysisSource,
+        locked_facts: lockedMetadata,
+        ai_inferred_fields: aiInferredFields,
+        fact_conflicts: factConflicts.map((conflict) => ({ ...conflict })),
+      };
 
-      let analysisConfidence: string;
-      const hasValidCategory = metadata.category && ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"].includes(metadata.category as string);
-      const hasValidTrainingType = metadata.training_type && ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "瑜伽", "康复"].includes(metadata.training_type as string);
-
-      if (!isFinalTitleGeneric && hasValidCategory && hasValidTrainingType && analysisSource === "full_page") {
-        analysisConfidence = "high";
-      } else if (!isFinalTitleGeneric && hasValidCategory && hasValidTrainingType && analysisSource !== "url_only") {
-        analysisConfidence = "medium";
-      } else if (isFinalTitleGeneric || analysisSource === "url_only") {
-        analysisConfidence = "low";
-      } else {
-        analysisConfidence = "medium";
-      }
-
-      const finalStatus = analysisConfidence === "low" ? "failed" : "completed";
+      const hasLockedFacts = hasAnyLockedWorkoutFacts(lockedWorkoutFacts);
+      const hasStructuredFacts = [
+        metadata.estimated_duration,
+        metadata.training_type,
+        metadata.category,
+        metadata.equipment_required,
+      ].some(hasValue)
+        || hasValue(metadata.target_muscles)
+        || hasValue(metadata.equipment)
+        || hasValue(metadata.scenarios);
+      const analysisConfidence = allowsContentInference && hasStructuredFacts
+        ? "high"
+        : hasLockedFacts
+          ? "medium"
+          : "low";
+      const finalStatus = hasStructuredFacts ? "completed" : "partial";
+      responseAnalysisSource = analysisSource;
+      responseAnalysisConfidence = analysisConfidence;
+      responseAnalysisStatus = finalStatus;
 
       console.log("[content-parser-agent] stage=quality_check", {
         analysisSource,
         analysisConfidence,
         finalStatus,
-        isGenericTitle: isFinalTitleGeneric,
         finalTitle: finalTitle?.slice(0, 40),
-        hasCategory: hasValidCategory,
-        hasTrainingType: hasValidTrainingType,
+        lockedFields: [...lockedFields],
+        aiInferredFields,
+        conflictCount: factConflicts.length,
       });
+
+      const equipmentItems = Array.isArray(metadata.equipment)
+        ? (metadata.equipment as string[])
+        : [];
+      const equipment = Array.isArray(metadata.equipment)
+        ? canonicalEquipmentToDatabase(
+          equipmentItems,
+          typeof metadata.equipment_required === "boolean" ? metadata.equipment_required : undefined,
+        )
+        : usableString(metadata.equipment) || null;
+      const updateFields = {
+        title: finalTitle || undefined,
+        category: usableString(metadata.category) || null,
+        difficulty: usableString(metadata.difficulty) || null,
+        training_type: usableString(metadata.training_type) || null,
+        estimated_duration: typeof metadata.estimated_duration === "number" ? metadata.estimated_duration : null,
+        target_muscles: Array.isArray(metadata.target_muscles) ? metadata.target_muscles as string[] : [],
+        equipment,
+        tags: Array.isArray(metadata.tags) ? metadata.tags as string[] : [],
+        description: usableString(metadata.analysis_notes) || null,
+        author: videoSourceMetadata.author || databaseWorkout?.author || null,
+        thumbnail_url: videoSourceMetadata.cover || databaseWorkout?.thumbnail_url || null,
+        metadata: videoSourceMetadata,
+        analysis_source: analysisSource,
+        analysis_confidence: analysisConfidence,
+        ai_analysis_status: finalStatus,
+      };
 
       if (workoutVideoId) {
         // ── Stage: database_save ──
@@ -1480,63 +1548,52 @@ serve(async (req: Request) => {
           muscles: (metadata.target_muscles as string[])?.length || 0,
         });
         // ── UPDATE mode: enrich existing workout_video row ──
-        const { data: updated } = await supabase
+        const { data: updated, error: saveError } = await supabase
           .from("workout_videos")
-          .update({
-            title: finalTitle || undefined,
-            category: metadata.category as string,
-            difficulty: metadata.difficulty as string,
-            training_type: metadata.training_type as string,
-            estimated_duration: (metadata.estimated_duration as number) || null,
-            target_muscles: (metadata.target_muscles as string[]) || [],
-            equipment: (metadata.equipment as string) || null,
-            tags: (metadata.tags as string[]) || [],
-            description: (metadata.analysis_notes as string) || null,
-            author: videoSourceMetadata.author || databaseWorkout?.author || null,
-            thumbnail_url: videoSourceMetadata.cover || databaseWorkout?.thumbnail_url || null,
-            metadata: videoSourceMetadata,
-            analysis_source: analysisSource,
-            analysis_confidence: analysisConfidence,
-            ai_analysis_status: finalStatus,
-          })
+          .update(updateFields)
           .eq("id", workoutVideoId)
           .select("id")
           .single();
 
-        if (updated) {
-          recordId = updated.id as string;
-          console.log("[content-parser-agent] stage=database_save done", { recordId, status: finalStatus });
-        } else {
-          console.error("[content-parser-agent] stage=database_save FAILED: no row updated", { workoutVideoId });
+        if (saveError || !updated) {
+          console.error("[content-parser-agent] stage=database_save FAILED", {
+            workoutVideoId,
+            error: saveError?.message || "no row updated",
+          });
+          return jsonResponse({
+            success: false,
+            stage: "database_save",
+            error: "无法保存训练分析结果",
+            detail: saveError?.message || "No workout row was updated",
+          }, req, 500);
         }
+        recordId = updated.id as string;
+        console.log("[content-parser-agent] stage=database_save done", { recordId, status: finalStatus });
       } else {
         // ── INSERT mode: create new workout_video row ──
-        const { data: inserted } = await supabase
+        const { data: inserted, error: saveError } = await supabase
           .from("workout_videos")
           .insert({
+            ...updateFields,
             user_id: user.id,
-            title: finalTitle,
-            category: metadata.category as string,
-            difficulty: (metadata.difficulty as string) || "初级",
-            training_type: metadata.training_type as string,
-            estimated_duration: (metadata.estimated_duration as number) || null,
-            target_muscles: (metadata.target_muscles as string[]) || [],
-            equipment: (metadata.equipment as string) || null,
-            tags: (metadata.tags as string[]) || [],
-            description: (metadata.analysis_notes as string) || null,
-            author: videoSourceMetadata.author || null,
-            thumbnail_url: videoSourceMetadata.cover || null,
-            metadata: videoSourceMetadata,
             platform: inputIsUrl ? platform : null,
             url: inputIsUrl ? input : null,
-            analysis_source: analysisSource,
-            analysis_confidence: analysisConfidence,
-            ai_analysis_status: finalStatus,
           })
           .select("id")
           .single();
 
-        if (inserted) recordId = inserted.id as string;
+        if (saveError || !inserted) {
+          console.error("[content-parser-agent] stage=database_save FAILED", {
+            error: saveError?.message || "no row inserted",
+          });
+          return jsonResponse({
+            success: false,
+            stage: "database_save",
+            error: "无法保存训练分析结果",
+            detail: saveError?.message || "No workout row was inserted",
+          }, req, 500);
+        }
+        recordId = inserted.id as string;
       }
     } else if (content_type === "recipe") {
       targetTable = "recipes";
@@ -1758,6 +1815,7 @@ serve(async (req: Request) => {
     // For resources (article/video/course), recordId is empty (no auto-save).
     // Preserve raw text content when input is not a URL.
     return jsonResponse({
+      success: true,
       content_type,
       title,
       category,
@@ -1776,6 +1834,9 @@ serve(async (req: Request) => {
       source_url: body.url || input || null,
       source_platform: inputIsUrl ? platform : null,
       raw_content: inputIsUrl ? null : (body.text || input || null),
+      analysis_source: responseAnalysisSource,
+      analysis_confidence: responseAnalysisConfidence,
+      ai_analysis_status: responseAnalysisStatus,
     }, req);
 
   } catch (err) {
