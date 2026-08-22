@@ -25,6 +25,15 @@ export type BodyProfile = {
   updated_at: string;
 };
 
+export type WorkoutVideoSourceMetadata = {
+  title?: string;
+  description?: string;
+  author?: string;
+  cover?: string;
+  source?: string;
+  fetched_at?: string;
+};
+
 export type WorkoutVideo = {
   id: string;
   user_id: string;
@@ -48,6 +57,7 @@ export type WorkoutVideo = {
   analysis_source: string | null;
   analysis_confidence: string | null;
   ai_analysis_status: string | null;
+  metadata: WorkoutVideoSourceMetadata;
   created_at: string;
 };
 
@@ -295,6 +305,7 @@ export function useCreateWorkoutVideo() {
       // Resolve B站 short links / av号 → canonical URL + metadata via Edge Function
       let resolvedTitle: string | null = null;
       let resolvedCover: string | null = null;
+      let resolvedAuthor: string | null = null;
       let resolvedCanonical: string | null = null;
       let resolvedBvid: string | null = extractVideoId(normalized, platform);
       let resolvedPage = extractPageFromUrl(normalized);
@@ -308,12 +319,14 @@ export function useCreateWorkoutVideo() {
           const rd = resolveData as {
             canonical_url: string; bvid: string | null; page: number;
             title: string | null; cover_url: string | null;
+            duration_seconds?: number | null; owner_name?: string | null;
           };
           resolvedCanonical = rd.canonical_url || null;
           resolvedBvid = rd.bvid || resolvedBvid;
           resolvedPage = rd.page || resolvedPage;
           resolvedTitle = rd.title || null;
           resolvedCover = rd.cover_url || null;
+          resolvedAuthor = rd.owner_name || null;
         }
       }
 
@@ -327,6 +340,15 @@ export function useCreateWorkoutVideo() {
 
       // Use resolved title from B站 API, fallback to generic default
       const initialTitle = resolvedTitle || getDefaultVideoTitle(platform);
+      const sourceMetadata: WorkoutVideoSourceMetadata = resolvedTitle || resolvedAuthor || resolvedCover
+        ? {
+            title: resolvedTitle || undefined,
+            author: resolvedAuthor || undefined,
+            cover: resolvedCover || undefined,
+            source: "bilibili_api",
+            fetched_at: new Date().toISOString(),
+          }
+        : {};
 
       // Step 1: Insert record with resolved metadata
       const { data, error } = await supabase
@@ -336,6 +358,7 @@ export function useCreateWorkoutVideo() {
           url: finalUrl,
           platform,
           title: initialTitle,
+          author: resolvedAuthor,
           video_id: videoId,
           embed_url: embedUrl,
           thumbnail_url: thumbnailUrl,
@@ -343,6 +366,7 @@ export function useCreateWorkoutVideo() {
           difficulty: null,
           estimated_duration: null,
           ai_analysis_status: "pending",
+          metadata: sourceMetadata,
         })
         .select()
         .single();
@@ -356,6 +380,7 @@ export function useCreateWorkoutVideo() {
         workout_video_id: record.id,
         pre_fetched_title: resolvedTitle,
         pre_fetched_cover_url: resolvedCover,
+        platform,
       }).then((result) => {
         if (!result.success) {
           console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, platform, error: result.error, detail: result.detail });
@@ -464,8 +489,21 @@ export function useRetryWorkoutAnalysis() {
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: async (video: { id: string; url: string }) => {
+      const { data: storedVideo, error: loadError } = await supabase
+        .from("workout_videos")
+        .select("id, url, title, thumbnail_url, platform, video_id, metadata")
+        .eq("id", video.id)
+        .single();
+      if (loadError) throw loadError;
+
       const result = await invokeAI("content-parser-agent",
-        { url: video.url, workout_video_id: video.id },
+        {
+          url: storedVideo.url || video.url,
+          workout_video_id: video.id,
+          pre_fetched_title: storedVideo.title || undefined,
+          pre_fetched_cover_url: storedVideo.thumbnail_url || undefined,
+          platform: storedVideo.platform || undefined,
+        },
         { timeout: 30_000 },
       );
       if (!result.success) {
@@ -1859,6 +1897,3 @@ export function useHealthGoals() {
     staleTime: 2 * 60 * 1000,
   });
 }
-
-
-

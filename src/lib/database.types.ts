@@ -3505,6 +3505,7 @@ export type Database = {
           estimated_duration: number | null
           id: string
           is_favorite: boolean | null
+          metadata: Json
           notes: string | null
           platform: string | null
           tags: string[] | null
@@ -3530,6 +3531,7 @@ export type Database = {
           estimated_duration?: number | null
           id?: string
           is_favorite?: boolean | null
+          metadata?: Json
           notes?: string | null
           platform?: string | null
           tags?: string[] | null
@@ -3555,6 +3557,7 @@ export type Database = {
           estimated_duration?: number | null
           id?: string
           is_favorite?: boolean | null
+          metadata?: Json
           notes?: string | null
           platform?: string | null
           tags?: string[] | null

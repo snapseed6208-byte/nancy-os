@@ -679,11 +679,54 @@ interface UrlContentResult {
   title: string;
   description: string;
   text: string;
+  author?: string;
+  cover?: string;
+  source?: string;
   error?: string;
   statusCode?: number;
 }
 
-async function fetchUrlContent(url: string): Promise<UrlContentResult> {
+interface VideoSourceMetadata {
+  title?: string;
+  description?: string;
+  author?: string;
+  cover?: string;
+  source?: string;
+  fetched_at?: string;
+}
+
+interface DatabaseWorkoutSource {
+  url: string;
+  title: string | null;
+  author: string | null;
+  thumbnail_url: string | null;
+  platform: string | null;
+  video_id: string | null;
+  analysis_source: string | null;
+  metadata: VideoSourceMetadata | null;
+}
+
+const GENERIC_WORKOUT_TITLES = ["训练视频", "健身训练视频", "B站训练视频", "抖音训练视频", "小红书训练视频", "YouTube训练视频"];
+
+function usableString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function usableWorkoutTitle(value: unknown): string {
+  const title = usableString(value);
+  return title && !GENERIC_WORKOUT_TITLES.includes(title) ? title : "";
+}
+
+function workoutSourceText(sourceContent: Record<string, unknown> | null): string {
+  if (!sourceContent) return "";
+  return ["subtitle", "transcript", "text", "source_material", "vision_result"]
+    .map((key) => usableString(sourceContent[key]))
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 5000);
+}
+
+async function fetchUrlContent(url: string, includePageText = true): Promise<UrlContentResult> {
   const platform = detectPlatform(url);
   const referer = platform === "bilibili" ? "https://www.bilibili.com/"
     : platform === "youtube" ? "https://www.youtube.com/"
@@ -724,8 +767,10 @@ async function fetchUrlContent(url: string): Promise<UrlContentResult> {
     const ogTitle = extractMeta(html, /<meta\s+property="og:title"\s+content="([^"]*)"/i) || "";
     const description = extractMeta(html, /<meta\s+name="description"\s+content="([^"]*)"/i)
       || extractMeta(html, /<meta\s+property="og:description"\s+content="([^"]*)"/i) || "";
+    const author = extractMeta(html, /<meta\s+name="author"\s+content="([^"]*)"/i) || "";
+    const cover = extractMeta(html, /<meta\s+property="og:image"\s+content="([^"]*)"/i) || "";
     // Strip tags and get meaningful text
-    const text = html
+    const text = includePageText ? html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
       .replace(/<[^>]+>/g, " ")
@@ -736,12 +781,15 @@ async function fetchUrlContent(url: string): Promise<UrlContentResult> {
       .replace(/&#x27;/g, "'")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 3000);
+      .slice(0, 3000) : "";
 
     return {
       title: ogTitle || title,
       description,
       text,
+      author,
+      cover,
+      source: platform === "douyin" ? "douyin_page" : "web_page",
     };
   } catch (err) {
     const errMsg = (err as Error).message || "fetch failed";
@@ -752,6 +800,37 @@ async function fetchUrlContent(url: string): Promise<UrlContentResult> {
       text: "",
       error: isTimeout ? "页面请求超时 (10s)" : `网络错误: ${errMsg}`,
     };
+  }
+}
+
+async function fetchBilibiliMetadata(bvid: string): Promise<VideoSourceMetadata | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const response = await fetch(
+      `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+      {
+        signal: controller.signal,
+        headers: { "User-Agent": BROWSER_UA, "Referer": "https://www.bilibili.com/" },
+      },
+    );
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+
+    const result = await response.json();
+    if (result.code !== 0 || !result.data) return null;
+
+    return {
+      title: usableString(result.data.title) || undefined,
+      description: usableString(result.data.desc) || undefined,
+      author: usableString(result.data.owner?.name) || undefined,
+      cover: usableString(result.data.pic) || undefined,
+      source: "bilibili_api",
+      fetched_at: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.log("[content-parser-agent] stage=bilibili_metadata error", { error: String(err) });
+    return null;
   }
 }
 
@@ -916,6 +995,9 @@ serve(async (req: Request) => {
     source_context?: string;
     source_content?: Record<string, unknown>;
     source_type?: string;
+    pre_fetched_title?: string;
+    pre_fetched_cover_url?: string;
+    platform?: string;
   };
   try {
     body = await req.json();
@@ -934,7 +1016,7 @@ serve(async (req: Request) => {
   const preFetchedTitle = body.pre_fetched_title || "";
   const preFetchedCoverUrl = body.pre_fetched_cover_url || "";
 
-  const input = body.url || body.text || "";
+  let input = body.url || body.text || "";
   if (!input && !workoutVideoId && !recipeId) {
     return jsonResponse({
       stage: "payload",
@@ -961,8 +1043,25 @@ serve(async (req: Request) => {
 
   try {
 
-    const inputIsUrl = body.url ? true : isUrl(input);
-    const platform = inputIsUrl ? detectPlatform(input) : "text";
+    let databaseWorkout: DatabaseWorkoutSource | null = null;
+    if (workoutVideoId) {
+      const { data: workoutRow, error: workoutLoadError } = await supabase
+        .from("workout_videos")
+        .select("url, title, author, thumbnail_url, platform, video_id, analysis_source, metadata")
+        .eq("id", workoutVideoId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (workoutLoadError) {
+        console.error("[content-parser-agent] stage=database_load workout FAILED", { workoutVideoId, error: workoutLoadError.message });
+        return jsonResponse({ stage: "database", error: "无法读取训练视频信息", detail: workoutLoadError.message }, req, 500);
+      }
+      databaseWorkout = workoutRow as DatabaseWorkoutSource | null;
+      if (!input && databaseWorkout?.url) input = databaseWorkout.url;
+    }
+
+    const inputIsUrl = isUrl(input);
+    const platform = usableString(body.platform) || databaseWorkout?.platform || (inputIsUrl ? detectPlatform(input) : "text");
     const preferredModule = body.preferred_module || "";
 
     // Determine if this is a recipe pipeline call (has source_content from extractor)
@@ -982,6 +1081,11 @@ serve(async (req: Request) => {
 
     let systemPrompt: string;
     let userMessage: string;
+    let fetchedContent: UrlContentResult | null = null;
+    let videoAnalysisSource = "url_only";
+    let videoSourceTitle = usableWorkoutTitle(preFetchedTitle);
+    let videoSourceMetadata: VideoSourceMetadata = {};
+    let preserveDatabaseTitle = false;
 
     if (isRecipePipeline) {
       // ═══════════════════════════════════════════
@@ -1046,46 +1150,125 @@ serve(async (req: Request) => {
       systemPrompt = UNIFIED_PROMPT;
 
       // ── Stage: video_fetch ──
-      let fetchedContent: UrlContentResult = { title: "", description: "", text: "" };
-      if (inputIsUrl) {
-        console.log("[content-parser-agent] stage=video_fetch start", { url: input.slice(0, 80), platform });
-        fetchedContent = await fetchUrlContent(input);
-        console.log("[content-parser-agent] stage=video_fetch done", {
-          title: fetchedContent.title.slice(0, 80),
-          textLen: fetchedContent.text.length,
-          descLen: fetchedContent.description.length,
-          error: fetchedContent.error || null,
-          statusCode: fetchedContent.statusCode || null,
+      const databaseMetadata = databaseWorkout?.metadata || {};
+      const databaseTitle = usableWorkoutTitle(databaseWorkout?.title);
+      const databaseMetadataTitle = usableWorkoutTitle(databaseMetadata.title);
+      const sourceText = workoutSourceText(sourceContent);
+      preserveDatabaseTitle = databaseWorkout?.analysis_source === "manual" && !!databaseTitle;
+
+      let bilibiliMetadata: VideoSourceMetadata | null = null;
+      const bvid = platform === "bilibili"
+        ? usableString(databaseWorkout?.video_id) || input.match(/bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/)?.[1] || ""
+        : "";
+
+      if (isWorkoutPath && bvid) {
+        console.log("[content-parser-agent] stage=bilibili_metadata start", { bvid });
+        bilibiliMetadata = await fetchBilibiliMetadata(bvid);
+        console.log("[content-parser-agent] stage=bilibili_metadata done", {
+          success: !!bilibiliMetadata,
+          title: bilibiliMetadata?.title?.slice(0, 60) || "",
         });
       }
 
-      // Server-side B站 API fallback: when page fetch fails, call api.bilibili.com directly
-      if (platform === "bilibili" && isWorkoutPath && !preFetchedTitle && (!fetchedContent.title || fetchedContent.text.length <= 50)) {
-        const bvMatch = input.match(/bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/);
-        const bvid = bvMatch ? bvMatch[1] : null;
-        if (bvid) {
-          console.log("[content-parser-agent] stage=bilibili_api_fallback fetching metadata for", { bvid });
-          try {
-            const apiResp = await fetch(
-              `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
-              { headers: { "User-Agent": BROWSER_UA, "Referer": "https://www.bilibili.com/" } },
-            );
-            if (apiResp.ok) {
-              const apiJson = await apiResp.json();
-              if (apiJson.code === 0 && apiJson.data) {
-                // Use B站 API result as pre-fetched title
-                const apiTitle = apiJson.data.title || "";
-                if (apiTitle && !["训练视频", "健身训练视频", "B站训练视频"].includes(apiTitle)) {
-                  // Inject API title into fetchedContent so it's used in userMessage
-                  fetchedContent.title = apiTitle;
-                  console.log("[content-parser-agent] stage=bilibili_api_fallback success", { title: apiTitle.slice(0, 60) });
-                }
-              }
-            }
-          } catch (err) {
-            console.log("[content-parser-agent] stage=bilibili_api_fallback error", { error: String(err) });
-          }
+      if (inputIsUrl) {
+        console.log("[content-parser-agent] stage=video_fetch start", { url: input.slice(0, 80), platform });
+        fetchedContent = await fetchUrlContent(input, platform !== "douyin");
+        console.log("[content-parser-agent] stage=video_fetch done", {
+          title: fetchedContent?.title?.slice(0, 80) ?? "",
+          textLen: fetchedContent?.text?.length ?? 0,
+          descLen: fetchedContent?.description?.length ?? 0,
+          error: fetchedContent?.error || null,
+          statusCode: fetchedContent?.statusCode || null,
+        });
+      }
+
+      const platformTitle = usableWorkoutTitle(bilibiliMetadata?.title)
+        || usableWorkoutTitle(preFetchedTitle)
+        || usableWorkoutTitle(fetchedContent?.title);
+      const freshPlatformDescription = usableString(bilibiliMetadata?.description)
+        || usableString(fetchedContent?.description);
+      const freshPlatformAuthor = usableString(bilibiliMetadata?.author)
+        || usableString(fetchedContent?.author);
+      const freshPlatformCover = usableString(bilibiliMetadata?.cover)
+        || usableString(preFetchedCoverUrl)
+        || usableString(fetchedContent?.cover);
+      const platformDescription = freshPlatformDescription || usableString(databaseMetadata.description);
+      const platformAuthor = freshPlatformAuthor || usableString(databaseMetadata.author) || usableString(databaseWorkout?.author);
+      const platformCover = freshPlatformCover || usableString(databaseMetadata.cover) || usableString(databaseWorkout?.thumbnail_url);
+
+      videoSourceTitle = preserveDatabaseTitle
+        ? databaseTitle
+        : platformTitle || databaseMetadataTitle || databaseTitle;
+
+      const directText = !inputIsUrl ? usableString(input) : "";
+      const fullText = sourceText || directText || usableString(fetchedContent?.text);
+      const hasFullContent = fullText.length > 50;
+      const hasPlatformMetadata = Boolean(platformTitle || freshPlatformDescription || freshPlatformAuthor || freshPlatformCover);
+      const hasDatabaseMetadata = Boolean(
+        databaseTitle ||
+        databaseMetadataTitle ||
+        databaseWorkout?.thumbnail_url ||
+        databaseWorkout?.platform ||
+        databaseWorkout?.video_id ||
+        Object.keys(databaseMetadata).length > 0
+      );
+      const hasUsableSource = Boolean(
+        sourceContext ||
+        fullText ||
+        videoSourceTitle ||
+        hasPlatformMetadata ||
+        hasDatabaseMetadata
+      );
+
+      if (hasFullContent) videoAnalysisSource = "full_page";
+      else if (sourceContext || directText) videoAnalysisSource = "user_context";
+      else if (hasPlatformMetadata) videoAnalysisSource = "api_metadata";
+      else if (hasDatabaseMetadata) videoAnalysisSource = "database_metadata";
+      else videoAnalysisSource = "url_only";
+
+      const metadataSource = bilibiliMetadata?.source
+        || ((usableWorkoutTitle(fetchedContent?.title) || freshPlatformDescription || freshPlatformAuthor || usableString(fetchedContent?.cover))
+          ? fetchedContent?.source
+          : "")
+        || ((usableWorkoutTitle(preFetchedTitle) || usableString(preFetchedCoverUrl)) ? "prefetched" : "")
+        || (hasDatabaseMetadata ? "database" : "url_only");
+      videoSourceMetadata = {
+        ...databaseMetadata,
+        title: videoSourceTitle || undefined,
+        description: platformDescription || undefined,
+        author: platformAuthor || undefined,
+        cover: platformCover || undefined,
+        source: metadataSource,
+        fetched_at: metadataSource !== "database" ? new Date().toISOString() : databaseMetadata.fetched_at,
+      };
+
+      if (workoutVideoId && (videoSourceTitle || platformDescription || platformAuthor || platformCover)) {
+        const sourceUpdate: Record<string, unknown> = { metadata: videoSourceMetadata };
+        if (!databaseWorkout?.title && videoSourceTitle) sourceUpdate.title = videoSourceTitle;
+        if (!databaseWorkout?.author && platformAuthor) sourceUpdate.author = platformAuthor;
+        if (!databaseWorkout?.thumbnail_url && platformCover) sourceUpdate.thumbnail_url = platformCover;
+        const { error: sourceSaveError } = await supabase
+          .from("workout_videos")
+          .update(sourceUpdate)
+          .eq("id", workoutVideoId)
+          .eq("user_id", user.id);
+        if (sourceSaveError) {
+          console.error("[content-parser-agent] stage=metadata_save FAILED", { workoutVideoId, error: sourceSaveError.message });
         }
+      }
+
+      if (isWorkoutPath && !hasUsableSource && !inputIsUrl) {
+        if (workoutVideoId) {
+          await supabase
+            .from("workout_videos")
+            .update({ ai_analysis_status: "failed" })
+            .eq("id", workoutVideoId);
+        }
+        return jsonResponse({
+          success: false,
+          stage: "content_fetch",
+          error: "无法获取视频内容",
+        }, req, 200);
       }
 
       // ── Stage: content_extract ──
@@ -1094,22 +1277,25 @@ serve(async (req: Request) => {
         userMessage = `用户提供的上下文:\n${sourceContext}\n\n`;
       }
 
-      if (inputIsUrl) {
-        userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
-        // Pre-fetched metadata from client (B站 API) — use as primary signal
-        if (preFetchedTitle) {
-          userMessage += `\n预取标题（高置信度）: ${preFetchedTitle}`;
-        }
+      if (isWorkoutPath) {
+        userMessage += inputIsUrl
+          ? `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`
+          : `输入类型: 视频来源信息\n平台: ${platform}`;
+        userMessage += `\n内容来源等级: ${videoAnalysisSource}`;
+        if (videoSourceTitle) userMessage += `\n可用标题: ${videoSourceTitle}`;
+        if (platformDescription) userMessage += `\n页面描述: ${platformDescription}`;
+        if (platformAuthor) userMessage += `\n作者: ${platformAuthor}`;
+        if (platformCover) userMessage += `\n封面: ${platformCover}`;
+        if (databaseWorkout?.video_id) userMessage += `\n平台视频ID: ${databaseWorkout.video_id}`;
         // Tell AI this is expected to be a fitness/training video so it uses workout metadata
-        if (isWorkoutPath) {
-          userMessage += `\n\n注意：这是一个训练视频链接。请使用 workout 类型的 metadata 格式，包含 difficulty（初级/中级/高级）、training_type（力量训练/塑形训练/有氧燃脂/HIIT/拉伸/瑜伽/康复）、category（臀腿/背部/肩胸/核心/全身/有氧/拉伸）、estimated_duration（预估分钟数）、target_muscles（目标肌群数组）。如果无法从页面内容确定这些信息，请根据视频标题合理推断。`;
-        }
-        if (fetchedContent.title) userMessage += `\n页面标题: ${fetchedContent.title}`;
-        if (fetchedContent.description) userMessage += `\n页面描述: ${fetchedContent.description}`;
-        if (fetchedContent.text) userMessage += `\n页面文本片段: ${fetchedContent.text}`;
-        if (!sourceContext && fetchedContent.text.length <= 50 && !fetchedContent.title && !preFetchedTitle) {
-          userMessage += `\n\n⚠️ 无法获取此链接的页面内容，请根据URL和平台名称进行合理推断。`;
-        }
+        userMessage += `\n\n注意：这是一个训练视频链接。请使用 workout 类型的 metadata 格式，包含 difficulty（初级/中级/高级）、training_type（力量训练/塑形训练/有氧燃脂/HIIT/拉伸/瑜伽/康复）、category（臀腿/背部/肩胸/核心/全身/有氧/拉伸）、estimated_duration（预估分钟数）、target_muscles（目标肌群数组）。如果无法从页面内容确定这些信息，请根据视频标题合理推断。`;
+        if (fullText) userMessage += `\n页面文本/字幕片段: ${fullText}`;
+        if (videoAnalysisSource === "url_only") userMessage += `\n\n注意：当前只有URL信息，请进行最低置信度推断。`;
+      } else if (inputIsUrl) {
+        userMessage += `输入类型: URL链接\nURL: ${input}\n平台: ${platform}`;
+        if (fetchedContent?.title) userMessage += `\n页面标题: ${fetchedContent.title}`;
+        if (fetchedContent?.description) userMessage += `\n页面描述: ${fetchedContent.description}`;
+        if (fetchedContent?.text) userMessage += `\n页面文本片段: ${fetchedContent.text}`;
       } else {
         userMessage += `输入类型: 文本内容\n文本: ${input.slice(0, 3000)}`;
       }
@@ -1119,9 +1305,12 @@ serve(async (req: Request) => {
 
       console.log("[content-parser-agent] stage=content_extract", {
         userMessageLen: userMessage.length,
-        hasTitle: !!fetchedContent.title,
-        hasText: fetchedContent.text.length > 50,
-        fetchError: fetchedContent.error || null,
+        sourceLevel: videoAnalysisSource,
+        hasTitle: !!videoSourceTitle,
+        hasText: hasFullContent,
+        hasPlatformMetadata,
+        hasDatabaseMetadata,
+        fetchError: fetchedContent?.error || null,
       });
     }
 
@@ -1234,40 +1423,33 @@ serve(async (req: Request) => {
       metadata = validation.corrected;
 
       // ── Quality assessment (shared by UPDATE and INSERT paths) ──
-      const GENERIC_TITLES = ["训练视频", "健身训练视频", "B站训练视频", "抖音训练视频", "小红书训练视频", "YouTube训练视频"];
-      const isGenericTitle = !title || GENERIC_TITLES.includes(title) || /^[a-zA-Z\s]*$/.test(title);
+      const isGenericTitle = !title || GENERIC_WORKOUT_TITLES.includes(title) || /^[a-zA-Z\s]*$/.test(title);
 
-      // Protect pre-fetched API title from being overwritten by generic AI output
-      const isPreFetchedTitleGeneric = !preFetchedTitle || GENERIC_TITLES.includes(preFetchedTitle) || preFetchedTitle.length < 3;
-      if (isGenericTitle && !isPreFetchedTitleGeneric && preFetchedTitle) {
-        console.log("[content-parser-agent] stage=title_fallback using pre-fetched title instead of generic AI output", {
+      // Protect trusted source titles, especially manual database titles.
+      const isSourceTitleGeneric = !videoSourceTitle || GENERIC_WORKOUT_TITLES.includes(videoSourceTitle) || videoSourceTitle.length < 3;
+      if ((preserveDatabaseTitle || isGenericTitle) && !isSourceTitleGeneric && videoSourceTitle) {
+        console.log("[content-parser-agent] stage=title_fallback using source title instead of AI output", {
           aiTitle: title?.slice(0, 40),
-          preFetchedTitle: preFetchedTitle.slice(0, 40),
+          sourceTitle: videoSourceTitle.slice(0, 40),
+          preserveDatabaseTitle,
         });
       }
-      const finalTitle = isGenericTitle && !isPreFetchedTitleGeneric && preFetchedTitle
-        ? preFetchedTitle
+      const finalTitle = (preserveDatabaseTitle || isGenericTitle) && !isSourceTitleGeneric && videoSourceTitle
+        ? videoSourceTitle
         : title;
       // Recalculate generic check with the final title
-      const isFinalTitleGeneric = !finalTitle || GENERIC_TITLES.includes(finalTitle) || /^[a-zA-Z\s]*$/.test(finalTitle);
+      const isFinalTitleGeneric = !finalTitle || GENERIC_WORKOUT_TITLES.includes(finalTitle) || /^[a-zA-Z\s]*$/.test(finalTitle);
 
-      let analysisSource: string;
-      if (preFetchedTitle && fetchedContent.text.length > 50) {
-        analysisSource = "full_page";
-      } else if (preFetchedTitle) {
-        analysisSource = "api_metadata";
-      } else if (fetchedContent.text.length > 50) {
-        analysisSource = "full_page";
-      } else {
-        analysisSource = "url_only";
-      }
+      const analysisSource = videoAnalysisSource;
 
       let analysisConfidence: string;
       const hasValidCategory = metadata.category && ["臀腿", "背部", "肩胸", "核心", "全身", "有氧", "拉伸"].includes(metadata.category as string);
       const hasValidTrainingType = metadata.training_type && ["力量训练", "塑形训练", "有氧燃脂", "HIIT", "拉伸", "瑜伽", "康复"].includes(metadata.training_type as string);
 
-      if (!isFinalTitleGeneric && hasValidCategory && hasValidTrainingType && analysisSource !== "url_only") {
+      if (!isFinalTitleGeneric && hasValidCategory && hasValidTrainingType && analysisSource === "full_page") {
         analysisConfidence = "high";
+      } else if (!isFinalTitleGeneric && hasValidCategory && hasValidTrainingType && analysisSource !== "url_only") {
+        analysisConfidence = "medium";
       } else if (isFinalTitleGeneric || analysisSource === "url_only") {
         analysisConfidence = "low";
       } else {
@@ -1310,6 +1492,9 @@ serve(async (req: Request) => {
             equipment: (metadata.equipment as string) || null,
             tags: (metadata.tags as string[]) || [],
             description: (metadata.analysis_notes as string) || null,
+            author: videoSourceMetadata.author || databaseWorkout?.author || null,
+            thumbnail_url: videoSourceMetadata.cover || databaseWorkout?.thumbnail_url || null,
+            metadata: videoSourceMetadata,
             analysis_source: analysisSource,
             analysis_confidence: analysisConfidence,
             ai_analysis_status: finalStatus,
@@ -1339,6 +1524,9 @@ serve(async (req: Request) => {
             equipment: (metadata.equipment as string) || null,
             tags: (metadata.tags as string[]) || [],
             description: (metadata.analysis_notes as string) || null,
+            author: videoSourceMetadata.author || null,
+            thumbnail_url: videoSourceMetadata.cover || null,
+            metadata: videoSourceMetadata,
             platform: inputIsUrl ? platform : null,
             url: inputIsUrl ? input : null,
             analysis_source: analysisSource,
