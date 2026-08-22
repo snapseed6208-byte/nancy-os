@@ -676,7 +676,7 @@ interface DatabaseWorkoutSource {
   metadata: VideoSourceMetadata | null;
 }
 
-const GENERIC_WORKOUT_TITLES = ["训练视频", "健身训练视频", "B站训练视频", "抖音训练视频", "小红书训练视频", "YouTube训练视频"];
+const GENERIC_WORKOUT_TITLES = ["训练视频", "健身视频", "未命名视频", "健身训练视频", "B站训练视频", "抖音训练视频", "小红书训练视频", "YouTube训练视频"];
 
 function usableString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";

@@ -175,3 +175,15 @@ export function getDefaultVideoTitle(platform: string): string {
   };
   return map[platform] || "训练视频";
 }
+
+const PLACEHOLDER_WORKOUT_TITLES = new Set([
+  "B站训练视频",
+  "抖音训练视频",
+  "健身视频",
+  "训练视频",
+  "未命名视频",
+]);
+
+export function isPlaceholderWorkoutTitle(title: string | null | undefined): boolean {
+  return !title || PLACEHOLDER_WORKOUT_TITLES.has(title.trim());
+}

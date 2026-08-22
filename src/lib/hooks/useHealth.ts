@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
-import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, extractPageFromUrl, getDefaultVideoTitle, getYouTubeThumbnail } from "@/lib/utils";
+import { normalizeUrl, detectUrlPlatform, extractVideoId, buildEmbedUrl, extractPageFromUrl, getDefaultVideoTitle, getYouTubeThumbnail, isPlaceholderWorkoutTitle } from "@/lib/utils";
 
 // ── Types ──
 
@@ -32,6 +32,7 @@ export type WorkoutVideoSourceMetadata = {
   cover?: string;
   source?: string;
   fetched_at?: string;
+  placeholder_title?: boolean;
 };
 
 export type WorkoutVideo = {
@@ -306,6 +307,8 @@ export function useCreateWorkoutVideo() {
       let resolvedTitle: string | null = null;
       let resolvedCover: string | null = null;
       let resolvedAuthor: string | null = null;
+      let resolvedDescription: string | null = null;
+      let resolvedSource: string | null = null;
       let resolvedCanonical: string | null = null;
       let resolvedBvid: string | null = extractVideoId(normalized, platform);
       let resolvedPage = extractPageFromUrl(normalized);
@@ -316,17 +319,29 @@ export function useCreateWorkoutVideo() {
           { body: { url: normalized } },
         );
         if (!resolveError && resolveData) {
-          const rd = resolveData as {
-            canonical_url: string; bvid: string | null; page: number;
-            title: string | null; cover_url: string | null;
-            duration_seconds?: number | null; owner_name?: string | null;
+          const envelope = resolveData as {
+            success?: boolean;
+            data?: {
+              canonical_url: string; video_id: string | null; page: number;
+              title: string | null; cover_url: string | null; description: string | null;
+              author: string | null; duration_seconds?: number | null; source: string;
+            };
           };
-          resolvedCanonical = rd.canonical_url || null;
-          resolvedBvid = rd.bvid || resolvedBvid;
-          resolvedPage = rd.page || resolvedPage;
-          resolvedTitle = rd.title || null;
-          resolvedCover = rd.cover_url || null;
-          resolvedAuthor = rd.owner_name || null;
+          const rd = envelope.success ? envelope.data : null;
+          if (!rd) {
+            console.warn("[useCreateWorkoutVideo] bilibili metadata unavailable", resolveData);
+          } else {
+            resolvedCanonical = rd.canonical_url || null;
+            resolvedBvid = rd.video_id || resolvedBvid;
+            resolvedPage = rd.page || resolvedPage;
+            resolvedTitle = isPlaceholderWorkoutTitle(rd.title) ? null : rd.title;
+            resolvedCover = rd.cover_url || null;
+            resolvedAuthor = rd.author || null;
+            resolvedDescription = rd.description || null;
+            resolvedSource = rd.source || null;
+          }
+        } else if (resolveError) {
+          console.warn("[useCreateWorkoutVideo] bilibili-resolve failed", resolveError);
         }
       }
 
@@ -340,15 +355,16 @@ export function useCreateWorkoutVideo() {
 
       // Use resolved title from B站 API, fallback to generic default
       const initialTitle = resolvedTitle || getDefaultVideoTitle(platform);
-      const sourceMetadata: WorkoutVideoSourceMetadata = resolvedTitle || resolvedAuthor || resolvedCover
+      const sourceMetadata: WorkoutVideoSourceMetadata = resolvedTitle || resolvedAuthor || resolvedCover || resolvedDescription
         ? {
             title: resolvedTitle || undefined,
+            description: resolvedDescription || undefined,
             author: resolvedAuthor || undefined,
             cover: resolvedCover || undefined,
-            source: "bilibili_api",
+            source: resolvedSource || "bilibili_api",
             fetched_at: new Date().toISOString(),
           }
-        : {};
+        : { source: "placeholder", placeholder_title: true };
 
       // Step 1: Insert record with resolved metadata
       const { data, error } = await supabase
@@ -381,6 +397,9 @@ export function useCreateWorkoutVideo() {
         pre_fetched_title: resolvedTitle,
         pre_fetched_cover_url: resolvedCover,
         platform,
+        source_content: resolvedTitle || resolvedDescription
+          ? { title: resolvedTitle, description: resolvedDescription, platform, source: resolvedSource }
+          : undefined,
       }).then((result) => {
         if (!result.success) {
           console.error("[useCreateWorkoutVideo] initial AI analysis failed", { videoId: record.id, platform, error: result.error, detail: result.detail });
@@ -496,13 +515,23 @@ export function useRetryWorkoutAnalysis() {
         .single();
       if (loadError) throw loadError;
 
+      const storedMetadata = (storedVideo.metadata || {}) as WorkoutVideoSourceMetadata;
+      const trustedStoredTitle = isPlaceholderWorkoutTitle(storedVideo.title) ? undefined : storedVideo.title || undefined;
       const result = await invokeAI("content-parser-agent",
         {
           url: storedVideo.url || video.url,
           workout_video_id: video.id,
-          pre_fetched_title: storedVideo.title || undefined,
+          pre_fetched_title: trustedStoredTitle,
           pre_fetched_cover_url: storedVideo.thumbnail_url || undefined,
           platform: storedVideo.platform || undefined,
+          source_content: trustedStoredTitle || storedMetadata.description
+            ? {
+                title: trustedStoredTitle,
+                description: storedMetadata.description || undefined,
+                platform: storedVideo.platform || undefined,
+                source: storedMetadata.source || undefined,
+              }
+            : undefined,
         },
         { timeout: 30_000 },
       );

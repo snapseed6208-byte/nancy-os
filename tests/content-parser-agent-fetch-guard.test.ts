@@ -58,6 +58,7 @@ describe("content-parser-agent source guard", () => {
     expect(source).toContain('error: "缺少可用于判断训练内容的信息"');
     expect(source).toContain('videoAnalysisSource = "database_metadata"');
     expect(source).toContain('videoAnalysisSource = "url_only"');
+    expect(source).toContain('"健身视频", "未命名视频"');
     expect(source).toContain("const inputIsUrl = isUrl(input);");
     expect(source).toContain("if (isWorkoutPath && bvid)");
     expect(source).toContain('.select("url, title, author, thumbnail_url, platform, video_id, analysis_source, metadata")');
@@ -125,8 +126,10 @@ describe("content-parser-agent source guard", () => {
     );
 
     expect(source).toContain('.select("id, url, title, thumbnail_url, platform, video_id, metadata")');
-    expect(source).toContain("pre_fetched_title: storedVideo.title || undefined");
+    expect(source).toContain("pre_fetched_title: trustedStoredTitle");
     expect(source).toContain("pre_fetched_cover_url: storedVideo.thumbnail_url || undefined");
     expect(source).toContain("platform: storedVideo.platform || undefined");
+    expect(source).toContain("isPlaceholderWorkoutTitle(storedVideo.title)");
+    expect(source).toContain("description: storedMetadata.description || undefined");
   });
 });

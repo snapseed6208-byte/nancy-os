@@ -1,227 +1,254 @@
-// ============================================
-// Nancy OS — B站 URL Resolver + Metadata Proxy
-// Accepts any B站 URL format (b23.tv, standard BV, av号, m.bilibili.com)
-// Resolves short links, extracts BV号, fetches video metadata from B站 API
-// ============================================
+// Nancy OS - Bilibili URL resolver and metadata proxy.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getCorsHeaders, jsonResponse } from "../_shared/nancy-context.ts";
+import {
+  emptyBilibiliMetadata,
+  extractAidFromUrl,
+  extractBvidFromUrl,
+  extractPageFromBilibiliUrl,
+  hasUsableBilibiliMetadata,
+  isBilibiliUrl,
+  mergeBilibiliMetadata,
+  parseBilibiliApiPayload,
+  parseBilibiliHtmlMetadata,
+  type BilibiliMetadata,
+} from "../_shared/bilibili-metadata.ts";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
-interface ResolveResult {
-  canonical_url: string;
-  bvid: string | null;
-  aid: number | null;
-  cid: number | null;
-  page: number;
-  title: string | null;
-  cover_url: string | null;
-  duration_seconds: number | null;
-  owner_name: string | null;
-  error?: string;
+type ErrorStage = "cors" | "invalid_url" | "bilibili_api" | "metadata_parse" | "internal";
+
+interface FetchOutcome {
+  metadata: BilibiliMetadata | null;
+  status: number | null;
+  error: string | null;
+  endpoint?: string;
 }
 
-// Extract BV号 from a canonical B站 URL
-const BV_RE = /bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/;
-const AV_RE = /bilibili\.com\/video\/av(\d+)/i;
-function extractBvFromUrl(url: string): string | null {
-  // Normal bilibili.com/video/BV...
-  const bvMatch = url.match(BV_RE);
-  if (bvMatch) return bvMatch[1];
-  return null;
+function logEvent(requestId: string, stage: string, fields: Record<string, unknown> = {}) {
+  console.log("[bilibili-resolve]", { requestId, stage, ...fields });
 }
 
-function extractAidFromUrl(url: string): number | null {
-  const avMatch = url.match(AV_RE);
-  if (avMatch) return parseInt(avMatch[1], 10);
-  return null;
+function errorResponse(
+  corsHeaders: Record<string, string>,
+  requestId: string,
+  stage: ErrorStage,
+  error: string,
+  status = 200,
+  detail?: Record<string, unknown>,
+) {
+  console.error("[bilibili-resolve]", { requestId, stage, error });
+  return jsonResponse({ success: false, stage, error, requestId, detail }, corsHeaders, status);
 }
 
-function extractPageFromUrl(url: string): number {
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 8_000): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const parsed = new URL(url);
-    const p = parsed.searchParams.get("p");
-    if (p) return parseInt(p, 10) || 1;
-  } catch { /* ignore */ }
-  return 1;
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-// Resolve b23.tv short link → canonical bilibili.com/video/BV... URL
 async function resolveB23(url: string): Promise<string | null> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
-    const resp = await fetch(url, {
-      method: "HEAD",
-      signal: controller.signal,
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
       headers: { "User-Agent": UA },
-      redirect: "manual", // Don't follow redirect, capture the Location header
+      redirect: "follow",
     });
-    clearTimeout(timeout);
-
-    if (resp.status === 301 || resp.status === 302 || resp.status === 307 || resp.status === 308) {
-      const location = resp.headers.get("Location");
-      if (location) return location;
-    }
-
-    // Some short links may return 200 with meta refresh or JS redirect
-    // Try a GET request to capture any redirect
-    if (resp.status === 200) {
-      const getResp = await fetch(url, {
-        headers: { "User-Agent": UA },
-        redirect: "follow",
-      });
-      const finalUrl = getResp.url;
-      if (finalUrl !== url && extractBvFromUrl(finalUrl)) {
-        return finalUrl;
-      }
-    }
-
-    return null;
+    return isBilibiliUrl(response.url) ? response.url : null;
   } catch {
     return null;
   }
 }
 
-// Fetch video metadata from B站 API (by bvid or aid)
-async function fetchBilibiliVideoInfo(bvid: string | null, aid: number | null): Promise<{
-  title: string | null;
-  cover_url: string | null;
-  duration_seconds: number | null;
-  owner_name: string | null;
-  aid: number | null;
-  cid: number | null;
-  bvid: string | null;
-}> {
-  const empty = { title: null, cover_url: null, duration_seconds: null, owner_name: null, aid: aid, cid: null, bvid: bvid };
-  if (!bvid && !aid) return empty;
+async function fetchApiMetadata(bvid: string | null, aid: number | null): Promise<FetchOutcome> {
+  if (!bvid && !aid) return { metadata: null, status: null, error: "missing video id" };
+  const query = bvid ? `bvid=${encodeURIComponent(bvid)}` : `aid=${aid}`;
+  const endpoints = [
+    `https://api.bilibili.com/x/web-interface/view?${query}`,
+    `https://api.bilibili.com/x/web-interface/wbi/view?${query}`,
+  ];
+  let lastOutcome: FetchOutcome = { metadata: null, status: null, error: "API request failed" };
 
-  const param = bvid ? `bvid=${encodeURIComponent(bvid)}` : `aid=${aid}`;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetchWithTimeout(endpoint, {
+        headers: {
+          "User-Agent": UA,
+          "Referer": "https://www.bilibili.com/",
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+          "Origin": "https://www.bilibili.com",
+        },
+      });
+      if (!response.ok) {
+        lastOutcome = { metadata: null, status: response.status, error: `HTTP ${response.status}`, endpoint };
+        continue;
+      }
+      const metadata = parseBilibiliApiPayload(await response.json(), bvid, aid);
+      if (metadata) return { metadata, status: response.status, error: null, endpoint };
+      lastOutcome = { metadata: null, status: response.status, error: "invalid API payload", endpoint };
+    } catch (error) {
+      lastOutcome = {
+        metadata: null,
+        status: null,
+        error: (error as Error).message || "API request failed",
+        endpoint,
+      };
+    }
+  }
+  return lastOutcome;
+}
+
+async function fetchHtmlMetadata(url: string, bvid: string | null, aid: number | null): Promise<FetchOutcome> {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
-    const resp = await fetch(
-      `https://api.bilibili.com/x/web-interface/view?${param}`,
-      {
-        signal: controller.signal,
-        headers: { "User-Agent": UA, "Referer": "https://www.bilibili.com/" },
-      },
-    );
-    clearTimeout(timeout);
-
-    if (!resp.ok) return empty;
-
-    const json = await resp.json();
-    if (json.code !== 0 || !json.data) return empty;
-
-    const d = json.data;
+    const response = await fetchWithTimeout(url, {
+      headers: { "User-Agent": UA, "Referer": "https://www.bilibili.com/" },
+      redirect: "follow",
+    });
+    if (!response.ok) return { metadata: null, status: response.status, error: `HTTP ${response.status}` };
     return {
-      title: d.title || null,
-      cover_url: d.pic || null,
-      duration_seconds: d.duration || null,
-      owner_name: d.owner?.name || null,
-      aid: d.aid || aid,
-      cid: d.cid || null,
-      bvid: d.bvid || bvid,
+      metadata: parseBilibiliHtmlMetadata(await response.text(), bvid, aid),
+      status: response.status,
+      error: null,
     };
-  } catch {
-    return empty;
+  } catch (error) {
+    return { metadata: null, status: null, error: (error as Error).message || "HTML request failed" };
   }
 }
 
 serve(async (req: Request) => {
+  const requestId = crypto.randomUUID();
+  const corsHeaders = getCorsHeaders(req);
+  const origin = req.headers.get("Origin") || "";
+
   if (req.method === "OPTIONS") {
+    logEvent(requestId, "cors", { origin, method: req.method });
     return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type",
-      },
+      status: 204,
+      headers: { ...corsHeaders, "Access-Control-Max-Age": "86400", "x-request-id": requestId },
     });
   }
 
+  logEvent(requestId, "request", { origin, method: req.method, url: req.url });
+  if (req.method !== "POST") {
+    return errorResponse(corsHeaders, requestId, "invalid_url", "仅支持 POST 请求", 405);
+  }
+
   try {
-    const body = await req.json();
-    const url = body.url as string;
-    if (!url || typeof url !== "string") {
-      return new Response(JSON.stringify({ error: "Missing or invalid 'url' parameter" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-      });
+    const body = await req.json() as { url?: unknown };
+    const inputUrl = typeof body.url === "string" ? body.url.trim() : "";
+    if (!inputUrl || !isBilibiliUrl(inputUrl)) {
+      return errorResponse(corsHeaders, requestId, "invalid_url", "无效的 B站视频链接", 400);
     }
 
-    // ── Step 1: Determine canonical URL and BV号 ──
-    let canonical = url;
-    let bvid = extractBvFromUrl(url);
-
-    // b23.tv short link → resolve redirect
-    if (url.includes("b23.tv") && !bvid) {
-      const resolved = await resolveB23(url);
-      if (resolved) {
-        canonical = resolved;
-        bvid = extractBvFromUrl(resolved);
-      }
+    let canonicalUrl = inputUrl;
+    let bvid = extractBvidFromUrl(canonicalUrl);
+    const inputHost = new URL(inputUrl).hostname.toLowerCase();
+    if (!bvid && (inputHost === "b23.tv" || inputHost.endsWith(".b23.tv"))) {
+      canonicalUrl = await resolveB23(inputUrl) || inputUrl;
+      bvid = extractBvidFromUrl(canonicalUrl);
     }
 
-    // m.bilibili.com → convert to www form
-    if (!bvid && canonical.includes("m.bilibili.com")) {
-      const upgraded = canonical.replace("m.bilibili.com", "www.bilibili.com");
-      bvid = extractBvFromUrl(upgraded);
-      if (bvid) canonical = upgraded;
+    if (!bvid && canonicalUrl.includes("m.bilibili.com")) {
+      canonicalUrl = canonicalUrl.replace("m.bilibili.com", "www.bilibili.com");
+      bvid = extractBvidFromUrl(canonicalUrl);
     }
 
-    const aid = extractAidFromUrl(canonical);
-    const page = extractPageFromUrl(canonical);
-
-    // ── Step 2: Fetch metadata from B站 API ──
-    let title: string | null = null;
-    let coverUrl: string | null = null;
-    let durationSec: number | null = null;
-    let ownerName: string | null = null;
-    let apiAid: number | null = aid;
-    let apiCid: number | null = null;
-
-    if (bvid || aid) {
-      const info = await fetchBilibiliVideoInfo(bvid, aid);
-      title = info.title;
-      coverUrl = info.cover_url;
-      durationSec = info.duration_seconds;
-      ownerName = info.owner_name;
-      apiAid = info.aid || aid;
-      apiCid = info.cid;
-      // Update bvid if API returned one (e.g. av号 → BV号 conversion)
-      if (!bvid && info.bvid) {
-        bvid = info.bvid;
-        canonical = `https://www.bilibili.com/video/${info.bvid}`;
-      }
+    let aid = extractAidFromUrl(canonicalUrl);
+    const page = extractPageFromBilibiliUrl(canonicalUrl);
+    if (!bvid && !aid) {
+      return errorResponse(corsHeaders, requestId, "invalid_url", "链接中未找到 BV 号或 av 号", 400);
     }
 
-    const result: ResolveResult = {
-      canonical_url: canonical,
+    logEvent(requestId, "video_id", { bvid, aid, page });
+    const api = await fetchApiMetadata(bvid, aid);
+    logEvent(requestId, "bilibili_api", {
       bvid,
-      aid: apiAid,
-      cid: apiCid,
+      status: api.status,
+      error: api.error,
+      endpoint: api.endpoint,
+      titleLength: api.metadata?.title?.length || 0,
+    });
+
+    if (api.metadata?.bvid && !bvid) {
+      bvid = api.metadata.bvid;
+      canonicalUrl = `https://www.bilibili.com/video/${bvid}`;
+    }
+    aid = api.metadata?.aid ?? aid;
+
+    let metadata = api.metadata || emptyBilibiliMetadata(bvid, aid);
+    let source: "bilibili_api" | "html_metadata" = "bilibili_api";
+    let htmlOutcome: FetchOutcome | null = null;
+    if (!hasUsableBilibiliMetadata(metadata)) {
+      const htmlUrl = bvid ? `https://www.bilibili.com/video/${bvid}` : canonicalUrl;
+      const html = await fetchHtmlMetadata(htmlUrl, bvid, aid);
+      htmlOutcome = html;
+      logEvent(requestId, "html_metadata", {
+        bvid,
+        status: html.status,
+        error: html.error,
+        titleLength: html.metadata?.title?.length || 0,
+      });
+      if (html.metadata) metadata = mergeBilibiliMetadata(metadata, html.metadata);
+      if (hasUsableBilibiliMetadata(metadata)) source = "html_metadata";
+    }
+
+    if (!hasUsableBilibiliMetadata(metadata)) {
+      return errorResponse(
+        corsHeaders,
+        requestId,
+        api.error ? "bilibili_api" : "metadata_parse",
+        "无法获取 B站视频标题",
+        200,
+        {
+          api_status: api.status,
+          api_error: api.error,
+          api_endpoint: api.endpoint,
+          html_status: htmlOutcome?.status ?? null,
+          html_error: htmlOutcome?.error ?? null,
+        },
+      );
+    }
+
+    logEvent(requestId, "success", {
+      bvid: metadata.bvid || bvid,
+      metadataApiStatus: api.status,
+      titleLength: metadata.title?.length || 0,
+      coverExists: Boolean(metadata.cover_url),
+      finalSource: source,
+    });
+
+    const responseData = {
+      platform: "bilibili",
+      video_id: metadata.bvid || bvid,
+      canonical_url: canonicalUrl,
       page,
-      title,
-      cover_url: coverUrl,
-      duration_seconds: durationSec,
-      owner_name: ownerName,
+      title: metadata.title,
+      cover_url: metadata.cover_url,
+      description: metadata.description,
+      author: metadata.author,
+      duration_seconds: metadata.duration_seconds,
+      source,
     };
-
-    console.log("[bilibili-resolve]", {
-      inputUrl: url.slice(0, 60),
-      resolved: bvid ? "yes" : "no",
-      bvid: bvid,
-      title: title?.slice(0, 40),
-    });
-
-    return new Response(JSON.stringify(result), {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    });
-  } catch (err) {
-    console.error("[bilibili-resolve] error:", err);
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    });
+    return jsonResponse({
+      success: true,
+      data: responseData,
+      requestId,
+      // Temporary compatibility for the currently deployed frontend.
+      canonical_url: responseData.canonical_url,
+      bvid: responseData.video_id,
+      page: responseData.page,
+      title: responseData.title,
+      cover_url: responseData.cover_url,
+      duration_seconds: responseData.duration_seconds,
+      owner_name: responseData.author,
+    }, { ...corsHeaders, "x-request-id": requestId });
+  } catch (error) {
+    return errorResponse(corsHeaders, requestId, "internal", (error as Error).message || "服务器内部错误", 500);
   }
 });
