@@ -318,9 +318,11 @@ export function useImportReadingArticle() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: { title: string; url?: string; text?: string }) => {
+      const userId = await getUserId();
       const result = await invokeAI<ReadingArticleExtractResult>("resource-extract", {
         url: input.url || undefined,
         text: input.text || undefined,
+        module: "english",
       }, { timeout: 30_000 });
       if (!result.success) throw new Error(result.error);
 
@@ -338,7 +340,9 @@ export function useImportReadingArticle() {
           extraction_error: result.data.extract_error || (hasContent ? null : "正文为空"),
         },
         updated_at: new Date().toISOString(),
-      }).eq("id", result.data.resource_id);
+      })
+        .eq("id", result.data.resource_id)
+        .eq("user_id", userId);
       if (error) throw error;
       return { resourceId: result.data.resource_id, hasContent };
     },
@@ -362,7 +366,10 @@ export function useUpdateReadingArticle() {
       }
       if (input.progress !== undefined) updates.read_progress = Math.min(1, Math.max(0, input.progress));
       const { error } = await supabase.from("resources").update(updates)
-        .eq("id", input.resourceId).eq("user_id", userId);
+        .eq("id", input.resourceId)
+        .eq("user_id", userId)
+        .eq("module", "english")
+        .eq("resource_type", "article");
       if (error) throw error;
       return input.resourceId;
     },
@@ -379,7 +386,10 @@ export function useDeleteReadingArticle() {
     mutationFn: async (resourceId: string) => {
       const userId = await getUserId();
       const { error } = await supabase.from("resources").update({ is_archived: true })
-        .eq("id", resourceId).eq("user_id", userId);
+        .eq("id", resourceId)
+        .eq("user_id", userId)
+        .eq("module", "english")
+        .eq("resource_type", "article");
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: readerKeys.articles }),

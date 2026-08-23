@@ -316,6 +316,7 @@ export function useDetachTagFromResource() {
 // ── Fetch Resources ──
 
 export type ArchiveFilter = "active" | "archived" | "all";
+const KNOWLEDGE_RESOURCE_SCOPE = "module.is.null,module.neq.english";
 
 async function fetchResources(archiveFilter: ArchiveFilter = "active"): Promise<ResourceRow[]> {
   const session = await supabase.auth.getSession();
@@ -325,6 +326,7 @@ async function fetchResources(archiveFilter: ArchiveFilter = "active"): Promise<
   let query = supabase
     .from("resources")
     .select("*")
+    .or(KNOWLEDGE_RESOURCE_SCOPE)
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -393,7 +395,7 @@ export function useCreateResource() {
           title: input.title,
           url: normalizedUrl,
           resource_type: input.resource_type || "article",
-          module: input.module || null,
+          module: input.module || "knowledge",
           tags: input.tags || null,
           notes: input.notes || null,
           // v2 fields
@@ -452,6 +454,7 @@ export function useUpdateResource() {
         .from("resources")
         .update({ ...fields, url: normalizedUrl ?? fields.url, updated_at: new Date().toISOString() })
         .eq("id", id)
+        .or(KNOWLEDGE_RESOURCE_SCOPE)
         .select()
         .single();
       if (error) throw error;
@@ -471,6 +474,7 @@ export function useRestoreResource() {
         .from("resources")
         .update({ is_archived: false, updated_at: new Date().toISOString() })
         .eq("id", id)
+        .or(KNOWLEDGE_RESOURCE_SCOPE)
         .select()
         .single();
       if (error) throw error;
@@ -486,8 +490,14 @@ export function useDeleteResource() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("resources").delete().eq("id", id);
+      const { data, error } = await supabase.from("resources")
+        .delete()
+        .eq("id", id)
+        .or(KNOWLEDGE_RESOURCE_SCOPE)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error("该资源不属于知识库，已阻止删除");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["resources"] });
@@ -538,6 +548,7 @@ export function useResourceExtract() {
       const result = await invokeAI<ExtractResult>("resource-extract", {
         url: input.url || undefined,
         text: input.text || undefined,
+        module: "knowledge",
       }, { timeout: 30_000 });
       if (!result.success) throw new Error(result.error);
       return result.data;

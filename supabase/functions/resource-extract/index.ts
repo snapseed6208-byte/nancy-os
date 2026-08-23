@@ -240,7 +240,7 @@ serve(async (req: Request) => {
   const t0 = Date.now();
 
   // ── Stage: payload ──
-  let body: { url?: string; text?: string };
+  let body: { url?: string; text?: string; module?: string };
   try {
     body = await req.json();
   } catch {
@@ -258,6 +258,7 @@ serve(async (req: Request) => {
 
   const inputIsUrl = body.url ? true : isUrl(input);
   const platform = inputIsUrl ? detectPlatform(input) : "text";
+  const resourceModule = body.module === "english" ? "english" : "knowledge";
 
   console.log(`[resource-extract] ${requestId} stage=input_receive platform=${platform} inputLen=${input.length} isUrl=${inputIsUrl}`);
 
@@ -319,6 +320,7 @@ serve(async (req: Request) => {
         title: sourceTitle || (inputIsUrl ? "未命名资源" : "手动输入"),
         url: inputIsUrl ? input : null,
         resource_type: "article",
+        module: resourceModule,
         // Layer 1: Original source
         source_platform: sourcePlatform || null,
         source_title: sourceTitle || null,
