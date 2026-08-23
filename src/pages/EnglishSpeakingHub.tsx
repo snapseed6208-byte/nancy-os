@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { BarChart3, FileUp, MessageCircle, Mic, Sparkles } from "lucide-react";
+import { BarChart3, FileUp, Mic, Sparkles } from "lucide-react";
 import { HubHeader, HubLink, HubStat } from "@/components/english/EnglishHubUI";
 import { useSpeakingSessions, useSpeakingStats } from "@/lib/hooks/useEnglish";
 
@@ -21,7 +21,6 @@ export default function EnglishSpeakingHub() {
 
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <HubLink icon={Mic} title="开始口语练习" description="进入现有口语训练，选择情境或主题" tone="rose" onClick={() => navigate("/english/speaking/practice")} />
-        <HubLink icon={MessageCircle} title="情境与主题表达" description="使用题库和推荐表达完成对话练习" tone="blue" onClick={() => navigate("/english/speaking/practice")} />
         <HubLink icon={BarChart3} title="口语成长趋势" description="查看评分、常见错误和 AI 总结" onClick={() => navigate("/english/progress/speaking")} />
         <HubLink icon={FileUp} title="导入口语题库" description="从文件提取并整理口语题目" onClick={() => navigate("/english/speaking/import")} />
       </section>

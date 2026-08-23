@@ -1,10 +1,10 @@
 import { useLocation } from "wouter";
 import {
-  ArrowRight, BookOpen, Clock3, FileUp, GraduationCap, Library,
-  Mic, Search, Sparkles, TrendingUp, Upload,
+  ArrowRight, BookOpen, ChevronRight, GraduationCap, Library,
+  Mic, Sparkles, TrendingUp,
 } from "lucide-react";
-import { useEnglishStats, useSpeakingSessions } from "@/lib/hooks/useEnglish";
-import { useLearnQueueCount, useTodayLearnSession, useTodayReviewStatus, isLearnItemFinished } from "@/lib/hooks/useReviewSession";
+import { useSpeakingSessions } from "@/lib/hooks/useEnglish";
+import { useTodayLearnSession, useTodayReviewStatus, isLearnItemFinished } from "@/lib/hooks/useReviewSession";
 import { useReaderBooks } from "@/lib/hooks/useEnglishReader";
 import { cn } from "@/lib/utils";
 
@@ -12,19 +12,17 @@ const isToday = (value?: string | null) => Boolean(value && new Date(value).toDa
 
 export default function English() {
   const [, navigate] = useLocation();
-  const statsQuery = useEnglishStats();
-  const learnCountQuery = useLearnQueueCount();
   const learnSessionQuery = useTodayLearnSession();
   const reviewProgressQuery = useTodayReviewStatus();
   const speakingQuery = useSpeakingSessions();
   const booksQuery = useReaderBooks();
 
-  const stats = statsQuery.data;
   const learnItems = learnSessionQuery.data?.items ?? [];
   const learnedToday = learnItems.filter(isLearnItemFinished).length;
   const hasUnfinishedLearn = Boolean(learnSessionQuery.data?.session && learnedToday < learnItems.length);
   const speakingToday = (speakingQuery.data ?? []).filter((session) => isToday(session.created_at)).length;
-  const readToday = (booksQuery.data ?? []).some((book) => isToday(book.reading_progress?.updated_at));
+  const books = booksQuery.data ?? [];
+  const readToday = books.some((book) => isToday(book.reading_progress?.updated_at));
   const reviewProgress = reviewProgressQuery.data;
   const dueTotal = reviewProgress?.total ?? 0;
   const reviewCompleted = reviewProgress?.completed ?? 0;
@@ -40,15 +38,13 @@ export default function English() {
       ? { label: reviewCompleted > 0 ? `继续复习 ${reviewRemaining} 条` : `开始复习 ${reviewRemaining} 条`, path: "/english/review" }
       : reviewWasScheduled && !reviewDayComplete
         ? { label: "继续完成复习", path: "/english/review" }
-      : reviewWasScheduled
-        ? null
       : speakingQuery.isError
         ? { label: "选择学习内容", path: "/english/expressions" }
         : speakingToday === 0
         ? { label: "完成今日口语", path: "/english/speaking/practice" }
+        : !booksQuery.isError && !readToday && books.length > 0
+          ? { label: "继续阅读", path: "/english/reading" }
         : null;
-
-  const statValue = (failed: boolean, value: number | undefined) => failed ? "--" : (value ?? 0);
 
   return (
     <div className="space-y-6 min-w-0">
@@ -57,13 +53,6 @@ export default function English() {
         <h1 className="text-2xl font-semibold mt-0.5">英语学习</h1>
         <p className="text-sm text-ink-light mt-1">学习 · 复习 · 口语 · 阅读</p>
       </header>
-
-      <section aria-label="学习概览" className="grid grid-cols-2 sm:grid-cols-4 rounded-lg border border-border bg-card overflow-hidden">
-        <OverviewStat label="表达库" value={statValue(statsQuery.isError, stats?.total)} />
-        <OverviewStat label="待学习" value={statValue(learnCountQuery.isError, learnCountQuery.data)} />
-        <OverviewStat label="剩余待复习" value={statValue(reviewProgressQuery.isError, reviewRemaining)} />
-        <OverviewStat label="口语练习" value={statValue(statsQuery.isError, stats?.totalSessions)} />
-      </section>
 
       <section aria-labelledby="today-english" className="rounded-lg border border-border bg-sage-light/35 p-4 sm:p-5">
         <div className="flex items-center gap-2">
@@ -76,7 +65,7 @@ export default function English() {
           <TodayMetric label="口语" value={speakingQuery.isError ? "--" : `${speakingToday}/1`} />
           <TodayMetric label="阅读" value={booksQuery.isError ? "--" : readToday ? "已阅读" : "未开始"} />
         </div>
-        <div className="mt-5 flex items-center justify-between gap-3 border-t border-sage/20 pt-4">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-sage/20 pt-4">
           <p className="text-xs text-ink-lighter min-w-0">
             {reviewDayComplete ? "今日复习已完成" : reviewWasScheduled && reviewRemaining === 0 ? "继续完成其他训练模式" : reviewRemaining > 0 ? `还有 ${reviewRemaining} 条待复习` : "按今日状态继续下一项"}
           </p>
@@ -99,28 +88,9 @@ export default function English() {
           <CenterCard icon={GraduationCap} title="表达学习" description="学表达 · SRS 复习 · 表达库" tone="sage" onClick={() => navigate("/english/expressions")} />
           <CenterCard icon={Mic} title="英语口语" description="对话 · 主题表达 · AI 纠错" tone="rose" onClick={() => navigate("/english/speaking")} />
           <CenterCard icon={BookOpen} title="英文阅读" description="EPUB · 原著阅读 · 表达摘录" tone="blue" onClick={() => navigate("/english/reading")} />
-          <CenterCard icon={TrendingUp} title="学习成长" description="历史 · 趋势 · AI 总结" tone="amber" onClick={() => navigate("/english/progress")} />
+          <CenterCard icon={TrendingUp} title="学习分析" description="历史 · 趋势 · AI 总结" tone="amber" onClick={() => navigate("/english/progress")} />
         </div>
       </section>
-
-      <section aria-labelledby="quick-actions">
-        <h2 id="quick-actions" className="text-xs font-medium text-ink-lighter mb-2">快捷入口</h2>
-        <div className="flex flex-wrap gap-2">
-          <QuickAction icon={Upload} label="导入表达" onClick={() => navigate("/english/import")} />
-          <QuickAction icon={FileUp} label="导入口语题库" onClick={() => navigate("/english/speaking/import")} />
-          <QuickAction icon={Clock3} label="学习历史" onClick={() => navigate("/english/history")} />
-          <QuickAction icon={Search} label="搜索表达库" onClick={() => navigate("/english/library")} />
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function OverviewStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="min-w-0 p-3 sm:p-4 border-b border-r border-border even:border-r-0 sm:border-b-0 sm:even:border-r">
-      <p className="text-xl font-semibold text-ink truncate">{value}</p>
-      <p className="text-[11px] text-ink-lighter mt-0.5 truncate">{label}</p>
     </div>
   );
 }
@@ -148,19 +118,13 @@ function CenterCard({ icon: Icon, title, description, tone, onClick }: {
     amber: "bg-amber-50 text-amber-600",
   };
   return (
-    <button type="button" onClick={onClick} className="min-w-0 rounded-lg border border-border bg-card p-4 text-left hover:border-ink/20 transition-colors">
+    <button type="button" onClick={onClick} className="min-w-0 rounded-lg border border-border bg-card p-4 text-left hover:border-ink/20 transition-colors flex items-center gap-3">
       <span className={cn("h-10 w-10 rounded-lg flex items-center justify-center", tones[tone])}><Icon size={19} /></span>
-      <h3 className="text-base font-semibold text-ink mt-4">{title}</h3>
-      <p className="text-xs text-ink-lighter mt-1">{description}</p>
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-ink mt-4">进入中心<ArrowRight size={13} /></span>
-    </button>
-  );
-}
-
-function QuickAction({ icon: Icon, label, onClick }: { icon: typeof Upload; label: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-medium text-ink-light inline-flex items-center gap-2 hover:bg-ink/5">
-      <Icon size={14} />{label}
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-ink">{title}</span>
+        <span className="block text-xs text-ink-lighter mt-1 leading-relaxed">{description}</span>
+      </span>
+      <ChevronRight size={16} className="shrink-0 text-ink-lighter" />
     </button>
   );
 }

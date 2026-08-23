@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { BookOpen, Brain, Clock3, Edit3, Eye, Library, Upload } from "lucide-react";
+import { BookOpen, Brain, Edit3, Eye, Library, Upload } from "lucide-react";
 import { HubHeader, HubLink, HubStat } from "@/components/english/EnglishHubUI";
 import { useEnglishStats } from "@/lib/hooks/useEnglish";
 import { useLearnQueueCount, useTodayReviewStatus } from "@/lib/hooks/useReviewSession";
@@ -25,7 +25,6 @@ export default function EnglishExpressionHub() {
         <HubLink icon={BookOpen} title="学习新表达" description={learnCount.data ? `${learnCount.data} 条表达等待学习` : "开始或继续今天的学习"} tone="sage" onClick={() => navigate("/english/learn")} />
         <HubLink icon={Brain} title="SRS 复习" description={review.data?.total ? `今日 ${review.data.completed} / ${review.data.total} · 剩余 ${review.data.remaining}` : "当前没有到期表达"} tone="blue" onClick={() => navigate("/english/review")} />
         <HubLink icon={Library} title="表达库" description="搜索、筛选和管理全部表达" onClick={() => navigate("/english/library")} />
-        <HubLink icon={Clock3} title="学习历史" description="查看学习报告和每次练习记录" onClick={() => navigate("/english/history")} />
         <HubLink icon={Upload} title="导入表达" description="从文本或文件批量添加表达" onClick={() => navigate("/english/import")} />
       </section>
 
