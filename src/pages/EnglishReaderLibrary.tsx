@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { BookOpen, ChevronRight, FileUp, Loader2, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronRight, FileUp, Loader2, Trash2, Upload } from "lucide-react";
 import { useDeleteReaderBook, useImportEpub, useReaderBooks } from "@/lib/hooks/useEnglishReader";
 import type { ReaderBook } from "@/lib/reader/types";
 
@@ -32,16 +32,22 @@ export default function EnglishReaderLibrary() {
 
   return (
     <div className="space-y-5">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-ink-lighter">English OS</p>
-          <h1 className="text-2xl font-semibold mt-0.5">Reader</h1>
+      <header className="flex flex-col sm:flex-row items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <button type="button" onClick={() => navigate("/english")} title="返回 English OS" className="h-9 w-9 shrink-0 rounded-lg bg-ink/5 flex items-center justify-center hover:bg-ink/10">
+            <ArrowLeft size={17} />
+          </button>
+          <div className="min-w-0">
+            <p className="text-xs text-ink-lighter">English OS</p>
+            <h1 className="text-2xl font-semibold mt-0.5">英文阅读</h1>
+            <p className="text-sm text-ink-light mt-1">我的书架 · EPUB 原著 · 阅读进度</p>
+          </div>
         </div>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={importEpub.isPending}
-          className="h-10 px-3 rounded-lg bg-ink text-white text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50"
+          className="h-10 px-3 rounded-lg bg-ink text-white text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50 self-end sm:self-auto"
         >
           {importEpub.isPending ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
           导入 EPUB

@@ -1091,7 +1091,7 @@ export default function EnglishSpeaking() {
     } else if (view === "browse") {
       setView("home");
     } else {
-      navigate("/english");
+      navigate("/english/speaking");
     }
   };
 
@@ -1103,7 +1103,7 @@ export default function EnglishSpeaking() {
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate("/english")}
+              onClick={() => navigate("/english/speaking")}
               className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0"
             >
               <ArrowLeft size={16} className="text-ink-light" />

@@ -6,14 +6,17 @@ import Home from "@/pages/Home";
 import Plan from "@/pages/Plan";
 import Career from "@/pages/Career";
 import English from "@/pages/English";
+import EnglishExpressionHub from "@/pages/EnglishExpressionHub";
 import EnglishExpressions from "@/pages/EnglishExpressions";
 import EnglishExpressionDetail from "@/pages/EnglishExpressionDetail";
 import EnglishReview from "@/pages/EnglishReview";
 import EnglishReviewV3 from "@/pages/EnglishReviewV3";
 import EnglishLearn from "@/pages/EnglishLearn";
 import EnglishSpeaking from "@/pages/EnglishSpeaking";
+import EnglishSpeakingHub from "@/pages/EnglishSpeakingHub";
 import SpeakingImport from "@/pages/SpeakingImport";
 import EnglishProgress from "@/pages/EnglishProgress";
+import EnglishProgressHub from "@/pages/EnglishProgressHub";
 import EnglishLearningHistory from "@/pages/EnglishLearningHistory";
 import EnglishImport from "@/pages/EnglishImport";
 import EnglishReader from "@/pages/EnglishReader";
@@ -69,16 +72,22 @@ function AppRoutes() {
         <Route path="/plan" component={Plan} />
         <Route path="/career" component={Career} />
         <Route path="/english" component={English} />
-        <Route path="/english/expressions" component={EnglishExpressions} />
+        <Route path="/english/expressions" component={EnglishExpressionHub} />
+        <Route path="/english/library" component={EnglishExpressions} />
+        <Route path="/english/library/:id" component={EnglishExpressionDetail} />
         <Route path="/english/expressions/:id" component={EnglishExpressionDetail} />
         <Route path="/english/learn" component={EnglishLearn} />
         <Route path="/english/review" component={EnglishReviewV3} />
-        <Route path="/english/speaking" component={EnglishSpeaking} />
+        <Route path="/english/speaking" component={EnglishSpeakingHub} />
+        <Route path="/english/speaking/practice" component={EnglishSpeaking} />
         <Route path="/english/speaking/import" component={SpeakingImport} />
-        <Route path="/english/progress" component={EnglishProgress} />
+        <Route path="/english/progress" component={EnglishProgressHub} />
+        <Route path="/english/progress/speaking" component={EnglishProgress} />
+        <Route path="/english/speaking/progress" component={EnglishProgress} />
         <Route path="/english/history" component={EnglishLearningHistory} />
         <Route path="/english/import" component={EnglishImport} />
         <Route path="/english/reader" component={EnglishReaderLibrary} />
+        <Route path="/english/reading" component={EnglishReaderLibrary} />
         <Route path="/english/reader/:bookId" component={EnglishReader} />
         <Route path="/health" component={Health} />
         <Route path="/exam" component={Exam} />

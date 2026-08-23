@@ -660,7 +660,7 @@ export default function EnglishImport() {
               继续导入
             </button>
             <button
-              onClick={() => navigate("/english/expressions")}
+              onClick={() => navigate("/english/library")}
               className="text-sm font-semibold bg-sage-light text-sage-deep rounded-xl px-5 py-2.5 hover:bg-sage-light/80 transition-colors"
             >
               查看表达库

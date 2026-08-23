@@ -659,7 +659,7 @@ export default function EnglishLearn() {
             <div className="space-y-4">
               <p className="text-sm text-ink-light">表达库里暂时没有待学习的新表达。</p>
               <button
-                onClick={() => navigate("/english/expressions")}
+                onClick={() => navigate("/english/library")}
                 className="w-full py-3 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
               >
                 去表达库

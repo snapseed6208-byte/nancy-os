@@ -103,7 +103,7 @@ export default function SpeakingImport() {
         {/* Header */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate("/english")}
+            onClick={() => navigate("/english/speaking")}
             className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-ink/5"
           >
             <ArrowLeft size={16} className="text-ink-light" />
@@ -206,7 +206,7 @@ export default function SpeakingImport() {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/english")} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-ink/5">
+          <button onClick={() => navigate("/english/speaking")} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-ink/5">
             <ArrowLeft size={16} className="text-ink-light" />
           </button>
           <h1 className="text-lg font-semibold text-ink">导入完成</h1>
@@ -225,10 +225,10 @@ export default function SpeakingImport() {
               继续导入
             </button>
             <button
-              onClick={() => navigate("/english")}
+              onClick={() => navigate("/english/speaking")}
               className="px-4 py-2 rounded-xl bg-sage-deep text-white text-sm font-medium hover:bg-sage-deep/90"
             >
-              返回英语 OS
+              返回口语中心
             </button>
           </div>
         </div>

@@ -136,12 +136,17 @@ export default function EnglishExpressions() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-ink-lighter">English OS</p>
-          <h1 className="text-2xl font-semibold tracking-tight mt-0.5">表达库</h1>
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => navigate("/english/expressions")} title="返回表达学习" className="h-9 w-9 shrink-0 rounded-lg bg-ink/5 flex items-center justify-center hover:bg-ink/10">
+            <ChevronLeft size={17} />
+          </button>
+          <div>
+            <p className="text-sm text-ink-lighter">表达学习</p>
+            <h1 className="text-2xl font-semibold tracking-tight mt-0.5">表达库</h1>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
             onClick={() => setBatchMode(!batchMode)}
             className={cn(
@@ -161,7 +166,7 @@ export default function EnglishExpressions() {
             {recategorize.isPending ? "分类中..." : "重新分类"}
           </button>
           <button
-            onClick={() => navigate("/english/expressions/new")}
+            onClick={() => navigate("/english/library/new")}
             className="flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-3 py-2 text-sm font-medium"
           >
             <Plus size={16} />
@@ -359,7 +364,7 @@ export default function EnglishExpressions() {
             batchMode={batchMode}
             selected={selectedIds.has(expr.id as string)}
             onToggleSelect={() => toggleSelect(expr.id as string)}
-            onClick={() => navigate(`/english/expressions/${expr.id}`)}
+            onClick={() => navigate(`/english/library/${expr.id}`)}
           />
         ))}
       </div>

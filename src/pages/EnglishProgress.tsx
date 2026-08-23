@@ -130,7 +130,7 @@ export default function EnglishProgress() {
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate("/english")}
+            onClick={() => navigate("/english/progress")}
             className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0"
           >
             <ArrowLeft size={16} className="text-ink-light" />
@@ -171,7 +171,7 @@ export default function EnglishProgress() {
           <p className="text-sm font-medium text-ink">还没有口语练习数据</p>
           <p className="text-xs text-ink-lighter">完成几次口语练习后，这里会展示你的成长轨迹</p>
           <button
-            onClick={() => navigate("/english/speaking")}
+            onClick={() => navigate("/english/speaking/practice")}
             className="inline-flex items-center gap-1.5 bg-sage-light text-sage-deep rounded-xl px-4 py-2 text-sm font-semibold mt-2"
           >
             <Mic size={14} />

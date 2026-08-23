@@ -1,423 +1,157 @@
 import { useLocation } from "wouter";
 import {
-  BookOpen, Mic, Library, Brain, Eye, Edit3,
-  ChevronRight, Zap, Upload, TrendingUp, FileUp,
-  Sparkles, CheckCircle2, GraduationCap,
+  ArrowRight, BookOpen, Clock3, FileUp, GraduationCap, Library,
+  Mic, Search, Sparkles, TrendingUp, Upload,
 } from "lucide-react";
-import { useEnglishStats } from "@/lib/hooks/useEnglish";
-import {
-  useHubSessionProgress,
-  useLearnQueueCount,
-  useTodayLearnSession,
-  useCreateLearnSession,
-  useAppendLearnItems,
-  useLearnMoreAvailable,
-  isLearnItemFinished,
-} from "@/lib/hooks/useReviewSession";
-import LearnTargetSelector from "@/components/english/LearnTargetSelector";
+import { useEnglishStats, useSpeakingSessions } from "@/lib/hooks/useEnglish";
+import { useHubSessionProgress, useLearnQueueCount, useTodayLearnSession, isLearnItemFinished } from "@/lib/hooks/useReviewSession";
+import { useReaderBooks } from "@/lib/hooks/useEnglishReader";
 import { cn } from "@/lib/utils";
+
+const isToday = (value?: string | null) => Boolean(value && new Date(value).toDateString() === new Date().toDateString());
 
 export default function English() {
   const [, navigate] = useLocation();
-  const { data: stats, isLoading } = useEnglishStats();
-  const { data: sessionProgress } = useHubSessionProgress();
-  const { data: learnCount } = useLearnQueueCount();
+  const statsQuery = useEnglishStats();
+  const learnCountQuery = useLearnQueueCount();
+  const learnSessionQuery = useTodayLearnSession();
+  const reviewProgressQuery = useHubSessionProgress();
+  const speakingQuery = useSpeakingSessions();
+  const booksQuery = useReaderBooks();
 
+  const stats = statsQuery.data;
+  const learnItems = learnSessionQuery.data?.items ?? [];
+  const learnedToday = learnItems.filter(isLearnItemFinished).length;
+  const hasUnfinishedLearn = Boolean(learnSessionQuery.data?.session && learnedToday < learnItems.length);
+  const speakingToday = (speakingQuery.data ?? []).filter((session) => isToday(session.created_at)).length;
+  const readToday = (booksQuery.data ?? []).some((book) => isToday(book.reading_progress?.updated_at));
   const dueCount = stats?.due ?? 0;
-  const toLearnCount = learnCount ?? 0;
+
+  const nextAction = hasUnfinishedLearn
+    ? { label: "继续今日学习", path: "/english/learn" }
+    : statsQuery.isError
+      ? { label: "选择学习内容", path: "/english/expressions" }
+      : dueCount > 0
+      ? { label: `复习 ${dueCount} 条表达`, path: "/english/review" }
+      : speakingQuery.isError
+        ? { label: "选择学习内容", path: "/english/expressions" }
+        : speakingToday === 0
+        ? { label: "完成今日口语", path: "/english/speaking/practice" }
+        : null;
+
+  const statValue = (failed: boolean, value: number | undefined) => failed ? "--" : (value ?? 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0">
       <header>
-        <p className="text-sm text-ink-lighter">English OS</p>
-        <h1 className="text-2xl font-semibold tracking-tight mt-0.5">英语学习</h1>
+        <p className="text-xs text-ink-lighter">English OS</p>
+        <h1 className="text-2xl font-semibold mt-0.5">英语学习</h1>
+        <p className="text-sm text-ink-light mt-1">学习 · 复习 · 口语 · 阅读</p>
       </header>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-4 gap-2">
-        <StatCard label="表达库" value={isLoading ? "-" : stats?.total ?? 0} color="ink" />
-        <StatCard label="待学习" value={toLearnCount} color={toLearnCount ? "blue" : "ink"} />
-        <StatCard label="待复习" value={isLoading ? "-" : dueCount} color={dueCount ? "sage" : "ink"} />
-        <StatCard label="已掌握" value={isLoading ? "-" : stats?.mastered ?? 0} color="sage" />
-      </div>
+      <section aria-label="学习概览" className="grid grid-cols-2 sm:grid-cols-4 rounded-lg border border-border bg-card overflow-hidden">
+        <OverviewStat label="表达库" value={statValue(statsQuery.isError, stats?.total)} />
+        <OverviewStat label="待学习" value={statValue(learnCountQuery.isError, learnCountQuery.data)} />
+        <OverviewStat label="今日待复习" value={statValue(statsQuery.isError, dueCount)} />
+        <OverviewStat label="口语练习" value={statValue(statsQuery.isError, stats?.totalSessions)} />
+      </section>
 
-      {/* Primary actions: Adaptive Learn + Review */}
-      <div className="space-y-3">
-        <TodayLearningCard />
-        <ActionCard
-          icon={Brain}
-          label="SRS 复习"
-          desc={dueCount ? `${dueCount} 条待复习` : "全部掌握!"}
-          highlight={dueCount > 0}
-          color="purple"
-          onClick={() => navigate("/english/review?mode=recall")}
-          extra={sessionProgress?.hasSession ? `今日已复习 ${sessionProgress.recallCompleted}/${sessionProgress.totalExpressions} 条` : undefined}
-        />
-      </div>
-
-      {/* Three training modes */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-ink-light">训练模式</p>
-        <div className="grid grid-cols-3 gap-2">
-          <ModeCard
-            icon={Brain}
-            label="主动回忆"
-            desc="看中文说英文"
-            color="purple"
-            onClick={() => navigate("/english/review?mode=recall")}
-          />
-          <ModeCard
-            icon={Edit3}
-            label="语境填空"
-            desc="例句中填空"
-            color="amber"
-            onClick={() => navigate("/english/review?mode=cloze")}
-          />
-          <ModeCard
-            icon={Eye}
-            label="个人造句"
-            desc="活用表达造句"
-            color="blue"
-            onClick={() => navigate("/english/review?mode=sentence")}
-          />
+      <section aria-labelledby="today-english" className="rounded-lg bg-ink text-white p-4 sm:p-5">
+        <div className="flex items-center gap-2">
+          <Sparkles size={16} className="text-sage-light" />
+          <h2 id="today-english" className="text-sm font-semibold">今日英语</h2>
         </div>
-      </div>
-
-      {/* Today's review progress */}
-      {sessionProgress?.hasSession && sessionProgress.totalExpressions > 0 && (
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap size={14} className="text-sage-deep" />
-            <span className="text-sm font-medium text-ink">今日复习进度</span>
-            {sessionProgress.allDone && (
-              <span className="text-[10px] font-medium text-sage-deep bg-sage-light/50 px-2 py-0.5 rounded-full ml-auto">
-                全部完成
-              </span>
-            )}
-          </div>
-          <div className="space-y-2">
-            <ProgressRow
-              label="主动回忆"
-              completed={sessionProgress.recallCompleted}
-              passed={sessionProgress.recallPassed}
-              total={sessionProgress.totalExpressions}
-              color="bg-purple-400"
-            />
-            <ProgressRow
-              label="语境填空"
-              completed={sessionProgress.clozeCompleted}
-              passed={sessionProgress.clozeCorrect}
-              total={sessionProgress.totalExpressions}
-              color="bg-amber-400"
-            />
-            <ProgressRow
-              label="个人造句"
-              completed={sessionProgress.sentenceCompleted}
-              passed={sessionProgress.sentenceCompleted}
-              total={sessionProgress.totalExpressions}
-              color="bg-blue-400"
-              showPassed={false}
-            />
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-4 mt-4">
+          <TodayMetric label="新学" value={learnSessionQuery.isError ? "--" : learnedToday} />
+          <TodayMetric label="待复习" value={statsQuery.isError ? "--" : dueCount} />
+          <TodayMetric label="口语" value={speakingQuery.isError ? "--" : `${speakingToday}/1`} />
+          <TodayMetric label="阅读" value={booksQuery.isError ? "--" : readToday ? "已阅读" : "未开始"} />
         </div>
-      )}
-
-      {/* Quick actions */}
-      <div className="grid grid-cols-1 gap-3">
-        <ActionCard
-          icon={BookOpen}
-          label="英文原著阅读"
-          desc="EPUB 书架 · AI 逐句理解"
-          onClick={() => navigate("/english/reader")}
-        />
-        <ActionCard
-          icon={Library}
-          label="表达库"
-          desc={`${stats?.total ?? 0} 条表达 · 搜索 & 管理`}
-          onClick={() => navigate("/english/expressions")}
-        />
-        <ActionCard
-          icon={Mic}
-          label="口语练习"
-          desc={`${stats?.totalSessions ?? 0} 次练习记录`}
-          onClick={() => navigate("/english/speaking")}
-        />
-        <ActionCard
-          icon={TrendingUp}
-          label="学习历史"
-          desc="今日报告 · 学习记录 · 趋势分析"
-          onClick={() => navigate("/english/history")}
-        />
-        <ActionCard
-          icon={Upload}
-          label="导入表达"
-          desc="从文件或文本批量导入英语表达"
-          onClick={() => navigate("/english/import")}
-        />
-        <ActionCard
-          icon={FileUp}
-          label="导入口语题库"
-          desc="上传文件 AI 提取 · 自动分类去重 · 批量导入"
-          onClick={() => navigate("/english/speaking/import")}
-        />
-      </div>
-
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════
-// V4.3: Today's Learning Card — three states
-//
-// No session  → "今天想学多少？" target selector (轻松5/标准10/专注15/冲刺20/自定义)
-// In progress → 3/10 [继续学习]
-// Completed   → 10/10 ✓ + [今天再学一些] (extends the SAME session, never a second one)
-// ═══════════════════════════════════════
-
-function TodayLearningCard() {
-  const [, navigate] = useLocation();
-  const { data } = useTodayLearnSession();
-  const { data: queueCount = 0 } = useLearnQueueCount();
-  const { data: moreAvailable = 0 } = useLearnMoreAvailable();
-  const createSession = useCreateLearnSession();
-  const append = useAppendLearnItems();
-
-  const session = data?.session ?? null;
-  const items = data?.items ?? [];
-  const doneCount = items.filter(isLearnItemFinished).length;
-  const started = session !== null;
-  const allDone = started && items.length > 0 && doneCount >= items.length;
-
-  const handleCreate = (target: number) => {
-    createSession.mutate(
-      { target },
-      { onSuccess: (res) => { if (!res.empty) navigate("/english/learn"); } },
-    );
-  };
-
-  const handleAppend = (count: number) => {
-    append.mutate(
-      { count },
-      { onSuccess: () => navigate("/english/learn") },
-    );
-  };
-
-  const header = (
-    <div className="flex items-center gap-2">
-      <GraduationCap size={14} className={started ? "text-sage-deep" : "text-blue-600"} />
-      <span className="text-sm font-medium text-ink">今日学习</span>
-      {started && allDone && (
-        <span className="text-[10px] font-medium text-sage-deep bg-sage-light/50 px-2 py-0.5 rounded-full ml-auto">
-          全部完成
-        </span>
-      )}
-    </div>
-  );
-
-  // State A — no session yet: target selector (or empty state)
-  if (!started) {
-    if (queueCount === 0) {
-      return (
-        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-          {header}
-          <p className="text-sm text-ink-light">表达库里暂时没有待学习的新表达。</p>
-          <button
-            onClick={() => navigate("/english/expressions")}
-            className="w-full py-3 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
-          >
-            去表达库
-          </button>
-        </div>
-      );
-    }
-    return (
-      <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
-        {header}
-        <LearnTargetSelector
-          mode="create"
-          availableCount={queueCount}
-          busy={createSession.isPending}
-          onSubmit={handleCreate}
-        />
-      </div>
-    );
-  }
-
-  // State B — in progress: continue
-  if (!allDone) {
-    return (
-      <div className="bg-card rounded-2xl border border-border p-4 flex items-center gap-4">
-        <div className="flex-1 min-w-0">
-          {header}
-          <p className="text-sm text-ink-light mt-1">
-            {doneCount} / {items.length} 条已完成
+        <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/15 pt-4">
+          <p className="text-xs text-white/65 min-w-0">
+            {reviewProgressQuery.data?.allDone && !nextAction ? "今天的核心学习已完成" : "按今日状态继续下一项"}
           </p>
+          {nextAction ? (
+            <button type="button" onClick={() => navigate(nextAction.path)} className="shrink-0 h-10 px-4 rounded-lg bg-white text-ink text-sm font-semibold inline-flex items-center gap-2">
+              {nextAction.label}<ArrowRight size={15} />
+            </button>
+          ) : (
+            <span className="shrink-0 text-sm font-medium text-sage-light">今日已完成</span>
+          )}
         </div>
-        <button
-          onClick={() => navigate("/english/learn")}
-          className="shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium bg-ink text-white hover:bg-ink/90 transition-colors"
-        >
-          继续学习
-        </button>
-      </div>
-    );
-  }
+      </section>
 
-  // State C — completed: today's recap + 今天再学一些
-  return (
-    <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
-      {header}
-      <p className="text-sm text-ink-light">
-        今天新学 <span className="font-semibold text-ink">{doneCount}</span> 条表达 ✓
-      </p>
-      {moreAvailable > 0 ? (
-        <LearnTargetSelector
-          mode="append"
-          availableCount={moreAvailable}
-          busy={append.isPending}
-          onSubmit={handleAppend}
-        />
-      ) : (
-        <p className="text-xs text-ink-lighter">
-          表达库里没有更多待学习的表达啦，去复习今天的 SRS 卡片吧。
-        </p>
-      )}
+      <section aria-labelledby="learning-centers">
+        <div className="mb-3">
+          <p className="text-xs text-ink-lighter">Learning hubs</p>
+          <h2 id="learning-centers" className="text-lg font-semibold mt-0.5">学习中心</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <CenterCard icon={GraduationCap} title="表达学习" description="学表达 · SRS 复习 · 表达库" tone="sage" onClick={() => navigate("/english/expressions")} />
+          <CenterCard icon={Mic} title="英语口语" description="对话 · 主题表达 · AI 纠错" tone="rose" onClick={() => navigate("/english/speaking")} />
+          <CenterCard icon={BookOpen} title="英文阅读" description="EPUB · 原著阅读 · 表达摘录" tone="blue" onClick={() => navigate("/english/reading")} />
+          <CenterCard icon={TrendingUp} title="学习成长" description="历史 · 趋势 · AI 总结" tone="amber" onClick={() => navigate("/english/progress")} />
+        </div>
+      </section>
+
+      <section aria-labelledby="quick-actions">
+        <h2 id="quick-actions" className="text-xs font-medium text-ink-lighter mb-2">快捷入口</h2>
+        <div className="flex flex-wrap gap-2">
+          <QuickAction icon={Upload} label="导入表达" onClick={() => navigate("/english/import")} />
+          <QuickAction icon={FileUp} label="导入口语题库" onClick={() => navigate("/english/speaking/import")} />
+          <QuickAction icon={Clock3} label="学习历史" onClick={() => navigate("/english/history")} />
+          <QuickAction icon={Search} label="搜索表达库" onClick={() => navigate("/english/library")} />
+        </div>
+      </section>
     </div>
   );
 }
 
-// ── Mode Card ──
+function OverviewStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-0 p-3 sm:p-4 border-b border-r border-border even:border-r-0 sm:border-b-0 sm:even:border-r">
+      <p className="text-xl font-semibold text-ink truncate">{value}</p>
+      <p className="text-[11px] text-ink-lighter mt-0.5 truncate">{label}</p>
+    </div>
+  );
+}
 
-function ModeCard({
-  icon: Icon,
-  label,
-  desc,
-  color,
-  onClick,
-}: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  desc: string;
-  color: string;
+function TodayMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-0 pr-2">
+      <p className="text-lg font-semibold truncate">{value}</p>
+      <p className="text-[11px] text-white/55 mt-0.5">{label}</p>
+    </div>
+  );
+}
+
+function CenterCard({ icon: Icon, title, description, tone, onClick }: {
+  icon: typeof Library;
+  title: string;
+  description: string;
+  tone: "sage" | "rose" | "blue" | "amber";
   onClick: () => void;
 }) {
-  const colorMap: Record<string, string> = {
-    purple: "bg-purple-50 text-purple-600",
+  const tones = {
+    sage: "bg-sage-light text-sage-deep",
+    rose: "bg-rose-50 text-rose-600",
     blue: "bg-blue-50 text-blue-600",
     amber: "bg-amber-50 text-amber-600",
   };
   return (
-    <button
-      onClick={onClick}
-      className="bg-card rounded-xl border border-border p-3 text-center hover:border-sage-light/50 transition-colors"
-    >
-      <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center mx-auto mb-1.5", colorMap[color] || colorMap.purple)}>
-        <Icon size={14} />
-      </div>
-      <p className="text-xs font-medium text-ink">{label}</p>
-      <p className="text-[10px] text-ink-lighter mt-0.5">{desc}</p>
+    <button type="button" onClick={onClick} className="min-w-0 rounded-lg border border-border bg-card p-4 text-left hover:border-ink/20 transition-colors">
+      <span className={cn("h-10 w-10 rounded-lg flex items-center justify-center", tones[tone])}><Icon size={19} /></span>
+      <h3 className="text-base font-semibold text-ink mt-4">{title}</h3>
+      <p className="text-xs text-ink-lighter mt-1">{description}</p>
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-ink mt-4">进入中心<ArrowRight size={13} /></span>
     </button>
   );
 }
 
-// ── Progress Row (V3.5: session-based) ──
-
-function ProgressRow({
-  label,
-  completed,
-  passed,
-  total,
-  color,
-  showPassed = true,
-}: {
-  label: string;
-  completed: number;
-  passed: number;
-  total: number;
-  color: string;
-  showPassed?: boolean;
-}) {
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+function QuickAction({ icon: Icon, label, onClick }: { icon: typeof Upload; label: string; onClick: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] text-ink-lighter w-14 shrink-0">{label}</span>
-      <div className="flex-1 h-1.5 bg-ink/5 rounded-full overflow-hidden">
-        <div
-          className={cn("h-full rounded-full transition-all", color)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-[10px] text-ink-lighter shrink-0 w-12 text-right">
-        {showPassed ? `${passed}/${completed}` : `${completed}/${total}`}
-      </span>
-    </div>
-  );
-}
-
-// ── Stat Card ──
-function StatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
-  return (
-    <div className="bg-card rounded-2xl border border-border p-3 text-center">
-      <p className={cn(
-        "text-xl font-bold",
-        color === "sage" ? "text-sage-deep" : color === "blue" ? "text-blue-600" : "text-ink",
-      )}>
-        {value}
-      </p>
-      <p className="text-[10px] text-ink-lighter mt-0.5">{label}</p>
-    </div>
-  );
-}
-
-// ── Action Card ──
-function ActionCard({
-  icon: Icon,
-  label,
-  desc,
-  highlight,
-  color,
-  onClick,
-  extra,
-}: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  desc: string;
-  highlight?: boolean;
-  color?: string;
-  onClick: () => void;
-  extra?: string;
-}) {
-  const highlightColors: Record<string, string> = {
-    blue: "bg-blue-50",
-    purple: "bg-purple-50",
-  };
-  const highlightIcons: Record<string, string> = {
-    blue: "text-blue-600",
-    purple: "text-purple-600",
-  };
-
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "bg-card rounded-2xl border p-4 flex items-center gap-4 text-left transition-colors",
-        highlight ? "border-sage-light/50" : "border-border",
-      )}
-    >
-      <div className={cn(
-        "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
-        highlight && color ? (highlightColors[color] || "bg-purple-50") : "bg-ink/5",
-      )}>
-        <Icon size={18} className={
-          highlight && color ? (highlightIcons[color] || "text-purple-600") : "text-ink-light"
-        } />
-      </div>
-      <div className="flex-1 min-w-0">
-        <h3 className="text-sm font-semibold text-ink">{label}</h3>
-        <p className="text-xs text-ink-lighter mt-0.5">{desc}</p>
-        {extra && <p className="text-[10px] text-sage-deep mt-0.5">{extra}</p>}
-      </div>
-      <ChevronRight size={14} className="text-ink-lighter shrink-0" />
+    <button type="button" onClick={onClick} className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-medium text-ink-light inline-flex items-center gap-2 hover:bg-ink/5">
+      <Icon size={14} />{label}
     </button>
   );
 }

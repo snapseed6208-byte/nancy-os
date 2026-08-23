@@ -11,8 +11,9 @@ const SCENES = [
 
 export default function EnglishExpressionDetail() {
   const [, navigate] = useLocation();
-  const [, params] = useRoute("/english/expressions/:id");
-  const id = params?.id;
+  const [, libraryParams] = useRoute("/english/library/:id");
+  const [, legacyParams] = useRoute("/english/expressions/:id");
+  const id = libraryParams?.id ?? legacyParams?.id;
   const isNew = !id || id === "new";
 
   const { data: existing, isLoading } = useExpression(isNew ? undefined : id);
@@ -70,21 +71,21 @@ export default function EnglishExpressionDetail() {
     } else {
       await updateExpr.mutateAsync({ id, ...form });
     }
-    navigate("/english/expressions");
+    navigate("/english/library");
   };
 
   const handleArchive = async () => {
     if (!id || isNew) return;
     if (!confirm("归档这条表达？归档后可在表达库中恢复。")) return;
     await archiveExpr.mutateAsync(id);
-    navigate("/english/expressions");
+    navigate("/english/library");
   };
 
   const handleDelete = async () => {
     if (!id || isNew) return;
     if (!confirm("确定永久删除这条表达？此操作不可恢复。")) return;
     await deleteExpr.mutateAsync(id);
-    navigate("/english/expressions");
+    navigate("/english/library");
   };
 
   if (isLoading) {
@@ -99,7 +100,7 @@ export default function EnglishExpressionDetail() {
     <div className="space-y-4">
       <header className="flex items-center gap-3">
         <button
-          onClick={() => navigate("/english/expressions")}
+          onClick={() => navigate("/english/library")}
           className="h-8 w-8 rounded-lg bg-ink/5 flex items-center justify-center shrink-0"
         >
           <ArrowLeft size={16} className="text-ink-light" />
