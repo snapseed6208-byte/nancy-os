@@ -125,6 +125,12 @@ export default function English() {
       {/* Quick actions */}
       <div className="grid grid-cols-1 gap-3">
         <ActionCard
+          icon={BookOpen}
+          label="英文原著阅读"
+          desc="EPUB 书架 · AI 逐句理解"
+          onClick={() => navigate("/english/reader")}
+        />
+        <ActionCard
           icon={Library}
           label="表达库"
           desc={`${stats?.total ?? 0} 条表达 · 搜索 & 管理`}

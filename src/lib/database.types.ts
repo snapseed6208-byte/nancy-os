@@ -325,6 +325,48 @@ export type Database = {
         }
         Relationships: []
       }
+      books: {
+        Row: {
+          author: string | null
+          chapter_count: number
+          created_at: string
+          file_name: string
+          file_size: number
+          id: string
+          language: string
+          metadata: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          author?: string | null
+          chapter_count?: number
+          created_at?: string
+          file_name: string
+          file_size?: number
+          id?: string
+          language?: string
+          metadata?: Json
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          author?: string | null
+          chapter_count?: number
+          created_at?: string
+          file_name?: string
+          file_size?: number
+          id?: string
+          language?: string
+          metadata?: Json
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           color: string | null
@@ -358,6 +400,50 @@ export type Database = {
         }
         Relationships: []
       }
+      chapters: {
+        Row: {
+          book_id: string
+          chapter_index: number
+          content: string
+          created_at: string
+          href: string | null
+          id: string
+          title: string
+          user_id: string
+          word_count: number
+        }
+        Insert: {
+          book_id: string
+          chapter_index: number
+          content: string
+          created_at?: string
+          href?: string | null
+          id?: string
+          title: string
+          user_id: string
+          word_count?: number
+        }
+        Update: {
+          book_id?: string
+          chapter_index?: number
+          content?: string
+          created_at?: string
+          href?: string | null
+          id?: string
+          title?: string
+          user_id?: string
+          word_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chapters_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chinese_speaking_attempts: {
         Row: {
           ai_model: string | null
@@ -378,6 +464,7 @@ export type Database = {
           is_retry: boolean
           key_improvements: Json | null
           material_understanding: Json | null
+          reference_meta: Json | null
           reference_viewed_before_retry: boolean
           retry_of_attempt_id: string | null
           scores: Json | null
@@ -409,6 +496,7 @@ export type Database = {
           is_retry?: boolean
           key_improvements?: Json | null
           material_understanding?: Json | null
+          reference_meta?: Json | null
           reference_viewed_before_retry?: boolean
           retry_of_attempt_id?: string | null
           scores?: Json | null
@@ -440,6 +528,7 @@ export type Database = {
           is_retry?: boolean
           key_improvements?: Json | null
           material_understanding?: Json | null
+          reference_meta?: Json | null
           reference_viewed_before_retry?: boolean
           retry_of_attempt_id?: string | null
           scores?: Json | null
@@ -1071,6 +1160,7 @@ export type Database = {
       }
       expressions: {
         Row: {
+          ai_cloze_sentence: string | null
           ai_model: string | null
           ai_prompt_version: string | null
           archived: boolean | null
@@ -1125,6 +1215,7 @@ export type Database = {
           vocabulary_score: number | null
         }
         Insert: {
+          ai_cloze_sentence?: string | null
           ai_model?: string | null
           ai_prompt_version?: string | null
           archived?: boolean | null
@@ -1179,6 +1270,7 @@ export type Database = {
           vocabulary_score?: number | null
         }
         Update: {
+          ai_cloze_sentence?: string | null
           ai_model?: string | null
           ai_prompt_version?: string | null
           archived?: boolean | null
@@ -2060,6 +2152,57 @@ export type Database = {
         }
         Relationships: []
       }
+      reading_progress: {
+        Row: {
+          book_id: string
+          chapter_id: string | null
+          chapter_index: number
+          id: string
+          percentage: number
+          scroll_offset: number
+          sentence_index: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          book_id: string
+          chapter_id?: string | null
+          chapter_index?: number
+          id?: string
+          percentage?: number
+          scroll_offset?: number
+          sentence_index?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          book_id?: string
+          chapter_id?: string | null
+          chapter_index?: number
+          id?: string
+          percentage?: number
+          scroll_offset?: number
+          sentence_index?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reading_progress_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reading_progress_chapter_id_fkey"
+            columns: ["chapter_id"]
+            isOneToOne: false
+            referencedRelation: "chapters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recipe_extraction_logs: {
         Row: {
           created_at: string
@@ -2462,6 +2605,7 @@ export type Database = {
           expression_id: string
           id: string
           last_practice_at: string | null
+          mode_data: Json | null
           personal_context: Json | null
           recall_score: number | null
           reinforcement_round: number
@@ -2481,6 +2625,7 @@ export type Database = {
           expression_id: string
           id?: string
           last_practice_at?: string | null
+          mode_data?: Json | null
           personal_context?: Json | null
           recall_score?: number | null
           reinforcement_round?: number
@@ -2500,6 +2645,7 @@ export type Database = {
           expression_id?: string
           id?: string
           last_practice_at?: string | null
+          mode_data?: Json | null
           personal_context?: Json | null
           recall_score?: number | null
           reinforcement_round?: number
@@ -2565,6 +2711,64 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      saved_reading_expressions: {
+        Row: {
+          analysis: Json
+          book_id: string
+          chapter_id: string | null
+          created_at: string
+          expression_id: string
+          expression_text: string
+          id: string
+          sentence_text: string
+          user_id: string
+        }
+        Insert: {
+          analysis?: Json
+          book_id: string
+          chapter_id?: string | null
+          created_at?: string
+          expression_id: string
+          expression_text: string
+          id?: string
+          sentence_text: string
+          user_id: string
+        }
+        Update: {
+          analysis?: Json
+          book_id?: string
+          chapter_id?: string | null
+          created_at?: string
+          expression_id?: string
+          expression_text?: string
+          id?: string
+          sentence_text?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_reading_expressions_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_reading_expressions_chapter_id_fkey"
+            columns: ["chapter_id"]
+            isOneToOne: false
+            referencedRelation: "chapters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_reading_expressions_expression_id_fkey"
+            columns: ["expression_id"]
+            isOneToOne: false
+            referencedRelation: "expressions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       speaking_attempts: {
         Row: {
@@ -3591,6 +3795,19 @@ export type Database = {
         }[]
       }
       increment_question_usage: { Args: { q_id: string }; Returns: undefined }
+      save_reading_expression: {
+        Args: {
+          p_analysis?: Json
+          p_book_id: string
+          p_chapter_id: string
+          p_chinese: string
+          p_example_sentence: string
+          p_expression_text: string
+          p_language_explanation: string
+          p_sentence_text: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

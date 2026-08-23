@@ -16,6 +16,8 @@ import SpeakingImport from "@/pages/SpeakingImport";
 import EnglishProgress from "@/pages/EnglishProgress";
 import EnglishLearningHistory from "@/pages/EnglishLearningHistory";
 import EnglishImport from "@/pages/EnglishImport";
+import EnglishReader from "@/pages/EnglishReader";
+import EnglishReaderLibrary from "@/pages/EnglishReaderLibrary";
 import Health from "@/pages/Health";
 import Exam from "@/pages/Exam";
 import LifeTrace from "@/pages/LifeTrace";
@@ -76,6 +78,8 @@ function AppRoutes() {
         <Route path="/english/progress" component={EnglishProgress} />
         <Route path="/english/history" component={EnglishLearningHistory} />
         <Route path="/english/import" component={EnglishImport} />
+        <Route path="/english/reader" component={EnglishReaderLibrary} />
+        <Route path="/english/reader/:bookId" component={EnglishReader} />
         <Route path="/health" component={Health} />
         <Route path="/exam" component={Exam} />
         <Route path="/life-trace" component={LifeTrace} />
