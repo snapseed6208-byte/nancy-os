@@ -2715,35 +2715,47 @@ export type Database = {
       saved_reading_expressions: {
         Row: {
           analysis: Json
-          book_id: string
+          book_id: string | null
+          chapter_title: string | null
           chapter_id: string | null
           created_at: string
           expression_id: string
           expression_text: string
           id: string
+          resource_id: string | null
           sentence_text: string
+          source_kind: string
+          source_title: string | null
           user_id: string
         }
         Insert: {
           analysis?: Json
-          book_id: string
+          book_id?: string | null
+          chapter_title?: string | null
           chapter_id?: string | null
           created_at?: string
           expression_id: string
           expression_text: string
           id?: string
+          resource_id?: string | null
           sentence_text: string
+          source_kind?: string
+          source_title?: string | null
           user_id: string
         }
         Update: {
           analysis?: Json
-          book_id?: string
+          book_id?: string | null
+          chapter_title?: string | null
           chapter_id?: string | null
           created_at?: string
           expression_id?: string
           expression_text?: string
           id?: string
+          resource_id?: string | null
           sentence_text?: string
+          source_kind?: string
+          source_title?: string | null
           user_id?: string
         }
         Relationships: [
@@ -2766,6 +2778,13 @@ export type Database = {
             columns: ["expression_id"]
             isOneToOne: false
             referencedRelation: "expressions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_reading_expressions_resource_id_fkey"
+            columns: ["resource_id"]
+            isOneToOne: false
+            referencedRelation: "resources"
             referencedColumns: ["id"]
           },
         ]
@@ -3807,6 +3826,23 @@ export type Database = {
           p_sentence_text: string
         }
         Returns: string
+      }
+      save_reading_expression_v2: {
+        Args: {
+          p_analysis?: Json
+          p_book_id: string | null
+          p_chapter_id: string | null
+          p_chapter_title: string | null
+          p_chinese: string
+          p_example_sentence: string
+          p_expression_text: string
+          p_language_explanation: string
+          p_resource_id: string | null
+          p_sentence_text: string
+          p_source_kind: string
+          p_source_title: string
+        }
+        Returns: Json
       }
     }
     Enums: {

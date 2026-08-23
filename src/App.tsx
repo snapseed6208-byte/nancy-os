@@ -21,6 +21,10 @@ import EnglishLearningHistory from "@/pages/EnglishLearningHistory";
 import EnglishImport from "@/pages/EnglishImport";
 import EnglishReader from "@/pages/EnglishReader";
 import EnglishReaderLibrary from "@/pages/EnglishReaderLibrary";
+import EnglishReadingHub from "@/pages/EnglishReadingHub";
+import EnglishReadingHistory from "@/pages/EnglishReadingHistory";
+import EnglishArticleLibrary from "@/pages/EnglishArticleLibrary";
+import EnglishArticleReader from "@/pages/EnglishArticleReader";
 import Health from "@/pages/Health";
 import Exam from "@/pages/Exam";
 import LifeTrace from "@/pages/LifeTrace";
@@ -86,8 +90,13 @@ function AppRoutes() {
         <Route path="/english/speaking/progress" component={EnglishProgress} />
         <Route path="/english/history" component={EnglishLearningHistory} />
         <Route path="/english/import" component={EnglishImport} />
+        <Route path="/english/reading" component={EnglishReadingHub} />
+        <Route path="/english/reading/library" component={EnglishReaderLibrary} />
+        <Route path="/english/reading/book/:bookId" component={EnglishReader} />
+        <Route path="/english/reading/articles" component={EnglishArticleLibrary} />
+        <Route path="/english/reading/article/:resourceId" component={EnglishArticleReader} />
+        <Route path="/english/reading/history" component={EnglishReadingHistory} />
         <Route path="/english/reader" component={EnglishReaderLibrary} />
-        <Route path="/english/reading" component={EnglishReaderLibrary} />
         <Route path="/english/reader/:bookId" component={EnglishReader} />
         <Route path="/health" component={Health} />
         <Route path="/exam" component={Exam} />

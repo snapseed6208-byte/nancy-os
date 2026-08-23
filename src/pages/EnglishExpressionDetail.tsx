@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
-import { ArrowLeft, Archive, Trash2 } from "lucide-react";
+import { ArrowLeft, Archive, BookOpen, FileText, Trash2 } from "lucide-react";
 import { useExpression, useCreateExpression, useUpdateExpression, useArchiveExpression, useDeleteExpression, useExpressionCategories } from "@/lib/hooks/useEnglish";
+import { useReadingExpressionSource } from "@/lib/hooks/useEnglishReader";
 import { EXPRESSION_TYPES } from "@/lib/types";
 
 const SCENES = [
@@ -17,6 +18,7 @@ export default function EnglishExpressionDetail() {
   const isNew = !id || id === "new";
 
   const { data: existing, isLoading } = useExpression(isNew ? undefined : id);
+  const { data: readingSource } = useReadingExpressionSource(isNew ? undefined : id);
   const createExpr = useCreateExpression();
   const updateExpr = useUpdateExpression();
   const archiveExpr = useArchiveExpression();
@@ -215,6 +217,20 @@ export default function EnglishExpressionDetail() {
             onChange={(e) => set("source_text", e.target.value)}
           />
         </div>
+
+        {readingSource && (
+          <section className="border-y border-border py-3 flex gap-3">
+            <span className="h-9 w-9 shrink-0 rounded-lg bg-sage-light text-sage-deep flex items-center justify-center">
+              {readingSource.source_kind === "article" ? <FileText size={16} /> : <BookOpen size={16} />}
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs text-ink-lighter">阅读来源</p>
+              <p className="text-sm font-medium mt-0.5 truncate">{readingSource.source_title || "英文阅读"}</p>
+              {readingSource.chapter_title && <p className="text-xs text-ink-lighter mt-0.5">{readingSource.chapter_title}</p>}
+              <p className="text-xs text-ink-light leading-5 mt-2">{readingSource.sentence_text}</p>
+            </div>
+          </section>
+        )}
 
         {/* Category */}
         {categories && categories.length > 0 && (

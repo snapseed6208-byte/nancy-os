@@ -54,8 +54,14 @@ export type ParsedEpub = {
 
 export type ReaderKeyExpression = {
   expression: string;
+  source_expression?: string;
+  alternative_expression?: string | null;
   chinese: string;
   explanation: string;
+  contextual_meaning?: string;
+  usage_note?: string;
+  register?: "spoken" | "neutral" | "written";
+  speaking_example?: string | null;
 };
 
 export type ReaderSentenceAnalysis = {
@@ -63,4 +69,37 @@ export type ReaderSentenceAnalysis = {
   key_expressions: ReaderKeyExpression[];
   language_explanation: string;
   speaking_examples: string[];
+};
+
+export type ReadingSourceKind = "epub" | "article";
+
+export type ReadingArticle = {
+  id: string;
+  user_id: string;
+  title: string;
+  source_url: string | null;
+  source_author: string | null;
+  raw_content: string | null;
+  parse_status: string | null;
+  read_progress: number | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReadingExpressionSaveResult = {
+  expression_id: string;
+  created: boolean;
+  linked: boolean;
+};
+
+export type ReadingExpressionSource = {
+  id: string;
+  source_kind: ReadingSourceKind;
+  source_title: string | null;
+  chapter_title: string | null;
+  sentence_text: string;
+  book_id: string | null;
+  chapter_id: string | null;
+  resource_id: string | null;
 };

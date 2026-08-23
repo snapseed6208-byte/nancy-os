@@ -72,6 +72,10 @@ describe("English OS information architecture", () => {
       "/english/expressions/:id",
       "/english/speaking/practice",
       "/english/reading",
+      "/english/reading/library",
+      "/english/reading/book/:bookId",
+      "/english/reading/articles",
+      "/english/reading/history",
       "/english/reader",
       "/english/progress/speaking",
     ]) expect(app).toContain(`path="${route}"`);

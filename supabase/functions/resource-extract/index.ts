@@ -12,6 +12,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getExtractionFailure } from "./extraction-result.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -173,27 +174,40 @@ async function fetchAndExtract(url: string, requestId: string): Promise<ExtractR
     };
   }
 
-  // Extract metadata before stripping HTML
-  const title = extractMeta(html, /<title[^>]*>([^<]*)<\/title>/i) || "";
-  const ogTitle = extractMeta(html, /<meta\s+property="og:title"\s+content="([^"]*)"/i) || "";
-  const description = extractMeta(html, /<meta\s+name="description"\s+content="([^"]*)"/i)
-    || extractMeta(html, /<meta\s+property="og:description"\s+content="([^"]*)"/i) || "";
+  let title = "";
+  let description = "";
+  let text = "";
+  try {
+    // Extract metadata before stripping HTML.
+    title = extractMeta(html, /<title[^>]*>([^<]*)<\/title>/i) || "";
+    const ogTitle = extractMeta(html, /<meta\s+property="og:title"\s+content="([^"]*)"/i) || "";
+    description = extractMeta(html, /<meta\s+name="description"\s+content="([^"]*)"/i)
+      || extractMeta(html, /<meta\s+property="og:description"\s+content="([^"]*)"/i) || "";
+    title = ogTitle || title;
 
-  // Strip tags and extract text — do in stages to allow GC of intermediates
-  let text = html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Release html reference early
-  html = "";
+    text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#x27;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown parser error";
+    console.error(`[resource-extract] ${requestId} stage=html_parse_failed error=${message}`);
+    return {
+      title: "", description: "", text: "",
+      truncated: false, responseBytes,
+      error: `页面解析失败: ${message}`,
+    };
+  } finally {
+    // Release the potentially large HTML string before database work.
+    html = "";
+  }
 
   const truncated = text.length > MAX_EXTRACTED_CHARS;
   if (truncated) {
@@ -204,7 +218,7 @@ async function fetchAndExtract(url: string, requestId: string): Promise<ExtractR
   console.log(`[resource-extract] ${requestId} stage=html_parse_done elapsedMs=${tParse} textLen=${text.length} truncated=${truncated}`);
 
   return {
-    title: ogTitle || title,
+    title,
     description,
     text,
     truncated,
@@ -278,15 +292,15 @@ serve(async (req: Request) => {
 
       // ── Stage: extract ──
       const result = await fetchAndExtract(input, requestId);
+      extractError = getExtractionFailure(result);
 
-      if (result.error && result.statusCode && result.statusCode >= 400) {
-        extractError = result.error;
-        console.error(`[resource-extract] ${requestId} stage=extract_failed error=${result.error}`);
+      if (extractError) {
+        console.error(`[resource-extract] ${requestId} stage=extract_failed error=${extractError}`);
       }
 
       sourceTitle = result.title;
       sourceDescription = result.description;
-      extractedText = result.text;
+      extractedText = extractError ? "" : result.text;
 
       console.log(`[resource-extract] ${requestId} stage=extract_done title="${sourceTitle.slice(0, 60)}" textLen=${extractedText.length} hasError=${!!extractError} responseBytes=${result.responseBytes}`);
     } else {

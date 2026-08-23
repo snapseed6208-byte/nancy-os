@@ -22,7 +22,7 @@ export default function EnglishReaderLibrary() {
     setUploadError("");
     try {
       const book = await importEpub.mutateAsync(file);
-      navigate(`/english/reader/${book.id}`);
+      navigate(`/english/reading/book/${book.id}`);
     } catch (uploadFailure) {
       setUploadError((uploadFailure as Error).message || "EPUB 导入失败");
     } finally {
@@ -34,13 +34,13 @@ export default function EnglishReaderLibrary() {
     <div className="space-y-5">
       <header className="flex flex-col sm:flex-row items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <button type="button" onClick={() => navigate("/english")} title="返回 English OS" className="h-9 w-9 shrink-0 rounded-lg bg-ink/5 flex items-center justify-center hover:bg-ink/10">
+          <button type="button" onClick={() => navigate("/english/reading")} title="返回英文阅读" className="h-9 w-9 shrink-0 rounded-lg bg-ink/5 flex items-center justify-center hover:bg-ink/10">
             <ArrowLeft size={17} />
           </button>
           <div className="min-w-0">
-            <p className="text-xs text-ink-lighter">English OS</p>
-            <h1 className="text-2xl font-semibold mt-0.5">英文阅读</h1>
-            <p className="text-sm text-ink-light mt-1">我的书架 · EPUB 原著 · 阅读进度</p>
+            <p className="text-xs text-ink-lighter">英文阅读</p>
+            <h1 className="text-2xl font-semibold mt-0.5">我的书架</h1>
+            <p className="text-sm text-ink-light mt-1">EPUB 原著 · 阅读进度</p>
           </div>
         </div>
         <button
@@ -94,7 +94,7 @@ export default function EnglishReaderLibrary() {
             <BookRow
               key={book.id}
               book={book}
-              onOpen={() => navigate(`/english/reader/${book.id}`)}
+              onOpen={() => navigate(`/english/reading/book/${book.id}`)}
               onDelete={() => {
                 if (window.confirm(`删除《${book.title}》及阅读记录？`)) deleteBook.mutate(book.id);
               }}
