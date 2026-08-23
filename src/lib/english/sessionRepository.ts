@@ -498,6 +498,24 @@ export async function createSessionItems(
   if (error) throw classifySessionError(error);
 }
 
+/** Insert session items idempotently across rapid clicks or multiple devices. */
+export async function upsertSessionItems(
+  sessionId: string,
+  expressionIds: string[],
+): Promise<void> {
+  if (expressionIds.length === 0) return;
+
+  const items = expressionIds.map((id) => ({
+    session_id: sessionId,
+    expression_id: id,
+    status: "pending",
+  }));
+  const { error } = await supabase
+    .from("review_session_items")
+    .upsert(items, { onConflict: "session_id,expression_id", ignoreDuplicates: true });
+  if (error) throw classifySessionError(error);
+}
+
 // ═══════════════════════════════════════
 // Session completion
 // ═══════════════════════════════════════

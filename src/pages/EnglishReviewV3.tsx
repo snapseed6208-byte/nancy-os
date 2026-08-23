@@ -4,7 +4,7 @@
 // Three independent training modes via URL param:
 //   /english/review?mode=recall|cloze|sentence
 //
-// All modes share the same Daily Set (15 expressions)
+// All modes share the same cumulative daily session items.
 // and the same review_session_id.
 // Only recall mode triggers SRS scheduling.
 // ============================================
@@ -13,6 +13,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useLocation, useSearchParams } from "wouter";
 import {
   useTodaySession,
+  useAppendReviewBatch,
   useUpdateSessionItem,
   useRecordPracticeLog,
   useUpdateSessionStage,
@@ -21,6 +22,8 @@ import {
   getDailyReviewProgress,
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
+import { isDailyReviewComplete, isLoadedBatchComplete, REVIEW_BATCH_SIZE } from "@/lib/english/dailyReviewBatch";
+import { getShanghaiDateKey } from "@/lib/english/sessionRepository";
 import { useSubmitReview } from "@/lib/hooks/useEnglish";
 import { validateClozeResult, buildProgressiveHint } from "@/lib/clozeUtils";
 import type { ClozeResult } from "@/lib/clozeUtils";
@@ -1190,30 +1193,81 @@ function ModeCompleteScreen({
 }
 
 // ═══════════════════════════════════════
-// All Modes Complete Screen
+// Batch / Day Complete Screens
 // ═══════════════════════════════════════
+
+function BatchCompleteScreen({
+  completed,
+  total,
+  remaining,
+  nextBatchSize,
+  onContinue,
+  continuing,
+  error,
+  onViewHistory,
+  onDone,
+}: {
+  completed: number;
+  total: number;
+  remaining: number;
+  nextBatchSize: number;
+  onContinue: () => void;
+  continuing: boolean;
+  error: string | null;
+  onViewHistory: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <div className="bg-white border border-border/60 rounded-lg p-6 text-center space-y-5">
+      <div className="h-12 w-12 rounded-lg bg-sage-light flex items-center justify-center mx-auto">
+        <CheckCircle2 size={24} className="text-sage-deep" />
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold text-ink">本批复习完成</h3>
+        <p className="text-sm text-ink-light mt-1">今日进度 {completed} / {total}</p>
+        <p className="text-xs text-ink-lighter mt-1">还有 {remaining} 条待复习</p>
+      </div>
+      <button
+        type="button"
+        onClick={onContinue}
+        disabled={continuing || nextBatchSize === 0}
+        className="w-full sm:w-auto min-h-11 px-5 rounded-lg bg-sage-deep text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
+      >
+        {continuing ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+        {continuing ? "正在载入下一批" : `继续下一批 ${nextBatchSize} 条`}
+      </button>
+      {error && <p className="text-xs text-red-600">下一批载入失败：{error}</p>}
+      <div className="flex items-center justify-center gap-4 text-xs">
+        <button type="button" onClick={onViewHistory} className="text-ink-light hover:text-ink">查看学习总结</button>
+        <button type="button" onClick={onDone} className="text-ink-light hover:text-ink">返回 English OS</button>
+      </div>
+    </div>
+  );
+}
 
 function AllDoneScreen({
   stats,
+  dailyTotal,
   onViewHistory,
   onDone,
   onGenerateSummary,
   summaryGenerating,
 }: {
   stats: ReturnType<typeof getSessionStats>;
+  dailyTotal: number;
   onViewHistory: () => void;
   onDone: () => void;
   onGenerateSummary: () => void;
   summaryGenerating: boolean;
 }) {
   return (
-    <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-5">
-      <div className="h-14 w-14 rounded-2xl bg-sage-light flex items-center justify-center mx-auto">
+    <div className="bg-white border border-border/60 rounded-lg p-6 sm:p-8 text-center space-y-5">
+      <div className="h-14 w-14 rounded-lg bg-sage-light flex items-center justify-center mx-auto">
         <Target size={28} className="text-sage-deep" />
       </div>
       <div>
-        <h3 className="text-lg font-semibold text-ink">今日所有训练完成</h3>
-        <p className="text-sm text-ink-light mt-1">三个训练模式已全部完成</p>
+        <h3 className="text-lg font-semibold text-ink">今日复习完成</h3>
+        <p className="text-sm text-ink-light mt-1">今天共复习 {dailyTotal} 条，三个训练模式已全部完成</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -1555,6 +1609,7 @@ export default function EnglishReviewV3() {
     : "recall";
 
   const { data, isLoading, error } = useTodaySession();
+  const appendBatch = useAppendReviewBatch();
   const updateItem = useUpdateSessionItem();
   const recordLog = useRecordPracticeLog();
   const submitReview = useSubmitReview();
@@ -1852,7 +1907,6 @@ export default function EnglishReviewV3() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
   const [modeComplete, setModeComplete] = useState(false);
-  const [allModesDone, setAllModesDone] = useState(false);
   const [roundOrder, setRoundOrder] = useState<string[]>([]);
   const initializedRef = useRef(false);
 
@@ -1907,6 +1961,17 @@ export default function EnglishReviewV3() {
     }
   }, [mode]);
 
+  const loadedCountRef = useRef(allItems.length);
+  useEffect(() => {
+    if (loadedCountRef.current === allItems.length) return;
+    loadedCountRef.current = allItems.length;
+    initializedRef.current = false;
+    setModeComplete(false);
+    setCurrentIndex(0);
+    currentIndexRef.current = 0;
+    setRoundOrder([]);
+  }, [allItems.length]);
+
   const currentItemId = roundOrder[currentIndex] || null;
   const currentItem = allItems.find((i) => i.id === currentItemId) || null;
   const stats = getSessionStats(allItems);
@@ -1920,11 +1985,18 @@ export default function EnglishReviewV3() {
   const clozeIncorrect = clozeCompleted - clozeCorrect;
   const sentenceCompleted = localSentenceIds.size;
 
-  // ── Check if all 3 modes are done ──
-  const allDone = recallCompleted >= allItems.length &&
-    clozeCompleted >= allItems.length &&
-    sentenceCompleted >= allItems.length &&
-    allItems.length > 0;
+  const loadedBatchComplete = isLoadedBatchComplete(
+    allItems.length,
+    recallCompleted,
+    clozeCompleted,
+    sentenceCompleted,
+  );
+  const dailyTotal = Math.max(data?.dailyProgress.total ?? 0, allItems.length);
+  const dailyCompleted = Math.min(recallCompleted, dailyTotal);
+  const dailyRemaining = Math.max(dailyTotal - dailyCompleted, 0);
+  const nextBatchSize = Math.min(REVIEW_BATCH_SIZE, Math.max(dailyTotal - allItems.length, 0));
+  const batchComplete = loadedBatchComplete && dailyRemaining > 0;
+  const dayComplete = isDailyReviewComplete(dailyTotal, dailyRemaining, loadedBatchComplete);
 
   // ── Recall handler (SRS only here) ──
   const handleRecallResult = useCallback(
@@ -2163,7 +2235,7 @@ export default function EnglishReviewV3() {
     try {
       const result = await invokeAI<DailySummaryData>("english-coach", {
         action: "summarize_daily_review",
-        date: new Date().toISOString().split("T")[0],
+        date: getShanghaiDateKey(),
         dailySet,
         mode_completion: modeCompletion,
       });
@@ -2186,16 +2258,23 @@ export default function EnglishReviewV3() {
   // ── Navigation ──
   const handleBack = () => navigate("/english");
   const handleViewHistory = () => navigate("/english/history");
+  const handleNextBatch = useCallback(async () => {
+    if (appendBatch.isPending) return;
+    const result = await appendBatch.mutateAsync();
+    if (result.addedCount > 0) {
+      navigate("/english/review?mode=recall", { replace: true });
+    }
+  }, [appendBatch, navigate]);
   const handleDone = useCallback(async () => {
     if (session?.id) {
       await updateStage.mutateAsync({
         sessionId: session.id,
         stage: "sentence",
-        status: allDone ? "completed" : "active",
+        status: dayComplete ? "completed" : "active",
       });
     }
     navigate("/english");
-  }, [session?.id, updateStage, navigate, allDone]);
+  }, [session?.id, updateStage, navigate, dayComplete]);
 
   // ── Loading / Error / Empty ──
   if (isLoading) {
@@ -2371,18 +2450,6 @@ export default function EnglishReviewV3() {
         />
       )}
 
-      {/* Summary generation button — always available if at least 1 mode has progress */}
-      {(recallCompleted > 0 || clozeCompleted > 0 || sentenceCompleted > 0) && !allDone && (
-        <button
-          onClick={generateSummary}
-          disabled={summaryGenerating}
-          className="w-full flex items-center justify-center gap-2 py-2.5 bg-purple-50 text-purple-600 rounded-xl text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
-        >
-          <Sparkles size={14} className={summaryGenerating ? "animate-spin" : ""} />
-          {summaryGenerating ? "正在生成..." : "生成今日 AI 总结"}
-        </button>
-      )}
-
       {/* Mode stats */}
       <div className="bg-white border border-border/60 rounded-2xl px-4 py-2.5">
         <ModeStatsBar
@@ -2394,9 +2461,22 @@ export default function EnglishReviewV3() {
       </div>
 
       {/* Content area */}
-      {allDone ? (
+      {batchComplete ? (
+        <BatchCompleteScreen
+          completed={dailyCompleted}
+          total={dailyTotal}
+          remaining={dailyRemaining}
+          nextBatchSize={nextBatchSize}
+          onContinue={handleNextBatch}
+          continuing={appendBatch.isPending}
+          error={appendBatch.error instanceof Error ? appendBatch.error.message : null}
+          onViewHistory={handleViewHistory}
+          onDone={handleDone}
+        />
+      ) : dayComplete ? (
         <AllDoneScreen
           stats={stats}
+          dailyTotal={dailyTotal}
           onViewHistory={handleViewHistory}
           onDone={handleDone}
           onGenerateSummary={generateSummary}

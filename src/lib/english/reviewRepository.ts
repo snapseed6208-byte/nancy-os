@@ -48,9 +48,31 @@ export async function getDuePoolCount(userId?: string): Promise<number> {
   return count ?? 0;
 }
 
+/** Count currently due expressions that are not already in today's session. */
+export async function getDuePoolCountExcluding(
+  userId: string,
+  excludeExpressionIds: string[] = [],
+): Promise<number> {
+  let query = supabase
+    .from("expressions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("archived", false)
+    .in("status", DUE_STATUSES as unknown as string[])
+    .lte("next_review_date", getDueCutoffDate());
+
+  if (excludeExpressionIds.length > 0) {
+    query = query.not("id", "in", `(${excludeExpressionIds.join(",")})`);
+  }
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
 /**
  * Fetch the IDs of due expressions (for populating a review session).
- * Returns the actual expression rows, limited by the daily cap.
+ * Returns the actual expression rows, limited by the requested batch size.
  */
 export async function fetchDueExpressionIds(
   userId: string,
@@ -64,6 +86,7 @@ export async function fetchDueExpressionIds(
     .in("status", DUE_STATUSES as unknown as string[])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
+    .order("id", { ascending: true })
     .limit(limit);
 
   if (error) throw error;
@@ -76,8 +99,9 @@ export async function fetchDueExpressionIds(
 export async function fetchDueExpressionsFull(
   userId: string,
   limit: number,
+  excludeExpressionIds: string[] = [],
 ): Promise<Record<string, unknown>[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("expressions")
     .select(EXPRESSION_SELECT)
     .eq("user_id", userId)
@@ -85,7 +109,13 @@ export async function fetchDueExpressionsFull(
     .in("status", DUE_STATUSES as unknown as string[])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
-    .limit(limit);
+    .order("id", { ascending: true });
+
+  if (excludeExpressionIds.length > 0) {
+    query = query.not("id", "in", `(${excludeExpressionIds.join(",")})`);
+  }
+
+  const { data, error } = await query.limit(limit);
 
   if (error) throw error;
   return (data || []) as unknown as Record<string, unknown>[];

@@ -4707,7 +4707,7 @@ function backfillSessionForTest(
     session: {
       ...session,
       items: [...session.items, ...newItems],
-      targetCount: session.items.length + newItems.length,
+      targetCount: Math.max(session.targetCount, countDueForTest(pool, today)),
     },
     backfilled: true,
     addedCount: dueIds.length,
@@ -4838,14 +4838,15 @@ describe("R-series — Review Due Pool Invariants", () => {
     expect(result.session.items.length).toBe(0);
   });
 
-  it("R3.4 backfill respects daily limit cap", () => {
+  it("R3.4 backfill respects batch size while preserving the full daily total", () => {
     const pool: DueExprForTest[] = Array.from({ length: 20 }, (_, i) =>
       makeDueExpr({ id: `e${i}`, nextReviewDate: "2026-08-11" }),
     );
     const session: RSessionForTest = { id: "s1", date: "2026-08-11", items: [], targetCount: 0 };
     const result = backfillSessionForTest(session, pool, "2026-08-11", 15);
     expect(result.backfilled).toBe(true);
-    expect(result.addedCount).toBe(15); // capped at limit
+    expect(result.addedCount).toBe(15);
+    expect(result.session.targetCount).toBe(20);
   });
 
   // ── R4: Timezone midnight boundary ──
@@ -4899,17 +4900,14 @@ describe("R-series — Review Due Pool Invariants", () => {
 
   // ── R7: Home and Review share same selector ──
 
-  it("R7.1 home due count = review session initial selection size", () => {
-    const pool: DueExprForTest[] = [
-      makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
-      makeDueExpr({ id: "b", nextReviewDate: "2026-08-11" }),
-      makeDueExpr({ id: "c", nextReviewDate: "2026-08-12" }), // future
-    ];
+  it("R7.1 home total may exceed the first 15-item batch", () => {
+    const pool: DueExprForTest[] = Array.from({ length: 31 }, (_, index) =>
+      makeDueExpr({ id: `due-${index}`, nextReviewDate: "2026-08-11" }),
+    );
     const dueCount = countDueForTest(pool, "2026-08-11");
     const selectedIds = selectDueIdsForTest(pool, "2026-08-11", 15);
-    // Home due count MUST equal the number of expressions that get selected for a new session
-    expect(dueCount).toBe(selectedIds.length);
-    expect(dueCount).toBe(2);
+    expect(dueCount).toBe(31);
+    expect(selectedIds).toHaveLength(15);
   });
 
   // ── R8: Provided null handling ──
@@ -4925,16 +4923,16 @@ describe("R-series — Review Due Pool Invariants", () => {
 
   // ── R9: Session does not override due reality ──
 
-  it("R9.1 existing session with items does not change due pool count", () => {
+  it("R9.1 session snapshot prevents the denominator shrinking after scheduling", () => {
     const pool: DueExprForTest[] = [
       makeDueExpr({ id: "a", nextReviewDate: "2026-08-11" }),
       makeDueExpr({ id: "b", nextReviewDate: "2026-08-11" }),
       makeDueExpr({ id: "c", nextReviewDate: "2026-08-12" }),
     ];
-    // Session has 3 items from a previous creation,
-    // but the real due pool is only 2 (a + b).
+    const sessionSnapshotTotal = 3;
     const dueCount = countDueForTest(pool, "2026-08-11");
-    expect(dueCount).toBe(2); // canonical, independent of session items
+    expect(dueCount).toBe(2);
+    expect(Math.max(sessionSnapshotTotal, dueCount)).toBe(3);
   });
 });
 

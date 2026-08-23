@@ -4,7 +4,7 @@ import {
   Mic, Search, Sparkles, TrendingUp, Upload,
 } from "lucide-react";
 import { useEnglishStats, useSpeakingSessions } from "@/lib/hooks/useEnglish";
-import { useHubSessionProgress, useLearnQueueCount, useTodayLearnSession, isLearnItemFinished } from "@/lib/hooks/useReviewSession";
+import { useLearnQueueCount, useTodayLearnSession, useTodayReviewStatus, isLearnItemFinished } from "@/lib/hooks/useReviewSession";
 import { useReaderBooks } from "@/lib/hooks/useEnglishReader";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +15,7 @@ export default function English() {
   const statsQuery = useEnglishStats();
   const learnCountQuery = useLearnQueueCount();
   const learnSessionQuery = useTodayLearnSession();
-  const reviewProgressQuery = useHubSessionProgress();
+  const reviewProgressQuery = useTodayReviewStatus();
   const speakingQuery = useSpeakingSessions();
   const booksQuery = useReaderBooks();
 
@@ -25,14 +25,23 @@ export default function English() {
   const hasUnfinishedLearn = Boolean(learnSessionQuery.data?.session && learnedToday < learnItems.length);
   const speakingToday = (speakingQuery.data ?? []).filter((session) => isToday(session.created_at)).length;
   const readToday = (booksQuery.data ?? []).some((book) => isToday(book.reading_progress?.updated_at));
-  const dueCount = stats?.due ?? 0;
+  const reviewProgress = reviewProgressQuery.data;
+  const dueTotal = reviewProgress?.total ?? 0;
+  const reviewCompleted = reviewProgress?.completed ?? 0;
+  const reviewRemaining = reviewProgress?.remaining ?? 0;
+  const reviewWasScheduled = dueTotal > 0 || Boolean(reviewProgress?.hasSession);
+  const reviewDayComplete = reviewProgress?.dayComplete ?? false;
 
   const nextAction = hasUnfinishedLearn
     ? { label: "继续今日学习", path: "/english/learn" }
-    : statsQuery.isError
+    : reviewProgressQuery.isError
       ? { label: "选择学习内容", path: "/english/expressions" }
-      : dueCount > 0
-      ? { label: `复习 ${dueCount} 条表达`, path: "/english/review" }
+      : reviewRemaining > 0
+      ? { label: reviewCompleted > 0 ? `继续复习 ${reviewRemaining} 条` : `开始复习 ${reviewRemaining} 条`, path: "/english/review" }
+      : reviewWasScheduled && !reviewDayComplete
+        ? { label: "继续完成复习", path: "/english/review" }
+      : reviewWasScheduled
+        ? null
       : speakingQuery.isError
         ? { label: "选择学习内容", path: "/english/expressions" }
         : speakingToday === 0
@@ -52,31 +61,31 @@ export default function English() {
       <section aria-label="学习概览" className="grid grid-cols-2 sm:grid-cols-4 rounded-lg border border-border bg-card overflow-hidden">
         <OverviewStat label="表达库" value={statValue(statsQuery.isError, stats?.total)} />
         <OverviewStat label="待学习" value={statValue(learnCountQuery.isError, learnCountQuery.data)} />
-        <OverviewStat label="今日待复习" value={statValue(statsQuery.isError, dueCount)} />
+        <OverviewStat label="剩余待复习" value={statValue(reviewProgressQuery.isError, reviewRemaining)} />
         <OverviewStat label="口语练习" value={statValue(statsQuery.isError, stats?.totalSessions)} />
       </section>
 
-      <section aria-labelledby="today-english" className="rounded-lg bg-ink text-white p-4 sm:p-5">
+      <section aria-labelledby="today-english" className="rounded-lg border border-border bg-sage-light/35 p-4 sm:p-5">
         <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-sage-light" />
-          <h2 id="today-english" className="text-sm font-semibold">今日英语</h2>
+          <Sparkles size={16} className="text-sage-deep" />
+          <h2 id="today-english" className="text-sm font-semibold text-ink">今日英语</h2>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-4 mt-4">
           <TodayMetric label="新学" value={learnSessionQuery.isError ? "--" : learnedToday} />
-          <TodayMetric label="待复习" value={statsQuery.isError ? "--" : dueCount} />
+          <TodayMetric label="复习" value={reviewProgressQuery.isError ? "--" : `${reviewCompleted} / ${dueTotal}`} />
           <TodayMetric label="口语" value={speakingQuery.isError ? "--" : `${speakingToday}/1`} />
           <TodayMetric label="阅读" value={booksQuery.isError ? "--" : readToday ? "已阅读" : "未开始"} />
         </div>
-        <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/15 pt-4">
-          <p className="text-xs text-white/65 min-w-0">
-            {reviewProgressQuery.data?.allDone && !nextAction ? "今天的核心学习已完成" : "按今日状态继续下一项"}
+        <div className="mt-5 flex items-center justify-between gap-3 border-t border-sage/20 pt-4">
+          <p className="text-xs text-ink-lighter min-w-0">
+            {reviewDayComplete ? "今日复习已完成" : reviewWasScheduled && reviewRemaining === 0 ? "继续完成其他训练模式" : reviewRemaining > 0 ? `还有 ${reviewRemaining} 条待复习` : "按今日状态继续下一项"}
           </p>
           {nextAction ? (
-            <button type="button" onClick={() => navigate(nextAction.path)} className="shrink-0 h-10 px-4 rounded-lg bg-white text-ink text-sm font-semibold inline-flex items-center gap-2">
+            <button type="button" onClick={() => navigate(nextAction.path)} className="shrink-0 h-10 px-4 rounded-lg bg-sage-deep text-white text-sm font-semibold inline-flex items-center gap-2">
               {nextAction.label}<ArrowRight size={15} />
             </button>
           ) : (
-            <span className="shrink-0 text-sm font-medium text-sage-light">今日已完成</span>
+            <span className="shrink-0 text-sm font-medium text-sage-deep">{reviewDayComplete ? "复习完成" : "今日已完成"}</span>
           )}
         </div>
       </section>
@@ -119,8 +128,8 @@ function OverviewStat({ label, value }: { label: string; value: string | number 
 function TodayMetric({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="min-w-0 pr-2">
-      <p className="text-lg font-semibold truncate">{value}</p>
-      <p className="text-[11px] text-white/55 mt-0.5">{label}</p>
+      <p className="text-lg font-semibold text-ink truncate">{value}</p>
+      <p className="text-[11px] text-ink-lighter mt-0.5">{label}</p>
     </div>
   );
 }

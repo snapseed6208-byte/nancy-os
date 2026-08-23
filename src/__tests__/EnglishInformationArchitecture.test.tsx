@@ -16,6 +16,7 @@ vi.mock("@/lib/hooks/useEnglish", () => ({
 }));
 vi.mock("@/lib/hooks/useReviewSession", () => ({
   useHubSessionProgress: () => ({ data: { allDone: false } }),
+  useTodayReviewStatus: () => ({ data: { total: 31, completed: 15, remaining: 16 }, isError: false }),
   useLearnQueueCount: () => ({ data: 6, isError: false }),
   useTodayLearnSession: () => ({ data: { session: null, items: [] }, isError: false }),
   isLearnItemFinished: (item: { status?: string }) => item.status === "completed" || item.status === "passed",

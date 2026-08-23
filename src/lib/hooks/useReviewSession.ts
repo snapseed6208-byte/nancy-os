@@ -1,7 +1,7 @@
 // ============================================
 // English SRS V3 — Daily Review Session Hook
 //
-// Anchors 15 daily expressions to a session.
+// Anchors the full daily due pool to one session and loads it in batches.
 // All training modes read from the same session.
 // Supports same-day reinforcement (up to 3 rounds).
 // ============================================
@@ -21,7 +21,7 @@ import {
   getOrCreateEnglishSession,
   findEnglishSession,
   fetchSessionItems,
-  createSessionItems,
+  upsertSessionItems,
   createLearnSessionWithTarget,
   appendLearnItems,
   countAvailableLearnExpressions,
@@ -35,8 +35,16 @@ import {
 import {
   fetchDueExpressionsFull,
   getDuePoolCount,
+  getDuePoolCountExcluding,
 } from "@/lib/english/reviewRepository";
 import { toProgressJSON } from "@/lib/english/learningProgress";
+import {
+  REVIEW_BATCH_SIZE,
+  deriveDailyReviewProgress,
+  isDailyReviewComplete,
+  isLoadedBatchComplete,
+  type DailyReviewPoolProgress,
+} from "@/lib/english/dailyReviewBatch";
 
 // ═══════════════════════════════════════
 // Types
@@ -115,8 +123,6 @@ export interface PracticeLogEntry {
 // Constants
 // ═══════════════════════════════════════
 
-const DAILY_TARGET = 15;
-const MAX_DAILY_CARDS = 50;
 const MAX_REINFORCEMENT_ROUNDS = 3;
 
 const EXPRESSION_SELECT =
@@ -141,10 +147,10 @@ async function fetchOrCreateSession(): Promise<{
   session: ReviewSession;
   items: SessionItem[];
   isNew: boolean;
+  dailyProgress: DailyReviewPoolProgress;
 }> {
   const userId = await getUserId();
   const today = todayStr();
-  const reviewLimit = Math.min(DAILY_TARGET, MAX_DAILY_CARDS);
 
   const { session: sessionData, isNew } = await getOrCreateEnglishSession({
     userId,
@@ -152,57 +158,155 @@ async function fetchOrCreateSession(): Promise<{
     sessionType: "review",
   });
 
-  // ── Existing session (resume) ──
-  if (!isNew) {
-    const items = await fetchSessionItems(sessionData.id);
+  let items = await fetchSessionItems(sessionData.id);
+  let outsideDue = await getDuePoolCountExcluding(userId, items.map((item) => item.expressionId));
+  let dailyProgress = deriveDailyReviewProgress({
+    snapshotTotal: sessionData.targetCount,
+    loadedCount: items.length,
+    recallCompleted: items.filter((item) => item.recallScore !== null).length,
+    eligibleOutsideSession: outsideDue,
+  });
 
-    // PART 4 case C: session row exists but has 0 items (created when due pool
-    // was 0, e.g. early-morning UTC window). Backfill from live due pool so
-    // the review page never shows "今日无事" when expressions are actually due.
-    if (items.length === 0) {
-      const dueExprs = await fetchDueExpressionsFull(userId, reviewLimit);
-      if (dueExprs.length > 0) {
-        await createSessionItems(
-          sessionData.id,
-          dueExprs.map((e) => e.id as string),
-        );
-        await supabase
-          .from("review_sessions")
-          .update({ target_count: dueExprs.length })
-          .eq("id", sessionData.id);
-
-        const populatedItems = await fetchSessionItems(sessionData.id);
-        return {
-          session: { ...sessionData, targetCount: dueExprs.length },
-          items: populatedItems,
-          isNew: false,
-        };
-      }
-    }
-
-    return { session: sessionData, items, isNew: false };
+  // New or legacy empty sessions receive only the first immutable batch.
+  if (items.length === 0 && dailyProgress.nextBatchSize > 0) {
+    const dueExprs = await fetchDueExpressionsFull(userId, dailyProgress.nextBatchSize);
+    await upsertSessionItems(sessionData.id, dueExprs.map((expr) => expr.id as string));
+    items = await fetchSessionItems(sessionData.id);
+    outsideDue = await getDuePoolCountExcluding(userId, items.map((item) => item.expressionId));
+    dailyProgress = deriveDailyReviewProgress({
+      snapshotTotal: dailyProgress.total,
+      loadedCount: items.length,
+      recallCompleted: 0,
+      eligibleOutsideSession: outsideDue,
+    });
   }
 
-  // ── Brand-new session ──
-  const dueExprs = await fetchDueExpressionsFull(userId, reviewLimit);
-
-  await supabase
-    .from("review_sessions")
-    .update({ target_count: dueExprs.length })
-    .eq("id", sessionData.id);
-
-  await createSessionItems(
-    sessionData.id,
-    dueExprs.map((e) => e.id as string),
-  );
-
-  const items = await fetchSessionItems(sessionData.id);
+  const shouldReactivate = dailyProgress.remaining > 0 && sessionData.status === "completed";
+  if (sessionData.targetCount !== dailyProgress.total || shouldReactivate) {
+    const { error } = await supabase
+      .from("review_sessions")
+      .update({
+        target_count: dailyProgress.total,
+        ...(shouldReactivate ? { status: "active", completed_at: null } : {}),
+      })
+      .eq("id", sessionData.id);
+    if (error) throw classifySessionError(error);
+  }
 
   return {
-    session: { ...sessionData, targetCount: dueExprs.length },
+    session: {
+      ...sessionData,
+      targetCount: dailyProgress.total,
+      ...(shouldReactivate ? { status: "active" as const, completedAt: null } : {}),
+    },
     items,
-    isNew: true,
+    isNew,
+    dailyProgress,
   };
+}
+
+export interface TodayReviewStatus extends DailyReviewPoolProgress {
+  hasSession: boolean;
+  sessionId: string | null;
+  loadedTrainingComplete: boolean;
+  dayComplete: boolean;
+}
+
+async function fetchTodayReviewStatus(): Promise<TodayReviewStatus> {
+  const userId = await getUserId();
+  const session = await findEnglishSession(userId, todayStr(), "review");
+  if (!session) {
+    const due = await getDuePoolCount(userId);
+    return {
+      hasSession: false,
+      sessionId: null,
+      loadedTrainingComplete: false,
+      dayComplete: false,
+      ...deriveDailyReviewProgress({ snapshotTotal: due, loadedCount: 0, recallCompleted: 0, eligibleOutsideSession: due }),
+    };
+  }
+
+  const items = await fetchSessionItems(session.id);
+  const outsideDue = await getDuePoolCountExcluding(userId, items.map((item) => item.expressionId));
+  const practiceLogs = await fetchTodayPracticeLogs(session.id);
+  const progress = deriveDailyReviewProgress({
+    snapshotTotal: session.targetCount,
+    loadedCount: items.length,
+    recallCompleted: items.filter((item) => item.recallScore !== null).length,
+    eligibleOutsideSession: outsideDue,
+  });
+  const loadedTrainingComplete = isLoadedBatchComplete(
+    items.length,
+    progress.completed,
+    items.filter((item) => practiceLogs.clozeIds.has(item.expressionId)).length,
+    items.filter((item) => practiceLogs.sentenceIds.has(item.expressionId) || item.userSentence !== null).length,
+  );
+  return {
+    hasSession: true,
+    sessionId: session.id,
+    loadedTrainingComplete,
+    dayComplete: isDailyReviewComplete(progress.total, progress.remaining, loadedTrainingComplete),
+    ...progress,
+  };
+}
+
+export interface AppendReviewBatchResult {
+  session: ReviewSession;
+  items: SessionItem[];
+  addedCount: number;
+  dailyProgress: DailyReviewPoolProgress;
+}
+
+const appendReviewLocks = new Map<string, Promise<AppendReviewBatchResult>>();
+
+async function appendReviewBatchCore(userId: string, date: string): Promise<AppendReviewBatchResult> {
+  const session = await findEnglishSession(userId, date, "review");
+  if (!session) throw new Error("No review session to extend");
+
+  const existingItems = await fetchSessionItems(session.id);
+  const excludeIds = existingItems.map((item) => item.expressionId);
+  const outsideDue = await getDuePoolCountExcluding(userId, excludeIds);
+  const before = deriveDailyReviewProgress({
+    snapshotTotal: session.targetCount,
+    loadedCount: existingItems.length,
+    recallCompleted: existingItems.filter((item) => item.recallScore !== null).length,
+    eligibleOutsideSession: outsideDue,
+  });
+  const rows = await fetchDueExpressionsFull(userId, Math.min(REVIEW_BATCH_SIZE, outsideDue), excludeIds);
+  await upsertSessionItems(session.id, rows.map((row) => row.id as string));
+
+  const items = await fetchSessionItems(session.id);
+  const remainingOutside = await getDuePoolCountExcluding(userId, items.map((item) => item.expressionId));
+  const dailyProgress = deriveDailyReviewProgress({
+    snapshotTotal: before.total,
+    loadedCount: items.length,
+    recallCompleted: items.filter((item) => item.recallScore !== null).length,
+    eligibleOutsideSession: remainingOutside,
+  });
+  const { error } = await supabase
+    .from("review_sessions")
+    .update({ target_count: dailyProgress.total, status: "active", completed_at: null })
+    .eq("id", session.id);
+  if (error) throw classifySessionError(error);
+
+  return {
+    session: { ...session, targetCount: dailyProgress.total, status: "active", completedAt: null },
+    items,
+    addedCount: Math.max(0, items.length - existingItems.length),
+    dailyProgress,
+  };
+}
+
+async function appendTodayReviewBatch(): Promise<AppendReviewBatchResult> {
+  const userId = await getUserId();
+  const date = todayStr();
+  const lockKey = `${userId}:${date}`;
+  const existing = appendReviewLocks.get(lockKey);
+  if (existing) return existing;
+
+  const request = appendReviewBatchCore(userId, date).finally(() => appendReviewLocks.delete(lockKey));
+  appendReviewLocks.set(lockKey, request);
+  return request;
 }
 
 // ═══════════════════════════════════════
@@ -322,6 +426,30 @@ export function useTodaySession() {
     queryFn: fetchOrCreateSession,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useTodayReviewStatus() {
+  return useQuery({
+    queryKey: ["today-review-status", "today"],
+    queryFn: fetchTodayReviewStatus,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useAppendReviewBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: appendTodayReviewBatch,
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["review-session"] }),
+        qc.invalidateQueries({ queryKey: ["today-review-status"] }),
+        qc.invalidateQueries({ queryKey: ["hub-session-progress"] }),
+        qc.invalidateQueries({ queryKey: ["english_stats"] }),
+      ]);
+    },
   });
 }
 
@@ -449,11 +577,15 @@ export function useUpdateSessionItem() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["review-session"] });
+      qc.invalidateQueries({ queryKey: ["today-review-status"] });
+      qc.invalidateQueries({ queryKey: ["hub-session-progress"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
 }
 
 export function useRecordPracticeLog() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (entry: PracticeLogEntry): Promise<string> => {
       // Route through the canonical repository so INSERT returns the log id
@@ -467,6 +599,11 @@ export function useRecordPracticeLog() {
         score: entry.score,
         metadata: entry.metadata,
       });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["practice-logs"] });
+      qc.invalidateQueries({ queryKey: ["today-review-status"] });
+      qc.invalidateQueries({ queryKey: ["hub-session-progress"] });
     },
   });
 }
@@ -524,6 +661,8 @@ export function useUpdateSessionStage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["review-session"] });
+      qc.invalidateQueries({ queryKey: ["today-review-status"] });
+      qc.invalidateQueries({ queryKey: ["hub-session-progress"] });
     },
   });
 }
@@ -958,45 +1097,46 @@ export interface TodayPracticeLogs {
   sentenceResults: Map<string, { sentence: string }>;
 }
 
+async function fetchTodayPracticeLogs(sessionId: string): Promise<TodayPracticeLogs> {
+  const userId = await getUserId();
+  const { data: logs, error } = await supabase
+    .from("expression_practice_logs")
+    .select("expression_id,mode,answer,score,feedback")
+    .eq("user_id", userId)
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true }); // Latest attempt wins for daily stats.
+  if (error) throw error;
+
+  const clozeIds = new Set<string>();
+  const sentenceIds = new Set<string>();
+  const clozeResults = new Map<string, { result: "correct" | "partially_correct" | "incorrect"; userAnswer: string }>();
+  const sentenceResults = new Map<string, { sentence: string }>();
+
+  for (const log of (logs || [])) {
+    if (log.mode === "cloze") {
+      clozeIds.add(log.expression_id as string);
+      const score = log.score as number;
+      clozeResults.set(log.expression_id as string, {
+        result: score >= 2 ? "correct" : score >= 1 ? "partially_correct" : "incorrect",
+        userAnswer: (log.answer as string) || "",
+      });
+    } else if (log.mode === "sentence") {
+      sentenceIds.add(log.expression_id as string);
+      sentenceResults.set(log.expression_id as string, {
+        sentence: (log.answer as string) || "",
+      });
+    }
+  }
+
+  return { clozeIds, sentenceIds, clozeResults, sentenceResults };
+}
+
 export function useTodayPracticeLogs(sessionId?: string | null) {
   return useQuery({
     queryKey: ["practice-logs", "today", sessionId],
     queryFn: async (): Promise<TodayPracticeLogs> => {
       if (!sessionId) return { clozeIds: new Set(), sentenceIds: new Set(), clozeResults: new Map(), sentenceResults: new Map() };
-
-      const userId = await getUserId();
-      const today = todayStr();
-
-      const { data: logs } = await supabase
-        .from("expression_practice_logs")
-        .select("expression_id,mode,answer,score,feedback")
-        .eq("user_id", userId)
-        .eq("session_id", sessionId)
-        .gte("created_at", `${today}T00:00:00`)
-        .order("created_at", { ascending: true }); // V3.5: latest attempt wins for daily stats
-
-      const clozeIds = new Set<string>();
-      const sentenceIds = new Set<string>();
-      const clozeResults = new Map<string, { result: "correct" | "partially_correct" | "incorrect"; userAnswer: string }>();
-      const sentenceResults = new Map<string, { sentence: string }>();
-
-      for (const log of (logs || [])) {
-        if (log.mode === "cloze") {
-          clozeIds.add(log.expression_id as string);
-          const s = log.score as number;
-          clozeResults.set(log.expression_id as string, {
-            result: s >= 2 ? "correct" : s >= 1 ? "partially_correct" : "incorrect",
-            userAnswer: (log.answer as string) || "",
-          });
-        } else if (log.mode === "sentence") {
-          sentenceIds.add(log.expression_id as string);
-          sentenceResults.set(log.expression_id as string, {
-            sentence: (log.answer as string) || "",
-          });
-        }
-      }
-
-      return { clozeIds, sentenceIds, clozeResults, sentenceResults };
+      return fetchTodayPracticeLogs(sessionId);
     },
     enabled: !!sessionId,
     staleTime: 30_000,
