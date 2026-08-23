@@ -38,11 +38,13 @@ import {
   getDuePoolCountExcluding,
 } from "@/lib/english/reviewRepository";
 import { toProgressJSON } from "@/lib/english/learningProgress";
+import { useShanghaiDateKey } from "@/lib/hooks/useShanghaiDateKey";
 import {
   REVIEW_BATCH_SIZE,
   deriveDailyReviewProgress,
   isDailyReviewComplete,
   isLoadedBatchComplete,
+  reconcileDailyReviewProgress,
   type DailyReviewPoolProgress,
 } from "@/lib/english/dailyReviewBatch";
 
@@ -143,18 +145,17 @@ function nowISO(): string {
 // Fetch or create today's session
 // ═══════════════════════════════════════
 
-async function fetchOrCreateSession(): Promise<{
+async function fetchOrCreateSession(dateKey: string): Promise<{
   session: ReviewSession;
   items: SessionItem[];
   isNew: boolean;
   dailyProgress: DailyReviewPoolProgress;
 }> {
   const userId = await getUserId();
-  const today = todayStr();
 
   const { session: sessionData, isNew } = await getOrCreateEnglishSession({
     userId,
-    date: today,
+    date: dateKey,
     sessionType: "review",
   });
 
@@ -212,9 +213,9 @@ export interface TodayReviewStatus extends DailyReviewPoolProgress {
   dayComplete: boolean;
 }
 
-async function fetchTodayReviewStatus(): Promise<TodayReviewStatus> {
+async function fetchTodayReviewStatus(dateKey: string): Promise<TodayReviewStatus> {
   const userId = await getUserId();
-  const session = await findEnglishSession(userId, todayStr(), "review");
+  const session = await findEnglishSession(userId, dateKey, "review");
   if (!session) {
     const due = await getDuePoolCount(userId);
     return {
@@ -255,6 +256,7 @@ export interface AppendReviewBatchResult {
   items: SessionItem[];
   addedCount: number;
   dailyProgress: DailyReviewPoolProgress;
+  reconciled: boolean;
 }
 
 const appendReviewLocks = new Map<string, Promise<AppendReviewBatchResult>>();
@@ -272,39 +274,53 @@ async function appendReviewBatchCore(userId: string, date: string): Promise<Appe
     recallCompleted: existingItems.filter((item) => item.recallScore !== null).length,
     eligibleOutsideSession: outsideDue,
   });
-  const rows = await fetchDueExpressionsFull(userId, Math.min(REVIEW_BATCH_SIZE, outsideDue), excludeIds);
+  const requestedCount = Math.min(REVIEW_BATCH_SIZE, outsideDue);
+  const rows = await fetchDueExpressionsFull(userId, requestedCount, excludeIds);
   await upsertSessionItems(session.id, rows.map((row) => row.id as string));
 
   const items = await fetchSessionItems(session.id);
   const remainingOutside = await getDuePoolCountExcluding(userId, items.map((item) => item.expressionId));
-  const dailyProgress = deriveDailyReviewProgress({
+  const { progress: dailyProgress, reconciled } = reconcileDailyReviewProgress({
     snapshotTotal: before.total,
     loadedCount: items.length,
     recallCompleted: items.filter((item) => item.recallScore !== null).length,
     eligibleOutsideSession: remainingOutside,
   });
+
+  if (rows.length === 0 && remainingOutside > 0) {
+    throw new Error("下一批暂时无法加载，请重试");
+  }
+
   const { error } = await supabase
     .from("review_sessions")
     .update({ target_count: dailyProgress.total, status: "active", completed_at: null })
     .eq("id", session.id);
   if (error) throw classifySessionError(error);
 
+  if (reconciled) {
+    console.warn("[daily_review_reconciled]", {
+      oldTarget: before.total,
+      newTarget: dailyProgress.total,
+      reason: rows.length === 0 ? "empty_eligible_pool" : "partial_eligible_pool",
+    });
+  }
+
   return {
     session: { ...session, targetCount: dailyProgress.total, status: "active", completedAt: null },
     items,
     addedCount: Math.max(0, items.length - existingItems.length),
     dailyProgress,
+    reconciled,
   };
 }
 
-async function appendTodayReviewBatch(): Promise<AppendReviewBatchResult> {
+async function appendTodayReviewBatch(dateKey: string): Promise<AppendReviewBatchResult> {
   const userId = await getUserId();
-  const date = todayStr();
-  const lockKey = `${userId}:${date}`;
+  const lockKey = `${userId}:${dateKey}`;
   const existing = appendReviewLocks.get(lockKey);
   if (existing) return existing;
 
-  const request = appendReviewBatchCore(userId, date).finally(() => appendReviewLocks.delete(lockKey));
+  const request = appendReviewBatchCore(userId, dateKey).finally(() => appendReviewLocks.delete(lockKey));
   appendReviewLocks.set(lockKey, request);
   return request;
 }
@@ -420,19 +436,27 @@ function formatSessionItem(raw: Record<string, unknown>): SessionItem {
 // Hooks
 // ═══════════════════════════════════════
 
+export const englishReviewKeys = {
+  todaySession: (dateKey: string) => ["review-session", dateKey] as const,
+  todayStatus: (dateKey: string) => ["today-review-status", dateKey] as const,
+  hubProgress: (dateKey: string) => ["hub-session-progress", dateKey] as const,
+};
+
 export function useTodaySession() {
+  const dateKey = useShanghaiDateKey();
   return useQuery({
-    queryKey: ["review-session", "today"],
-    queryFn: fetchOrCreateSession,
+    queryKey: englishReviewKeys.todaySession(dateKey),
+    queryFn: () => fetchOrCreateSession(dateKey),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
 }
 
 export function useTodayReviewStatus() {
+  const dateKey = useShanghaiDateKey();
   return useQuery({
-    queryKey: ["today-review-status", "today"],
-    queryFn: fetchTodayReviewStatus,
+    queryKey: englishReviewKeys.todayStatus(dateKey),
+    queryFn: () => fetchTodayReviewStatus(dateKey),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
@@ -441,12 +465,13 @@ export function useTodayReviewStatus() {
 export function useAppendReviewBatch() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: appendTodayReviewBatch,
-    onSuccess: async () => {
+    mutationFn: () => appendTodayReviewBatch(getShanghaiDateKey()),
+    onSuccess: async (result) => {
+      const dateKey = result.session.sessionDate;
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ["review-session"] }),
-        qc.invalidateQueries({ queryKey: ["today-review-status"] }),
-        qc.invalidateQueries({ queryKey: ["hub-session-progress"] }),
+        qc.invalidateQueries({ queryKey: englishReviewKeys.todaySession(dateKey) }),
+        qc.invalidateQueries({ queryKey: englishReviewKeys.todayStatus(dateKey) }),
+        qc.invalidateQueries({ queryKey: englishReviewKeys.hubProgress(dateKey) }),
         qc.invalidateQueries({ queryKey: ["english_stats"] }),
       ]);
     },
@@ -576,9 +601,10 @@ export function useUpdateSessionItem() {
       return data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["review-session"] });
-      qc.invalidateQueries({ queryKey: ["today-review-status"] });
-      qc.invalidateQueries({ queryKey: ["hub-session-progress"] });
+      const dateKey = getShanghaiDateKey();
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todaySession(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todayStatus(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.hubProgress(dateKey) });
       qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
@@ -601,9 +627,10 @@ export function useRecordPracticeLog() {
       });
     },
     onSuccess: () => {
+      const dateKey = getShanghaiDateKey();
       qc.invalidateQueries({ queryKey: ["practice-logs"] });
-      qc.invalidateQueries({ queryKey: ["today-review-status"] });
-      qc.invalidateQueries({ queryKey: ["hub-session-progress"] });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todayStatus(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.hubProgress(dateKey) });
     },
   });
 }
@@ -660,9 +687,10 @@ export function useUpdateSessionStage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["review-session"] });
-      qc.invalidateQueries({ queryKey: ["today-review-status"] });
-      qc.invalidateQueries({ queryKey: ["hub-session-progress"] });
+      const dateKey = getShanghaiDateKey();
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todaySession(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todayStatus(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.hubProgress(dateKey) });
     },
   });
 }
@@ -874,7 +902,8 @@ export function useUpdateReinforcementStatus() {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["review-session"] });
+      const dateKey = getShanghaiDateKey();
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todaySession(dateKey) });
     },
   });
 }
@@ -905,7 +934,8 @@ export function useBatchUpdateReinforcement() {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["review-session"] });
+      const dateKey = getShanghaiDateKey();
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todaySession(dateKey) });
     },
   });
 }
@@ -1340,17 +1370,17 @@ export interface HubSessionProgress {
 }
 
 export function useHubSessionProgress() {
+  const dateKey = useShanghaiDateKey();
   return useQuery({
-    queryKey: ["hub-session-progress", "today"],
+    queryKey: englishReviewKeys.hubProgress(dateKey),
     queryFn: async (): Promise<HubSessionProgress> => {
       const userId = await getUserId();
-      const today = todayStr();
 
       const { data: session } = await supabase
         .from("review_sessions")
         .select("id,status,target_count")
         .eq("user_id", userId)
-        .eq("session_date", today)
+        .eq("session_date", dateKey)
         .eq("session_type", "review")
         .limit(1)
         .maybeSingle();

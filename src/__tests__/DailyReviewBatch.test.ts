@@ -4,6 +4,7 @@ import {
   deriveDailyReviewProgress,
   isDailyReviewComplete,
   isLoadedBatchComplete,
+  reconcileDailyReviewProgress,
 } from "@/lib/english/dailyReviewBatch";
 
 function progress(snapshotTotal: number, loadedCount: number, recallCompleted: number, eligibleOutsideSession: number) {
@@ -68,5 +69,36 @@ describe("full daily SRS due pool batching", () => {
     expect(isLoadedBatchComplete(30, 30, 30, 30)).toBe(true);
     expect(isLoadedBatchComplete(30, 30, 29, 30)).toBe(false);
     expect(isLoadedBatchComplete(30, 30, 30, 29)).toBe(false);
+  });
+
+  it("reconciles a stale 31-item snapshot when no eligible items remain", () => {
+    const result = reconcileDailyReviewProgress({
+      snapshotTotal: 31,
+      loadedCount: 15,
+      recallCompleted: 15,
+      eligibleOutsideSession: 0,
+    });
+    expect(result.reconciled).toBe(true);
+    expect(result.progress).toMatchObject({ total: 15, completed: 15, remaining: 0 });
+  });
+
+  it("accepts a partial 10-item batch and preserves real remaining work", () => {
+    const withSixStillEligible = reconcileDailyReviewProgress({
+      snapshotTotal: 31,
+      loadedCount: 25,
+      recallCompleted: 15,
+      eligibleOutsideSession: 6,
+    });
+    expect(withSixStillEligible.reconciled).toBe(false);
+    expect(withSixStillEligible.progress).toMatchObject({ total: 31, loadedCount: 25, unloadedRemaining: 6 });
+
+    const exhaustedPool = reconcileDailyReviewProgress({
+      snapshotTotal: 31,
+      loadedCount: 25,
+      recallCompleted: 15,
+      eligibleOutsideSession: 0,
+    });
+    expect(exhaustedPool.reconciled).toBe(true);
+    expect(exhaustedPool.progress).toMatchObject({ total: 25, remaining: 10 });
   });
 });

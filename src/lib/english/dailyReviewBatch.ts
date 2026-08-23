@@ -16,6 +16,11 @@ export interface DailyReviewPoolProgress {
   nextBatchSize: number;
 }
 
+export interface ReconciledDailyReviewProgress {
+  progress: DailyReviewPoolProgress;
+  reconciled: boolean;
+}
+
 /**
  * Keep today's denominator monotonic after SM-2 moves completed expressions
  * out of the live due query. Newly due, not-yet-loaded expressions may grow it.
@@ -36,6 +41,18 @@ export function deriveDailyReviewProgress(input: DailyReviewPoolProgressInput): 
     unloadedRemaining,
     nextBatchSize: Math.min(REVIEW_BATCH_SIZE, unloadedRemaining),
   };
+}
+
+/** Shrink a stale snapshot only after the eligible outside pool was successfully rechecked. */
+export function reconcileDailyReviewProgress(
+  input: DailyReviewPoolProgressInput,
+): ReconciledDailyReviewProgress {
+  const stableProgress = deriveDailyReviewProgress(input);
+  const observedProgress = deriveDailyReviewProgress({ ...input, snapshotTotal: 0 });
+  if (observedProgress.total >= stableProgress.total) {
+    return { progress: stableProgress, reconciled: false };
+  }
+  return { progress: observedProgress, reconciled: true };
 }
 
 export function isLoadedBatchComplete(

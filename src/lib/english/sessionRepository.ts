@@ -473,7 +473,8 @@ export async function fetchSessionItems(sessionId: string): Promise<SessionItem[
     .from("review_session_items")
     .select("*, expression:expressions(*)")
     .eq("session_id", sessionId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) throw classifySessionError(error);
   return (data || []).map((i: Record<string, unknown>) => formatSessionItem(i));

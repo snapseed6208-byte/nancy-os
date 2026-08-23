@@ -13,6 +13,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useLocation, useSearchParams } from "wouter";
 import {
   useTodaySession,
+  useTodayReviewStatus,
   useAppendReviewBatch,
   useUpdateSessionItem,
   useRecordPracticeLog,
@@ -163,7 +164,7 @@ function ModeHeader({
       </div>
 
       {/* Mode tabs */}
-      <div className="flex items-center gap-1">
+      <div className="grid grid-cols-3 gap-1 min-w-0">
         {MODE_ORDER.map((mode) => {
           const Icon = MODE_ICONS[mode];
           const isActive = mode === currentMode;
@@ -173,20 +174,20 @@ function ModeHeader({
               key={mode}
               onClick={() => onModeChange(mode)}
               className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[11px] font-medium transition-colors",
+                "min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 sm:px-2 py-2 rounded-lg text-[11px] font-medium leading-tight transition-colors",
                 isActive
                   ? "bg-sage-light text-sage-deep"
                   : "bg-warm-cream/50 text-ink-lighter hover:bg-warm-cream",
               )}
             >
-              <Icon size={11} />
-              <span>{MODE_LABELS[mode]}</span>
-              {s.completed > 0 && (
-                <span className="text-[10px] opacity-70">{s.completed}/{s.total}</span>
-              )}
-              {s.completed === s.total && s.total > 0 && (
-                <CheckCircle2 size={9} className="text-sage-deep" />
-              )}
+              <Icon size={11} className="hidden sm:block shrink-0" />
+              <span className="whitespace-nowrap">{MODE_LABELS[mode]}</span>
+              <span className="min-h-3.5 flex items-center justify-center gap-0.5 whitespace-nowrap text-[10px] opacity-70">
+                {s.completed > 0 && <span>{s.completed}/{s.total}</span>}
+                {s.completed === s.total && s.total > 0 && (
+                  <CheckCircle2 size={9} className="text-sage-deep shrink-0" />
+                )}
+              </span>
             </button>
           );
         })}
@@ -1234,7 +1235,7 @@ function BatchCompleteScreen({
         className="w-full sm:w-auto min-h-11 px-5 rounded-lg bg-sage-deep text-white text-sm font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2"
       >
         {continuing ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
-        {continuing ? "正在载入下一批" : `继续下一批 ${nextBatchSize} 条`}
+        {continuing ? "正在载入下一批" : error ? "重试加载下一批" : `继续下一批 ${nextBatchSize} 条`}
       </button>
       {error && <p className="text-xs text-red-600">下一批载入失败：{error}</p>}
       <div className="flex items-center justify-center gap-4 text-xs">
@@ -1609,6 +1610,7 @@ export default function EnglishReviewV3() {
     : "recall";
 
   const { data, isLoading, error } = useTodaySession();
+  const { data: todayReviewStatus } = useTodayReviewStatus();
   const appendBatch = useAppendReviewBatch();
   const updateItem = useUpdateSessionItem();
   const recordLog = useRecordPracticeLog();
@@ -1991,9 +1993,9 @@ export default function EnglishReviewV3() {
     clozeCompleted,
     sentenceCompleted,
   );
-  const dailyTotal = Math.max(data?.dailyProgress.total ?? 0, allItems.length);
-  const dailyCompleted = Math.min(recallCompleted, dailyTotal);
-  const dailyRemaining = Math.max(dailyTotal - dailyCompleted, 0);
+  const dailyTotal = Math.max(todayReviewStatus?.total ?? data?.dailyProgress.total ?? 0, allItems.length);
+  const dailyCompleted = Math.min(todayReviewStatus?.completed ?? recallCompleted, dailyTotal);
+  const dailyRemaining = todayReviewStatus?.remaining ?? Math.max(dailyTotal - dailyCompleted, 0);
   const nextBatchSize = Math.min(REVIEW_BATCH_SIZE, Math.max(dailyTotal - allItems.length, 0));
   const batchComplete = loadedBatchComplete && dailyRemaining > 0;
   const dayComplete = isDailyReviewComplete(dailyTotal, dailyRemaining, loadedBatchComplete);
@@ -2448,6 +2450,12 @@ export default function EnglishReviewV3() {
           onRegenerate={generateSummary}
           regenerating={summaryGenerating}
         />
+      )}
+
+      {appendBatch.data?.reconciled && (
+        <div role="status" className="rounded-lg border border-sage/25 bg-sage-light/35 px-3 py-2 text-xs text-sage-deep">
+          今日复习任务已更新
+        </div>
       )}
 
       {/* Mode stats */}
