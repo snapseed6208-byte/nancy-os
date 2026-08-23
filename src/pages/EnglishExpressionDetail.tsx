@@ -3,6 +3,10 @@ import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Archive, BookOpen, FileText, Trash2 } from "lucide-react";
 import { useExpression, useCreateExpression, useUpdateExpression, useArchiveExpression, useDeleteExpression, useExpressionCategories } from "@/lib/hooks/useEnglish";
 import { useReadingExpressionSource } from "@/lib/hooks/useEnglishReader";
+import { useExpressionConnections, useInvalidateExpressionConnections } from "@/lib/hooks/useExpressionConnections";
+import { findExistingExpressionByText } from "@/lib/english/expressionConnectionsService";
+import type { ExpressionConnection } from "@/lib/english/expressionConnections";
+import ExpressionConnectionsPanel from "@/components/english/ExpressionConnectionsPanel";
 import { EXPRESSION_TYPES } from "@/lib/types";
 
 const SCENES = [
@@ -19,6 +23,8 @@ export default function EnglishExpressionDetail() {
 
   const { data: existing, isLoading } = useExpression(isNew ? undefined : id);
   const { data: readingSource } = useReadingExpressionSource(isNew ? undefined : id);
+  const connectionsQuery = useExpressionConnections(isNew ? undefined : id);
+  const invalidateConnections = useInvalidateExpressionConnections();
   const createExpr = useCreateExpression();
   const updateExpr = useUpdateExpression();
   const archiveExpr = useArchiveExpression();
@@ -41,6 +47,8 @@ export default function EnglishExpressionDetail() {
     common_patterns: "",
     category_id: "",
   });
+  const [addingExpression, setAddingExpression] = useState<string | null>(null);
+  const [connectionActionError, setConnectionActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (existing && !isNew) {
@@ -88,6 +96,34 @@ export default function EnglishExpressionDetail() {
     if (!confirm("确定永久删除这条表达？此操作不可恢复。")) return;
     await deleteExpr.mutateAsync(id);
     navigate("/english/library");
+  };
+
+  const handleAddConnection = async (connection: ExpressionConnection) => {
+    setAddingExpression(connection.expression);
+    setConnectionActionError(null);
+    try {
+      const duplicate = await findExistingExpressionByText(connection.expression);
+      if (duplicate) {
+        await invalidateConnections();
+        navigate(`/english/library/${duplicate.id}`);
+        return;
+      }
+      const created = await createExpr.mutateAsync({
+        english: connection.expression,
+        chinese: connection.chinese_meaning || connection.difference,
+        type: "chunk",
+        scene: (existing?.scene as string) || "daily life",
+        usage_note: connection.difference,
+        source: "expression_connection",
+        source_text: existing?.english ? `Related to: ${existing.english}` : "Expression Connections",
+      });
+      await invalidateConnections();
+      navigate(`/english/library/${created.id}`);
+    } catch (error) {
+      setConnectionActionError(error instanceof Error ? error.message : "加入表达库失败");
+    } finally {
+      setAddingExpression(null);
+    }
   };
 
   if (isLoading) {
@@ -292,6 +328,25 @@ export default function EnglishExpressionDetail() {
             onChange={(e) => set("context", e.target.value)}
           />
         </div>
+
+        {!isNew && (
+          <>
+            <ExpressionConnectionsPanel
+              title="你还可以这样说"
+              connections={(connectionsQuery.data?.connections || []).slice(0, 5)}
+              isLoading={connectionsQuery.isLoading}
+              error={connectionsQuery.error}
+              onRetry={() => connectionsQuery.refetch()}
+              onOpen={(expressionId) => navigate(`/english/library/${expressionId}`)}
+              onAdd={handleAddConnection}
+              addingExpression={addingExpression}
+            />
+            {connectionsQuery.error && existing?.synonyms && (
+              <p className="break-words text-xs text-ink-lighter">近义表达：{existing.synonyms as string}</p>
+            )}
+            {connectionActionError && <p className="text-xs text-accent-rose">{connectionActionError}</p>}
+          </>
+        )}
 
         {/* Common patterns */}
         <div>

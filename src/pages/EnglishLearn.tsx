@@ -54,6 +54,9 @@ import {
 } from "@/lib/english/learningMaterial";
 import { evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
 import { sentenceScoreForVerdict } from "@/lib/english/sentenceEvaluation";
+import { selectLearnConnections, type ExpressionConnection } from "@/lib/english/expressionConnections";
+import { useExpressionConnections } from "@/lib/hooks/useExpressionConnections";
+import ExpressionConnectionsPanel from "@/components/english/ExpressionConnectionsPanel";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -184,6 +187,7 @@ export default function EnglishLearn() {
   const currentItem = items.length > 0 ? items[currentIndex] : null;
   const expr = currentItem?.expression ?? null;
   const material: LearningMaterial | null = expr ? buildLearningMaterial(expr) : null;
+  const connectionsQuery = useExpressionConnections(expr?.id, stage === "contextUsage");
 
   // ═══ Resume: restore expression + stage, then NORMALIZE the state machine.
   // Recalled evidence is restored into the recall view; an unreachable stage
@@ -766,7 +770,15 @@ export default function EnglishLearn() {
       {/* Stage content */}
       <div className="bg-white rounded-2xl border border-border p-5 sm:p-6 space-y-4 min-h-[280px]">
         {stage === "understand" && <UnderstandStage material={material} />}
-        {stage === "contextUsage" && <ContextUsageStage material={material} />}
+        {stage === "contextUsage" && (
+          <ContextUsageStage
+            material={material}
+            connections={selectLearnConnections(connectionsQuery.data?.connections || [])}
+            connectionsLoading={connectionsQuery.isLoading}
+            connectionsError={connectionsQuery.error}
+            onRetryConnections={() => connectionsQuery.refetch()}
+          />
+        )}
         {stage === "recall" && (
           <RecallStage
             material={material}
@@ -914,7 +926,19 @@ function UnderstandStage({ material }: { material: LearningMaterial }) {
 // Stage 2: Context & Usage (optional modules)
 // ═══════════════════════════════════════
 
-function ContextUsageStage({ material }: { material: LearningMaterial }) {
+function ContextUsageStage({
+  material,
+  connections,
+  connectionsLoading,
+  connectionsError,
+  onRetryConnections,
+}: {
+  material: LearningMaterial;
+  connections: ExpressionConnection[];
+  connectionsLoading: boolean;
+  connectionsError: unknown;
+  onRetryConnections: () => void;
+}) {
   const hasAny =
     material.examples.length > 0 ||
     material.contexts.length > 0 ||
@@ -944,6 +968,14 @@ function ContextUsageStage({ material }: { material: LearningMaterial }) {
       {material.usageNotes.length > 0 && (
         <InfoBlock tone="purple" title="用法说明" content={material.usageNotes.join("\n")} />
       )}
+      <ExpressionConnectionsPanel
+        title="联想到你学过的表达"
+        connections={connections}
+        isLoading={connectionsLoading}
+        error={connectionsError}
+        compact
+        onRetry={onRetryConnections}
+      />
       {material.synonyms && (
         <InfoBlock tone="muted" title="近义词" content={material.synonyms} />
       )}

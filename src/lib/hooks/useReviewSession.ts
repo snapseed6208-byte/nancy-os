@@ -38,6 +38,7 @@ import {
   getDuePoolCountExcluding,
 } from "@/lib/english/reviewRepository";
 import { toProgressJSON } from "@/lib/english/learningProgress";
+import { isExpressionLearned } from "@/lib/english/learningStatus";
 import { useShanghaiDateKey } from "@/lib/hooks/useShanghaiDateKey";
 import {
   REVIEW_BATCH_SIZE,
@@ -368,8 +369,7 @@ export function saveLearnTarget(target: number): void {
 /** A learning item counts as finished once its item row OR its expression reached the review cycle. */
 export function isLearnItemFinished(item: SessionItem): boolean {
   if (item.status === "completed") return true;
-  const st = item.expression?.status;
-  return st === "review" || st === "mastered";
+  return isExpressionLearned(item.expression);
 }
 
 /**

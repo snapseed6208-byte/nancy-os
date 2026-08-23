@@ -590,6 +590,216 @@ function validateSentenceEvaluation(raw: unknown): SentenceEvaluation {
   return value;
 }
 
+type ConnectionRelation = "very_close" | "similar" | "related" | "contrast";
+type ConnectionRegister = "spoken" | "neutral" | "formal" | "written";
+type ConnectionInterchangeability = "usually" | "sometimes" | "rarely";
+
+type ConnectionCandidate = {
+  candidate_key: string;
+  english: string;
+  chinese: string;
+  usage_note: string;
+  context: string;
+  situation: string;
+  scene: string;
+  topic: string;
+  type: string;
+  formality: string;
+};
+
+function optionalText(value: unknown, maxLength = 1200): string {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+function validateConnectionCandidates(raw: unknown): ConnectionCandidate[] {
+  if (!Array.isArray(raw) || raw.length > 30) throw new Error("candidates must be an array with at most 30 items");
+  const keys = new Set<string>();
+  return raw.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`candidates[${index}] is invalid`);
+    const candidateKey = requireString(value.candidate_key, `candidates[${index}].candidate_key`, false);
+    if (!/^c\d+$/.test(candidateKey) || keys.has(candidateKey)) throw new Error(`candidates[${index}].candidate_key is invalid`);
+    keys.add(candidateKey);
+    return {
+      candidate_key: candidateKey,
+      english: requireString(value.english, `candidates[${index}].english`),
+      chinese: optionalText(value.chinese),
+      usage_note: optionalText(value.usage_note),
+      context: optionalText(value.context),
+      situation: optionalText(value.situation),
+      scene: optionalText(value.scene, 200),
+      topic: optionalText(value.topic, 200),
+      type: optionalText(value.type, 100),
+      formality: optionalText(value.formality, 100),
+    };
+  });
+}
+
+function validateExpressionConnectionsAI(raw: unknown, candidateKeys: Set<string>) {
+  if (!isRecord(raw) || !Array.isArray(raw.connections) || !Array.isArray(raw.external_suggestions)) {
+    throw new Error("connections and external_suggestions arrays are required");
+  }
+  const connections: Array<{
+    candidate_key: string;
+    relation: ConnectionRelation;
+    difference: string;
+    register: ConnectionRegister;
+    interchangeability: ConnectionInterchangeability;
+    reason: string;
+  }> = [];
+  const usedKeys = new Set<string>();
+  for (const value of raw.connections) {
+    if (connections.length >= 5 || !isRecord(value)) break;
+    const candidateKey = optionalText(value.candidate_key, 40);
+    if (!candidateKeys.has(candidateKey) || usedKeys.has(candidateKey)) continue;
+    try {
+      connections.push({
+        candidate_key: candidateKey,
+        relation: requireEnum(value.relation, ["very_close", "similar", "related", "contrast"] as const, "relation"),
+        difference: requireString(value.difference, "difference").slice(0, 420),
+        register: requireEnum(value.register, ["spoken", "neutral", "formal", "written"] as const, "register"),
+        interchangeability: requireEnum(value.interchangeability, ["usually", "sometimes", "rarely"] as const, "interchangeability"),
+        reason: requireString(value.reason, "reason").slice(0, 240),
+      });
+      usedKeys.add(candidateKey);
+    } catch {
+      // A malformed individual item is enrichment noise, so drop it.
+    }
+  }
+
+  const externalSuggestions: Array<{
+    expression: string;
+    relation: Exclude<ConnectionRelation, "contrast">;
+    difference: string;
+    register: ConnectionRegister;
+    interchangeability: ConnectionInterchangeability;
+    reason: string;
+  }> = [];
+  const usedExternal = new Set<string>();
+  for (const value of raw.external_suggestions) {
+    if (connections.length + externalSuggestions.length >= 5 || externalSuggestions.length >= 2) break;
+    if (!isRecord(value)) continue;
+    try {
+      const expression = requireString(value.expression, "external.expression").slice(0, 160);
+      const normalized = expression.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!normalized || usedExternal.has(normalized)) continue;
+      const relation = requireEnum(value.relation, ["very_close", "similar", "related"] as const, "external.relation");
+      externalSuggestions.push({
+        expression,
+        relation,
+        difference: requireString(value.difference, "external.difference").slice(0, 420),
+        register: requireEnum(value.register, ["spoken", "neutral", "formal", "written"] as const, "external.register"),
+        interchangeability: requireEnum(value.interchangeability, ["usually", "sometimes", "rarely"] as const, "external.interchangeability"),
+        reason: requireString(value.reason, "external.reason").slice(0, 240),
+      });
+      usedExternal.add(normalized);
+    } catch {
+      // Drop malformed external suggestions without weakening valid grounded results.
+    }
+  }
+  return { connections, external_suggestions: externalSuggestions };
+}
+
+async function handleGenerateExpressionConnections(
+  req: Request,
+  body: Record<string, unknown>,
+  supabase: UntypedSupabaseClient,
+  userId: string,
+): Promise<Response> {
+  const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
+  if (!isRecord(body.source_expression)) {
+    return jsonResponse(req, { success: false, stage: "payload", error: "source_expression is required", requestId }, 400);
+  }
+
+  let candidates: ConnectionCandidate[];
+  try {
+    requireString(body.source_expression.english, "source_expression.english");
+    candidates = validateConnectionCandidates(body.candidates);
+  } catch (error) {
+    return jsonResponse(req, {
+      success: false,
+      stage: "payload",
+      error: error instanceof Error ? error.message : "Invalid connection payload",
+      requestId,
+    }, 400);
+  }
+
+  const promptVersion = optionalText(body.prompt_version, 100) || "expression_connections_v1";
+  const source = Object.fromEntries(Object.entries(body.source_expression).map(([key, value]) => [key, optionalText(value)]));
+  const prompt = `You are an English expression contrast editor. Build a small semantic alternative network for the SOURCE expression.
+
+PRIORITIES:
+1. Prefer genuinely relevant candidates from the user's existing library.
+2. Explain when SOURCE is more suitable and when the candidate is more suitable.
+3. Do not treat every related expression as interchangeable or synonymous.
+4. difference must be concise Chinese, at most 2-3 short sentences. Never merely translate A and B.
+5. Return no weak connection. Zero results is valid.
+6. You may add at most 2 exceptional external suggestions, and at most 5 items total.
+7. Never output database ids, learned state, or user status. Existing candidates must be referenced only by candidate_key.
+
+SOURCE:
+${JSON.stringify(source, null, 2)}
+
+WHITELISTED CANDIDATES:
+${JSON.stringify(candidates, null, 2)}
+
+Return strict JSON only:
+{
+  "connections": [{
+    "candidate_key": "c1",
+    "relation": "very_close | similar | related | contrast",
+    "difference": "concise Chinese usage distinction",
+    "register": "spoken | neutral | formal | written",
+    "interchangeability": "usually | sometimes | rarely",
+    "reason": "short Chinese relevance reason"
+  }],
+  "external_suggestions": [{
+    "expression": "",
+    "relation": "very_close | similar | related",
+    "difference": "concise Chinese usage distinction",
+    "register": "spoken | neutral | formal | written",
+    "interchangeability": "usually | sometimes | rarely",
+    "reason": "short Chinese core meaning"
+  }]
+}`;
+
+  const aiResult = await aiRuntime<Record<string, unknown>>([{ role: "user", content: prompt }], {
+    agentName: "english-coach-expression-connections",
+    maxTokens: 1600,
+    temperature: 0.25,
+    parseJson: true,
+    dynamicTokens: false,
+  });
+  if (!aiResult.success) {
+    return jsonResponse(req, {
+      success: false, stage: aiResult.stage, error: aiResult.error, detail: aiResult.detail, requestId,
+    }, aiResult.stage === "deepseek" ? 502 : 500);
+  }
+
+  try {
+    const data = validateExpressionConnectionsAI(aiResult.data, new Set(candidates.map((candidate) => candidate.candidate_key)));
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "generate_expression_connections",
+      input_data: { request_id: requestId, prompt_version: promptVersion, candidate_count: candidates.length },
+      output_data: { connection_count: data.connections.length, external_count: data.external_suggestions.length, latency_ms: Date.now() - startedAt },
+      model: "deepseek-chat",
+      model_version: promptVersion,
+      tokens_used: aiResult.usage?.totalTokens || 0,
+    });
+    const responseBody = { success: true, data, requestId };
+    return jsonResponse(req, responseBody);
+  } catch (error) {
+    return jsonResponse(req, {
+      success: false,
+      stage: "response_validation",
+      error: error instanceof Error ? error.message : "AI response validation failed",
+      requestId,
+    }, 502);
+  }
+}
+
 async function handleEvaluatePersonalSentence(
   req: Request,
   body: Record<string, unknown>,
@@ -814,6 +1024,11 @@ serve(async (req: Request) => {
     // ── Action: evaluate_personal_sentence (V3.6) ──
     if (action === "evaluate_personal_sentence") {
       return handleEvaluatePersonalSentence(req, body, supabase, userId);
+    }
+
+    // ── Action: generate_expression_connections ──
+    if (action === "generate_expression_connections") {
+      return handleGenerateExpressionConnections(req, body, supabase, userId);
     }
 
     // ── Normal coaching: require messages ──
