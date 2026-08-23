@@ -781,9 +781,24 @@ function SentenceCard({
     // Step 2: AI evaluation
     try {
       const result = await evaluatePersonalSentence(
-        expr?.english || "",
-        sentence,
-        safeContext,
+        {
+          expression_id: expr?.id,
+          expression: expr?.english || "",
+          meaning: expr?.chinese || "",
+          expression_type: expr?.type,
+          english_explanation: expr?.english_explanation,
+          usage_note: expr?.usage_note,
+          native_usage: expr?.native_usage,
+          common_patterns: expr?.common_patterns,
+          context: expr?.context || expr?.scene || safeContext,
+          situation: expr?.situation,
+          synonyms: expr?.synonyms,
+          common_mistakes: expr?.common_mistakes,
+          example_sentence: expr?.example_sentence,
+          cloze_sentence: expr?.cloze_sentence,
+          memory_tip: expr?.memory_tip,
+          user_sentence: sentence,
+        },
       );
 
       if (result.success && result.data) {
@@ -809,9 +824,24 @@ function SentenceCard({
 
     try {
       const result = await evaluatePersonalSentence(
-        expr?.english || "",
-        sentenceRef.current,
-        safeContext,
+        {
+          expression_id: expr?.id,
+          expression: expr?.english || "",
+          meaning: expr?.chinese || "",
+          expression_type: expr?.type,
+          english_explanation: expr?.english_explanation,
+          usage_note: expr?.usage_note,
+          native_usage: expr?.native_usage,
+          common_patterns: expr?.common_patterns,
+          context: expr?.context || expr?.scene || safeContext,
+          situation: expr?.situation,
+          synonyms: expr?.synonyms,
+          common_mistakes: expr?.common_mistakes,
+          example_sentence: expr?.example_sentence,
+          cloze_sentence: expr?.cloze_sentence,
+          memory_tip: expr?.memory_tip,
+          user_sentence: sentenceRef.current,
+        },
       );
 
       if (result.success && result.data) {
@@ -960,17 +990,17 @@ function SentenceCard({
               {/* Grammar */}
               <div className={cn(
                 "flex items-center gap-2 px-3 py-2.5 rounded-lg",
-                evaluation.grammar_correct ? "bg-sage-light/40" : "bg-accent-warm/10",
+                evaluation.grammar.correct ? "bg-sage-light/40" : "bg-accent-warm/10",
               )}>
-                {evaluation.grammar_correct
+                {evaluation.grammar.correct
                   ? <CheckCircle2 size={14} className="text-sage-deep" />
                   : <AlertTriangle size={14} className="text-accent-warm" />
                 }
                 <span className={cn(
                   "text-xs font-medium",
-                  evaluation.grammar_correct ? "text-sage-deep" : "text-accent-warm",
+                  evaluation.grammar.correct ? "text-sage-deep" : "text-accent-warm",
                 )}>
-                  {evaluation.grammar_correct ? "语法 ✓ 正确" : "语法 ⚠️ 需要调整"}
+                  {evaluation.grammar.correct ? "语法 ✓ 正确" : "语法 ⚠️ 需要调整"}
                 </span>
               </div>
 
@@ -994,33 +1024,32 @@ function SentenceCard({
               {/* Naturalness */}
               <div className={cn(
                 "flex items-center gap-2 px-3 py-2.5 rounded-lg",
-                evaluation.naturalness === "natural" ? "bg-sage-light/40" :
-                evaluation.naturalness === "slightly_unnatural" ? "bg-amber-50" :
+                evaluation.verdict === "natural" ? "bg-sage-light/40" :
+                evaluation.verdict === "acceptable" ? "bg-amber-50" :
                 "bg-accent-warm/10",
               )}>
-                {evaluation.naturalness === "natural"
+                {evaluation.verdict === "natural"
                   ? <CheckCircle2 size={14} className="text-sage-deep" />
-                  : evaluation.naturalness === "slightly_unnatural"
+                  : evaluation.verdict === "acceptable"
                     ? <AlertTriangle size={14} className="text-amber-500" />
                     : <XCircle size={14} className="text-accent-warm" />
                 }
                 <span className={cn(
                   "text-xs font-medium",
-                  evaluation.naturalness === "natural" ? "text-sage-deep" :
-                  evaluation.naturalness === "slightly_unnatural" ? "text-amber-600" :
+                  evaluation.verdict === "natural" ? "text-sage-deep" :
+                  evaluation.verdict === "acceptable" ? "text-amber-600" :
                   "text-accent-warm",
                 )}>
                   自然度 {
-                    evaluation.naturalness === "natural" ? "✓ 自然" :
-                    evaluation.naturalness === "slightly_unnatural" ? "△ 可以更自然" :
-                    evaluation.naturalness === "awkward" ? "⚠️ 不自然" :
-                    "✗ 用法不正确"
+                    evaluation.verdict === "natural" ? "✓ 自然正确" :
+                    evaluation.verdict === "acceptable" ? "△ 基本正确，可以更自然" :
+                    "✗ 需要修改"
                   }
                 </span>
               </div>
 
               {/* All-good message */}
-              {evaluation.grammar_correct && evaluation.expression_used_correctly && evaluation.naturalness === "natural" && (
+              {evaluation.verdict === "natural" && (
                 <div className="bg-sage-light/30 rounded-xl p-3">
                   <p className="text-xs text-sage-deep leading-relaxed">
                     这句话已经很好，不需要修改。
@@ -1029,23 +1058,23 @@ function SentenceCard({
               )}
 
               {/* Overall feedback */}
-              {evaluation.overall_feedback && (
+              {evaluation.feedback && (
                 <div className="bg-purple-50/50 rounded-xl p-3">
                   <p className="text-[10px] text-purple-500 mb-0.5 uppercase tracking-wider">主要反馈</p>
-                  <p className="text-xs text-ink leading-relaxed">{evaluation.overall_feedback}</p>
+                  <p className="text-xs text-ink leading-relaxed">{evaluation.feedback}</p>
                 </div>
               )}
 
               {/* Corrected version (only if grammar/usage issues) */}
-              {evaluation.corrections && evaluation.corrections.length > 0 && (
+              {evaluation.grammar.issues.length > 0 && (
                 <div className="bg-warm-cream rounded-xl p-3 space-y-2">
                   <p className="text-[10px] text-ink-lighter uppercase tracking-wider">纠正版</p>
-                  {evaluation.corrections.map((c, i) => (
+                  {evaluation.grammar.issues.map((c, i) => (
                     <div key={i} className="text-xs space-y-1">
                       <p>
                         <span className="text-accent-warm line-through">"{c.original}"</span>
                         {" → "}
-                        <span className="text-sage-deep font-medium">"{c.corrected}"</span>
+                        <span className="text-sage-deep font-medium">"{c.correction}"</span>
                       </p>
                       {c.explanation && (
                         <p className="text-ink-lighter">{c.explanation}</p>
@@ -1056,10 +1085,10 @@ function SentenceCard({
               )}
 
               {/* Example usage */}
-              {evaluation.example_usage && (
+              {evaluation.natural_version && (
                 <div className="bg-sage-light/20 rounded-xl p-3">
                   <p className="text-[10px] text-ink-lighter mb-0.5 uppercase tracking-wider">更自然的说法</p>
-                  <p className="text-xs text-ink italic leading-relaxed">{evaluation.example_usage}</p>
+                  <p className="text-xs text-ink italic leading-relaxed">{evaluation.natural_version}</p>
                 </div>
               )}
 
@@ -1091,12 +1120,9 @@ function SentenceCard({
 // ── Sentence score mapping (V3.6) ──
 
 function deriveSentenceScore(result: PersonalSentenceEvaluation): number {
-  if (result.expression_used_correctly && result.naturalness === "natural") return 5;
-  if (result.expression_used_correctly && result.naturalness === "slightly_unnatural") return 3;
-  if (result.expression_used_correctly || result.naturalness === "awkward") return 3;
-  if (!result.expression_used_correctly && result.naturalness === "incorrect") return 1;
-  if (!result.grammar_correct) return 2;
-  return 3;
+  if (result.verdict === "natural") return 5;
+  if (result.verdict === "acceptable") return 3;
+  return 1;
 }
 
 // ═══════════════════════════════════════

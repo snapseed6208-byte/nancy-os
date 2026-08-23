@@ -544,31 +544,34 @@ export async function generateClozeBatchViaEdge(
   return map;
 }
 
-// ── 13. Personal Sentence Evaluation (V3.6) ──
+// ── 13. Personal Sentence Evaluation (V2 strict scoring) ──
 
-export interface PersonalSentenceEvaluation {
-  grammar_correct: boolean;
-  naturalness: "natural" | "slightly_unnatural" | "awkward" | "incorrect";
-  corrections: Array<{ original: string; corrected: string; explanation: string }>;
-  overall_feedback: string;
-  expression_used_correctly: boolean;
-  example_usage?: string;
-}
+import {
+  parseSentenceEvaluation,
+  type PersonalSentenceEvaluation,
+  type SentenceEvaluationInput,
+} from "@/lib/english/sentenceEvaluation";
+export type { PersonalSentenceEvaluation } from "@/lib/english/sentenceEvaluation";
 
 export async function evaluatePersonalSentence(
-  expression: string,
-  userSentence: string,
-  safeContext?: string,
+  input: SentenceEvaluationInput,
 ): Promise<AIResult<PersonalSentenceEvaluation>> {
-  return invokeAI<PersonalSentenceEvaluation>("english-coach", {
+  const result = await invokeAI<unknown>("english-coach", {
     action: "evaluate_personal_sentence",
-    expression,
-    user_sentence: userSentence,
-    safe_context: safeContext || "",
+    ...input,
   }, {
     timeout: 30_000,
     retries: 1,
   });
+  if (!result.success) return result;
+  try {
+    return { success: true, data: parseSentenceEvaluation(result.data) };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? `[response_validation] ${error.message}` : "[response_validation] AI response invalid",
+    };
+  }
 }
 
 // ── 14. Context Cloze Generation (V3.4) ──

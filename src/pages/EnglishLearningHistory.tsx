@@ -12,6 +12,7 @@ import {
   useSessionDetail,
   useHistoricalSummaries,
   useTodayLearnSession,
+  useTodaySentencePracticeHistory,
   isLearnItemFinished,
   type ExpressionProgressDetail,
   type HistoricalSummary,
@@ -256,6 +257,7 @@ export default function EnglishLearningHistory() {
   const [, navigate] = useLocation();
   const { data, isLoading, error } = useLearningHistory();
   const { data: sessionDetail, isLoading: detailLoading } = useSessionDetail();
+  const { data: sentenceHistory = [] } = useTodaySentencePracticeHistory();
   const { data: historicalSummaries } = useHistoricalSummaries(14);
   const { data: learnData } = useTodayLearnSession();
 
@@ -515,7 +517,7 @@ export default function EnglishLearningHistory() {
       {/* Sentence Practice History             */}
       {/* ═══════════════════════════════════════ */}
 
-      {sessionDetail && (
+      {sentenceHistory.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 px-1">
             <MessageCircle size={16} className="text-sage-deep" />
@@ -523,11 +525,11 @@ export default function EnglishLearningHistory() {
               今日造句记录
             </h3>
             <span className="text-[11px] text-ink-lighter ml-auto">
-              {sessionDetail.sentenceDetails.length} 条
+              {sentenceHistory.length} 条
             </span>
           </div>
           <SentencePracticeHistory
-            records={sessionDetail.sentenceDetails.map((d): SentencePracticeRecord => ({
+            records={sentenceHistory.map((d): SentencePracticeRecord => ({
               expressionId: d.expressionId,
               expressionEnglish: d.expressionEnglish,
               expressionChinese: d.expressionChinese,

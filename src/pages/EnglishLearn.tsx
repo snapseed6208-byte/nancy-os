@@ -53,6 +53,7 @@ import {
   type LearningMaterial,
 } from "@/lib/english/learningMaterial";
 import { evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
+import { sentenceScoreForVerdict } from "@/lib/english/sentenceEvaluation";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -86,12 +87,7 @@ interface RecallOutcome {
 }
 
 function sentenceScoreOf(evaluation: PersonalSentenceEvaluation): number {
-  if (evaluation.expression_used_correctly && evaluation.naturalness === "natural") return 5;
-  if (evaluation.expression_used_correctly && evaluation.naturalness === "slightly_unnatural") return 3;
-  if (evaluation.expression_used_correctly || evaluation.naturalness === "awkward") return 3;
-  if (!evaluation.expression_used_correctly && evaluation.naturalness === "incorrect") return 1;
-  if (!evaluation.grammar_correct) return 2;
-  return 3;
+  return sentenceScoreForVerdict(evaluation.verdict);
 }
 
 /**
@@ -172,8 +168,9 @@ export default function EnglishLearn() {
   const items = data?.items || [];
   const initializedRef = useRef(false);
   const indexRef = useRef(currentIndex);
-  /** One sentence = one practice record: id created at submit, updated on AI + completion. */
+  /** One submitted sentence = one practice record; AI retries update that same attempt. */
   const practiceLogIdRef = useRef<string | null>(null);
+  const sentenceAttemptRef = useRef(0);
 
   useEffect(() => { indexRef.current = currentIndex; }, [currentIndex]);
 
@@ -250,6 +247,7 @@ export default function EnglishLearn() {
     setError(null);
     setErrorAction("none");
     practiceLogIdRef.current = null;
+    sentenceAttemptRef.current = 0;
     setProgress({ ...DEFAULT_LEARN_PROGRESS, expressionIndex: indexRef.current });
   }, []);
 
@@ -331,23 +329,55 @@ export default function EnglishLearn() {
   }, [session, saveProgress]);
 
   // ═══ Sentence submission (save-before-AI, non-blocking) ═══
-  const runSentenceAI = useCallback(async (sentence: string) => {
+  const runSentenceAI = useCallback(async (sentence: string, attemptNumber: number) => {
     if (!expr || !session || !currentItem) return;
     setSentencePhase("submitting");
     try {
-      const safeContext = [expr.context, expr.situation, expr.scene].filter(Boolean).join(" · ") || undefined;
-      const result = await evaluatePersonalSentence(expr.english, sentence, safeContext);
+      const result = await evaluatePersonalSentence({
+        expression_id: expr.id,
+        expression: expr.english,
+        meaning: expr.chinese,
+        expression_type: expr.type,
+        english_explanation: expr.english_explanation,
+        usage_note: expr.usage_note,
+        native_usage: expr.native_usage,
+        common_patterns: expr.common_patterns,
+        context: expr.context || expr.scene,
+        situation: expr.situation,
+        synonyms: expr.synonyms,
+        common_mistakes: expr.common_mistakes,
+        example_sentence: expr.example_sentence,
+        cloze_sentence: expr.cloze_sentence,
+        memory_tip: expr.memory_tip,
+        user_sentence: sentence,
+      });
       if (result.success && result.data) {
         setSentenceEvaluation(result.data);
         setSentencePhase("feedback");
-        // Persist AI feedback onto the existing practice record (enrichment, non-blocking)
+        const serialized = JSON.stringify(result.data);
+        const score = sentenceScoreOf(result.data);
+        try {
+          await updateItem.mutateAsync({
+            itemId: currentItem.id,
+            updates: { aiFeedback: serialized, sentenceScore: score, attemptCount: attemptNumber },
+          });
+        } catch {
+          /* practice log remains the durable feedback history */
+        }
         if (practiceLogIdRef.current) {
           try {
             await updatePracticeLog(practiceLogIdRef.current, {
+              feedback: serialized,
+              score,
               metadata: {
+                source: "learning",
+                learn_stage: "production",
+                sentence,
+                attempt_number: attemptNumber,
                 ai_evaluation: result.data,
-                ai_feedback: result.data.overall_feedback ?? null,
                 ai_success: true,
+                ai_prompt_version: "sentence_feedback_v2",
+                learn_completed: false,
               },
             });
           } catch {
@@ -356,55 +386,75 @@ export default function EnglishLearn() {
         }
       } else {
         setSentencePhase("aiFailed");
+        if (practiceLogIdRef.current) {
+          try {
+            await updatePracticeLog(practiceLogIdRef.current, {
+              metadata: {
+                source: "learning",
+                learn_stage: "production",
+                sentence,
+                attempt_number: attemptNumber,
+                ai_success: false,
+                ai_error: "error" in result ? result.error : "AI response missing",
+                ai_prompt_version: "sentence_feedback_v2",
+                learn_completed: false,
+              },
+            });
+          } catch { /* sentence is already stored on the session item */ }
+        }
       }
     } catch {
       setSentencePhase("aiFailed");
     }
-  }, [expr, session, currentItem]);
+  }, [expr, session, currentItem, updateItem]);
 
   const handleSubmitSentence = useCallback(async () => {
     if (!currentItem || !session || !sentenceInput.trim() || sentencePhase === "submitting") return;
     const sentence = sentenceInput.trim();
+    const attemptNumber = sentenceAttemptRef.current + 1;
+    sentenceAttemptRef.current = attemptNumber;
     setError(null);
 
     // 1. Save sentence first (persists even if AI fails)
     try {
-      await updateItem.mutateAsync({ itemId: currentItem.id, updates: { userSentence: sentence } });
+      await updateItem.mutateAsync({
+        itemId: currentItem.id,
+        updates: { userSentence: sentence, attemptCount: attemptNumber, aiFeedback: null, sentenceScore: null },
+      });
     } catch {
       setError("句子保存失败，请重试");
       return;
     }
 
-    // 2. One sentence = one practice record. Create once at submit; subsequent
-    //    submits (after 修改一下) update the same record.
+    // 2. A revised sentence is a new attempt. AI retries keep this same log id.
     try {
-      if (!practiceLogIdRef.current) {
-        const id = await insertPracticeLog({
-          expressionId: currentItem.expressionId,
-          sessionId: session.id,
-          mode: "learn",
-          answer: recallInput || null,
-          feedback: recallOutcome?.feedback ?? null,
-          score: recallOutcome?.score ?? 0,
-          metadata: { source: "learning", learn_stage: "production", sentence, learn_completed: false },
-        });
-        practiceLogIdRef.current = id;
-      } else {
-        await updatePracticeLog(practiceLogIdRef.current, {
-          metadata: { source: "learning", learn_stage: "production", sentence, learn_completed: false },
-        });
-      }
+      practiceLogIdRef.current = await insertPracticeLog({
+        expressionId: currentItem.expressionId,
+        sessionId: session.id,
+        mode: "learn",
+        answer: sentence,
+        feedback: null,
+        score: 0,
+        metadata: {
+          source: "learning",
+          learn_stage: "production",
+          sentence,
+          attempt_number: attemptNumber,
+          ai_prompt_version: "sentence_feedback_v2",
+          learn_completed: false,
+        },
+      });
     } catch {
       // Enrichment — sentence is already saved; completion still proceeds.
     }
 
     // 3. AI feedback (non-blocking)
-    await runSentenceAI(sentence);
+    await runSentenceAI(sentence, attemptNumber);
   }, [currentItem, sentenceInput, sentencePhase, session, recallInput, recallOutcome, updateItem, runSentenceAI]);
 
   const handleRetryAI = useCallback(() => {
     if (!sentenceInput.trim()) return;
-    runSentenceAI(sentenceInput.trim());
+    runSentenceAI(sentenceInput.trim(), Math.max(1, sentenceAttemptRef.current));
   }, [sentenceInput, runSentenceAI]);
 
   const handleModifySentence = useCallback(() => {
@@ -420,6 +470,7 @@ export default function EnglishLearn() {
     qc.invalidateQueries({ queryKey: ["expressions"] });
     qc.invalidateQueries({ queryKey: ["english_stats"] });
     qc.invalidateQueries({ queryKey: ["learning-history"] });
+    qc.invalidateQueries({ queryKey: ["sentence-practice-history"] });
     qc.invalidateQueries({ queryKey: ["expressions", "due"] });
     qc.invalidateQueries({ queryKey: ["expressions", "daily_queue"] });
   }, [qc]);
@@ -486,7 +537,18 @@ export default function EnglishLearn() {
       try {
         if (practiceLogIdRef.current) {
           await updatePracticeLog(practiceLogIdRef.current, {
-            metadata: { learn_completed: true, learn_stage: "production", sentence: sentence || null },
+            feedback: sentenceEvaluation ? JSON.stringify(sentenceEvaluation) : undefined,
+            score: sentenceEvaluation ? sentenceScoreOf(sentenceEvaluation) : 0,
+            metadata: {
+              source: "learning",
+              learn_completed: true,
+              learn_stage: "production",
+              sentence: sentence || null,
+              attempt_number: sentenceAttemptRef.current,
+              ai_success: Boolean(sentenceEvaluation),
+              ai_evaluation: sentenceEvaluation,
+              ai_prompt_version: "sentence_feedback_v2",
+            },
           });
         } else {
           // No sentence submitted — record the recall-only learn attempt once
@@ -724,6 +786,7 @@ export default function EnglishLearn() {
             evaluation={sentenceEvaluation}
             onRetryAI={handleRetryAI}
             onModify={handleModifySentence}
+            onLater={completeCurrent}
           />
         )}
       </div>
@@ -990,6 +1053,7 @@ function ProductionStage({
   evaluation,
   onRetryAI,
   onModify,
+  onLater,
 }: {
   material: LearningMaterial;
   input: string;
@@ -998,6 +1062,7 @@ function ProductionStage({
   evaluation: PersonalSentenceEvaluation | null;
   onRetryAI: () => void;
   onModify: () => void;
+  onLater: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -1021,11 +1086,12 @@ function ProductionStage({
         />
       )}
 
-      {phase === "feedback" && evaluation && <SentenceFeedback evaluation={evaluation} />}
+      {phase === "feedback" && evaluation && <SentenceFeedback evaluation={evaluation} originalSentence={input} />}
 
       {phase === "aiFailed" && (
-        <div className="bg-amber-50 rounded-xl p-3 text-sm text-amber-700">
-          句子已保存，AI反馈暂时不可用。
+        <div className="bg-amber-50 rounded-xl p-3 text-sm text-amber-700 space-y-1">
+          <p className="font-medium">分析暂时失败</p>
+          <p className="text-xs">你的句子已经保留，不会自动进入下一条。</p>
         </div>
       )}
 
@@ -1038,50 +1104,68 @@ function ProductionStage({
             >
               修改一下
             </button>
-          ) : (
-            <button
-              onClick={onRetryAI}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border text-ink hover:bg-muted transition-colors"
-            >
-              <RefreshCw className="w-4 h-4 inline mr-1" />
-              重试AI反馈
+          ) : <>
+            <button onClick={onRetryAI} className="flex-1 py-2.5 rounded-xl text-xs font-medium border border-border text-ink hover:bg-muted transition-colors">
+              <RefreshCw className="w-4 h-4 inline mr-1" />重试 AI 分析
             </button>
-          )}
+            <button onClick={onModify} className="flex-1 py-2.5 rounded-xl text-xs font-medium border border-border text-ink hover:bg-muted transition-colors">继续修改</button>
+            <button onClick={onLater} className="flex-1 py-2.5 rounded-xl text-xs font-medium bg-ink text-white">稍后再试</button>
+          </>}
         </div>
       )}
     </div>
   );
 }
 
-function SentenceFeedback({ evaluation }: { evaluation: PersonalSentenceEvaluation }) {
-  const score = sentenceScoreOf(evaluation);
-  const good = score >= 4;
-  const ok = score >= 3;
+function SentenceFeedback({ evaluation, originalSentence }: { evaluation: PersonalSentenceEvaluation; originalSentence: string }) {
+  const good = evaluation.verdict === "natural";
+  const ok = evaluation.verdict === "acceptable";
+  const issueLabels: Record<PersonalSentenceEvaluation["primary_issue"], string> = {
+    none: "目标表达使用准确自然",
+    meaning: "目标表达的核心含义",
+    structure: "目标表达的句型结构",
+    collocation: "搭配不够自然",
+    context: "使用场景不够贴切",
+    grammar: "整句语法",
+    naturalness: "表达不够地道",
+  };
   return (
     <div className={cn(
-      "rounded-xl p-4 space-y-2",
+      "rounded-xl p-4 space-y-3",
       good ? "bg-sage-light/30" : ok ? "bg-amber-50" : "bg-rose-50",
     )}>
       <p className={cn(
         "text-sm font-medium",
         good ? "text-sage-deep" : ok ? "text-amber-700" : "text-rose-700",
       )}>
-        {good ? "很棒！" : ok ? "不错，可以更自然一些" : "继续加油"}
+        {good ? "✓ 自然正确" : ok ? "△ 基本正确，可以更自然" : "✕ 需要修改"}
       </p>
-      {evaluation.corrections && evaluation.corrections.length > 0 && (
+      <div>
+        <p className="text-[10px] text-ink-lighter mb-1">{good ? "为什么用得对" : "主要问题"}</p>
+        <p className="text-xs font-medium text-ink">{issueLabels[evaluation.primary_issue]}</p>
+        <p className="text-xs text-ink-light mt-1 leading-5">{evaluation.feedback}</p>
+      </div>
+      {!good && evaluation.minimal_revision && (
+        <div>
+          <p className="text-[10px] text-ink-lighter mb-1">最小修改</p>
+          <p className="text-xs text-rose-600 line-through">{originalSentence}</p>
+          <p className="text-xs text-sage-deep mt-1">→ {evaluation.minimal_revision}</p>
+        </div>
+      )}
+      {!good && evaluation.natural_version && evaluation.natural_version !== evaluation.minimal_revision && (
+        <div>
+          <p className="text-[10px] text-ink-lighter mb-1">更自然的说法</p>
+          <p className="text-xs text-ink">{evaluation.natural_version}</p>
+        </div>
+      )}
+      {evaluation.grammar.issues.length > 0 && (
         <div className="space-y-1">
-          {evaluation.corrections.slice(0, 3).map((c, i) => (
-            <p key={i} className="text-xs text-ink">
-              <span className="line-through text-rose-500">{c.original}</span>
-              <span className="mx-1 text-ink-lighter">→</span>
-              <span className="text-sage-deep">{c.corrected}</span>
-            </p>
+          {evaluation.grammar.issues.slice(0, 3).map((issue, index) => (
+            <p key={index} className="text-xs text-ink-light">{issue.explanation}</p>
           ))}
         </div>
       )}
-      {evaluation.overall_feedback && (
-        <p className="text-xs text-ink">{evaluation.overall_feedback}</p>
-      )}
+      {evaluation.usage_tip && <p className="text-xs text-ink-light border-t border-current/10 pt-2">提示：{evaluation.usage_tip}</p>}
     </div>
   );
 }

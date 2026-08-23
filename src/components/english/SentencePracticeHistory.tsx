@@ -250,7 +250,7 @@ export default function SentencePracticeHistory({
       {/* Rows */}
       {records.map((record, idx) => (
         <div
-          key={record.expressionId || idx}
+          key={`${record.expressionId}-${record.completedAt || idx}`}
           className={cn(
             idx < records.length - 1 && "border-b border-border/20",
           )}

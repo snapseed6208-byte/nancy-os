@@ -49,7 +49,7 @@ describe("parseSentenceFeedback — format handling", () => {
   it("1. JSON object feedback — normal parsing", () => {
     const result = parseSentenceFeedback(naturalFeedbackObj);
     expect(result.status).toBe("natural");
-    expect(result.statusLabel).toBe("表达自然");
+    expect(result.statusLabel).toBe("自然正确");
     expect(result.grammarOk).toBe(true);
     expect(result.expressionUsedCorrectly).toBe(true);
     expect(result.overallFeedback).toBe("语法正确，表达也很自然。");
@@ -58,7 +58,7 @@ describe("parseSentenceFeedback — format handling", () => {
   it("2. JSON string feedback — normal parsing", () => {
     const result = parseSentenceFeedback(JSON.stringify(naturalFeedbackObj));
     expect(result.status).toBe("natural");
-    expect(result.statusLabel).toBe("表达自然");
+    expect(result.statusLabel).toBe("自然正确");
     expect(result.grammarOk).toBe(true);
   });
 
@@ -94,7 +94,7 @@ describe("parseSentenceFeedback — status derivation", () => {
   it("6. grammar_correct + natural → 表达自然", () => {
     const result = parseSentenceFeedback(naturalFeedbackObj);
     expect(result.status).toBe("natural");
-    expect(result.statusLabel).toBe("表达自然");
+    expect(result.statusLabel).toBe("自然正确");
     expect(result.statusIcon).toBe("check");
   });
 
@@ -108,13 +108,13 @@ describe("parseSentenceFeedback — status derivation", () => {
   it("8. slightly_unnatural → 可以更自然", () => {
     const result = parseSentenceFeedback(slightlyUnnaturalObj);
     expect(result.status).toBe("acceptable");
-    expect(result.statusLabel).toBe("可以更自然");
+    expect(result.statusLabel).toBe("基本正确，可以更自然");
     expect(result.statusIcon).toBe("delta");
   });
 
-  it("8b. awkward naturalness → 需要修改", () => {
+  it("8b. incomplete legacy data never defaults to pass", () => {
     const result = parseSentenceFeedback({ grammar_correct: true, naturalness: "awkward" });
-    expect(result.status).toBe("needs_work");
+    expect(result.status).toBe("unknown");
   });
 
   it("8c. expression_used_correctly === false → 需要修改", () => {
@@ -124,6 +124,41 @@ describe("parseSentenceFeedback — status derivation", () => {
       expression_used_correctly: false,
     });
     expect(result.status).toBe("needs_work");
+  });
+
+  it("8d. V2 acceptable maps to the YELLOW history label", () => {
+    const result = parseSentenceFeedback({
+      verdict: "acceptable",
+      expression_mastery: { meaning: "correct", structure: "correct", collocation: "acceptable", context_fit: "acceptable" },
+      grammar: { correct: true, issues: [] },
+      naturalness: { level: "understandable_but_non_native", reason: "语境不典型" },
+      primary_issue: "context",
+      feedback: "句型正确，但使用场景不够典型。",
+      minimal_revision: "I took it upon myself to explain the mistake to the client.",
+      natural_version: "I took it upon myself to explain the issue and find a solution.",
+      usage_tip: "强调主动承担未分配的责任。",
+      expression_used_correctly: true,
+    });
+    expect(result.status).toBe("acceptable");
+    expect(result.statusLabel).toBe("基本正确，可以更自然");
+    expect(result.betterSentence).toContain("find a solution");
+  });
+
+  it("8e. V2 grammar failure maps to RED even when the model says natural", () => {
+    const result = parseSentenceFeedback({
+      verdict: "natural",
+      expression_mastery: { meaning: "correct", structure: "correct", collocation: "natural", context_fit: "natural" },
+      grammar: { correct: false, issues: [{ original: "the skirt it is", correction: "the skirt is", explanation: "重复主语" }] },
+      naturalness: { level: "natural", reason: "意图可理解" },
+      primary_issue: "grammar",
+      feedback: "思路很好。",
+      minimal_revision: "Look at how shiny the skirt is.",
+      natural_version: "Look at how shiny that skirt is.",
+      usage_tip: "间接感叹句不要重复主语。",
+      expression_used_correctly: true,
+    });
+    expect(result.status).toBe("needs_work");
+    expect(result.statusLabel).toBe("需要修改");
   });
 });
 

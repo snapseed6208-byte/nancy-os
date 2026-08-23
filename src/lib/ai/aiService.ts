@@ -75,6 +75,7 @@ async function extractErrorMessage(err: unknown): Promise<{
           auth: "认证",
           deepseek: "DeepSeek调用",
           parse: "AI结果解析",
+          response_validation: "AI结果校验",
           database: "数据库",
           internal: "内部错误",
         };
@@ -121,7 +122,7 @@ async function extractErrorMessage(err: unknown): Promise<{
       const stage = typeof body?.stage === "string" ? body.stage : undefined;
       const stageLabels: Record<string, string> = {
         payload: "请求参数", auth: "认证", deepseek: "DeepSeek调用",
-        parse: "AI结果解析", database: "数据库", internal: "内部错误",
+        parse: "AI结果解析", response_validation: "AI结果校验", database: "数据库", internal: "内部错误",
       };
       const stagePrefix = stage ? `[${stageLabels[stage] || stage}] ` : "";
 

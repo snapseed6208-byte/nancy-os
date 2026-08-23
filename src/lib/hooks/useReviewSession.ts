@@ -417,7 +417,7 @@ export function useUpdateSessionItem() {
         sentenceScore: number | null;
         applicationScore: number;
         userSentence: string;
-        aiFeedback: string;
+        aiFeedback: string | null;
         status: SessionItem["status"];
         attemptCount: number;
         reinforcementRound: number;
@@ -1372,6 +1372,41 @@ export interface SessionDetailData {
     recallScore: number | null;
     status: string;
   }>;
+}
+
+export function useTodaySentencePracticeHistory() {
+  return useQuery({
+    queryKey: ["sentence-practice-history", "today"],
+    queryFn: async (): Promise<SentenceDetail[]> => {
+      const userId = await getUserId();
+      const start = new Date(`${todayStr()}T00:00:00+08:00`);
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      const { data, error } = await supabase
+        .from("expression_practice_logs")
+        .select("expression_id,answer,feedback,metadata,created_at,expression:expressions(english,chinese)")
+        .eq("user_id", userId)
+        .in("mode", ["learn", "sentence"])
+        .gte("created_at", start.toISOString())
+        .lt("created_at", end.toISOString())
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+
+      return (data || []).map((row) => {
+        const metadata = (row.metadata || {}) as Record<string, unknown>;
+        const expression = row.expression as unknown as { english?: string; chinese?: string } | null;
+        const evaluation = metadata.ai_evaluation;
+        return {
+          expressionId: row.expression_id as string,
+          expressionEnglish: expression?.english || "unknown",
+          expressionChinese: expression?.chinese || "",
+          userSentence: (metadata.sentence as string) || (row.answer as string) || "",
+          aiFeedback: (row.feedback as string | null) || (evaluation ? JSON.stringify(evaluation) : null),
+          completedAt: row.created_at as string,
+        };
+      });
+    },
+    staleTime: 30_000,
+  });
 }
 
 export function useSessionDetail() {

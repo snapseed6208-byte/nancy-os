@@ -6,12 +6,10 @@
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
 import { authenticateRequest, getConfirmedMemories, getExpressionAssets, matchExpressionAssets, trackAssetUsage, getNancyPersonalProfileWithGrowth, buildNancyPersonalProfileContextWithGrowth } from "../_shared/nancy-context.ts";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+type UntypedSupabaseClient = any;
 
 const ALLOWED_ORIGINS = [
   "https://nancy-os.pages.dev",
@@ -42,7 +40,7 @@ function jsonResponse(req: Request, data: unknown, status = 200) {
 // ── Build learning context from memories + history ──
 
 function buildLearningContext(
-  memories: Array<Record<string, unknown>>,
+  memories: Array<{ memory_type: string; content: string }>,
   reviewStats: { totalReviewed: number; correctRate: number; problemAreas: string[] },
   speakingStats: { totalSessions: number; avgDuration: number; recentScenarios: string[] },
 ): string {
@@ -96,11 +94,21 @@ function buildLearningContext(
 async function handleSummarizeDailyReview(
   req: Request,
   body: Record<string, unknown>,
-  supabase: ReturnType<typeof createClient>,
+  supabase: UntypedSupabaseClient,
   userId: string,
 ): Promise<Response> {
-  const dailySet = body.dailySet as Array<Record<string, unknown>> | undefined;
-  const modeCompletion = body.mode_completion as Record<string, unknown> | undefined;
+  const dailySet = body.dailySet as Array<{
+    english?: unknown;
+    chinese?: unknown;
+    recall?: { initial_rating?: unknown; final_status?: unknown; reinforcement_count?: unknown };
+    cloze?: { completed?: unknown; correct?: unknown; user_answer?: unknown };
+    sentence?: { completed?: unknown; user_sentence?: unknown; ai_feedback?: unknown };
+  }> | undefined;
+  const modeCompletion = body.mode_completion as {
+    recall?: { completed_count?: number; total?: number };
+    cloze?: { completed_count?: number; total?: number; correct_count?: number };
+    sentence?: { completed_count?: number; total?: number };
+  } | undefined;
   const date = (body.date as string) || new Date().toISOString().split("T")[0];
 
   if (!dailySet || !Array.isArray(dailySet) || dailySet.length === 0) {
@@ -109,16 +117,16 @@ async function handleSummarizeDailyReview(
 
   // Build a compact summary prompt with enriched per-expression data
   const expressions = dailySet.map((item) => ({
-    english: item.english || "unknown",
-    chinese: item.chinese || "",
-    recall_score: item.recall?.initial_rating ?? null,
-    recall_status: item.recall?.final_status ?? "pending",
-    recall_reinforcement: item.recall?.reinforcement_count ?? 0,
-    cloze_done: item.cloze?.completed ?? false,
-    cloze_correct: item.cloze?.correct ?? false,
-    cloze_user_answer: item.cloze?.user_answer ?? null,
-    sentence_done: item.sentence?.completed ?? false,
-    sentence_text: item.sentence?.user_sentence ?? null,
+    english: typeof item.english === "string" ? item.english : "unknown",
+    chinese: typeof item.chinese === "string" ? item.chinese : "",
+    recall_score: typeof item.recall?.initial_rating === "number" ? item.recall.initial_rating : null,
+    recall_status: typeof item.recall?.final_status === "string" ? item.recall.final_status : "pending",
+    recall_reinforcement: typeof item.recall?.reinforcement_count === "number" ? item.recall.reinforcement_count : 0,
+    cloze_done: item.cloze?.completed === true,
+    cloze_correct: item.cloze?.correct === true,
+    cloze_user_answer: typeof item.cloze?.user_answer === "string" ? item.cloze.user_answer : null,
+    sentence_done: item.sentence?.completed === true,
+    sentence_text: typeof item.sentence?.user_sentence === "string" ? item.sentence.user_sentence : null,
     sentence_feedback: item.sentence?.ai_feedback ?? null,
   }));
 
@@ -224,7 +232,7 @@ Use the pre-computed categories as a reference, but apply your own judgment. Onl
 async function handleGenerateClozeBatch(
   req: Request,
   body: Record<string, unknown>,
-  supabase: ReturnType<typeof createClient>,
+  supabase: UntypedSupabaseClient,
   userId: string,
 ): Promise<Response> {
   const expressions = body.expressions as Array<{ english: string; chinese: string; context?: string }> | undefined;
@@ -339,7 +347,7 @@ interface ContextClozeCardResponse {
 async function handleGenerateContextCloze(
   req: Request,
   body: Record<string, unknown>,
-  supabase: ReturnType<typeof createClient>,
+  supabase: UntypedSupabaseClient,
   userId: string,
 ): Promise<Response> {
   const expressions = body.expressions as ContextClozeInput[] | undefined;
@@ -472,47 +480,206 @@ ${exprList}`;
   }
 }
 
-// ── Action: evaluate_personal_sentence (V3.6) ──
+// ── Action: evaluate_personal_sentence (sentence_feedback_v2) ──
+
+type SentenceVerdict = "natural" | "acceptable" | "needs_revision";
+type SentenceEvaluation = {
+  verdict: SentenceVerdict;
+  expression_mastery: {
+    meaning: "correct" | "partial" | "incorrect";
+    structure: "correct" | "incorrect";
+    collocation: "natural" | "acceptable" | "unnatural";
+    context_fit: "natural" | "acceptable" | "inappropriate";
+  };
+  grammar: {
+    correct: boolean;
+    issues: Array<{ original: string; correction: string; explanation: string }>;
+  };
+  naturalness: {
+    level: "natural" | "understandable_but_non_native" | "unnatural";
+    reason: string;
+  };
+  primary_issue: "none" | "meaning" | "structure" | "collocation" | "context" | "grammar" | "naturalness";
+  feedback: string;
+  minimal_revision: string;
+  natural_version: string;
+  usage_tip: string;
+  expression_used_correctly: boolean;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireEnum<T extends string>(value: unknown, values: readonly T[], path: string): T {
+  if (typeof value !== "string" || !values.includes(value as T)) throw new Error(`${path} is invalid`);
+  return value as T;
+}
+
+function requireString(value: unknown, path: string, allowEmpty = false): string {
+  if (typeof value !== "string") throw new Error(`${path} must be a string`);
+  const normalized = value.trim();
+  if (!allowEmpty && !normalized) throw new Error(`${path} must not be empty`);
+  return normalized;
+}
+
+function deriveHardGateVerdict(value: SentenceEvaluation): SentenceVerdict {
+  const mastery = value.expression_mastery;
+  if (
+    !value.expression_used_correctly
+    || mastery.meaning === "incorrect"
+    || mastery.structure === "incorrect"
+    || mastery.collocation === "unnatural"
+    || mastery.context_fit === "inappropriate"
+    || !value.grammar.correct
+    || value.naturalness.level === "unnatural"
+  ) return "needs_revision";
+  if (
+    mastery.meaning === "partial"
+    || mastery.collocation === "acceptable"
+    || mastery.context_fit === "acceptable"
+    || value.naturalness.level === "understandable_but_non_native"
+  ) return "acceptable";
+  return "natural";
+}
+
+function validateSentenceEvaluation(raw: unknown): SentenceEvaluation {
+  if (!isRecord(raw) || !isRecord(raw.expression_mastery) || !isRecord(raw.grammar) || !isRecord(raw.naturalness)) {
+    throw new Error("required evaluation objects are missing");
+  }
+  if (typeof raw.grammar.correct !== "boolean" || !Array.isArray(raw.grammar.issues)) {
+    throw new Error("grammar fields are invalid");
+  }
+  if (typeof raw.expression_used_correctly !== "boolean") throw new Error("expression_used_correctly must be boolean");
+  const value: SentenceEvaluation = {
+    verdict: requireEnum(raw.verdict, ["natural", "acceptable", "needs_revision"] as const, "verdict"),
+    expression_mastery: {
+      meaning: requireEnum(raw.expression_mastery.meaning, ["correct", "partial", "incorrect"] as const, "expression_mastery.meaning"),
+      structure: requireEnum(raw.expression_mastery.structure, ["correct", "incorrect"] as const, "expression_mastery.structure"),
+      collocation: requireEnum(raw.expression_mastery.collocation, ["natural", "acceptable", "unnatural"] as const, "expression_mastery.collocation"),
+      context_fit: requireEnum(raw.expression_mastery.context_fit, ["natural", "acceptable", "inappropriate"] as const, "expression_mastery.context_fit"),
+    },
+    grammar: {
+      correct: raw.grammar.correct,
+      issues: raw.grammar.issues.map((issue, index) => {
+        if (!isRecord(issue)) throw new Error(`grammar.issues[${index}] is invalid`);
+        return {
+          original: requireString(issue.original, `grammar.issues[${index}].original`),
+          correction: requireString(issue.correction, `grammar.issues[${index}].correction`),
+          explanation: requireString(issue.explanation, `grammar.issues[${index}].explanation`),
+        };
+      }),
+    },
+    naturalness: {
+      level: requireEnum(raw.naturalness.level, ["natural", "understandable_but_non_native", "unnatural"] as const, "naturalness.level"),
+      reason: requireString(raw.naturalness.reason, "naturalness.reason"),
+    },
+    primary_issue: requireEnum(raw.primary_issue, ["none", "meaning", "structure", "collocation", "context", "grammar", "naturalness"] as const, "primary_issue"),
+    feedback: requireString(raw.feedback, "feedback"),
+    minimal_revision: requireString(raw.minimal_revision, "minimal_revision", true),
+    natural_version: requireString(raw.natural_version, "natural_version"),
+    usage_tip: requireString(raw.usage_tip, "usage_tip"),
+    expression_used_correctly: raw.expression_used_correctly,
+  };
+  if (!value.grammar.correct && value.grammar.issues.length === 0) {
+    throw new Error("grammar.issues must describe an incorrect grammar result");
+  }
+  const hardGateVerdict = deriveHardGateVerdict(value);
+  const severity = { natural: 0, acceptable: 1, needs_revision: 2 } as const;
+  if (severity[hardGateVerdict] > severity[value.verdict]) value.verdict = hardGateVerdict;
+  return value;
+}
 
 async function handleEvaluatePersonalSentence(
   req: Request,
   body: Record<string, unknown>,
-  supabase: ReturnType<typeof createClient>,
+  supabase: UntypedSupabaseClient,
   userId: string,
 ): Promise<Response> {
-  const expression = body.expression as string | undefined;
-  const userSentence = body.user_sentence as string | undefined;
-  const safeContext = body.safe_context as string | undefined;
+  const startedAt = Date.now();
+  const requestId = crypto.randomUUID();
+  const text = (key: string, max = 2000) => typeof body[key] === "string" ? (body[key] as string).trim().slice(0, max) : "";
+  const expressionId = text("expression_id", 100);
+  const expression = text("expression", 300);
+  const userSentence = text("user_sentence", 1600);
 
   if (!expression || !userSentence) {
-    return jsonResponse(req, { error: "expression and user_sentence are required" }, 400);
+    return jsonResponse(req, { success: false, stage: "payload", error: "expression and user_sentence are required", requestId }, 400);
   }
 
-  const evalPrompt = `You are an English grammar and naturalness evaluator.
+  const usageSource = {
+    expression,
+    meaning: text("meaning", 600),
+    expression_type: text("expression_type", 100),
+    english_explanation: text("english_explanation"),
+    usage_note: text("usage_note"),
+    native_usage: text("native_usage"),
+    common_patterns: text("common_patterns"),
+    context: text("context"),
+    situation: text("situation"),
+    synonyms: text("synonyms"),
+    common_mistakes: text("common_mistakes"),
+    example_sentence: text("example_sentence"),
+    cloze_sentence: text("cloze_sentence"),
+    memory_tip: text("memory_tip"),
+  };
 
-Evaluate whether the user's sentence correctly and naturally uses the target expression.
+  const evalPrompt = `You are evaluating whether the learner has genuinely mastered the TARGET EXPRESSION, not whether the sentence is merely understandable.
+Your job is linguistic diagnosis, not encouragement. Separate the linguistic verdict from motivational tone. Never raise the linguistic verdict just to be supportive.
 
-Target expression: "${expression}"
-${safeContext ? `Context: ${safeContext}` : ""}
+STEP 1: Build an internal ExpressionUsageCard from the supplied library fields. Determine core_meaning, usage_function, grammar_pattern, typical_contexts, common_collocations, register, common_misuses, and native_usage_note. Do this inside the same request; do not output the card.
+STEP 2: Check whether the learner uses the target expression with the right meaning and structure.
+STEP 3: Check collocation, register, and whether the created context is plausible.
+STEP 4: Check the WHOLE sentence for grammar errors, including errors outside the target phrase.
+STEP 5: Check whether a native speaker would plausibly say it in this situation.
+STEP 6: Assign the verdict using the hard gates below.
 
-User's sentence: "${userSentence}"
+HARD GATES:
+- natural: ONLY when meaning, structure, collocation, context, whole-sentence grammar, and native-level plausibility all pass with no meaningful problem.
+- acceptable: meaning and structure are basically correct and the sentence is understandable, but there is a noticeable collocation, context, register, or non-native wording problem.
+- needs_revision: ANY clear grammar error, target-expression misuse, wrong structure/preposition, wrong collocation, inappropriate context, contradiction, mechanical insertion, or failure to use the target expression.
+- A target-expression core usage error MUST be needs_revision, never acceptable.
+- Any clear whole-sentence grammar error cannot be natural.
+- Understandable, semantically recoverable, close enough, or clear learner intention are NOT equivalent to natural and correct.
+- Technically grammatical does not mean native-like.
+- The target expression is the PRIMARY object of evaluation. A grammatically perfect sentence that misuses it must fail.
+- Encouragement may appear in feedback, but NEVER changes verdict.
 
-IMPORTANT RULES:
-- Focus on whether THE TARGET EXPRESSION is used correctly and naturally, not on the overall grammar of the sentence
-- Be lenient about minor grammar errors in parts of the sentence that are NOT the target expression
-- "Naturalness" means: does this usage sound like something a native speaker would say?
-- If the expression is used correctly but the rest of the sentence has issues, still mark expression_used_correctly as true
+Prefer a minimal_revision that preserves the learner's meaning and structure. Do not rewrite the whole sentence unless necessary.
 
-Return ONLY a JSON object (no markdown, no explanation):
+REFERENCE CALIBRATION:
+- "I take it upon myself to admit the mistake." for "take it upon oneself to do something" is acceptable, not natural: the pattern and broad meaning work, but admitting one's own mistake is normally already the speaker's responsibility and is not a typical voluntarily-unassigned task.
+- "Wow. You all fit is everything. Look at how shiny the skirt it is." for "your outfit is everything" is needs_revision because the target phrase and whole-sentence grammar are wrong.
+
+Expression library fields:
+${JSON.stringify(usageSource, null, 2)}
+
+Learner sentence:
+${JSON.stringify(userSentence)}
+
+Return strict JSON only:
 {
-  "grammar_correct": true/false,
-  "naturalness": "natural" | "slightly_unnatural" | "awkward" | "incorrect",
-  "corrections": [
-    { "original": "problematic part of sentence", "corrected": "corrected version", "explanation": "brief explanation in Chinese" }
-  ],
-  "overall_feedback": "1-2 sentences feedback in Chinese, encouraging tone",
-  "expression_used_correctly": true/false,
-  "example_usage": "optional: a natural example sentence using this expression correctly in context"
+  "verdict": "natural | acceptable | needs_revision",
+  "expression_mastery": {
+    "meaning": "correct | partial | incorrect",
+    "structure": "correct | incorrect",
+    "collocation": "natural | acceptable | unnatural",
+    "context_fit": "natural | acceptable | inappropriate"
+  },
+  "grammar": {
+    "correct": true,
+    "issues": [{ "original": "", "correction": "", "explanation": "Chinese explanation" }]
+  },
+  "naturalness": {
+    "level": "natural | understandable_but_non_native | unnatural",
+    "reason": "Chinese diagnosis"
+  },
+  "primary_issue": "none | meaning | structure | collocation | context | grammar | naturalness",
+  "feedback": "concise Chinese linguistic feedback; motivation must not change verdict",
+  "minimal_revision": "empty string only when no revision is needed",
+  "natural_version": "natural version, or the original sentence when already natural",
+  "usage_tip": "concise Chinese usage tip",
+  "expression_used_correctly": true
 }`;
 
   try {
@@ -528,29 +695,87 @@ Return ONLY a JSON object (no markdown, no explanation):
     );
 
     if (!aiResult.success) {
+      await supabase.from("agent_logs").insert({
+        user_id: userId,
+        agent_type: "english_coach",
+        action: "evaluate_personal_sentence",
+        input_data: { request_id: requestId, expression_id: expressionId || null, prompt_version: "sentence_feedback_v2" },
+        output_data: { response_validation_status: "not_run", failure_stage: aiResult.stage, latency_ms: Date.now() - startedAt },
+        model: "deepseek-chat",
+        model_version: "sentence_feedback_v2",
+        tokens_used: 0,
+      });
       return jsonResponse(req, {
+        success: false,
         stage: aiResult.stage,
         error: aiResult.error,
         detail: aiResult.detail,
+        requestId,
       }, aiResult.stage === "deepseek" ? 502 : 500);
     }
 
-    const data = aiResult.data || {};
+    let data: SentenceEvaluation;
+    try {
+      data = validateSentenceEvaluation(aiResult.data);
+    } catch (validationError) {
+      await supabase.from("agent_logs").insert({
+        user_id: userId,
+        agent_type: "english_coach",
+        action: "evaluate_personal_sentence",
+        input_data: { request_id: requestId, expression_id: expressionId || null, prompt_version: "sentence_feedback_v2" },
+        output_data: { response_validation_status: "invalid", latency_ms: Date.now() - startedAt },
+        model: "deepseek-chat",
+        model_version: "sentence_feedback_v2",
+        tokens_used: aiResult.usage?.totalTokens || 0,
+      });
+      return jsonResponse(req, {
+        success: false,
+        stage: "response_validation",
+        error: validationError instanceof Error ? validationError.message : "AI response validation failed",
+        requestId,
+      }, 502);
+    }
 
     await supabase.from("agent_logs").insert({
       user_id: userId,
       agent_type: "english_coach",
       action: "evaluate_personal_sentence",
-      input_data: { expression, user_sentence: userSentence },
-      output_data: { naturalness: data.naturalness, expression_used_correctly: data.expression_used_correctly },
+      input_data: {
+        request_id: requestId,
+        expression_id: expressionId || null,
+        prompt_version: "sentence_feedback_v2",
+        usage_fields_present: Object.entries(usageSource).filter(([, value]) => Boolean(value)).map(([key]) => key),
+      },
+      output_data: {
+        verdict: data.verdict,
+        primary_issue: data.primary_issue,
+        grammar_correct: data.grammar.correct,
+        expression_used_correctly: data.expression_used_correctly,
+        latency_ms: Date.now() - startedAt,
+        response_validation_status: "valid",
+      },
       model: "deepseek-chat",
+      model_version: "sentence_feedback_v2",
       tokens_used: aiResult.usage?.totalTokens || 0,
     });
 
-    return jsonResponse(req, { success: true, data });
+    return jsonResponse(req, { success: true, data, requestId });
   } catch (err) {
+    await supabase.from("agent_logs").insert({
+      user_id: userId,
+      agent_type: "english_coach",
+      action: "evaluate_personal_sentence",
+      input_data: { request_id: requestId, expression_id: expressionId || null, prompt_version: "sentence_feedback_v2" },
+      output_data: { response_validation_status: "not_run", failure_stage: "internal", latency_ms: Date.now() - startedAt },
+      model: "deepseek-chat",
+      model_version: "sentence_feedback_v2",
+      tokens_used: 0,
+    });
     return jsonResponse(req, {
+      success: false,
+      stage: "internal",
       error: err instanceof Error ? err.message : "Sentence evaluation failed",
+      requestId,
     }, 500);
   }
 }
