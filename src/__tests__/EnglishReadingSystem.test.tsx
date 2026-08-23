@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import JSZip from "jszip";
-import ReadingExperience from "@/components/english/reading/ReadingExperience";
+import ReadingExperience, { ReadingAIPanel } from "@/components/english/reading/ReadingExperience";
 import { parseEpubFile } from "@/lib/reader/epubParser";
 import { readerProgressPercentage } from "@/lib/reader/sentences";
 import type { ReaderSentenceAnalysis } from "@/lib/reader/types";
@@ -74,6 +74,37 @@ describe("English Reading shared sentence engine", () => {
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ source_expression: "bring myself to" }), analysis, "I couldn't bring myself to tell him."));
     expect(await screen.findByText("已在表达库中，来源已关联")).toBeInTheDocument();
   });
+
+  it("keeps long article text and AI panel content inside the shared width contract", () => {
+    const longToken = `https://example.com/${"unbreakable".repeat(20)}`;
+    const overflowAnalysis: ReaderSentenceAnalysis = {
+      ...analysis,
+      chinese_understanding: `中文理解 ${longToken}`,
+      key_expressions: [{
+        ...analysis.key_expressions[0],
+        expression: longToken,
+        source_expression: longToken,
+        contextual_meaning: `语境解释 ${longToken}`,
+      }],
+    };
+    render(
+      <ReadingAIPanel
+        sentence={`You are standing inside your own body, yet you cannot feel your center. ${longToken}`}
+        analysis={overflowAnalysis}
+        loading={false}
+        error=""
+        saveStates={{}}
+        onClose={vi.fn()}
+        onRetry={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const panel = screen.getByRole("complementary");
+    expect(panel).toHaveClass("max-w-full", "min-w-0", "box-border");
+    expect(screen.getByText(/You are standing inside/)).toHaveClass("whitespace-normal", "[overflow-wrap:anywhere]");
+    expect(screen.getByTitle("加入表达库")).toHaveClass("shrink-0");
+  });
 });
 
 describe("English Reader compatibility contracts", () => {
@@ -105,6 +136,20 @@ describe("English Reader compatibility contracts", () => {
       "/english/reader",
       "/english/reader/:bookId",
     ]) expect(app).toContain(`path="${route}"`);
+  });
+
+  it("shares a viewport-safe width contract between Article and EPUB readers", () => {
+    const article = readFileSync("src/pages/EnglishArticleReader.tsx", "utf8");
+    const epub = readFileSync("src/pages/EnglishReader.tsx", "utf8");
+    const experience = readFileSync("src/components/english/reading/ReadingExperience.tsx", "utf8");
+
+    expect(article).toContain('className="w-full max-w-full min-w-0 -mt-2 pb-20"');
+    expect(epub).toContain('className="w-full max-w-full min-w-0 -mt-2 pb-20"');
+    expect(article).toContain("w-full max-w-xl min-w-0");
+    expect(epub).toContain("w-full max-w-xl min-w-0");
+    expect(experience).toContain("fixed inset-x-0 bottom-0 z-50 w-auto max-w-full min-w-0 box-border");
+    expect(experience).toContain("[overflow-wrap:anywhere]");
+    expect(`${article}\n${epub}\n${experience}`).not.toContain("w-screen");
   });
 
   it("uses an idempotent, ownership-checked direct-save RPC", () => {

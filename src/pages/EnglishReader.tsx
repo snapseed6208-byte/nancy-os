@@ -81,7 +81,7 @@ export default function EnglishReader() {
   if (error || !data || !chapter) return <p className="text-sm text-red-600">{(error as Error)?.message || "书籍内容不存在"}</p>;
 
   return (
-    <div className="-mt-2 pb-20">
+    <div className="w-full max-w-full min-w-0 -mt-2 pb-20">
       <header className="sticky top-14 lg:top-0 z-20 bg-warm-cream/95 backdrop-blur border-b border-border -mx-4 px-3 py-2">
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => navigate("/english/reading/library")} title="返回书架" className="h-9 w-9 rounded-md flex items-center justify-center hover:bg-ink/5"><ArrowLeft size={18} /></button>
@@ -103,7 +103,7 @@ export default function EnglishReader() {
         )}
       </header>
 
-      <article className="pt-8 max-w-xl mx-auto">
+      <article className="w-full max-w-xl min-w-0 mx-auto pt-8 [overflow-wrap:anywhere]">
         <p className="text-xs uppercase text-ink-lighter">Chapter {chapterIndex + 1} of {data.chapters.length}</p>
         <h1 className="text-xl font-semibold mt-2 mb-8">{chapter.title}</h1>
         <ReadingExperience

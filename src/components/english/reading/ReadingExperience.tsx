@@ -134,16 +134,16 @@ export default function ReadingExperience({
 
   return (
     <>
-      <div className="font-serif text-ink" style={{ fontSize, lineHeight: 1.95 }}>
+      <div className="w-full max-w-full min-w-0 font-serif text-ink [overflow-wrap:anywhere]" style={{ fontSize, lineHeight: 1.95 }}>
         {paragraphs.map((items, paragraphIndex) => (
-          <p key={paragraphIndex} className="mb-6">
+          <p key={paragraphIndex} className="mb-6 w-full max-w-full min-w-0 whitespace-normal [overflow-wrap:anywhere]">
             {items.map((item) => (
               <button
                 id={`reading-sentence-${item.index}`}
                 key={item.index}
                 type="button"
                 onClick={() => void runAnalysis(item)}
-                className={`inline py-0.5 px-0.5 -mx-0.5 text-left rounded-sm transition-colors scroll-mb-[55vh] ${selected?.index === item.index ? "bg-sage-light text-ink" : "hover:bg-sage-light/60 active:bg-sage-light"}`}
+                className={`inline max-w-full whitespace-normal [overflow-wrap:anywhere] py-0.5 px-0.5 -mx-0.5 text-left rounded-sm transition-colors scroll-mb-[55vh] ${selected?.index === item.index ? "bg-sage-light text-ink" : "hover:bg-sage-light/60 active:bg-sage-light"}`}
               >
                 {item.text}{" "}
               </button>
@@ -168,7 +168,7 @@ export default function ReadingExperience({
   );
 }
 
-function ReadingAIPanel({ sentence, analysis, loading, error, saveStates, onClose, onRetry, onSave }: {
+export function ReadingAIPanel({ sentence, analysis, loading, error, saveStates, onClose, onRetry, onSave }: {
   sentence: string;
   analysis: ReaderSentenceAnalysis | null;
   loading: boolean;
@@ -179,14 +179,14 @@ function ReadingAIPanel({ sentence, analysis, loading, error, saveStates, onClos
   onSave: (expression: ReaderKeyExpression) => void;
 }) {
   return (
-    <aside className="fixed inset-x-0 bottom-0 z-50 lg:left-auto lg:right-6 lg:bottom-6 lg:w-[390px] bg-card border-t lg:border border-border lg:rounded-lg shadow-2xl max-h-[68vh] overflow-y-auto safe-bottom">
-      <div className="sticky top-0 z-10 bg-card border-b border-border px-4 py-3 flex items-center gap-2">
-        <Sparkles size={16} className="text-sage-deep" />
-        <span className="text-sm font-semibold">AI 阅读理解</span>
-        <button type="button" onClick={onClose} title="关闭" className="ml-auto h-8 w-8 rounded-md flex items-center justify-center hover:bg-ink/5"><X size={16} /></button>
+    <aside className="fixed inset-x-0 bottom-0 z-50 w-auto max-w-full min-w-0 box-border lg:left-auto lg:right-6 lg:bottom-6 lg:w-[390px] lg:max-w-[calc(100vw-3rem)] bg-card border-t lg:border border-border lg:rounded-lg shadow-2xl max-h-[68vh] overflow-y-auto safe-bottom">
+      <div className="sticky top-0 z-10 w-full max-w-full min-w-0 box-border bg-card border-b border-border px-4 py-3 flex items-center gap-2">
+        <Sparkles size={16} className="shrink-0 text-sage-deep" />
+        <span className="min-w-0 text-sm font-semibold">AI 阅读理解</span>
+        <button type="button" onClick={onClose} title="关闭" className="ml-auto h-8 w-8 shrink-0 rounded-md flex items-center justify-center hover:bg-ink/5"><X size={16} /></button>
       </div>
-      <div className="p-4 space-y-5">
-        <blockquote className="text-sm font-serif leading-7 border-l-2 border-sage pl-3">{sentence}</blockquote>
+      <div className="w-full max-w-full min-w-0 box-border p-4 space-y-5 [overflow-wrap:anywhere]">
+        <blockquote className="w-full max-w-full min-w-0 whitespace-normal [overflow-wrap:anywhere] text-sm font-serif leading-7 border-l-2 border-sage pl-3">{sentence}</blockquote>
         {loading && <div className="py-8 flex items-center justify-center gap-2 text-sm text-ink-lighter"><Loader2 size={17} className="animate-spin" />正在理解这句话</div>}
         {error && (
           <div className="py-5 text-center">
@@ -206,16 +206,16 @@ function ReadingAIPanel({ sentence, analysis, loading, error, saveStates, onClos
                 const key = expressionText(item);
                 const state = saveStates[key];
                 return (
-                  <div key={key} className="border-b border-border last:border-0 py-3 first:pt-0">
-                    <div className="flex gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-ink break-words">{key}</p>
-                        <p className="text-xs text-sage-deep mt-0.5">{item.chinese}</p>
-                        <p className="text-xs text-ink-light mt-1.5 leading-5">{item.contextual_meaning || item.explanation}</p>
-                        {item.usage_note && <p className="text-xs text-ink-lighter mt-1">{item.usage_note}</p>}
+                  <div key={key} className="w-full max-w-full min-w-0 border-b border-border last:border-0 py-3 first:pt-0">
+                    <div className="flex w-full max-w-full min-w-0 gap-3">
+                      <div className="flex-1 min-w-0 max-w-full [overflow-wrap:anywhere]">
+                        <p className="max-w-full whitespace-normal [overflow-wrap:anywhere] font-semibold text-ink">{key}</p>
+                        <p className="max-w-full whitespace-normal [overflow-wrap:anywhere] text-xs text-sage-deep mt-0.5">{item.chinese}</p>
+                        <p className="max-w-full whitespace-normal [overflow-wrap:anywhere] text-xs text-ink-light mt-1.5 leading-5">{item.contextual_meaning || item.explanation}</p>
+                        {item.usage_note && <p className="max-w-full whitespace-normal [overflow-wrap:anywhere] text-xs text-ink-lighter mt-1">{item.usage_note}</p>}
                         {item.register === "written" && <p className="text-[11px] text-amber-700 mt-1">偏书面 · 阅读理解为主</p>}
                         {(item.speaking_example || (item.register !== "written" && analysis.speaking_examples[0])) && (
-                          <p className="text-xs bg-warm-cream rounded-md px-2.5 py-2 mt-2">{item.speaking_example || analysis.speaking_examples[0]}</p>
+                          <p className="max-w-full whitespace-normal [overflow-wrap:anywhere] text-xs bg-warm-cream rounded-md px-2.5 py-2 mt-2">{item.speaking_example || analysis.speaking_examples[0]}</p>
                         )}
                       </div>
                       <button
@@ -243,5 +243,5 @@ function ReadingAIPanel({ sentence, analysis, loading, error, saveStates, onClos
 }
 
 function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="text-sm leading-6"><h2 className="text-xs font-semibold text-ink-lighter mb-2">{title}</h2>{children}</section>;
+  return <section className="w-full max-w-full min-w-0 whitespace-normal [overflow-wrap:anywhere] text-sm leading-6"><h2 className="text-xs font-semibold text-ink-lighter mb-2">{title}</h2>{children}</section>;
 }
