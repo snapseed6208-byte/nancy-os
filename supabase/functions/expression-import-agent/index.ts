@@ -9,6 +9,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
 import type { AIRuntimeResult } from "../_shared/ai.ts";
+import {
+  buildAlternativeExtractionStats,
+  normalizeImportedAlternatives,
+} from "../_shared/alternative-expressions.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -86,27 +90,15 @@ Rules:
 - common_mistakes: typical errors Chinese university students make with this expression
 - context: the most typical real-life situation where this expression is used
 - common_patterns: common sentence structures or collocation patterns
-- alternative_expressions: optional enrichment with at most 2 natural, high-value alternatives
-- Do not generate alternatives merely to fill the list. Use [] when none adds learning value
-- Each alternative must differ from the source expression and include a concise 1-2 sentence Chinese difference
-- Avoid mechanical inflections, trivial duplicates, and overly basic words with no added expression value
+- Every expression object MUST include alternative_expressions as an array.
+- For every extracted expression, automatically generate 0-2 high-value alternative expressions in this same response.
+- Prefer 1-2 alternatives whenever they meaningfully express the same intent in another natural way.
+- Do not leave alternative_expressions empty merely because it is enrichment. Use [] only when there is genuinely no useful alternative.
+- Each alternative must differ from the source expression and include one concise Chinese sentence explaining when it is more suitable.
+- Do not generate mechanical dictionary synonyms, trivial duplicates, or mere inflections.
+- Examples: "be proud of myself" -> "feel proud of myself", "take pride in what I've done"; "now and then" -> "from time to time", "every so often".
 - Extract 10-30 expressions total, prioritizing quality over quantity
 - All expressions must have proper chinese translation`;
-
-function normalizeAlternativeExpressions(value: unknown): Array<{ expression: string; difference: string }> {
-  if (!Array.isArray(value)) return [];
-  const result: Array<{ expression: string; difference: string }> = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    const expression = typeof record.expression === "string" ? record.expression.trim() : "";
-    const difference = typeof record.difference === "string" ? record.difference.trim() : "";
-    if (!expression || !difference) continue;
-    result.push({ expression, difference });
-    if (result.length === 2) break;
-  }
-  return result;
-}
 
 function errResponse(body: Record<string, unknown>, req: Request, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -169,12 +161,37 @@ serve(async (req: Request) => {
     const tokensUsed = aiResult.usage?.totalTokens || 0;
 
     const rawExpressions = Array.isArray(parsed.expressions) ? parsed.expressions : [];
+    let alternativesMissing = 0;
+    let malformedAlternativeItems = 0;
     const expressions = rawExpressions
       .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
-      .map((expression) => ({
-        ...expression,
-        alternative_expressions: normalizeAlternativeExpressions(expression.alternative_expressions),
-      }));
+      .map((expression) => {
+        const normalized = normalizeImportedAlternatives(expression.alternative_expressions);
+        if (normalized.fieldMissing) alternativesMissing++;
+        malformedAlternativeItems += normalized.malformedItems;
+        return { ...expression, alternative_expressions: normalized.alternatives };
+      });
+
+    const alternativesWithValues = expressions.filter((expression) =>
+      Array.isArray(expression.alternative_expressions) && expression.alternative_expressions.length > 0
+    ).length;
+    const alternativeStats = buildAlternativeExtractionStats({
+      totalExpressions: expressions.length,
+      withAlternatives: alternativesWithValues,
+      missingFields: alternativesMissing,
+      malformedItems: malformedAlternativeItems,
+      rawContainsField: aiResult.raw?.includes("alternative_expressions") ?? false,
+    });
+    const alternativeWarnings: string[] = [];
+    if (alternativesMissing > 0) alternativeWarnings.push("alternative_expressions_missing");
+    if (malformedAlternativeItems > 0) alternativeWarnings.push("alternative_expressions_malformed");
+    if (expressions.length > 0 && alternativesWithValues === 0) alternativeWarnings.push("alternative_expressions_all_empty");
+    if (alternativeWarnings.length > 0) {
+      console.warn("[expression-import-agent] Alternative expression warning", {
+        warnings: alternativeWarnings,
+        stats: alternativeStats,
+      });
+    }
 
     // Build stats
     const stats = {
@@ -205,6 +222,8 @@ serve(async (req: Request) => {
         output_data: {
           expression_count: expressions.length,
           stats,
+          alternative_stats: alternativeStats,
+          warnings: alternativeWarnings,
           tokens_used: tokensUsed,
         },
         model: "deepseek-chat",
@@ -217,6 +236,7 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({
       expressions,
       stats,
+      alternative_stats: alternativeStats,
       tokens_used: tokensUsed,
     }), {
       headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },

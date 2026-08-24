@@ -737,7 +737,7 @@ export type ParsedExpression = {
   common_mistakes?: string;
   context?: string;
   common_patterns?: string;
-  alternative_expressions?: AlternativeExpression[];
+  alternative_expressions: AlternativeExpression[];
 };
 
 export type ImportResult = {
@@ -750,6 +750,14 @@ export type ImportResult = {
     speakingExpression: number;
   };
   tokens_used: number;
+  alternative_stats?: {
+    total_expressions: number;
+    with_alternatives: number;
+    without_alternatives: number;
+    missing_fields: number;
+    malformed_items: number;
+    raw_contains_field: boolean;
+  };
   import_batch_id?: string;
 };
 

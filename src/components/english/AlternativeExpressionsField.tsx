@@ -28,6 +28,9 @@ export default function AlternativeExpressionsField({ value, onChange }: Alterna
           </button>
         )}
       </div>
+      {value.length === 0 && (
+        <p className="text-xs text-ink-lighter">暂无近义替换，可手动补充。</p>
+      )}
       {value.map((item, index) => (
         <div key={index} className="min-w-0 border-t border-border pt-2 space-y-2 first:border-t-0 first:pt-0">
           <div className="flex min-w-0 items-center gap-2">

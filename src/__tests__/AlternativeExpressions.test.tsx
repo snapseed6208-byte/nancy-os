@@ -4,10 +4,64 @@ import { readFileSync } from "node:fs";
 import AlternativeExpressionsField from "@/components/english/AlternativeExpressionsField";
 import AlternativeExpressionsList from "@/components/english/AlternativeExpressionsList";
 import { normalizeAlternativeExpressions } from "@/lib/english/alternativeExpressions";
+import {
+  buildAlternativeExtractionStats,
+  normalizeImportedAlternatives,
+} from "../../supabase/functions/_shared/alternative-expressions";
 
 afterEach(cleanup);
 
 describe("Alternative Expressions", () => {
+  it("keeps two alternatives from the AI response", () => {
+    expect(normalizeImportedAlternatives([
+      { expression: "feel proud of myself", difference: "更直接。" },
+      { expression: "take pride in it", difference: "更正式。" },
+    ]).alternatives).toHaveLength(2);
+  });
+
+  it("keeps one alternative from the AI response", () => {
+    expect(normalizeImportedAlternatives([
+      { expression: "from time to time", difference: "更中性。" },
+    ]).alternatives).toHaveLength(1);
+  });
+
+  it("accepts an intentional empty AI array", () => {
+    expect(normalizeImportedAlternatives([])).toEqual({
+      alternatives: [], fieldMissing: false, malformedItems: 0,
+    });
+  });
+
+  it("distinguishes an omitted field while preserving the expression", () => {
+    expect(normalizeImportedAlternatives(undefined)).toEqual({
+      alternatives: [], fieldMissing: true, malformedItems: 0,
+    });
+  });
+
+  it("drops one malformed AI item and keeps valid alternatives", () => {
+    expect(normalizeImportedAlternatives([
+      { expression: "", difference: "invalid" },
+      { expression: "every so often", difference: "更口语。" },
+    ])).toEqual({
+      alternatives: [{ expression: "every so often", difference: "更口语。" }],
+      fieldMissing: false,
+      malformedItems: 1,
+    });
+  });
+
+  it("reports extraction coverage as total, with, and without alternatives", () => {
+    expect(buildAlternativeExtractionStats({
+      totalExpressions: 13,
+      withAlternatives: 10,
+      missingFields: 0,
+      malformedItems: 0,
+      rawContainsField: true,
+    })).toMatchObject({
+      total_expressions: 13,
+      with_alternatives: 10,
+      without_alternatives: 3,
+    });
+  });
+
   it("keeps two valid alternatives", () => {
     expect(normalizeAlternativeExpressions([
       { expression: "work with", difference: "更中性。" },
@@ -73,12 +127,30 @@ describe("Alternative Expressions", () => {
   it("import prompt requests optional alternatives", () => {
     const source = readFileSync("supabase/functions/expression-import-agent/index.ts", "utf8");
     expect(source).toContain('"alternative_expressions"');
-    expect(source).toContain("Use [] when none adds learning value");
+    expect(source).toContain("Every expression object MUST include alternative_expressions");
+    expect(source).toContain("Prefer 1-2 alternatives whenever they meaningfully express the same intent");
+  });
+
+  it("logs missing, malformed, and all-empty extraction states", () => {
+    const source = readFileSync("supabase/functions/expression-import-agent/index.ts", "utf8");
+    expect(source).toContain("alternative_expressions_missing");
+    expect(source).toContain("alternative_expressions_malformed");
+    expect(source).toContain("alternative_expressions_all_empty");
+    expect(source).toContain("alternative_stats: alternativeStats");
   });
 
   it("import persistence saves the structured field", () => {
     const source = readFileSync("src/lib/hooks/useEnglish.ts", "utf8");
     expect(source).toContain("alternative_expressions: normalizeAlternativeExpressions(expr.alternative_expressions)");
+  });
+
+  it("extraction DTO and review state preserve alternatives", () => {
+    const hook = readFileSync("src/lib/hooks/useEnglish.ts", "utf8");
+    const review = readFileSync("src/pages/EnglishImport.tsx", "utf8");
+    expect(hook).toContain("alternative_expressions: AlternativeExpression[]");
+    expect(hook).toContain("...expression");
+    expect(review).toContain("result.expressions.map((e) => ({ ...e, selected: true }))");
+    expect(review).toContain("alternative_expressions: normalizeAlternativeExpressions(editForm.alternative_expressions)");
   });
 
   it("Detail reads saved alternatives without Connections AI", () => {
