@@ -985,56 +985,6 @@ export type Database = {
           },
         ]
       }
-      expression_connection_cache: {
-        Row: {
-          candidate_fingerprint: string
-          connections: Json
-          created_at: string
-          expires_at: string | null
-          generated_at: string
-          id: string
-          model: string | null
-          prompt_version: string | null
-          source_expression_id: string
-          source_updated_at: string
-          user_id: string
-        }
-        Insert: {
-          candidate_fingerprint: string
-          connections?: Json
-          created_at?: string
-          expires_at?: string | null
-          generated_at?: string
-          id?: string
-          model?: string | null
-          prompt_version?: string | null
-          source_expression_id: string
-          source_updated_at: string
-          user_id: string
-        }
-        Update: {
-          candidate_fingerprint?: string
-          connections?: Json
-          created_at?: string
-          expires_at?: string | null
-          generated_at?: string
-          id?: string
-          model?: string | null
-          prompt_version?: string | null
-          source_expression_id?: string
-          source_updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expression_connection_cache_source_expression_id_fkey"
-            columns: ["source_expression_id"]
-            isOneToOne: false
-            referencedRelation: "expressions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       expression_imports: {
         Row: {
           created_at: string
@@ -1213,6 +1163,7 @@ export type Database = {
           ai_cloze_sentence: string | null
           ai_model: string | null
           ai_prompt_version: string | null
+          alternative_expressions: Json
           archived: boolean | null
           category_id: string | null
           chinese: string | null
@@ -1268,6 +1219,7 @@ export type Database = {
           ai_cloze_sentence?: string | null
           ai_model?: string | null
           ai_prompt_version?: string | null
+          alternative_expressions?: Json
           archived?: boolean | null
           category_id?: string | null
           chinese?: string | null
@@ -1323,6 +1275,7 @@ export type Database = {
           ai_cloze_sentence?: string | null
           ai_model?: string | null
           ai_prompt_version?: string | null
+          alternative_expressions?: Json
           archived?: boolean | null
           category_id?: string | null
           chinese?: string | null

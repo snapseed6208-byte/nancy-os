@@ -1,4 +1,6 @@
 // ============================================
+
+import { normalizeAlternativeExpressions, type AlternativeExpression } from "@/lib/english/alternativeExpressions";
 // English SRS V4 — Learning Material Normalizer
 //
 // Single source of truth for learning UI content.
@@ -23,6 +25,7 @@ export interface LearningExpressionInput {
   common_mistakes?: string | null;
   memory_tip?: string | null;
   synonyms?: string | null;
+  alternative_expressions?: unknown;
   notes?: string | null;
 }
 
@@ -45,6 +48,7 @@ export interface LearningMaterial {
   mistakes: string[];
   memoryTip: string | null;
   synonyms: string | null;
+  alternativeExpressions: AlternativeExpression[];
   hasEnrichment: boolean;
   /** true when enrichment is very thin — UI may show a one-line note */
   sparse: boolean;
@@ -88,6 +92,7 @@ export function buildLearningMaterial(expr: LearningExpressionInput): LearningMa
   const mistakes = listOf(expr.common_mistakes);
   const memoryTip = clean(expr.memory_tip);
   const synonyms = clean(expr.synonyms);
+  const alternativeExpressions = normalizeAlternativeExpressions(expr.alternative_expressions);
 
   const presentFields = [
     examples.length,
@@ -97,6 +102,7 @@ export function buildLearningMaterial(expr: LearningExpressionInput): LearningMa
     mistakes.length,
     memoryTip ? 1 : 0,
     synonyms ? 1 : 0,
+    alternativeExpressions.length,
   ].filter((n) => n > 0).length;
 
   const hasEnrichment = presentFields > 0;
@@ -111,6 +117,7 @@ export function buildLearningMaterial(expr: LearningExpressionInput): LearningMa
     mistakes,
     memoryTip,
     synonyms,
+    alternativeExpressions,
     hasEnrichment,
     sparse,
   };

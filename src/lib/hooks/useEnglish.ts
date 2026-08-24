@@ -5,6 +5,10 @@ import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
 import { getDuePoolCount, getDueCutoffDate } from "@/lib/english/reviewRepository";
 import {
+  normalizeAlternativeExpressions,
+  type AlternativeExpression,
+} from "@/lib/english/alternativeExpressions";
+import {
   scheduleExpressionReview,
   isDue,
   isMastered,
@@ -733,6 +737,7 @@ export type ParsedExpression = {
   common_mistakes?: string;
   context?: string;
   common_patterns?: string;
+  alternative_expressions?: AlternativeExpression[];
 };
 
 export type ImportResult = {
@@ -763,7 +768,13 @@ export function useExtractExpressions() {
     mutationFn: async (input: { text: string }): Promise<ImportResult> => {
       const result = await invokeAI<ImportResult>("expression-import-agent", { text: input.text });
       if (!result.success) throw new Error(result.error);
-      return result.data;
+      return {
+        ...result.data,
+        expressions: (result.data.expressions || []).map((expression) => ({
+          ...expression,
+          alternative_expressions: normalizeAlternativeExpressions(expression.alternative_expressions),
+        })),
+      };
     },
   });
 }
@@ -825,6 +836,7 @@ export function useBatchImportExpressions() {
           common_mistakes: expr.common_mistakes || null,
           context: expr.context || null,
           common_patterns: expr.common_patterns || null,
+          alternative_expressions: normalizeAlternativeExpressions(expr.alternative_expressions),
           category_id: catName ? (catMap.get(catName) || null) : null,
           status: "collected",
           ease_factor: 2.5,

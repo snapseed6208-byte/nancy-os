@@ -30,9 +30,6 @@ import { validateClozeResult, buildProgressiveHint } from "@/lib/clozeUtils";
 import type { ClozeResult } from "@/lib/clozeUtils";
 import { invokeAI } from "@/lib/ai/aiService";
 import { generateContextClozeBatch, evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
-import { selectReviewConnections } from "@/lib/english/expressionConnections";
-import { useExpressionConnections } from "@/lib/hooks/useExpressionConnections";
-import ExpressionConnectionsPanel from "@/components/english/ExpressionConnectionsPanel";
 import {
   type ContextClozeCard,
   type ClozeGenerationMaterial,
@@ -469,8 +466,6 @@ function ClozeCard({
   const [showRetryButtons, setShowRetryButtons] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const maxHintRef = useRef(0);
-  const connectionsQuery = useExpressionConnections(item.expressionId, finalResult !== null);
-  const reviewConnections = selectReviewConnections(connectionsQuery.data?.connections || []);
 
   const MAX_ATTEMPTS = 2;
   const MAX_HINT_LEVEL = 3;
@@ -720,15 +715,6 @@ function ClozeCard({
             </div>
           )}
 
-          <ExpressionConnectionsPanel
-            title="相关表达"
-            connections={reviewConnections}
-            isLoading={connectionsQuery.isLoading}
-            error={connectionsQuery.error}
-            compact
-            onRetry={() => connectionsQuery.refetch()}
-          />
-
           {/* Manual "继续" button */}
           <button
             onClick={handleNext}
@@ -786,8 +772,6 @@ function SentenceCard({
   sentenceRef.current = sentence;
 
   const expr = item.expression;
-  const connectionsQuery = useExpressionConnections(item.expressionId, step === "feedback");
-  const reviewConnections = selectReviewConnections(connectionsQuery.data?.connections || []);
   const safeContext = [expr?.context, expr?.situation].filter(Boolean).join(" · ") || undefined;
 
   const handleSubmit = async () => {
@@ -985,14 +969,6 @@ function SentenceCard({
                   AI反馈暂时生成失败。你的句子已经安全保存，可以稍后查看。
                 </p>
               </div>
-              <ExpressionConnectionsPanel
-                title="相关表达"
-                connections={reviewConnections}
-                isLoading={connectionsQuery.isLoading}
-                error={connectionsQuery.error}
-                compact
-                onRetry={() => connectionsQuery.refetch()}
-              />
               <div className="flex gap-2">
                 <button
                   onClick={handleRetryAI}
@@ -1120,14 +1096,6 @@ function SentenceCard({
                 </div>
               )}
 
-              <ExpressionConnectionsPanel
-                title="相关表达"
-                connections={reviewConnections}
-                isLoading={connectionsQuery.isLoading}
-                error={connectionsQuery.error}
-                compact
-                onRetry={() => connectionsQuery.refetch()}
-              />
 
               {/* User controls */}
               <div className="flex gap-2 pt-1">

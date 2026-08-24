@@ -10,6 +10,8 @@ import {
   useParseFile, useExtractExpressions, useBatchImportExpressions,
   type ParsedExpression,
 } from "@/lib/hooks/useEnglish";
+import AlternativeExpressionsField from "@/components/english/AlternativeExpressionsField";
+import { normalizeAlternativeExpressions, type AlternativeExpression } from "@/lib/english/alternativeExpressions";
 
 const TYPE_LABELS: Record<string, string> = {
   vocabulary: "词汇",
@@ -130,8 +132,12 @@ export default function EnglishImport() {
 
   const saveEdit = () => {
     if (editingIdx === null || !editForm) return;
+    const normalizedForm = {
+      ...editForm,
+      alternative_expressions: normalizeAlternativeExpressions(editForm.alternative_expressions),
+    };
     setExpressions((prev) =>
-      prev.map((e, i) => (i === editingIdx ? { ...editForm, selected: e.selected } : e)),
+      prev.map((e, i) => (i === editingIdx ? { ...normalizedForm, selected: e.selected } : e)),
     );
     setEditingIdx(null);
     setEditForm(null);
@@ -148,6 +154,11 @@ export default function EnglishImport() {
   const updateEditField = (field: keyof ParsedExpression, value: string | number) => {
     if (!editForm) return;
     setEditForm({ ...editForm, [field]: value });
+  };
+
+  const updateEditAlternatives = (value: AlternativeExpression[]) => {
+    if (!editForm) return;
+    setEditForm({ ...editForm, alternative_expressions: value });
   };
 
   const handleImport = async () => {
@@ -447,6 +458,10 @@ export default function EnglishImport() {
                         className="w-full bg-transparent text-sm text-ink border border-border rounded-lg px-2.5 py-1.5 outline-none focus:border-sage-light/50"
                       />
                     </div>
+                    <AlternativeExpressionsField
+                      value={editForm.alternative_expressions || []}
+                      onChange={updateEditAlternatives}
+                    />
                     <div>
                       <label className="text-[10px] text-ink-lighter">记忆技巧</label>
                       <input
@@ -561,6 +576,11 @@ export default function EnglishImport() {
                       {/* Usage note */}
                       {expr.usage_note && (
                         <p className="text-[10px] text-ink-lighter mt-1">{expr.usage_note}</p>
+                      )}
+                      {normalizeAlternativeExpressions(expr.alternative_expressions).length > 0 && (
+                        <p className="mt-1 break-words text-[10px] text-ink-lighter">
+                          近义替换：{normalizeAlternativeExpressions(expr.alternative_expressions).map((item) => item.expression).join(" · ")}
+                        </p>
                       )}
                     </div>
 

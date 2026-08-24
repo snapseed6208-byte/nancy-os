@@ -168,6 +168,7 @@ export const expressions = pgTable("expressions", {
   sourceText: text("source_text"),
   notes: text("notes"),
   synonyms: text("synonyms"),
+  alternativeExpressions: jsonb("alternative_expressions").notNull().default([]),
   englishExplanation: text("english_explanation"),
   nativeUsage: text("native_usage"),
   situation: text("situation"),

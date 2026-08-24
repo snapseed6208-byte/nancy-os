@@ -54,9 +54,7 @@ import {
 } from "@/lib/english/learningMaterial";
 import { evaluatePersonalSentence, type PersonalSentenceEvaluation } from "@/lib/ai/englishCoach";
 import { sentenceScoreForVerdict } from "@/lib/english/sentenceEvaluation";
-import { selectLearnConnections, type ExpressionConnection } from "@/lib/english/expressionConnections";
-import { useExpressionConnections } from "@/lib/hooks/useExpressionConnections";
-import ExpressionConnectionsPanel from "@/components/english/ExpressionConnectionsPanel";
+import AlternativeExpressionsList from "@/components/english/AlternativeExpressionsList";
 import { cn } from "@/lib/utils";
 import {
   Loader2,
@@ -187,7 +185,6 @@ export default function EnglishLearn() {
   const currentItem = items.length > 0 ? items[currentIndex] : null;
   const expr = currentItem?.expression ?? null;
   const material: LearningMaterial | null = expr ? buildLearningMaterial(expr) : null;
-  const connectionsQuery = useExpressionConnections(expr?.id, stage === "contextUsage");
 
   // ═══ Resume: restore expression + stage, then NORMALIZE the state machine.
   // Recalled evidence is restored into the recall view; an unreachable stage
@@ -773,10 +770,6 @@ export default function EnglishLearn() {
         {stage === "contextUsage" && (
           <ContextUsageStage
             material={material}
-            connections={selectLearnConnections(connectionsQuery.data?.connections || [])}
-            connectionsLoading={connectionsQuery.isLoading}
-            connectionsError={connectionsQuery.error}
-            onRetryConnections={() => connectionsQuery.refetch()}
           />
         )}
         {stage === "recall" && (
@@ -928,16 +921,8 @@ function UnderstandStage({ material }: { material: LearningMaterial }) {
 
 function ContextUsageStage({
   material,
-  connections,
-  connectionsLoading,
-  connectionsError,
-  onRetryConnections,
 }: {
   material: LearningMaterial;
-  connections: ExpressionConnection[];
-  connectionsLoading: boolean;
-  connectionsError: unknown;
-  onRetryConnections: () => void;
 }) {
   const hasAny =
     material.examples.length > 0 ||
@@ -946,7 +931,8 @@ function ContextUsageStage({
     material.usageNotes.length > 0 ||
     material.mistakes.length > 0 ||
     material.memoryTip !== null ||
-    material.synonyms !== null;
+    material.synonyms !== null ||
+    material.alternativeExpressions.length > 0;
 
   return (
     <div className="space-y-4">
@@ -968,17 +954,10 @@ function ContextUsageStage({
       {material.usageNotes.length > 0 && (
         <InfoBlock tone="purple" title="用法说明" content={material.usageNotes.join("\n")} />
       )}
-      <ExpressionConnectionsPanel
-        title="联想到你学过的表达"
-        connections={connections}
-        isLoading={connectionsLoading}
-        error={connectionsError}
-        compact
-        onRetry={onRetryConnections}
+      <AlternativeExpressionsList
+        alternatives={material.alternativeExpressions}
+        legacySynonyms={material.synonyms}
       />
-      {material.synonyms && (
-        <InfoBlock tone="muted" title="近义词" content={material.synonyms} />
-      )}
       {material.mistakes.length > 0 && (
         <InfoBlock tone="rose" title="常见错误" content={material.mistakes.join("\n")} />
       )}

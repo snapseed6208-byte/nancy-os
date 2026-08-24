@@ -102,6 +102,7 @@ export interface ExpressionCard {
   common_mistakes?: string;
   memory_tip?: string;
   synonyms?: string;
+  alternative_expressions?: unknown;
   formality?: string;
   notes?: string;
   cloze_sentence?: string;
@@ -131,7 +132,7 @@ const MAX_REINFORCEMENT_ROUNDS = 3;
 const EXPRESSION_SELECT =
   "id,english,chinese,pronunciation,example_sentence," +
   "english_explanation,usage_note,native_usage,context,situation," +
-  "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence,ai_cloze_sentence," +
+  "common_patterns,common_mistakes,memory_tip,synonyms,alternative_expressions,formality,notes,cloze_sentence,ai_cloze_sentence," +
   "type,scene,status,mastery_level";
 
 function todayStr(): string {
@@ -420,6 +421,7 @@ function formatSessionItem(raw: Record<string, unknown>): SessionItem {
           common_mistakes: expr.common_mistakes as string | undefined,
           memory_tip: expr.memory_tip as string | undefined,
           synonyms: expr.synonyms as string | undefined,
+          alternative_expressions: expr.alternative_expressions,
           formality: expr.formality as string | undefined,
           notes: expr.notes as string | undefined,
           cloze_sentence: expr.cloze_sentence as string | undefined,

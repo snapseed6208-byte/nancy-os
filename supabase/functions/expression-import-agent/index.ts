@@ -67,7 +67,13 @@ Return ONLY valid JSON:
       "memory_tip": "中文记忆技巧，用联想、词根、谐音、场景关联等方式帮助记忆该表达",
       "common_mistakes": "中国学生使用该表达时常犯的错误，如语法、搭配、语境误用等",
       "context": "该表达最典型的实际使用语境和场景",
-      "common_patterns": "该表达最常用的句型结构或搭配模式，如 'It is [adjective] that...'"
+      "common_patterns": "该表达最常用的句型结构或搭配模式，如 'It is [adjective] that...'",
+      "alternative_expressions": [
+        {
+          "expression": "常用且有替换价值的自然表达",
+          "difference": "用中文简短说明使用区别"
+        }
+      ]
     }
   ]
 }
@@ -80,8 +86,27 @@ Rules:
 - common_mistakes: typical errors Chinese university students make with this expression
 - context: the most typical real-life situation where this expression is used
 - common_patterns: common sentence structures or collocation patterns
+- alternative_expressions: optional enrichment with at most 2 natural, high-value alternatives
+- Do not generate alternatives merely to fill the list. Use [] when none adds learning value
+- Each alternative must differ from the source expression and include a concise 1-2 sentence Chinese difference
+- Avoid mechanical inflections, trivial duplicates, and overly basic words with no added expression value
 - Extract 10-30 expressions total, prioritizing quality over quantity
 - All expressions must have proper chinese translation`;
+
+function normalizeAlternativeExpressions(value: unknown): Array<{ expression: string; difference: string }> {
+  if (!Array.isArray(value)) return [];
+  const result: Array<{ expression: string; difference: string }> = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const expression = typeof record.expression === "string" ? record.expression.trim() : "";
+    const difference = typeof record.difference === "string" ? record.difference.trim() : "";
+    if (!expression || !difference) continue;
+    result.push({ expression, difference });
+    if (result.length === 2) break;
+  }
+  return result;
+}
 
 function errResponse(body: Record<string, unknown>, req: Request, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -133,7 +158,7 @@ serve(async (req: Request) => {
         { role: "system", content: EXTRACT_PROMPT },
         { role: "user", content: `Please analyze this English text and extract useful learning expressions:\n\n${truncated}` },
       ],
-      { agentName: "expression-import", maxTokens: 4096, temperature: 0.5 },
+      { agentName: "expression-import", maxTokens: 6144, temperature: 0.5 },
     );
 
     if (!aiResult.success) {
@@ -143,7 +168,13 @@ serve(async (req: Request) => {
     const parsed = aiResult.data as unknown as Record<string, unknown>;
     const tokensUsed = aiResult.usage?.totalTokens || 0;
 
-    const expressions = (parsed.expressions as Array<Record<string, unknown>>) || [];
+    const rawExpressions = Array.isArray(parsed.expressions) ? parsed.expressions : [];
+    const expressions = rawExpressions
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((expression) => ({
+        ...expression,
+        alternative_expressions: normalizeAlternativeExpressions(expression.alternative_expressions),
+      }));
 
     // Build stats
     const stats = {
