@@ -16,8 +16,6 @@ const EXPRESSION_SELECT =
   "common_patterns,common_mistakes,memory_tip,synonyms,formality,notes,cloze_sentence," +
   "type,scene,status,mastery_level";
 
-const DUE_STATUSES = ["review", "mastered"] as const;
-
 /**
  * Canonical due-pool date cutoff.
  *
@@ -32,7 +30,9 @@ export function getDueCutoffDate(): string {
 
 /**
  * Count expressions currently due for review.
- * One canonical query — used by home page, review page, and observability.
+ * A non-null due date is the SRS-lifecycle signal. Status is intentionally not
+ * filtered because legacy production rows carry scheduled reviews under
+ * several lifecycle labels. Used by home, review session, and observability.
  */
 export async function getDuePoolCount(userId?: string): Promise<number> {
   const uid = userId ?? (await getUserId());
@@ -41,7 +41,6 @@ export async function getDuePoolCount(userId?: string): Promise<number> {
     .select("id", { count: "exact", head: true })
     .eq("user_id", uid)
     .eq("archived", false)
-    .in("status", DUE_STATUSES as unknown as string[])
     .lte("next_review_date", getDueCutoffDate());
 
   if (error) throw error;
@@ -58,7 +57,6 @@ export async function getDuePoolCountExcluding(
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
     .eq("archived", false)
-    .in("status", DUE_STATUSES as unknown as string[])
     .lte("next_review_date", getDueCutoffDate());
 
   if (excludeExpressionIds.length > 0) {
@@ -83,7 +81,6 @@ export async function fetchDueExpressionIds(
     .select("id")
     .eq("user_id", userId)
     .eq("archived", false)
-    .in("status", DUE_STATUSES as unknown as string[])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .order("id", { ascending: true })
@@ -106,7 +103,6 @@ export async function fetchDueExpressionsFull(
     .select(EXPRESSION_SELECT)
     .eq("user_id", userId)
     .eq("archived", false)
-    .in("status", DUE_STATUSES as unknown as string[])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .order("id", { ascending: true });

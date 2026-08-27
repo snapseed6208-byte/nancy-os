@@ -2,7 +2,7 @@
 
 // ── Types ──
 
-export type ReviewRating = "again" | "hard" | "good" | "easy";
+export type ReviewRating = "again" | "fuzzy" | "hard" | "good" | "easy";
 
 export type ReviewMode = "active_recall" | "recognition" | "cloze" | "production";
 
@@ -39,6 +39,15 @@ export const ACTIVATION_REPS = 3; // need 3+ reps to enter activation stage
 export const PRODUCTION_REPS = 6; // need 6+ reps + interval>=60 + 2+ productions for production
 export const MASTERY_REPS = 8; // 8+ reps + interval>=90 for maintenance/mastery
 export const MAINTENANCE_INTERVAL = 90;
+
+/** Canonical 1–5 UI score mapping. */
+export function ratingForRecallScore(score: number): ReviewRating {
+  if (score <= 1) return "again";
+  if (score === 2) return "fuzzy";
+  if (score === 3) return "hard";
+  if (score === 4) return "good";
+  return "easy";
+}
 
 // ── SM-2 V2 Algorithm ──
 
@@ -79,13 +88,22 @@ export function scheduleExpressionReview(
       newInterval = 1;
       break;
 
+    case "fuzzy":
+      // Partial memory: a smaller lapse. Mature intervals collapse, but less
+      // aggressively than Again; the card also rolls again today in the UI.
+      newReps = Math.max(0, reps - 1);
+      newInterval = interval === 0
+        ? 2
+        : Math.min(3, Math.max(2, Math.round(interval * 0.25)));
+      break;
+
     case "hard":
       // Recalled with significant effort: keep reps, advance slowly
       newReps = reps;
       if (interval === 0) {
-        newInterval = 1;
+        newInterval = 3;
       } else {
-        newInterval = Math.max(1, Math.round(interval * 1.2));
+        newInterval = Math.min(MAX_INTERVAL, Math.max(3, Math.round(interval * 1.2)));
       }
       break;
 
@@ -93,7 +111,7 @@ export function scheduleExpressionReview(
       // Successful recall: advance normally
       newReps = reps + 1;
       if (interval === 0) {
-        newInterval = 1;
+        newInterval = 4;
       } else if (reps === 0) {
         newInterval = 4;
       } else {
@@ -105,9 +123,9 @@ export function scheduleExpressionReview(
       // Effortless recall: accelerate
       newReps = reps + 1;
       if (interval === 0) {
-        newInterval = 4;
+        newInterval = 7;
       } else {
-        newInterval = Math.min(MAX_INTERVAL, Math.round(interval * newEF * 1.3));
+        newInterval = Math.min(MAX_INTERVAL, Math.max(7, Math.round(interval * newEF * 1.3)));
       }
       break;
   }
@@ -117,7 +135,7 @@ export function scheduleExpressionReview(
   const status = stageToStatus(stage);
 
   // Compute next review date
-  const nextDate = addDays(now, newInterval);
+  const nextDate = addDaysToShanghaiDate(now, newInterval);
 
   return {
     ease_factor: Math.round(newEF * 100) / 100,
@@ -167,16 +185,23 @@ export function stageToStatus(stage: ExpressionStage): string {
 function ratingToQuality(rating: ReviewRating): number {
   switch (rating) {
     case "again": return 0;
-    case "hard": return 1;
-    case "good": return 2;
-    case "easy": return 3;
+    case "fuzzy": return 1;
+    case "hard": return 2;
+    case "good": return 3;
+    case "easy": return 4;
   }
 }
 
-function addDays(date: Date, days: number): string {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+export function addDaysToShanghaiDate(date: Date, days: number): string {
+  const dateKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day + days));
+  return d.toISOString().slice(0, 10);
 }
 
 /** Compute the number of days until next_review_date (0 if null or overdue) */

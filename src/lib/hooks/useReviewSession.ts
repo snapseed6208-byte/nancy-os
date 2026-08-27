@@ -48,6 +48,7 @@ import {
   reconcileDailyReviewProgress,
   type DailyReviewPoolProgress,
 } from "@/lib/english/dailyReviewBatch";
+import { countRecallResolved, isRecallResolved } from "@/lib/english/rollingReview";
 
 // ═══════════════════════════════════════
 // Types
@@ -123,6 +124,21 @@ export interface PracticeLogEntry {
   metadata?: Record<string, unknown>;
 }
 
+export interface RecallAttemptResult {
+  expression_id: string;
+  attempt_number: number;
+  rating: "again" | "fuzzy" | "hard" | "good" | "easy";
+  today_passed: boolean;
+  should_requeue: boolean;
+  requeue_position: "tail" | null;
+  had_lapse: boolean;
+  had_fuzzy: boolean;
+  interval_days: number;
+  next_review_date: string;
+  max_attempts_reached: boolean;
+  needs_relearning: boolean;
+}
+
 // ═══════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════
@@ -166,7 +182,7 @@ async function fetchOrCreateSession(dateKey: string): Promise<{
   let dailyProgress = deriveDailyReviewProgress({
     snapshotTotal: sessionData.targetCount,
     loadedCount: items.length,
-    recallCompleted: items.filter((item) => item.recallScore !== null).length,
+    recallCompleted: countRecallResolved(items),
     eligibleOutsideSession: outsideDue,
   });
 
@@ -235,7 +251,7 @@ async function fetchTodayReviewStatus(dateKey: string): Promise<TodayReviewStatu
   const progress = deriveDailyReviewProgress({
     snapshotTotal: session.targetCount,
     loadedCount: items.length,
-    recallCompleted: items.filter((item) => item.recallScore !== null).length,
+    recallCompleted: countRecallResolved(items),
     eligibleOutsideSession: outsideDue,
   });
   const loadedTrainingComplete = isLoadedBatchComplete(
@@ -273,7 +289,7 @@ async function appendReviewBatchCore(userId: string, date: string): Promise<Appe
   const before = deriveDailyReviewProgress({
     snapshotTotal: session.targetCount,
     loadedCount: existingItems.length,
-    recallCompleted: existingItems.filter((item) => item.recallScore !== null).length,
+    recallCompleted: countRecallResolved(existingItems),
     eligibleOutsideSession: outsideDue,
   });
   const requestedCount = Math.min(REVIEW_BATCH_SIZE, outsideDue);
@@ -285,7 +301,7 @@ async function appendReviewBatchCore(userId: string, date: string): Promise<Appe
   const { progress: dailyProgress, reconciled } = reconcileDailyReviewProgress({
     snapshotTotal: before.total,
     loadedCount: items.length,
-    recallCompleted: items.filter((item) => item.recallScore !== null).length,
+    recallCompleted: countRecallResolved(items),
     eligibleOutsideSession: remainingOutside,
   });
 
@@ -550,7 +566,8 @@ export function useLearnQueueCount() {
         .eq("user_id", userId)
         .eq("archived", false)
         .in("status", ["collected", "learning"])
-        .is("learned_at", null);
+        .is("learned_at", null)
+        .is("next_review_date", null);
       if (error) throw error;
       return count ?? 0;
     },
@@ -633,6 +650,45 @@ export function useRecordPracticeLog() {
       qc.invalidateQueries({ queryKey: ["practice-logs"] });
       qc.invalidateQueries({ queryKey: englishReviewKeys.todayStatus(dateKey) });
       qc.invalidateQueries({ queryKey: englishReviewKeys.hubProgress(dateKey) });
+    },
+  });
+}
+
+/** Server-authoritative Recall: item, attempt history, and SRS commit together. */
+export function useSubmitRecallAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    retry: false,
+    mutationFn: async ({
+      sessionId,
+      itemId,
+      score,
+      attemptId,
+    }: {
+      sessionId: string;
+      itemId: string;
+      score: number;
+      attemptId: string;
+    }): Promise<RecallAttemptResult> => {
+      const { data, error } = await supabase.rpc("submit_recall_attempt", {
+        p_session_id: sessionId,
+        p_item_id: itemId,
+        p_score: score,
+        p_attempt_id: attemptId,
+      });
+      if (error) throw error;
+      if (!data || typeof data !== "object") throw new Error("Recall submission returned no authoritative result");
+      return data as unknown as RecallAttemptResult;
+    },
+    onSuccess: () => {
+      const dateKey = getShanghaiDateKey();
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todaySession(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.todayStatus(dateKey) });
+      qc.invalidateQueries({ queryKey: englishReviewKeys.hubProgress(dateKey) });
+      qc.invalidateQueries({ queryKey: ["practice-logs"] });
+      qc.invalidateQueries({ queryKey: ["expressions"] });
+      qc.invalidateQueries({ queryKey: ["expressions", "due"] });
+      qc.invalidateQueries({ queryKey: ["english_stats"] });
     },
   });
 }
@@ -1189,7 +1245,7 @@ export interface DailyExpressionProgress {
   recall: {
     completed: boolean;
     score: number | null;
-    rating: "again" | "hard" | "good" | "easy" | null;
+    rating: "again" | "fuzzy" | "hard" | "good" | "easy" | null;
     status: string;
     reinforcementRound: number;
   };
@@ -1229,12 +1285,18 @@ export function getDailyReviewProgress(
   const expressions: DailyExpressionProgress[] = items.map((item) => {
     const expr = item.expression;
     const recallScore = item.recallScore;
-    const recallCompleted = recallScore !== null;
-    const rating: "again" | "hard" | "good" | "easy" | null =
+    const recallCompleted = isRecallResolved(item);
+    const rating: "again" | "fuzzy" | "hard" | "good" | "easy" | null =
       recallScore !== null
-        ? recallScore >= 4
-          ? "good"
-          : "hard"
+        ? recallScore === 1
+          ? "again"
+          : recallScore === 2
+            ? "fuzzy"
+            : recallScore === 3
+              ? "hard"
+              : recallScore === 4
+                ? "good"
+                : "easy"
         : null;
 
     const clozeResult = practiceLogs.clozeResults.get(item.expressionId) || null;
@@ -1268,7 +1330,7 @@ export function getDailyReviewProgress(
     date: todayStr(),
     expressions,
     totalExpressions: items.length,
-    recallCompleted: items.filter((i) => i.recallScore !== null).length,
+    recallCompleted: countRecallResolved(items),
     recallCorrect: items.filter((i) => i.recallScore !== null && i.recallScore >= 3).length,
     clozeCompleted: practiceLogs.clozeIds.size,
     clozeCorrect: [...practiceLogs.clozeResults.values()].filter((r) => r.result === "correct").length,

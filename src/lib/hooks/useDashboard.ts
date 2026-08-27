@@ -5,6 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { getShanghaiDateKey } from "@/lib/english/sessionRepository";
 
 // ── Types ──
 
@@ -171,7 +172,7 @@ export function useDashboardStats() {
 }
 
 async function fetchDashboardStats(): Promise<DashboardStats> {
-  const today = new Date().toISOString().split("T")[0];
+  const today = getShanghaiDateKey();
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weekAgoStr = weekAgo.toISOString().split("T")[0];
@@ -242,7 +243,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     // Reviews due
     supabase.from("expressions")
       .select("id")
-      .in("status", ["review", "mastered"])
+      .eq("archived", false)
       .lte("next_review_date", today)
       .limit(50),
     // Speaking sessions today

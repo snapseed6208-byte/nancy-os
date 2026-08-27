@@ -17,6 +17,7 @@ import {
   useAppendReviewBatch,
   useUpdateSessionItem,
   useRecordPracticeLog,
+  useSubmitRecallAttempt,
   useUpdateSessionStage,
   useTodayPracticeLogs,
   getSessionStats,
@@ -24,8 +25,8 @@ import {
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { isDailyReviewComplete, isLoadedBatchComplete, REVIEW_BATCH_SIZE } from "@/lib/english/dailyReviewBatch";
+import { buildRecallQueue, countRecallResolved, requeueNearTail } from "@/lib/english/rollingReview";
 import { getShanghaiDateKey } from "@/lib/english/sessionRepository";
-import { useSubmitReview } from "@/lib/hooks/useEnglish";
 import { validateClozeResult, buildProgressiveHint } from "@/lib/clozeUtils";
 import type { ClozeResult } from "@/lib/clozeUtils";
 import { invokeAI } from "@/lib/ai/aiService";
@@ -89,11 +90,6 @@ const MODE_ORDER: ReviewMode[] = ["recall", "cloze", "sentence"];
 // ═══════════════════════════════════════
 // Pure helpers
 // ═══════════════════════════════════════
-
-function getSrsRating(score: number): "again" | "hard" | "good" | "easy" {
-  if (score >= 4) return "good";
-  return "hard";
-}
 
 /** Count completed items for a given mode using practice logs + session items */
 function countModeCompleted(items: SessionItem[], mode: ReviewMode, clozeLogIds?: Set<string>, sentenceLogIds?: Set<string>): number {
@@ -292,17 +288,39 @@ function RecallCard({
   onResult,
 }: {
   item: SessionItem;
-  onResult: (itemId: string, score: number) => void;
+  onResult: (itemId: string, score: number, attemptId: string) => Promise<void>;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [selfRating, setSelfRating] = useState<number | null>(null);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
   const expr = item.expression;
 
   const handleReveal = () => setRevealed(true);
 
-  const handleRate = (rating: number) => {
+  const submitRating = async (rating: number, stableAttemptId: string) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
     setSelfRating(rating);
-    setTimeout(() => onResult(item.id, rating), 200);
+    try {
+      await onResult(item.id, rating, stableAttemptId);
+    } catch {
+      setSubmitError("提交失败，请重试");
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+
+  const handleRate = (rating: number) => {
+    if (submittingRef.current) return;
+    const stableAttemptId = crypto.randomUUID();
+    setAttemptId(stableAttemptId);
+    void submitRating(rating, stableAttemptId);
   };
 
   return (
@@ -420,7 +438,7 @@ function RecallCard({
                 <button
                   key={score}
                   onClick={() => handleRate(score)}
-                  disabled={selfRating !== null}
+                  disabled={selfRating !== null || submitting}
                   className={cn(
                     "flex-1 py-2 rounded-lg text-xs font-medium border transition-all",
                     selfRating === score
@@ -434,6 +452,19 @@ function RecallCard({
                 </button>
               ))}
             </div>
+            {submitError && selfRating !== null && attemptId && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2">
+                <p role="alert" className="text-xs text-red-600">{submitError}</p>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void submitRating(selfRating, attemptId)}
+                  className="shrink-0 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 disabled:opacity-50"
+                >
+                  {submitting ? "重试中…" : "重试"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1615,7 +1646,7 @@ export default function EnglishReviewV3() {
   const appendBatch = useAppendReviewBatch();
   const updateItem = useUpdateSessionItem();
   const recordLog = useRecordPracticeLog();
-  const submitReview = useSubmitReview();
+  const submitRecallAttempt = useSubmitRecallAttempt();
   const updateStage = useUpdateSessionStage();
 
   const session = data?.session;
@@ -1925,9 +1956,6 @@ export default function EnglishReviewV3() {
   const [summaryGenerating, setSummaryGenerating] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
 
-  // ── SRS tracking ──
-  const [srsSubmitted, setSrsSubmitted] = useState<Set<string>>(new Set());
-
   // ── Initialize round order and resume position ──
   useEffect(() => {
     if (allItems.length === 0) return;
@@ -1935,14 +1963,19 @@ export default function EnglishReviewV3() {
     // For cloze mode, wait until preparation is complete
     if (mode === "cloze" && clozePrep.phase !== "ready") return;
 
-    const order = mode === "cloze" ? [...clozeEligibleIds] : [...dailySetIds];
+    const order = mode === "recall"
+      ? buildRecallQueue(allItems)
+      : mode === "cloze"
+        ? [...clozeEligibleIds]
+        : [...dailySetIds];
     if (order.length === 0) {
       initializedRef.current = true;
       return;
     }
     setRoundOrder(order);
-    setCurrentIndex(resumeIndex);
-    currentIndexRef.current = resumeIndex;
+    const initialIndex = mode === "recall" ? 0 : resumeIndex;
+    setCurrentIndex(initialIndex);
+    currentIndexRef.current = initialIndex;
     initializedRef.current = true;
   }, [allItems, dailySetIds, clozeEligibleIds, resumeIndex, mode, clozePrep.phase]);
 
@@ -1980,7 +2013,7 @@ export default function EnglishReviewV3() {
   const stats = getSessionStats(allItems);
 
   // ── Compute per-mode stats for display ──
-  const recallCompleted = allItems.filter((i) => i.recallScore !== null).length;
+  const recallCompleted = countRecallResolved(allItems);
   const recallPassed = allItems.filter((i) => i.recallScore !== null && i.recallScore >= 3).length;
   const recallFailed = allItems.filter((i) => i.recallScore !== null && i.recallScore < 3).length;
   const clozeCompleted = localClozeIds.size;
@@ -2003,45 +2036,27 @@ export default function EnglishReviewV3() {
 
   // ── Recall handler (SRS only here) ──
   const handleRecallResult = useCallback(
-    async (itemId: string, score: number) => {
+    async (itemId: string, score: number, attemptId: string) => {
       const item = allItems.find((i) => i.id === itemId);
       if (!item || !session) return;
 
-      const passed = score >= 3;
-
-      await updateItem.mutateAsync({
-        itemId,
-        updates: {
-          recallScore: score,
-          status: passed ? "passed" : "failed",
-          attemptCount: item.attemptCount + 1,
-        },
-      });
-
-      recordLog.mutate({
-        expressionId: item.expressionId,
-        mode: "recall",
-        score,
+      const result = await submitRecallAttempt.mutateAsync({
         sessionId: session.id,
+        itemId,
+        score,
+        attemptId,
       });
 
-      // SRS: only on recall mode, first attempt
-      if (!srsSubmitted.has(itemId)) {
-        const srsRating = getSrsRating(score);
-        submitReview.mutate({
-          expressionId: item.expressionId,
-          rating: srsRating,
-          reviewMode: "active_recall",
-        });
-        setSrsSubmitted((prev) => new Set(prev).add(itemId));
+      if (result.should_requeue) {
+        setRoundOrder((previous) => requeueNearTail(previous, itemId));
       }
 
       setModeStats((prev) => ({
         ...prev,
         recall: {
           completed: prev.recall.completed + 1,
-          correct: prev.recall.correct + (passed ? 1 : 0),
-          incorrect: prev.recall.incorrect + (passed ? 0 : 1),
+          correct: prev.recall.correct + (result.today_passed ? 1 : 0),
+          incorrect: prev.recall.incorrect + (result.today_passed ? 0 : 1),
         },
       }));
 
@@ -2049,7 +2064,7 @@ export default function EnglishReviewV3() {
       currentIndexRef.current = nextIdx;
       setCurrentIndex(nextIdx);
     },
-    [allItems, session, updateItem, recordLog, submitReview, srsSubmitted],
+    [allItems, session, submitRecallAttempt],
   );
 
   // ── Cloze handler (NO SRS) ──
@@ -2507,7 +2522,7 @@ export default function EnglishReviewV3() {
 
           {mode === "recall" ? (
             <RecallCard
-              key={currentItem.id}
+              key={`${currentItem.id}:${currentIndex}`}
               item={currentItem}
               onResult={handleRecallResult}
             />

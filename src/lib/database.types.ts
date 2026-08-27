@@ -1021,6 +1021,7 @@ export type Database = {
       expression_practice_logs: {
         Row: {
           answer: string | null
+          attempt_id: string | null
           created_at: string
           expression_id: string
           feedback: string | null
@@ -1033,6 +1034,7 @@ export type Database = {
         }
         Insert: {
           answer?: string | null
+          attempt_id?: string | null
           created_at?: string
           expression_id: string
           feedback?: string | null
@@ -1045,6 +1047,7 @@ export type Database = {
         }
         Update: {
           answer?: string | null
+          attempt_id?: string | null
           created_at?: string
           expression_id?: string
           feedback?: string | null
@@ -1124,6 +1127,7 @@ export type Database = {
           result: string
           review_mode: string | null
           reviewed_at: string
+          session_id: string | null
           user_id: string
         }
         Insert: {
@@ -1135,6 +1139,7 @@ export type Database = {
           result: string
           review_mode?: string | null
           reviewed_at?: string
+          session_id?: string | null
           user_id: string
         }
         Update: {
@@ -1146,6 +1151,7 @@ export type Database = {
           result?: string
           review_mode?: string | null
           reviewed_at?: string
+          session_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -1154,6 +1160,13 @@ export type Database = {
             columns: ["expression_id"]
             isOneToOne: false
             referencedRelation: "expressions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expression_reviews_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "review_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -3815,6 +3828,15 @@ export type Database = {
           item_completed: boolean
           srs_initialized: boolean
         }[]
+      }
+      submit_recall_attempt: {
+        Args: {
+          p_attempt_id: string
+          p_item_id: string
+          p_score: number
+          p_session_id: string
+        }
+        Returns: Json
       }
       increment_question_usage: { Args: { q_id: string }; Returns: undefined }
       save_reading_expression: {

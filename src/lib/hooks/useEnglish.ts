@@ -4,6 +4,7 @@ import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import type { ExpressionStatus } from "@/lib/types";
 import { getDuePoolCount, getDueCutoffDate } from "@/lib/english/reviewRepository";
+import { getShanghaiDateKey, getShanghaiDayBounds } from "@/lib/english/sessionRepository";
 import {
   normalizeAlternativeExpressions,
   type AlternativeExpression,
@@ -20,7 +21,7 @@ import {
 // ── Helpers ──
 
 function today() {
-  return new Date().toISOString().split("T")[0];
+  return getDueCutoffDate();
 }
 
 function nowISO() {
@@ -286,7 +287,6 @@ async function fetchDueExpressions() {
     .select("*")
     .eq("user_id", userId)
     .eq("archived", false)
-    .in("status", ["review", "mastered"])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(200);
@@ -317,15 +317,16 @@ export type DailyReviewQueue = {
 
 async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
   const userId = await getUserId();
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = getDueCutoffDate();
+  const dayBounds = getShanghaiDayBounds(todayStr);
 
   // Count how many reviews done today
   const { count: todayDone, error: countErr } = await supabase
     .from("expression_reviews")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
-    .gte("reviewed_at", `${todayStr}T00:00:00Z`)
-    .lte("reviewed_at", `${todayStr}T23:59:59Z`);
+    .gte("reviewed_at", dayBounds.start)
+    .lt("reviewed_at", dayBounds.end);
 
   if (countErr) throw countErr;
 
@@ -337,7 +338,6 @@ async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
     .select("id")
     .eq("user_id", userId)
     .eq("archived", false)
-    .in("status", ["review", "mastered"])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true });
 
@@ -353,7 +353,6 @@ async function fetchDailyReviewQueue(): Promise<DailyReviewQueue> {
     .select("*")
     .eq("user_id", userId)
     .eq("archived", false)
-    .in("status", ["review", "mastered"])
     .lte("next_review_date", getDueCutoffDate())
     .order("next_review_date", { ascending: true, nullsFirst: true })
     .limit(limit);
@@ -652,6 +651,7 @@ export async function uploadAudio(sessionId: string, blob: Blob): Promise<string
 async function fetchEnglishStats() {
   const userId = await getUserId();
   const todayStr = today();
+  const dayBounds = getShanghaiDayBounds(todayStr);
 
   const [totalRes, dueCount, masteredRes, sessionsRes, recentReviewsRes] = await Promise.all([
     supabase.from("expressions").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("archived", false),
@@ -670,8 +670,8 @@ async function fetchEnglishStats() {
       .from("expression_reviews")
       .select("id, result")
       .eq("user_id", userId)
-      .gte("reviewed_at", `${todayStr}T00:00:00Z`)
-      .lte("reviewed_at", `${todayStr}T23:59:59Z`),
+      .gte("reviewed_at", dayBounds.start)
+      .lt("reviewed_at", dayBounds.end),
   ]);
 
   const todayReviews = recentReviewsRes.data || [];
@@ -686,15 +686,17 @@ async function fetchEnglishStats() {
     .gte("reviewed_at", new Date(Date.now() - 30 * 86400000).toISOString())
     .order("reviewed_at", { ascending: false });
 
-  const reviewDays = new Set((recentDays || []).map((r: { reviewed_at: string }) => r.reviewed_at.split("T")[0]));
+  const reviewDays = new Set((recentDays || []).map((r: { reviewed_at: string }) =>
+    getShanghaiDateKey(new Date(r.reviewed_at))));
   const currentStreak = (() => {
     let streak = 0;
-    const d = new Date(todayStr + "T00:00:00");
+    const [year, month, day] = todayStr.split("-").map(Number);
+    const d = new Date(Date.UTC(year, month - 1, day));
     while (true) {
-      const ds = d.toISOString().split("T")[0];
+      const ds = d.toISOString().slice(0, 10);
       if (reviewDays.has(ds)) {
         streak++;
-        d.setDate(d.getDate() - 1);
+        d.setUTCDate(d.getUTCDate() - 1);
       } else {
         break;
       }

@@ -42,7 +42,7 @@ import {
   type LearningItemProgress,
 } from "@/lib/english/learningProgress";
 import { supabase } from "@/lib/supabase";
-import { scheduleExpressionReview } from "@/lib/srs/expressionSrs";
+import { addDaysToShanghaiDate, scheduleExpressionReview } from "@/lib/srs/expressionSrs";
 import {
   insertPracticeLog,
   updatePracticeLog,
@@ -517,8 +517,10 @@ export default function EnglishLearn() {
       }, new Date());
       const srsJson = {
         status: "review",
-        next_review_date: srs.next_review_date,
-        interval_days: srs.interval_days,
+        // Learning completion keeps the existing first-review rule: tomorrow.
+        // Every later review is driven only by this persisted due date.
+        next_review_date: addDaysToShanghaiDate(new Date(), 1),
+        interval_days: 1,
         repetitions: srs.repetitions,
         ease_factor: srs.ease_factor,
         result: rating,

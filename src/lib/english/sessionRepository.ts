@@ -39,6 +39,16 @@ export function getShanghaiISO(): string {
   return new Date().toISOString();
 }
 
+/** Inclusive start / exclusive end timestamps for one Shanghai calendar day. */
+export function getShanghaiDayBounds(dateKey: string = getShanghaiDateKey()): { start: string; end: string } {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+  return {
+    start: `${dateKey}T00:00:00+08:00`,
+    end: `${next}T00:00:00+08:00`,
+  };
+}
+
 // ═══════════════════════════════════════
 // Session Types
 // ═══════════════════════════════════════
@@ -285,6 +295,7 @@ async function selectLearnQueue(
     .eq("archived", false)
     .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
     .is("learned_at", null)
+    .is("next_review_date", null)
     .order("created_at", { ascending: true });
 
   if (excludeExpressionIds.length > 0) {
@@ -452,6 +463,7 @@ export async function countAvailableLearnExpressions(
     .eq("archived", false)
     .in("status", LEARN_QUEUE_STATUSES as unknown as string[])
     .is("learned_at", null)
+    .is("next_review_date", null)
     .not("id", "in", `(${ids.join(",")})`);
 
   if (error) throw classifySessionError(error);
