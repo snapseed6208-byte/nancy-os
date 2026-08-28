@@ -252,7 +252,7 @@ BEGIN
   UPDATE expressions SET
     next_review_date = v_next_review,
     status = v_new_status,
-    mastery_level = LEAST(v_new_reps, 5)::text,
+    mastery_level = LEAST(v_new_reps, 5)::smallint,
     streak = CASE WHEN v_worst_score = 1 THEN 0 ELSE v_orig_streak + 1 END,
     review_count = v_orig_review_count + 1,
     last_review_result = v_rating,
