@@ -98,7 +98,7 @@ describe("canonical rolling SRS", () => {
       ? item(String(index), 3, 1, "passed")
       : item(String(index), 1, 1, "reinforcement"));
     expect(countRecallResolved(items)).toBe(12);
-    expect(isLoadedBatchComplete(15, countRecallResolved(items), 15, 15)).toBe(false);
+    expect(isLoadedBatchComplete(15, countRecallResolved(items), 5, 5, 2, 2)).toBe(false);
   });
 
   it("14: repeats do not increase the 31-expression due denominator", () => {

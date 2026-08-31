@@ -25,6 +25,7 @@ import {
   type SessionItem,
 } from "@/lib/hooks/useReviewSession";
 import { isDailyReviewComplete, isLoadedBatchComplete, REVIEW_BATCH_SIZE } from "@/lib/english/dailyReviewBatch";
+import { buildDeepPracticePlan } from "@/lib/english/deepPracticePlan";
 import { buildRecallQueue, countRecallResolved, requeueNearTail } from "@/lib/english/rollingReview";
 import { getShanghaiDateKey } from "@/lib/english/sessionRepository";
 import { validateClozeResult, buildProgressiveHint } from "@/lib/clozeUtils";
@@ -118,7 +119,7 @@ function findResumeIndex(
     if (!item) continue;
     if (mode === "recall" && item.recallScore === null) return i;
     if (mode === "cloze" && !clozeLogIds.has(item.expressionId)) return i;
-    if (mode === "sentence" && !sentenceLogIds.has(item.expressionId)) return i;
+    if (mode === "sentence" && !sentenceLogIds.has(item.expressionId) && item.userSentence === null) return i;
   }
   return dailySetIds.length; // all complete
 }
@@ -130,12 +131,14 @@ function findResumeIndex(
 function ModeHeader({
   currentMode,
   stats,
+  deepPracticeUnlocked,
   onModeChange,
   onBack,
   onViewHistory,
 }: {
   currentMode: ReviewMode;
   stats: { recall: ModeStats; cloze: ModeStats; sentence: ModeStats };
+  deepPracticeUnlocked: boolean;
   onModeChange: (mode: ReviewMode) => void;
   onBack: () => void;
   onViewHistory: () => void;
@@ -164,22 +167,26 @@ function ModeHeader({
         {MODE_ORDER.map((mode) => {
           const Icon = MODE_ICONS[mode];
           const isActive = mode === currentMode;
+          const isLocked = mode !== "recall" && !deepPracticeUnlocked;
           const s = stats[mode];
           return (
             <button
               key={mode}
               onClick={() => onModeChange(mode)}
+              disabled={isLocked}
+              aria-label={isLocked ? `${MODE_LABELS[mode]}，请先完成主动回忆` : MODE_LABELS[mode]}
               className={cn(
                 "min-w-0 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 px-1 sm:px-2 py-2 rounded-lg text-[11px] font-medium leading-tight transition-colors",
                 isActive
                   ? "bg-sage-light text-sage-deep"
                   : "bg-warm-cream/50 text-ink-lighter hover:bg-warm-cream",
+                isLocked && "cursor-not-allowed opacity-55 hover:bg-warm-cream/50",
               )}
             >
               <Icon size={11} className="hidden sm:block shrink-0" />
               <span className="whitespace-nowrap">{MODE_LABELS[mode]}</span>
               <span className="min-h-3.5 flex items-center justify-center gap-0.5 whitespace-nowrap text-[10px] opacity-70">
-                {s.completed > 0 && <span>{s.completed}/{s.total}</span>}
+                {isLocked ? <span>先完成回忆</span> : s.total > 0 && <span>{s.completed}/{s.total}</span>}
                 {s.completed === s.total && s.total > 0 && (
                   <CheckCircle2 size={9} className="text-sage-deep shrink-0" />
                 )}
@@ -1256,9 +1263,9 @@ function BatchCompleteScreen({
         <CheckCircle2 size={24} className="text-sage-deep" />
       </div>
       <div>
-        <h3 className="text-lg font-semibold text-ink">本批复习完成</h3>
-        <p className="text-sm text-ink-light mt-1">今日进度 {completed} / {total}</p>
-        <p className="text-xs text-ink-lighter mt-1">还有 {remaining} 条待复习</p>
+        <h3 className="text-lg font-semibold text-ink">今日计划完成</h3>
+        <p className="text-sm text-ink-light mt-1">已完成本组 Recall 与抽样深练 · 今日处理 {completed} / {total}</p>
+        <p className="text-xs text-ink-lighter mt-1">仍有 {remaining} 条到期表达，可以结束或继续下一组</p>
       </div>
       <button
         type="button"
@@ -1299,8 +1306,8 @@ function AllDoneScreen({
         <Target size={28} className="text-sage-deep" />
       </div>
       <div>
-        <h3 className="text-lg font-semibold text-ink">今日复习完成</h3>
-        <p className="text-sm text-ink-light mt-1">今天共复习 {dailyTotal} 条，三个训练模式已全部完成</p>
+        <h3 className="text-lg font-semibold text-ink">今日到期复习已完成</h3>
+        <p className="text-sm text-ink-light mt-1">今天共处理 {dailyTotal} 条 Recall，并完成本日抽样语境与造句训练</p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -1386,7 +1393,7 @@ function buildFallbackSummary(
     .map((e) => e.english || "");
 
   const totalDone = recall.completed_count + cloze.completed_count + sentence.completed_count;
-  const totalPossible = allItems.length * 3;
+  const totalPossible = recall.total + cloze.total + sentence.total;
 
   return {
     overview: totalDone > 0
@@ -1542,7 +1549,7 @@ function AISummaryCard({
       {/* V3.5: Expression categories */}
       {summary.activated_expressions && summary.activated_expressions.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-[10px] font-medium text-sage-deep">已全面激活 (3项全部完成)</p>
+          <p className="text-[10px] font-medium text-sage-deep">已完成抽样深练</p>
           <div className="flex flex-wrap gap-1">
             {summary.activated_expressions.map((e, i) => (
               <span key={i} className="text-[10px] bg-sage-light/50 text-sage-deep px-1.5 py-0.5 rounded">{e}</span>
@@ -1553,7 +1560,7 @@ function AISummaryCard({
 
       {(summary.recall_only_expressions && summary.recall_only_expressions.length > 0) && (
         <div className="space-y-1.5">
-          <p className="text-[10px] font-medium text-ink-lighter">仅完成回忆 (需填空+造句)</p>
+          <p className="text-[10px] font-medium text-ink-lighter">本轮仅需主动回忆</p>
           <div className="flex flex-wrap gap-1">
             {summary.recall_only_expressions.map((e, i) => (
               <span key={i} className="text-[10px] bg-ink/5 text-ink-light px-1.5 py-0.5 rounded">{e}</span>
@@ -1651,6 +1658,15 @@ export default function EnglishReviewV3() {
 
   const session = data?.session;
   const allItems = data?.items || [];
+  const deepPracticePlan = useMemo(() => buildDeepPracticePlan(allItems), [allItems]);
+  const clozePlanIdSet = useMemo(() => new Set(deepPracticePlan.clozeItemIds), [deepPracticePlan.clozeItemIds]);
+  const sentencePlanIdSet = useMemo(() => new Set(deepPracticePlan.sentenceItemIds), [deepPracticePlan.sentenceItemIds]);
+  const clozePlanItems = useMemo(
+    () => allItems.filter((item) => clozePlanIdSet.has(item.id)),
+    [allItems, clozePlanIdSet],
+  );
+  const recallResolvedCount = countRecallResolved(allItems);
+  const recallBatchComplete = allItems.length > 0 && recallResolvedCount >= allItems.length;
 
   // ── Practice logs for mode progress tracking ──
   const { data: practiceLogsData } = useTodayPracticeLogs(session?.id);
@@ -1688,7 +1704,7 @@ export default function EnglishReviewV3() {
   // ── Cloze preparation effect: runs when entering cloze mode ──
   // V3.5: Dedup via inFlightRef, 45s watchdog timeout, correct expression_id keys.
   useEffect(() => {
-    if (mode !== "cloze" || allItems.length === 0) return;
+    if (mode !== "cloze" || clozePlanItems.length === 0 || !recallBatchComplete) return;
 
     // Use ref to avoid stale closure issues
     const currentPhase = clozePrepRef.current.phase;
@@ -1696,7 +1712,7 @@ export default function EnglishReviewV3() {
     if (currentPhase === "generating" && generationInFlightRef.current) return;
     if (generationInFlightRef.current) return;
 
-    const materials: ClozeGenerationMaterial[] = allItems
+    const materials: ClozeGenerationMaterial[] = clozePlanItems
       .filter((item) => !!item.expression)
       .map((item) => ({
         expression_id: item.expressionId,
@@ -1726,7 +1742,7 @@ export default function EnglishReviewV3() {
 
     if (needsAI.length === 0) {
       setClozePrep({
-        total: allItems.length,
+        total: clozePlanItems.length,
         prepared: cards.size,
         cards,
         pendingIds: [],
@@ -1740,7 +1756,7 @@ export default function EnglishReviewV3() {
     generationInFlightRef.current = true;
 
     setClozePrep({
-      total: allItems.length,
+      total: clozePlanItems.length,
       prepared: cards.size,
       cards,
       pendingIds,
@@ -1801,7 +1817,7 @@ export default function EnglishReviewV3() {
           const preparedCount = currentCards.size;
           const stillNeedsAI = needsAI.filter((m) => !currentCards.has(m.expression_id));
           setClozePrep({
-            total: allItems.length,
+            total: clozePlanItems.length,
             prepared: preparedCount,
             cards: new Map(currentCards),
             pendingIds: stillNeedsAI.map((m) => m.expression_id),
@@ -1834,26 +1850,26 @@ export default function EnglishReviewV3() {
 
         const finalStillMissing = needsAI.filter((m) => !currentCards.has(m.expression_id));
         setClozePrep({
-          total: allItems.length,
+          total: clozePlanItems.length,
           prepared: currentCards.size,
           cards: new Map(currentCards),
           pendingIds: finalStillMissing.map((m) => m.expression_id),
           phase: finalStillMissing.length > 0 ? "error" : "ready",
           error: finalStillMissing.length > 0
-            ? `${currentCards.size} / ${allItems.length} 已准备，${finalStillMissing.length} 题生成失败`
+            ? `${currentCards.size} / ${clozePlanItems.length} 已准备，${finalStillMissing.length} 题生成失败`
             : undefined,
         });
 
         // Persist cards to session items
         if (!cancelled) {
-          for (const item of allItems) {
+          for (const item of clozePlanItems) {
             const card = currentCards.get(item.expressionId);
             if (card) {
               try {
                 await updateItem.mutateAsync({
                   itemId: item.id,
                   updates: {
-                    modeData: { cloze: card },
+                    modeData: { ...(item.modeData ?? {}), cloze: card },
                   },
                 });
               } catch { /* persistence failure is non-fatal for practice */ }
@@ -1887,16 +1903,16 @@ export default function EnglishReviewV3() {
         generationTimeoutRef.current = null;
       }
     };
-  }, [mode, allItems]);
+  }, [mode, clozePlanItems, recallBatchComplete]);
 
   // Also load cards from existing session items (previously persisted)
   useEffect(() => {
-    if (mode !== "cloze" || allItems.length === 0) return;
+    if (mode !== "cloze" || clozePlanItems.length === 0 || !recallBatchComplete) return;
     if (clozePrep.phase !== "loading") return;
 
     // Check if items already have persisted cloze cards
     const existingCards = new Map<string, ContextClozeCard>();
-    for (const item of allItems) {
+    for (const item of clozePlanItems) {
       const modeData = item.modeData as Record<string, unknown> | null | undefined;
       if (modeData?.cloze) {
         const card = modeData.cloze as ContextClozeCard;
@@ -1907,18 +1923,18 @@ export default function EnglishReviewV3() {
       }
     }
 
-    if (existingCards.size === allItems.length) {
+    if (existingCards.size === clozePlanItems.length) {
       // All cards already persisted — use them directly
       setClozePrep({
-        total: allItems.length,
-        prepared: allItems.length,
+        total: clozePlanItems.length,
+        prepared: clozePlanItems.length,
         cards: existingCards,
         pendingIds: [],
         phase: "ready",
       });
     }
     // If not all persisted, the generation effect above will handle it
-  }, [mode, allItems, clozePrep.phase]);
+  }, [mode, clozePlanItems, clozePrep.phase, recallBatchComplete]);
 
   // ── dailySetIds ──
   const dailySetIds = useMemo(() => allItems.map((i) => i.id), [allItems]);
@@ -1926,16 +1942,25 @@ export default function EnglishReviewV3() {
   // ── Cloze eligible IDs from prep state ──
   const clozeEligibleIds = useMemo(() => {
     if (clozePrep.phase !== "ready") return [];
-    return allItems
+    return clozePlanItems
       .filter((item) => clozePrep.cards.has(item.expressionId))
       .map((item) => item.id);
-  }, [allItems, clozePrep]);
+  }, [clozePlanItems, clozePrep]);
+
+  const modeTargetIds = useMemo(
+    () => mode === "recall"
+      ? dailySetIds
+      : mode === "cloze"
+        ? deepPracticePlan.clozeItemIds
+        : deepPracticePlan.sentenceItemIds,
+    [dailySetIds, deepPracticePlan.clozeItemIds, deepPracticePlan.sentenceItemIds, mode],
+  );
 
   // ── Initialize/restore mode progress ──
   const resumeIndex = useMemo(() => {
     if (allItems.length === 0) return 0;
-    return findResumeIndex(allItems, dailySetIds, mode, clozeLogIds, sentenceLogIds);
-  }, [allItems, dailySetIds, mode, clozeLogIds, sentenceLogIds]);
+    return findResumeIndex(allItems, modeTargetIds, mode, clozeLogIds, sentenceLogIds);
+  }, [allItems, modeTargetIds, mode, clozeLogIds, sentenceLogIds]);
 
   // ── Core state ──
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -1967,7 +1992,7 @@ export default function EnglishReviewV3() {
       ? buildRecallQueue(allItems)
       : mode === "cloze"
         ? [...clozeEligibleIds]
-        : [...dailySetIds];
+        : [...deepPracticePlan.sentenceItemIds];
     if (order.length === 0) {
       initializedRef.current = true;
       return;
@@ -1977,7 +2002,7 @@ export default function EnglishReviewV3() {
     setCurrentIndex(initialIndex);
     currentIndexRef.current = initialIndex;
     initializedRef.current = true;
-  }, [allItems, dailySetIds, clozeEligibleIds, resumeIndex, mode, clozePrep.phase]);
+  }, [allItems, clozeEligibleIds, deepPracticePlan.sentenceItemIds, resumeIndex, mode, clozePrep.phase]);
 
   // ── Reset initialization when mode changes ──
   useEffect(() => {
@@ -2013,18 +2038,25 @@ export default function EnglishReviewV3() {
   const stats = getSessionStats(allItems);
 
   // ── Compute per-mode stats for display ──
-  const recallCompleted = countRecallResolved(allItems);
+  const recallCompleted = recallResolvedCount;
   const recallPassed = allItems.filter((i) => i.recallScore !== null && i.recallScore >= 3).length;
   const recallFailed = allItems.filter((i) => i.recallScore !== null && i.recallScore < 3).length;
-  const clozeCompleted = localClozeIds.size;
-  const clozeCorrect = [...localClozeResults.values()].filter((r) => r.result === "correct").length;
+  const clozeCompleted = clozePlanItems.filter((item) => localClozeIds.has(item.expressionId)).length;
+  const clozeCorrect = clozePlanItems.filter(
+    (item) => localClozeResults.get(item.expressionId)?.result === "correct",
+  ).length;
   const clozeIncorrect = clozeCompleted - clozeCorrect;
-  const sentenceCompleted = localSentenceIds.size;
+  const sentenceCompleted = allItems.filter(
+    (item) => sentencePlanIdSet.has(item.id)
+      && (localSentenceIds.has(item.expressionId) || item.userSentence !== null),
+  ).length;
 
   const loadedBatchComplete = isLoadedBatchComplete(
     allItems.length,
     recallCompleted,
+    deepPracticePlan.clozeItemIds.length,
     clozeCompleted,
+    deepPracticePlan.sentenceItemIds.length,
     sentenceCompleted,
   );
   const dailyTotal = Math.max(todayReviewStatus?.total ?? data?.dailyProgress.total ?? 0, allItems.length);
@@ -2246,8 +2278,8 @@ export default function EnglishReviewV3() {
 
     const modeCompletion = {
       recall: { completed_count: progress.recallCompleted, total: progress.totalExpressions },
-      cloze: { completed_count: progress.clozeCompleted, total: progress.totalExpressions, correct_count: progress.clozeCorrect },
-      sentence: { completed_count: progress.sentenceCompleted, total: progress.totalExpressions },
+      cloze: { completed_count: clozeCompleted, total: deepPracticePlan.clozeItemIds.length, correct_count: clozeCorrect },
+      sentence: { completed_count: sentenceCompleted, total: deepPracticePlan.sentenceItemIds.length },
     };
 
     try {
@@ -2271,7 +2303,7 @@ export default function EnglishReviewV3() {
     const fallbackSummary = buildFallbackSummary(allItems, dailySet, modeCompletion);
     setAiSummary(fallbackSummary);
     setSummaryGenerating(false);
-  }, [session, allItems, clozeLogIds, sentenceLogIds, localClozeResults, recallCompleted, clozeCompleted, clozeCorrect, sentenceCompleted]);
+  }, [session, allItems, clozeLogIds, sentenceLogIds, localClozeResults, recallCompleted, clozeCompleted, clozeCorrect, sentenceCompleted, deepPracticePlan.clozeItemIds.length, deepPracticePlan.sentenceItemIds.length]);
 
   // ── Navigation ──
   const handleBack = () => navigate("/english");
@@ -2365,16 +2397,54 @@ export default function EnglishReviewV3() {
     );
   }
 
-  // ── Cloze mode: preparation loading / generating / error states (V3.4) ──
-  if (mode === "cloze" && clozePrep.phase !== "ready" && !modeComplete) {
+  if (mode !== "recall" && !recallBatchComplete) {
     return (
       <div className="space-y-4">
         <ModeHeader
           currentMode={mode}
+          deepPracticeUnlocked={false}
           stats={{
             recall: { completed: recallCompleted, total: allItems.length, correct: recallPassed, incorrect: recallFailed },
-            cloze: { completed: 0, total: allItems.length, correct: 0, incorrect: 0 },
-            sentence: { completed: sentenceCompleted, total: allItems.length },
+            cloze: { completed: clozeCompleted, total: deepPracticePlan.clozeItemIds.length, correct: clozeCorrect, incorrect: clozeIncorrect },
+            sentence: { completed: sentenceCompleted, total: deepPracticePlan.sentenceItemIds.length },
+          }}
+          onModeChange={switchMode}
+          onBack={handleBack}
+          onViewHistory={handleViewHistory}
+        />
+        <div className="bg-white border border-border/60 rounded-2xl p-8 text-center space-y-4">
+          <div className="h-14 w-14 rounded-2xl bg-sage-light flex items-center justify-center mx-auto">
+            <Brain size={28} className="text-sage-deep" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-ink">先完成本批主动回忆</h3>
+            <p className="text-sm text-ink-light mt-1">
+              完成 {allItems.length} 条 Recall 后，系统会挑选 {deepPracticePlan.clozeItemIds.length} 条语境填空和 {deepPracticePlan.sentenceItemIds.length} 条个人造句。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => switchMode("recall")}
+            className="px-5 py-2.5 bg-sage text-white rounded-xl text-sm font-medium hover:bg-sage-deep transition-colors"
+          >
+            返回主动回忆
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Cloze mode: preparation loading / generating / error states (V3.4) ──
+  if (mode === "cloze" && clozePrep.phase !== "ready" && !modeComplete) {
+    return (
+      <div className="space-y-4">
+          <ModeHeader
+            currentMode={mode}
+            deepPracticeUnlocked={recallBatchComplete}
+            stats={{
+            recall: { completed: recallCompleted, total: allItems.length, correct: recallPassed, incorrect: recallFailed },
+            cloze: { completed: 0, total: deepPracticePlan.clozeItemIds.length, correct: 0, incorrect: 0 },
+            sentence: { completed: sentenceCompleted, total: deepPracticePlan.sentenceItemIds.length },
           }}
           onModeChange={switchMode}
           onBack={handleBack}
@@ -2438,13 +2508,13 @@ export default function EnglishReviewV3() {
     },
     cloze: {
       completed: clozeCompleted,
-      total: clozeEligibleIds.length || allItems.length,
+      total: deepPracticePlan.clozeItemIds.length,
       correct: clozeCorrect,
       incorrect: clozeIncorrect,
     },
     sentence: {
       completed: sentenceCompleted,
-      total: allItems.length,
+      total: deepPracticePlan.sentenceItemIds.length,
     },
   };
 
@@ -2452,6 +2522,7 @@ export default function EnglishReviewV3() {
     <div className="space-y-4">
       <ModeHeader
         currentMode={mode}
+        deepPracticeUnlocked={recallBatchComplete}
         stats={displayStats}
         onModeChange={switchMode}
         onBack={handleBack}

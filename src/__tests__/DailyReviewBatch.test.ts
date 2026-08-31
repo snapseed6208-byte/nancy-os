@@ -37,17 +37,17 @@ describe("full daily SRS due pool batching", () => {
 
   it("does not declare the day complete after the first completed batch", () => {
     const result = progress(31, 15, 15, 16);
-    const batchDone = isLoadedBatchComplete(15, 15, 15, 15);
+    const batchDone = isLoadedBatchComplete(15, 15, 5, 5, 2, 2);
     expect(batchDone).toBe(true);
     expect(result.remaining).toBe(16);
     expect(batchDone && result.remaining === 0).toBe(false);
   });
 
-  it("15 due is day complete only after all three modes finish", () => {
+  it("15 due is day complete after Recall plus the sampled deep-practice targets", () => {
     const result = progress(15, 15, 15, 0);
     expect(result.remaining).toBe(0);
-    expect(isDailyReviewComplete(result.total, result.remaining, isLoadedBatchComplete(15, 15, 15, 15))).toBe(true);
-    expect(isDailyReviewComplete(result.total, result.remaining, isLoadedBatchComplete(15, 15, 14, 15))).toBe(false);
+    expect(isDailyReviewComplete(result.total, result.remaining, isLoadedBatchComplete(15, 15, 5, 5, 2, 2))).toBe(true);
+    expect(isDailyReviewComplete(result.total, result.remaining, isLoadedBatchComplete(15, 15, 5, 4, 2, 2))).toBe(false);
   });
 
   it("keeps the denominator stable after SM-2 removes completed rows from live due", () => {
@@ -65,10 +65,10 @@ describe("full daily SRS due pool batching", () => {
     expect(resumed).toMatchObject({ total: 31, completed: 22, remaining: 9, loadedCount: 30, unloadedRemaining: 1 });
   });
 
-  it("requires recall, cloze, and sentence to complete the same loaded set", () => {
-    expect(isLoadedBatchComplete(30, 30, 30, 30)).toBe(true);
-    expect(isLoadedBatchComplete(30, 30, 29, 30)).toBe(false);
-    expect(isLoadedBatchComplete(30, 30, 30, 29)).toBe(false);
+  it("requires Recall plus 5 Cloze and 2 Sentence targets per loaded batch", () => {
+    expect(isLoadedBatchComplete(30, 30, 10, 10, 4, 4)).toBe(true);
+    expect(isLoadedBatchComplete(30, 30, 10, 9, 4, 4)).toBe(false);
+    expect(isLoadedBatchComplete(30, 30, 10, 10, 4, 3)).toBe(false);
   });
 
   it("reconciles a stale 31-item snapshot when no eligible items remain", () => {

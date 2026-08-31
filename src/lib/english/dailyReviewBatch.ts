@@ -56,15 +56,17 @@ export function reconcileDailyReviewProgress(
 }
 
 export function isLoadedBatchComplete(
-  loadedCount: number,
+  recallTarget: number,
   recallCompleted: number,
+  clozeTarget: number,
   clozeCompleted: number,
+  sentenceTarget: number,
   sentenceCompleted: number,
 ): boolean {
-  return loadedCount > 0
-    && recallCompleted >= loadedCount
-    && clozeCompleted >= loadedCount
-    && sentenceCompleted >= loadedCount;
+  return recallTarget > 0
+    && recallCompleted >= recallTarget
+    && clozeCompleted >= clozeTarget
+    && sentenceCompleted >= sentenceTarget;
 }
 
 export function isDailyReviewComplete(

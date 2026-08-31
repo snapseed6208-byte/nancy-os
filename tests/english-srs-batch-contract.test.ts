@@ -58,8 +58,8 @@ describe("daily SRS batch production contracts", () => {
   });
 
   it("has distinct batch-complete and day-complete UI states", () => {
-    expect(reviewPage).toContain("本批复习完成");
-    expect(reviewPage).toContain("今日复习完成");
+    expect(reviewPage).toContain("今日计划完成");
+    expect(reviewPage).toContain("今日到期复习已完成");
     expect(reviewPage).toContain("batchComplete ?");
     expect(reviewPage).toContain(": dayComplete ?");
   });

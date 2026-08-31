@@ -48,6 +48,7 @@ import {
   reconcileDailyReviewProgress,
   type DailyReviewPoolProgress,
 } from "@/lib/english/dailyReviewBatch";
+import { buildDeepPracticePlan } from "@/lib/english/deepPracticePlan";
 import { countRecallResolved, isRecallResolved } from "@/lib/english/rollingReview";
 
 // ═══════════════════════════════════════
@@ -248,6 +249,9 @@ async function fetchTodayReviewStatus(dateKey: string): Promise<TodayReviewStatu
   const items = await fetchSessionItems(session.id);
   const outsideDue = await getDuePoolCountExcluding(userId, items.map((item) => item.expressionId));
   const practiceLogs = await fetchTodayPracticeLogs(session.id);
+  const deepPracticePlan = buildDeepPracticePlan(items);
+  const clozeTargetIds = new Set(deepPracticePlan.clozeItemIds);
+  const sentenceTargetIds = new Set(deepPracticePlan.sentenceItemIds);
   const progress = deriveDailyReviewProgress({
     snapshotTotal: session.targetCount,
     loadedCount: items.length,
@@ -257,8 +261,10 @@ async function fetchTodayReviewStatus(dateKey: string): Promise<TodayReviewStatu
   const loadedTrainingComplete = isLoadedBatchComplete(
     items.length,
     progress.completed,
-    items.filter((item) => practiceLogs.clozeIds.has(item.expressionId)).length,
-    items.filter((item) => practiceLogs.sentenceIds.has(item.expressionId) || item.userSentence !== null).length,
+    deepPracticePlan.clozeItemIds.length,
+    items.filter((item) => clozeTargetIds.has(item.id) && practiceLogs.clozeIds.has(item.expressionId)).length,
+    deepPracticePlan.sentenceItemIds.length,
+    items.filter((item) => sentenceTargetIds.has(item.id) && (practiceLogs.sentenceIds.has(item.expressionId) || item.userSentence !== null)).length,
   );
   return {
     hasSession: true,
