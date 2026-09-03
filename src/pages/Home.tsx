@@ -21,6 +21,7 @@ import {
   StatusCard, TodayHabits, TodaySchedule, DailyBriefCard,
   TimelineSection, ImportantEvents, BodyStatus,
 } from "@/components/home";
+import { HomeStrip } from "@/components/habits/HomeStrip";
 
 const QUICK_ACTIONS = [
   { key: "ideas", label: "灵感库", icon: Lightbulb, color: "bg-accent-warm/10 text-accent-warm", path: "/ideas" },
@@ -186,6 +187,9 @@ export default function Home() {
           })}
         </div>
       </section>
+
+      {/* ── Habit Lab (compact entry, only when running) ── */}
+      <HomeStrip />
 
       {/* ── Today's Focus Tasks ── */}
       <TodaySchedule

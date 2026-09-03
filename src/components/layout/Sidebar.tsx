@@ -21,7 +21,7 @@ import {
 import {
   LayoutDashboard, CalendarCheck, Briefcase, BookOpen, Heart,
   GraduationCap, Footprints, Lightbulb, BarChart3, Brain, Database,
-  Settings, Menu, X, Sparkles, FolderOpen, Mic,
+  Settings, Menu, X, Sparkles, FolderOpen, Mic, FlaskConical,
   GripVertical, ChevronDown, EyeOff, RotateCcw,
   type LucideIcon,
 } from "lucide-react";
@@ -33,7 +33,7 @@ import {
 const iconMap: Record<string, LucideIcon> = {
   LayoutDashboard, CalendarCheck, Briefcase, BookOpen, Heart,
   GraduationCap, Footprints, Lightbulb, BarChart3, Brain, Database,
-  Settings, FolderOpen, Mic, Sparkles,
+  Settings, FolderOpen, Mic, Sparkles, FlaskConical,
 };
 
 // ═══════════════════════════════════════

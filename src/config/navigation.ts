@@ -145,6 +145,15 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     description: "周报、月报、趋势",
   },
   {
+    id: "habit-lab",
+    label: "习惯实验",
+    icon: "FlaskConical",
+    path: "/habits",
+    group: "life",
+    defaultOrder: 34,
+    description: "21 天最小习惯实验",
+  },
+  {
     id: "reflection",
     label: "AI 反思",
     icon: "Brain",

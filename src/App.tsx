@@ -36,6 +36,10 @@ import LifeTraceMood from "@/pages/LifeTraceMood";
 import LifeTraceMoney from "@/pages/LifeTraceMoney";
 import Ideas from "@/pages/Ideas";
 import Review from "@/pages/Review";
+import HabitLab from "@/pages/HabitLab";
+import HabitLabNew from "@/pages/HabitLabNew";
+import HabitLabDetail from "@/pages/HabitLabDetail";
+import HabitLabReview from "@/pages/HabitLabReview";
 import ReviewHistory from "@/pages/ReviewHistory";
 import ReviewDetail from "@/pages/ReviewDetail";
 import Reflection from "@/pages/Reflection";
@@ -110,6 +114,10 @@ function AppRoutes() {
         <Route path="/ideas" component={Ideas} />
         <Route path="/review" component={Review} />
         <Route path="/review/history" component={ReviewHistory} />
+        <Route path="/habits" component={HabitLab} />
+        <Route path="/habits/new" component={HabitLabNew} />
+        <Route path="/habits/:id" component={HabitLabDetail} />
+        <Route path="/habits/:id/review" component={HabitLabReview} />
         <Route path="/review/date/:date" component={ReviewDetail} />
         <Route path="/reflection" component={Reflection} />
         <Route path="/memory-center" component={MemoryCenter} />
