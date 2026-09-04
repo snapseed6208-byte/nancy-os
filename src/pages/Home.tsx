@@ -21,7 +21,6 @@ import {
   StatusCard, TodaySchedule, DailyBriefCard,
   TimelineSection, ImportantEvents, BodyStatus,
 } from "@/components/home";
-import { HabitLabToday } from "@/components/habits/HabitLabToday";
 
 const QUICK_ACTIONS = [
   { key: "ideas", label: "灵感库", icon: Lightbulb, color: "bg-accent-warm/10 text-accent-warm", path: "/ideas" },
@@ -100,17 +99,18 @@ export default function Home() {
   const isGeneratingBrief = loadingBrief || generateBrief.isPending;
 
   // 今日实验 metric — derived from Habit Lab only (single source of truth).
+  // The card is a pure overview; completing / reviewing happens inside Habit Lab.
   const { isLoading: habitsLoading } = useActiveSprints();
   const habitToday = useHabitLabToday();
   const habitValue = habitsLoading ? "..." : !habitToday.hasExperiments ? "0"
     : habitToday.due.length === 0 ? "—"
     : `${habitToday.doneCount}/${habitToday.due.length}`;
-  const habitSub = habitsLoading ? "" : !habitToday.hasExperiments ? "去开始一个 21 天实验"
+  const habitSub = habitsLoading ? "" : !habitToday.hasExperiments ? "暂无进行中实验"
     : habitToday.due.length === 0 ? (habitToday.reviewable.length > 0 ? "有实验待复盘" : "今日无到期实验")
-    : habitToday.remainingCount === 0 ? (habitToday.allCompleted ? "今天的实验已完成" : "今天的实验已打卡")
+    : habitToday.remainingCount === 0 ? (habitToday.allCompleted ? "今天已完成" : "今天已打卡")
     : habitToday.doneCount === 0 ? `${habitToday.due.length} 个实验进行中`
-    : `还有 ${habitToday.remainingCount} 个最小行动`;
-  const habitPath = habitsLoading || !habitToday.hasExperiments ? "/habits/new" : "/habits";
+    : `还有 ${habitToday.remainingCount} 个待完成`;
+  const habitPath = "/habits";
 
   return (
     <div className="space-y-5">
@@ -196,9 +196,6 @@ export default function Home() {
           })}
         </div>
       </section>
-
-      {/* ── Habit Lab — today's action (daily minimum, quick complete) ── */}
-      <HabitLabToday />
 
       {/* ── Today's Focus Tasks ── */}
       <TodaySchedule

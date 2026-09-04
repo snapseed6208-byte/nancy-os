@@ -220,8 +220,9 @@ function toTodayItem(
 
 /**
  * Fold the user's active/paused sprints + today's explicit logs into one
- * summary that drives Home's 今日实验 card and daily-action section.
- * Pure — every count is derived from Habit Lab data, so card == section == data.
+ * summary that drives Home's 今日实验 card.
+ * Pure — the count is derived from Habit Lab data, so Home never disagrees
+ * with the /habits pages.
  */
 export function summarizeToday(
   sprints: HabitSprintRow[],
@@ -260,20 +261,4 @@ export function summarizeToday(
     allHandled: due.length > 0 && remainingCount === 0,
     allCompleted: due.length > 0 && doneCount === due.length,
   };
-}
-
-/**
- * Non-judgmental recovery nudge: the sprint had a check-in window yesterday but no
- * explicit log, and is still actionable today. Nothing is scored — presence only.
- */
-export function missedYesterday(
-  item: TodaySprintItem,
-  yesterdayLogs: { sprint_id: string }[],
-  today: string,
-): boolean {
-  if (item.todayStatus !== null) return false; // already acted on today
-  if (item.phase !== "active") return false;
-  const yesterday = addDays(today, -1);
-  if (item.sprint.start_date > yesterday) return false; // window hadn't started
-  return !yesterdayLogs.some((l) => l.sprint_id === item.sprint.id);
 }

@@ -116,7 +116,7 @@ export type RewardMatch = {
 
 // ── Home daily-action surface ──
 
-/** One sprint folded into the Home "today" summary (phase + today's explicit log). */
+/** One sprint folded into the today summary (phase + today's explicit log). */
 export type TodaySprintItem = {
   sprint: HabitSprintRow;
   phase: SprintPhase;
@@ -126,7 +126,7 @@ export type TodaySprintItem = {
   todayStatus: "completed" | "skipped" | null;
 };
 
-/** Single source of truth for Home's 今日实验 card + daily-action section. */
+/** Single source of truth for Home's 今日实验 card. */
 export type HabitLabTodaySummary = {
   /** true when at least one active/paused sprint exists at all */
   hasExperiments: boolean;
