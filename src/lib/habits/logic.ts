@@ -6,6 +6,7 @@
 
 import type {
   LogByDate, SprintPhase, SprintTimeline, SprintDayCell, SprintPoints, CueInput, HabitSprintRow,
+  HabitLabTodaySummary, TodaySprintItem,
 } from "./types";
 
 const DAY_MS = 86_400_000;
@@ -197,4 +198,82 @@ export function buildCueSentence(input: CueInput): string {
 export function completionRatePercent(completedCount: number, totalDays: number): number {
   if (totalDays <= 0) return 0;
   return Math.min(100, Math.round((completedCount / totalDays) * 100));
+}
+
+type TodayLogLike = { sprint_id: string; status: "completed" | "skipped" };
+
+function toTodayItem(
+  sprint: HabitSprintRow,
+  todayLog: TodayLogLike | undefined,
+  today: string,
+): TodaySprintItem {
+  const tl = buildSprintTimeline(sprint, [], today); // phase/currentDay never depend on logs
+  return {
+    sprint,
+    phase: tl.phase,
+    currentDay: tl.currentDay,
+    totalDays: tl.totalDays,
+    endDate: tl.endDate,
+    todayStatus: todayLog?.status ?? null,
+  };
+}
+
+/**
+ * Fold the user's active/paused sprints + today's explicit logs into one
+ * summary that drives Home's 今日实验 card and daily-action section.
+ * Pure — every count is derived from Habit Lab data, so card == section == data.
+ */
+export function summarizeToday(
+  sprints: HabitSprintRow[],
+  todayLogs: TodayLogLike[],
+  today: string,
+): HabitLabTodaySummary {
+  const logBySprint = new Map<string, TodayLogLike>();
+  for (const l of todayLogs) logBySprint.set(l.sprint_id, l);
+
+  const due: TodaySprintItem[] = [];
+  const reviewable: TodaySprintItem[] = [];
+  const paused: TodaySprintItem[] = [];
+  const scheduled: TodaySprintItem[] = [];
+
+  for (const s of sprints) {
+    const item = toTodayItem(s, logBySprint.get(s.id), today);
+    if (item.phase === "active") due.push(item);
+    else if (item.phase === "reviewable") reviewable.push(item);
+    else if (item.phase === "paused") paused.push(item);
+    else if (item.phase === "scheduled") scheduled.push(item);
+  }
+
+  const doneCount = due.filter((d) => d.todayStatus === "completed").length;
+  const handledCount = due.filter((d) => d.todayStatus !== null).length;
+  const remainingCount = due.length - handledCount;
+
+  return {
+    hasExperiments: sprints.length > 0,
+    due,
+    reviewable,
+    paused,
+    scheduled,
+    doneCount,
+    handledCount,
+    remainingCount,
+    allHandled: due.length > 0 && remainingCount === 0,
+    allCompleted: due.length > 0 && doneCount === due.length,
+  };
+}
+
+/**
+ * Non-judgmental recovery nudge: the sprint had a check-in window yesterday but no
+ * explicit log, and is still actionable today. Nothing is scored — presence only.
+ */
+export function missedYesterday(
+  item: TodaySprintItem,
+  yesterdayLogs: { sprint_id: string }[],
+  today: string,
+): boolean {
+  if (item.todayStatus !== null) return false; // already acted on today
+  if (item.phase !== "active") return false;
+  const yesterday = addDays(today, -1);
+  if (item.sprint.start_date > yesterday) return false; // window hadn't started
+  return !yesterdayLogs.some((l) => l.sprint_id === item.sprint.id);
 }

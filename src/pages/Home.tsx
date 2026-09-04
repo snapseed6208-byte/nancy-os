@@ -2,14 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { getGreeting, getDateLabel, today } from "@/lib/utils";
 import {
-  Lightbulb, CheckSquare, Clock, Trophy, Sparkles, Settings, FileText,
+  Lightbulb, CheckSquare, Clock, FlaskConical, Sparkles, Settings, FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTodayBrief, useGenerateDailyBrief, useBriefFeedback } from "@/lib/hooks/useReflection";
 import { useDashboardStats } from "@/lib/hooks/useDashboard";
 import { useTodayTasks, useToggleTaskComplete } from "@/lib/hooks/usePlan";
-import { useHabitsWithToday, useToggleHabitCompletion, useHabitWeeklyStats, useHabitAnalysis, formatFrequency, type HabitWithRecord } from "@/lib/hooks/useHabit";
 import { useImportantEvents, useCreateImportantEvent, useToggleImportantEvent } from "@/lib/hooks/useImportantEvent";
+import { useActiveSprints, useHabitLabToday } from "@/lib/habits/hooks";
 import {
   useWaterToday, useAddWater, useDeleteWater,
   useDailyChecklist, useInitChecklist,
@@ -18,10 +18,10 @@ import {
 } from "@/lib/hooks/useHealth";
 import type { DailyBrief } from "@/lib/types";
 import {
-  StatusCard, TodayHabits, TodaySchedule, DailyBriefCard,
+  StatusCard, TodaySchedule, DailyBriefCard,
   TimelineSection, ImportantEvents, BodyStatus,
 } from "@/components/home";
-import { HomeStrip } from "@/components/habits/HomeStrip";
+import { HabitLabToday } from "@/components/habits/HabitLabToday";
 
 const QUICK_ACTIONS = [
   { key: "ideas", label: "灵感库", icon: Lightbulb, color: "bg-accent-warm/10 text-accent-warm", path: "/ideas" },
@@ -41,10 +41,6 @@ export default function Home() {
   const { data: todayTasks } = useTodayTasks();
   const toggleTaskComplete = useToggleTaskComplete();
   const briefFeedback = useBriefFeedback();
-  const { data: habitsWithToday } = useHabitsWithToday();
-  const toggleHabitCompletion = useToggleHabitCompletion();
-  const { data: habitWeeklyStats } = useHabitWeeklyStats(2);
-  const { data: habitAnalysis } = useHabitAnalysis();
   const { data: importantEvents } = useImportantEvents();
   const createImportantEvent = useCreateImportantEvent();
   const toggleImportantEvent = useToggleImportantEvent();
@@ -103,6 +99,19 @@ export default function Home() {
 
   const isGeneratingBrief = loadingBrief || generateBrief.isPending;
 
+  // 今日实验 metric — derived from Habit Lab only (single source of truth).
+  const { isLoading: habitsLoading } = useActiveSprints();
+  const habitToday = useHabitLabToday();
+  const habitValue = habitsLoading ? "..." : !habitToday.hasExperiments ? "0"
+    : habitToday.due.length === 0 ? "—"
+    : `${habitToday.doneCount}/${habitToday.due.length}`;
+  const habitSub = habitsLoading ? "" : !habitToday.hasExperiments ? "去开始一个 21 天实验"
+    : habitToday.due.length === 0 ? (habitToday.reviewable.length > 0 ? "有实验待复盘" : "今日无到期实验")
+    : habitToday.remainingCount === 0 ? (habitToday.allCompleted ? "今天的实验已完成" : "今天的实验已打卡")
+    : habitToday.doneCount === 0 ? `${habitToday.due.length} 个实验进行中`
+    : `还有 ${habitToday.remainingCount} 个最小行动`;
+  const habitPath = habitsLoading || !habitToday.hasExperiments ? "/habits/new" : "/habits";
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -140,13 +149,13 @@ export default function Home() {
           path="/plan?tab=tasks"
         />
         <StatusCard
-          icon={Trophy}
-          label="今日习惯"
-          value={loadingStats ? "..." : `${stats?.habits.completed ?? 0}/${stats?.habits.total ?? 0}`}
-          sub={stats?.habits.streak ? `连续 ${stats.habits.streak} 天` : "今日暂无记录"}
+          icon={FlaskConical}
+          label="今日实验"
+          value={habitValue}
+          sub={habitSub}
           color="text-accent-warm"
           bg="bg-accent-warm/5"
-          path="/plan?tab=habits"
+          path={habitPath}
         />
         <StatusCard
           icon={Clock}
@@ -188,8 +197,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Habit Lab (compact entry, only when running) ── */}
-      <HomeStrip />
+      {/* ── Habit Lab — today's action (daily minimum, quick complete) ── */}
+      <HabitLabToday />
 
       {/* ── Today's Focus Tasks ── */}
       <TodaySchedule
@@ -197,19 +206,6 @@ export default function Home() {
         onToggleTask={handleTaskToggle}
         isToggling={toggleTaskComplete.isPending}
       />
-
-      {/* ── Today's Habits (compact) ── */}
-      {habitsWithToday && (habitsWithToday as HabitWithRecord[]).length > 0 && (
-        <TodayHabits
-          habits={habitsWithToday as HabitWithRecord[]}
-          onToggle={(habitId) => toggleHabitCompletion.mutate(habitId, {
-            onError: (err) => { console.error("Habit toggle failed:", err); },
-          })}
-          isToggling={toggleHabitCompletion.isPending}
-          weeklyStats={habitWeeklyStats || []}
-          formatFreq={formatFrequency}
-        />
-      )}
 
       {/* ── Body Status (summary only) ── */}
       <BodyStatus

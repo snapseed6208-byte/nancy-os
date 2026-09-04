@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   Flag, Calendar, ListChecks, TrendingUp, Loader2, Plus, Check, X,
-  RefreshCw, Brain,
-  Sparkles, ChevronRight, ChevronLeft, Circle, CircleDot, CheckCircle2, Trash2,
-  Target, Clock, Zap, Lightbulb, ArrowRight, AlertTriangle, Heart,
-  Edit3, Eye, Sun, Moon, Sunrise, CheckCheck, Star,
+  RefreshCw,
+  Sparkles, ChevronRight, CircleDot, Circle, CheckCircle2, Trash2,
+  Target, Clock, Zap,
+  Edit3, Sun, CheckCheck, Star,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
@@ -18,13 +19,6 @@ import {
   type GoalRow, type TaskRow, type TaskBreakdownItem, type GoalWithProgress, type TaskPeriodState,
   type TaskCompletionRecord,
 } from "@/lib/hooks/usePlan";
-import {
-  useHabitsWithToday, useCreateHabit, useToggleHabitRecord,
-  useDeleteHabit, useHabitAnalysis, useGenerateHabitAnalysis,
-  useHabitMonthCalendar, useHabitWeeklyStats,
-  formatFrequency,
-  type HabitWithRecord, type HabitAnalysis, type DayCell, type WeeklyStat,
-} from "@/lib/hooks/useHabit";
 import {
   useImportantEvents, useCreateImportantEvent, useToggleImportantEvent,
   useUpdateImportantEvent, useDeleteImportantEvent,
@@ -55,20 +49,30 @@ const GOAL_LEVEL_COLORS: Record<string, string> = {
   monthly: "bg-sage-light/50 text-sage-deep border-sage-light",
 };
 
-type Tab = "today" | "goals" | "tasks" | "habits" | "weekly" | "events";
+type Tab = "today" | "goals" | "tasks" | "weekly" | "events";
 
 // ── Page ──
 
 export default function Plan() {
+  const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>(() => {
     const hash = window.location.hash;
     const match = hash.match(/[?&]tab=([^&]+)/);
     const initial = match?.[1];
-    if (initial && ["today", "goals", "tasks", "habits", "weekly", "events"].includes(initial)) {
+    if (initial && ["today", "goals", "tasks", "weekly", "events"].includes(initial)) {
       return initial as Tab;
     }
     return "today";
   });
+
+  // Legacy deep link from the removed 习惯追踪 tab → send the user to Habit Lab.
+  useEffect(() => {
+    const legacyHabitTab =
+      /tab=habits/.test(window.location.hash) ||
+      /tab=habits/.test(window.location.search);
+    if (legacyHabitTab) navigate("/habits");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sync tab changes to URL
   const handleTabChange = (next: Tab) => {
@@ -94,7 +98,6 @@ export default function Plan() {
           { key: "today" as Tab, label: "今日计划", icon: Calendar },
           { key: "goals" as Tab, label: "目标层级", icon: Flag },
           { key: "tasks" as Tab, label: "任务列表", icon: ListChecks },
-          { key: "habits" as Tab, label: "习惯追踪", icon: Heart },
           { key: "weekly" as Tab, label: "周计划", icon: TrendingUp },
           { key: "events" as Tab, label: "重要安排", icon: Star },
         ]).map(({ key, label, icon: Icon }) => (
@@ -115,7 +118,6 @@ export default function Plan() {
       {tab === "today" && <TodayPlan onTabChange={handleTabChange} />}
       {tab === "goals" && <GoalHierarchy />}
       {tab === "tasks" && <TaskList />}
-      {tab === "habits" && <HabitTracker />}
       {tab === "weekly" && <WeeklyPlan />}
       {tab === "events" && <ImportantEventsPage />}
     </div>
@@ -1528,592 +1530,6 @@ function AiReviewSection() {
             )}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Habit Tracker ──
-
-const HABIT_ICONS = ["💪", "📚", "🧘", "🏃", "💧", "🍎", "😴", "✍️", "🎯", "🌟"];
-const HABIT_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9"];
-
-function HabitTracker() {
-  const { data: habitsWithToday, isLoading } = useHabitsWithToday();
-  const toggleRecord = useToggleHabitRecord();
-  const createHabit = useCreateHabit();
-  const deleteHabit = useDeleteHabit();
-  const [showAdd, setShowAdd] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newFrequencyType, setNewFrequencyType] = useState("daily");
-  const [newFrequencyValue, setNewFrequencyValue] = useState(1);
-
-  // Calendar state
-  const now = new Date();
-  const [calYear, setCalYear] = useState(now.getFullYear());
-  const [calMonth, setCalMonth] = useState(now.getMonth() + 1);
-
-  const habits = (habitsWithToday || []) as HabitWithRecord[];
-  const today = new Date().toISOString().split("T")[0];
-
-  const completedCount = habits.filter(
-    (h) => h.today_record?.status === "completed",
-  ).length;
-  const totalCount = habits.length;
-  const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-  const { data: analysis } = useHabitAnalysis();
-  const generateAnalysis = useGenerateHabitAnalysis();
-  const { data: calendar } = useHabitMonthCalendar(calYear, calMonth);
-  const { data: weeklyStats } = useHabitWeeklyStats(4);
-
-  const monthNames = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
-
-  const statusCycleLabel = (status?: string) => {
-    if (!status) return "○";
-    if (status === "completed") return "✓";
-    if (status === "skipped") return "→";
-    return "✗";
-  };
-
-  const statusColor = (status?: string) => {
-    if (!status) return "border-ink/20 bg-white text-ink-lighter";
-    if (status === "completed") return "border-emerald-300 bg-emerald-50 text-emerald-600";
-    if (status === "skipped") return "border-amber-300 bg-amber-50 text-amber-600";
-    return "border-accent-rose/30 bg-accent-rose/5 text-accent-rose";
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Loader2 size={20} className="animate-spin text-ink-lighter" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Stats: 4-stat grid */}
-      <div className="grid grid-cols-4 gap-2">
-        <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-emerald-500">{completedCount}</p>
-          <p className="text-[10px] text-ink-lighter">今日完成</p>
-        </div>
-        <div className="bg-accent-sky/5 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-accent-sky">{completionRate}%</p>
-          <p className="text-[10px] text-ink-lighter">完成率</p>
-        </div>
-        <div className="bg-sage-light/30 rounded-xl p-2.5 text-center">
-          <p className="text-lg font-bold text-sage-deep">{totalCount}</p>
-          <p className="text-[10px] text-ink-lighter">总习惯数</p>
-        </div>
-        <div className="bg-purple-50 rounded-xl p-2.5 text-center">
-          <p className="text-sm font-bold text-purple-600">
-            {analysis ? "✓" : "-"}
-          </p>
-          <p className="text-[10px] text-ink-lighter">本月分析</p>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      {totalCount > 0 && (
-        <div className="bg-ink/5 rounded-full h-2 overflow-hidden">
-          <div
-            className="bg-emerald-400 h-full rounded-full transition-all duration-500"
-            style={{ width: `${completionRate}%` }}
-          />
-        </div>
-      )}
-
-      {/* Add habit */}
-      <button
-        onClick={() => setShowAdd(!showAdd)}
-        className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 border border-dashed border-sage-light/50 text-xs text-sage-deep hover:bg-sage-light/10 transition-colors"
-      >
-        <Plus size={13} /> 添加习惯
-      </button>
-
-      {showAdd && (
-        <div className="bg-card rounded-xl border border-sage-light/30 p-3 space-y-2">
-          <input
-            type="text"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="习惯名称..."
-            className="w-full text-sm rounded-lg border border-border px-3 py-2 bg-white"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newTitle.trim()) {
-                createHabit.mutate({
-                  title: newTitle.trim(),
-                  icon: HABIT_ICONS[Math.floor(Math.random() * HABIT_ICONS.length)],
-                  color: HABIT_COLORS[Math.floor(Math.random() * HABIT_COLORS.length)],
-                  frequencyType: newFrequencyType,
-                  frequencyValue: newFrequencyValue,
-                });
-                setNewTitle("");
-                setNewFrequencyType("daily");
-                setNewFrequencyValue(1);
-                setShowAdd(false);
-              }
-            }}
-          />
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-ink-lighter shrink-0">频率</span>
-            {([
-              { type: "daily", label: "每天" },
-              { type: "weekly", label: "每周" },
-              { type: "monthly", label: "每月" },
-            ] as const).map(({ type, label }) => (
-              <button
-                key={type}
-                onClick={() => {
-                  setNewFrequencyType(type);
-                  if (type === "daily") setNewFrequencyValue(1);
-                }}
-                className={cn(
-                  "text-[10px] px-2 py-1 rounded-full font-medium transition-colors",
-                  newFrequencyType === type
-                    ? "bg-sage-light text-sage-deep"
-                    : "bg-ink/5 text-ink-lighter hover:bg-ink/10",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-            {newFrequencyType !== "daily" && (
-              <select
-                value={newFrequencyValue}
-                onChange={(e) => setNewFrequencyValue(Number(e.target.value))}
-                className="text-[10px] bg-ink/5 rounded px-1.5 py-1 outline-none"
-              >
-                {Array.from({ length: newFrequencyType === "weekly" ? 7 : 10 }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>{n}次</option>
-                ))}
-              </select>
-            )}
-            <div className="flex-1" />
-            <button
-              onClick={() => setShowAdd(false)}
-              className="text-ink-lighter hover:text-ink p-1"
-            >
-              <X size={14} />
-            </button>
-            <button
-              onClick={() => {
-                if (!newTitle.trim()) return;
-                createHabit.mutate({
-                  title: newTitle.trim(),
-                  icon: HABIT_ICONS[Math.floor(Math.random() * HABIT_ICONS.length)],
-                  color: HABIT_COLORS[Math.floor(Math.random() * HABIT_COLORS.length)],
-                  frequencyType: newFrequencyType,
-                  frequencyValue: newFrequencyValue,
-                });
-                setNewTitle("");
-                setNewFrequencyType("daily");
-                setNewFrequencyValue(1);
-                setShowAdd(false);
-              }}
-              disabled={!newTitle.trim() || createHabit.isPending}
-              className="bg-sage-light text-sage-deep rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-            >
-              {createHabit.isPending ? "..." : "添加"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Habit list */}
-      {habits.length === 0 ? (
-        <div className="text-center py-10 bg-card rounded-2xl border border-border">
-          <Heart size={28} className="text-ink-lighter mx-auto mb-2" />
-          <p className="text-sm text-ink-light">尚未创建习惯</p>
-          <p className="text-xs text-ink-lighter mt-1">追踪你的每日习惯，建立更好的生活节奏</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {habits.map((h) => {
-            const recordStatus = h.today_record?.status;
-            return (
-              <div
-                key={h.id}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 bg-card border border-border/50"
-              >
-                <button
-                  onClick={() =>
-                    toggleRecord.mutate({ habitId: h.id, date: today, currentStatus: recordStatus })
-                  }
-                  disabled={toggleRecord.isPending}
-                  className={cn(
-                    "h-8 w-8 rounded-lg border-2 flex items-center justify-center text-xs font-bold shrink-0 transition-colors",
-                    statusColor(recordStatus),
-                  )}
-                >
-                  {statusCycleLabel(recordStatus)}
-                </button>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm">{h.icon || "✅"}</span>
-                    <p className="text-xs font-medium text-ink truncate">{h.title}</p>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-ink-lighter">
-                      {formatFrequency(h.frequency_type || "daily", h.frequency_value || 1)}
-                    </span>
-                    {h.streak_best > 0 && (
-                      <span className="text-[10px] text-accent-warm">
-                        最佳 {h.streak_best}天
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => deleteHabit.mutate(h.id)}
-                  className="text-ink-lighter hover:text-accent-rose shrink-0"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Month Calendar */}
-      <HabitMonthCalendar
-        calendar={calendar || []}
-        year={calYear}
-        month={calMonth}
-        monthLabel={monthNames[calMonth - 1]}
-        onPrev={() => {
-          if (calMonth === 1) { setCalMonth(12); setCalYear(calYear - 1); }
-          else setCalMonth(calMonth - 1);
-        }}
-        onNext={() => {
-          if (calMonth === 12) { setCalMonth(1); setCalYear(calYear + 1); }
-          else setCalMonth(calMonth + 1);
-        }}
-        habits={habits}
-      />
-
-      {/* Weekly Habit Bars */}
-      {weeklyStats && weeklyStats.length > 0 && (
-        <WeeklyHabitBars stats={weeklyStats} />
-      )}
-
-      {/* AI Analysis Card */}
-      <HabitAnalysisCard
-        analysis={analysis}
-        onGenerate={() => generateAnalysis.mutate({ days: 30 })}
-        isGenerating={generateAnalysis.isPending}
-      />
-    </div>
-  );
-}
-
-// ── Habit Month Calendar ──
-
-const DAY_HEADERS = ["日", "一", "二", "三", "四", "五", "六"];
-
-function HabitMonthCalendar({
-  calendar,
-  year,
-  month,
-  monthLabel,
-  onPrev,
-  onNext,
-  habits,
-}: {
-  calendar: DayCell[];
-  year: number;
-  month: number;
-  monthLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-  habits: HabitWithRecord[];
-}) {
-  return (
-    <div className="bg-card rounded-2xl border border-border p-4">
-      <div className="flex items-center justify-between mb-3">
-        <button onClick={onPrev} className="text-ink-lighter hover:text-ink p-1">
-          <ChevronLeft size={14} />
-        </button>
-        <span className="text-sm font-semibold text-ink">{year}年 {monthLabel}</span>
-        <button onClick={onNext} className="text-ink-lighter hover:text-ink p-1">
-          <ChevronRight size={14} />
-        </button>
-      </div>
-
-      {/* Day headers */}
-      <div className="grid grid-cols-7 mb-1">
-        {DAY_HEADERS.map((d) => (
-          <div key={d} className="text-center text-[10px] text-ink-lighter py-1">{d}</div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-0.5">
-        {calendar.map((cell) => {
-          const intensity = cell.completionRate;
-          const bgClass = !cell.isCurrentMonth
-            ? "bg-transparent"
-            : intensity >= 0.8 ? "bg-emerald-100"
-            : intensity >= 0.5 ? "bg-emerald-50"
-            : intensity > 0 ? "bg-amber-50"
-            : "bg-ink/5";
-
-          return (
-            <div
-              key={cell.date}
-              className={cn(
-                "aspect-square rounded-lg flex flex-col items-center justify-center text-[10px] relative",
-                bgClass,
-                cell.isToday && "ring-1 ring-sage-deep",
-                !cell.isCurrentMonth && "opacity-30",
-              )}
-            >
-              <span className={cn(
-                "text-[10px] font-medium",
-                cell.isToday ? "text-sage-deep" : "text-ink-light",
-              )}>
-                {cell.dayOfMonth}
-              </span>
-              {/* Mini dots for habits */}
-              {cell.habits.filter((h) => h.status === "completed").length > 0 && (
-                <div className="flex gap-0.5 mt-0.5">
-                  {cell.habits
-                    .filter((h) => h.status === "completed")
-                    .slice(0, 3)
-                    .map((h) => (
-                      <div
-                        key={h.id}
-                        className="w-1 h-1 rounded-full"
-                        style={{ backgroundColor: h.color }}
-                      />
-                    ))}
-                  {cell.habits.filter((h) => h.status === "completed").length > 3 && (
-                    <span className="text-[7px] text-ink-lighter">+</span>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Legend */}
-      {habits.length > 0 && (
-        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/30 flex-wrap">
-          {habits.slice(0, 4).map((h) => (
-            <div key={h.id} className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: h.color }} />
-              <span className="text-[9px] text-ink-lighter truncate max-w-[60px]">{h.title}</span>
-            </div>
-          ))}
-          {habits.length > 4 && (
-            <span className="text-[9px] text-ink-lighter">+{habits.length - 4} more</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Weekly Habit Bars ──
-
-function WeeklyHabitBars({ stats }: { stats: WeeklyStat[] }) {
-  if (stats.length === 0) return null;
-
-  const latestWeek = stats[stats.length - 1];
-  const sorted = [...latestWeek.habits].sort((a, b) => b.rate - a.rate);
-
-  return (
-    <div className="bg-card rounded-2xl border border-border p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <TrendingUp size={14} className="text-sage-deep" />
-        <span className="text-xs font-semibold text-ink">本周习惯完成率</span>
-        <span className="text-[10px] text-ink-lighter ml-auto">
-          整体 {Math.round(latestWeek.overallRate * 100)}%
-        </span>
-      </div>
-      <div className="space-y-2">
-        {sorted.map((h) => (
-          <div key={h.id} className="flex items-center gap-2">
-            <span className="text-[10px] text-ink-light w-14 truncate">{h.name}</span>
-            <div className="flex-1 bg-ink/5 rounded-full h-2 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${Math.round(h.rate * 100)}%`,
-                  backgroundColor: h.color,
-                }}
-              />
-            </div>
-            <span className="text-[10px] text-ink-lighter w-8 text-right">
-              {Math.round(h.rate * 100)}%
-            </span>
-          </div>
-        ))}
-      </div>
-      {/* Small week-over-week sparkline */}
-      {stats.length > 1 && (
-        <div className="flex items-center gap-0.5 mt-3 pt-2 border-t border-border/30">
-          <span className="text-[9px] text-ink-lighter mr-1">趋势</span>
-          {stats.map((w, i) => (
-            <div
-              key={w.weekStart}
-              className="flex-1 flex flex-col items-center gap-0.5"
-              title={`${w.weekStart} - ${w.weekEnd}: ${Math.round(w.overallRate * 100)}%`}
-            >
-              <div className="w-full bg-ink/5 rounded-sm overflow-hidden" style={{ height: 16 }}>
-                <div
-                  className="w-full bg-sage-light rounded-sm transition-all"
-                  style={{ height: `${Math.max(Math.round(w.overallRate * 100), 4)}%`, marginTop: "auto" }}
-                />
-              </div>
-              <span className="text-[8px] text-ink-lighter">
-                {w.weekStart.slice(5)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Habit Analysis Card ──
-
-function HabitAnalysisCard({
-  analysis,
-  onGenerate,
-  isGenerating,
-}: {
-  analysis: HabitAnalysis | null | undefined;
-  onGenerate: () => void;
-  isGenerating: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (isGenerating) {
-    return (
-      <div className="bg-card rounded-2xl border border-sage-light/30 p-6 flex items-center justify-center gap-3">
-        <Loader2 size={18} className="animate-spin text-sage-deep" />
-        <span className="text-sm text-ink-light">正在生成 AI 习惯分析...</span>
-      </div>
-    );
-  }
-
-  if (!analysis) {
-    return (
-      <div className="bg-card rounded-2xl border border-border p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Brain size={14} className="text-purple-600" />
-          <span className="text-xs font-semibold text-ink">AI 习惯分析</span>
-        </div>
-        <p className="text-xs text-ink-lighter mb-3">
-          基于最近30天的习惯数据，AI 将分析你的行为模式、发现优势和改进空间。
-        </p>
-        <button
-          onClick={onGenerate}
-          className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-purple-50 text-purple-700 text-xs font-medium hover:bg-purple-100 transition-colors"
-        >
-          <Sparkles size={13} /> 生成 AI 分析
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-gradient-to-br from-purple-50/30 to-white border border-purple-100 rounded-2xl overflow-hidden">
-      <div className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Brain size={14} className="text-purple-600" />
-            <span className="text-xs font-semibold text-ink">AI 习惯分析</span>
-            <span className="text-[9px] text-purple-500 bg-purple-100 px-1.5 py-0.5 rounded-full">
-              最近30天
-            </span>
-          </div>
-          <button
-            onClick={onGenerate}
-            disabled={isGenerating}
-            className="flex items-center gap-1 text-[10px] text-ink-lighter hover:text-ink-light transition-colors"
-          >
-            <RefreshCw size={10} /> 重新生成
-          </button>
-        </div>
-
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          <div className="bg-white/60 rounded-xl p-2 text-center">
-            <p className="text-sm font-bold text-emerald-500">
-              {Math.round(analysis.stats.completion_rate * 100)}%
-            </p>
-            <p className="text-[9px] text-ink-lighter">完成率</p>
-          </div>
-          <div className="bg-white/60 rounded-xl p-2 text-center">
-            <p className="text-sm font-bold text-accent-sky">{analysis.stats.total_completed}</p>
-            <p className="text-[9px] text-ink-lighter">完成次数</p>
-          </div>
-          <div className="bg-white/60 rounded-xl p-2 text-center">
-            <p className="text-sm font-bold text-accent-warm">{analysis.stats.best_day_of_week}</p>
-            <p className="text-[9px] text-ink-lighter">最佳日</p>
-          </div>
-        </div>
-
-        {/* Summary */}
-        {analysis.summary && (
-          <p className="text-xs text-ink-light leading-relaxed mb-3">{analysis.summary}</p>
-        )}
-
-        {/* Strengths */}
-        {analysis.strengths.length > 0 && (
-          <div className="mb-2">
-            <p className="text-[10px] text-emerald-500 font-medium mb-1">优势发现</p>
-            <div className="space-y-1">
-              {analysis.strengths.map((s, i) => (
-                <div key={i} className="flex items-start gap-1.5">
-                  <span className="text-[10px] mt-0.5">💪</span>
-                  <span className="text-[10px] text-ink-light">{s}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Suggestions (collapsible) */}
-        {analysis.suggestions.length > 0 && (
-          <div>
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-[10px] text-purple-500 font-medium"
-            >
-              <Lightbulb size={10} />
-              改进建议 ({analysis.suggestions.length})
-              <ChevronRight size={10} className={cn("transition-transform", expanded && "rotate-90")} />
-            </button>
-            {expanded && (
-              <div className="space-y-1 mt-1.5">
-                {analysis.suggestions.map((s, i) => (
-                  <div key={i} className="flex items-start gap-1.5">
-                    <span className="text-[10px] mt-0.5">💡</span>
-                    <span className="text-[10px] text-ink-light">{s}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Motivation */}
-        {analysis.motivation && (
-          <p className="text-xs text-purple-600 italic text-center pt-2 mt-2 border-t border-purple-100">
-            {analysis.motivation}
-          </p>
-        )}
       </div>
     </div>
   );

@@ -1,13 +1,12 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
-import { Clock, Circle, CircleDot, CheckCircle2, FileText, Languages, ListTodo, Trophy, ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import { Clock, Circle, CircleDot, CheckCircle2, FileText, Languages, ListTodo, ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIPreference } from "@/lib/hooks/useUIPreference";
-import { aggregateReviewsAndSpeaking, aggregateHabits, type TimelineItem, type DashboardStats } from "@/lib/hooks/useDashboard";
+import { aggregateReviewsAndSpeaking, type TimelineItem, type DashboardStats } from "@/lib/hooks/useDashboard";
 
 const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   task: ListTodo,
-  habit: Trophy,
   journal: FileText,
   speaking: Languages,
   review: CheckCircle2,
@@ -15,7 +14,6 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?
 
 const TYPE_COLORS: Record<string, string> = {
   task: "bg-accent-sky/10 text-accent-sky",
-  habit: "bg-accent-warm/10 text-accent-warm",
   journal: "bg-accent-rose/10 text-accent-rose",
   speaking: "bg-accent-sky/10 text-accent-sky",
   review: "bg-sage-light text-sage-deep",
@@ -101,41 +99,18 @@ export function TimelineSection({ stats }: TimelineSectionProps) {
 
   const { completed, inProgress, pending } = stats.timeline;
 
-  // Separate habit items from non-habit items for aggregation
-  const { aggregated, habitNamesMap } = useMemo(() => {
-    const nonHabitCompleted = completed.filter((i) => i.type !== "habit" && i.type !== "review" && i.type !== "speaking");
+  const { aggregated } = useMemo(() => {
+    const others = completed.filter((i) => i.type !== "review" && i.type !== "speaking");
     const reviewItems = completed.filter((i) => i.type === "review");
     const speakingItems = completed.filter((i) => i.type === "speaking");
-    const habitItems = completed.filter((i) => i.type === "habit");
 
-    // Build habit names from metadata
-    const nameMap = new Map<string, { name: string; icon: string }>();
-    for (const h of habitItems) {
-      const habitId = h.metadata?.habitId as string;
-      if (habitId && !nameMap.has(habitId)) {
-        const title = h.title || "";
-        const name = title.replace(/^[^\s]+\s/, ""); // strip emoji prefix
-        const icon = title.match(/^[^\s]+/)?.[0] || "✅";
-        nameMap.set(habitId, { name: name || title, icon });
-      }
-    }
-
-    const aggregatedReview = aggregateReviewsAndSpeaking(reviewItems, speakingItems);
-    const aggregatedHabits = habitItems.length > 0
-      ? aggregateHabits(habitItems, nameMap)
-      : [];
-
-    const merged = [...aggregatedReview, ...aggregatedHabits, ...nonHabitCompleted]
+    const merged = [...aggregateReviewsAndSpeaking(reviewItems, speakingItems), ...others]
       .sort((a, b) => (b.time || "").localeCompare(a.time || ""));
 
-    return { aggregated: merged, habitNamesMap: nameMap };
+    return { aggregated: merged };
   }, [completed]);
 
-  // Non-habit items for in-progress and pending
-  const nonHabitInProgress = inProgress.filter((i) => i.type !== "habit");
-  const nonHabitPending = pending.filter((i) => i.type !== "habit");
-
-  const hasContent = aggregated.length > 0 || nonHabitInProgress.length > 0 || nonHabitPending.length > 0;
+  const hasContent = aggregated.length > 0 || inProgress.length > 0 || pending.length > 0;
   if (!hasContent) return null;
 
   return (
@@ -154,21 +129,21 @@ export function TimelineSection({ stats }: TimelineSectionProps) {
 
       {!expanded && (
         <p className="text-[11px] text-ink-lighter mb-1">
-          {aggregated.length} 项已完成 · {nonHabitPending.length} 项待完成
+          {aggregated.length} 项已完成 · {pending.length} 项待完成
         </p>
       )}
 
       {expanded && (
         <div className="space-y-3">
-          {nonHabitInProgress.length > 0 && (
+          {inProgress.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <CircleDot size={12} className="text-accent-sky" />
                 <span className="text-[11px] font-medium text-ink-light">进行中</span>
-                <span className="text-[10px] text-ink-lighter">({nonHabitInProgress.length})</span>
+                <span className="text-[10px] text-ink-lighter">({inProgress.length})</span>
               </div>
               <div className="space-y-1">
-                {nonHabitInProgress.map((item) => (
+                {inProgress.map((item) => (
                   <IndividualItem key={item.id} item={item} />
                 ))}
               </div>
@@ -192,15 +167,15 @@ export function TimelineSection({ stats }: TimelineSectionProps) {
             </div>
           )}
 
-          {nonHabitPending.length > 0 && (
+          {pending.length > 0 && (
             <div>
               <div className="flex items-center gap-1.5 mb-2">
                 <Circle size={12} className="text-ink-lighter" />
                 <span className="text-[11px] font-medium text-ink-light">待完成</span>
-                <span className="text-[10px] text-ink-lighter">({nonHabitPending.length})</span>
+                <span className="text-[10px] text-ink-lighter">({pending.length})</span>
               </div>
               <div className="space-y-1">
-                {nonHabitPending.map((item) => (
+                {pending.map((item) => (
                   <IndividualItem key={item.id} item={item} />
                 ))}
               </div>

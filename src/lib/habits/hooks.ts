@@ -6,9 +6,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getUserId } from "@/lib/auth";
 import { getBeijingDateString } from "@/lib/date";
-import { buildSprintTimeline, computePoints } from "./logic";
+import { buildSprintTimeline, computePoints, summarizeToday } from "./logic";
 import type {
-  HabitRewardRow, HabitReviewRow, HabitSprintLogRow, HabitSprintRow,
+  HabitRewardRow, HabitReviewRow, HabitSprintLogRow, HabitSprintRow, HabitLabTodaySummary,
 } from "./types";
 
 // ── Query keys ──
@@ -112,6 +112,35 @@ export function useTodayLogs() {
     },
     staleTime: 30_000,
   });
+}
+
+/** Explicit logs for an arbitrary Beijing date (used for yesterday-missed recovery). */
+export function useLogsOn(date: string) {
+  return useQuery({
+    queryKey: ["habit-lab", "logs", "on", date] as const,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("habit_sprint_logs")
+        .select("sprint_id, status")
+        .eq("date", date);
+      if (error) throw error;
+      return (data || []) as { sprint_id: string; status: "completed" | "skipped" }[];
+    },
+    enabled: !!date,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Single-source summary for Home's 今日实验 metric + daily-action section.
+ * Derived entirely from Habit Lab queries so Home never disagrees with itself
+ * (or with the /habits pages) about experiment counts.
+ */
+export function useHabitLabToday(): HabitLabTodaySummary {
+  const { data: sprints = [] } = useActiveSprints();
+  const { data: todayLogs = [] } = useTodayLogs();
+  const today = getBeijingDateString();
+  return summarizeToday(sprints, todayLogs, today);
 }
 
 /** All of the user's sprint logs (for cross-sprint points balance). */

@@ -113,3 +113,32 @@ export type RewardMatch = {
   /** balance overall */
   balance: number;
 };
+
+// ── Home daily-action surface ──
+
+/** One sprint folded into the Home "today" summary (phase + today's explicit log). */
+export type TodaySprintItem = {
+  sprint: HabitSprintRow;
+  phase: SprintPhase;
+  currentDay: number | null;
+  totalDays: number;
+  endDate: string;
+  todayStatus: "completed" | "skipped" | null;
+};
+
+/** Single source of truth for Home's 今日实验 card + daily-action section. */
+export type HabitLabTodaySummary = {
+  /** true when at least one active/paused sprint exists at all */
+  hasExperiments: boolean;
+  /** sprints whose window contains today (check-in available) */
+  due: TodaySprintItem[];
+  /** active sprints that ran past their window, awaiting the 复盘 review */
+  reviewable: TodaySprintItem[];
+  paused: TodaySprintItem[];
+  scheduled: TodaySprintItem[];
+  doneCount: number;      // due sprints completed today
+  handledCount: number;   // due sprints with any explicit log today (completed or skipped)
+  remainingCount: number; // due sprints with no log today
+  allHandled: boolean;    // due.length > 0 && remainingCount === 0
+  allCompleted: boolean;  // due.length > 0 && doneCount === due.length
+};
