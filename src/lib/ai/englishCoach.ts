@@ -1,3 +1,4 @@
+import { parseSpeakingResponse, speakingObject, type SimplifiedSpeakingFeedback } from "../english/speakingFeedback";
 // ============================================
 // Nancy OS — English Coach AI Service
 // Migrated from Expression Builder AI prompts
@@ -12,7 +13,6 @@ import {
   GENERATE_CATEGORY_QUESTION_PROMPT,
   EXPRESSION_PRACTICE_PROMPT,
   SUMMARIZE_PROGRESS_PROMPT,
-  GENERATE_REFERENCE_ANSWER_PROMPT,
   GENERATE_CLOZE_PROMPT,
   GENERATE_CONTEXT_CLOZE_PROMPT,
   buildExtractPrompt,
@@ -50,70 +50,16 @@ export interface GeneratedQuestion {
   suitableExpressions: string[];
 }
 
-export interface ExpressionUpgrade {
-  english: string;
-  chinese: string;
-  type: "vocabulary" | "chunk" | "sentencePattern" | "speakingExpression";
-  scene: string;
-  exampleSentence: string;
-  formality: "casual" | "semi-formal" | "formal";
-  usageNote: string;
-  sourceChunk: string;
-}
-
-export interface ContentAnalysis {
-  relevanceScore: number;
-  coherenceScore: number;
-  developmentScore: number;
-  relevanceLevel: string;
-  coherenceLevel: string;
-  developmentLevel: string;
-  summary: string;
-  questionRequirements: string[];
-  answeredRequirements: string[];
-  missedRequirements: string[];
-  offTopicParts: string[];
-  repetition: string[];
-  orderProblems: string[];
-  contentGaps: string[];
-  recommendedOrder: string[];
-  // Phase 6: Final High-score Answer fields
-  diagnosis?: string;
-  keyImprovements?: string[];
-}
-
-export interface AnswerStructureStep {
-  step: string;
-  label: string;
-  content: string;
-}
-
-export interface KeyUpgrade {
-  english: string;
-  chinese: string;
-  reason: string;
-}
-
-export interface SpeakingFeedback {
-  naturalVersion: string;
-  fluencyScore: number;
-  grammarScore: number;
-  vocabularyScore: number;
-  naturalnessScore: number;
+export interface SpeakingFeedback extends SimplifiedSpeakingFeedback {
+  fluencyScore: number | null;
+  grammarScore: number | null;
+  vocabularyScore: number | null;
+  naturalnessScore: number | null;
   mainProblems: string;
   usefulCorrections: string;
-  betterChunks: string;
-  oneBetterExample: string;
   expressionsUsed: string[];
   expressionsMissed: string[];
-  expressionUpgrade: ExpressionUpgrade[];
-  // Phase 6: Content & Structure fields (optional for backward compatibility)
-  contentAnalysis?: ContentAnalysis;
-  answerStructure?: AnswerStructureStep[];
-  finalHighScoreAnswer?: string;
-  diagnosis?: string;
-  keyImprovements?: string[];
-  keyUpgrades?: KeyUpgrade[];
+  contentAnalysis: Record<string, unknown>;
 }
 
 // ── 1. analyzeSpeaking / extractExpressions ──
@@ -172,63 +118,13 @@ export async function generateSpeakingQuestion(
 
 // ── 3. analyzeSpeaking / generateBetterVersion ──
 
-function safeContentAnalysis(raw: Record<string, unknown>): ContentAnalysis {
-  const ca = (raw.contentAnalysis as Record<string, unknown>) || {};
-  const arr = (key: string): string[] => Array.isArray(ca[key]) ? (ca[key] as string[]) : [];
-  return {
-    relevanceScore: typeof ca.relevanceScore === "number" ? ca.relevanceScore : 0,
-    coherenceScore: typeof ca.coherenceScore === "number" ? ca.coherenceScore : 0,
-    developmentScore: typeof ca.developmentScore === "number" ? ca.developmentScore : 0,
-    relevanceLevel: (ca.relevanceLevel as string) || "",
-    coherenceLevel: (ca.coherenceLevel as string) || "",
-    developmentLevel: (ca.developmentLevel as string) || "",
-    summary: (ca.summary as string) || "",
-    questionRequirements: arr("questionRequirements"),
-    answeredRequirements: arr("answeredRequirements"),
-    missedRequirements: arr("missedRequirements"),
-    offTopicParts: arr("offTopicParts"),
-    repetition: arr("repetition"),
-    orderProblems: arr("orderProblems"),
-    contentGaps: arr("contentGaps"),
-    recommendedOrder: arr("recommendedOrder"),
-    diagnosis: typeof ca.diagnosis === "string" ? ca.diagnosis : "",
-    keyImprovements: arr("keyImprovements"),
-  };
-}
-
-function safeAnswerStructure(raw: Record<string, unknown>): AnswerStructureStep[] {
-  const arr = raw.answerStructure;
-  if (!Array.isArray(arr)) return [];
-  return arr.map((s: unknown) => {
-    const step = s as Record<string, unknown>;
-    return {
-      step: (step.step as string) || "",
-      label: (step.label as string) || "",
-      content: (step.content as string) || "",
-    };
-  });
-}
-
-function safeKeyUpgrades(raw: Record<string, unknown>): KeyUpgrade[] {
-  const arr = raw.keyUpgrades;
-  if (!Array.isArray(arr)) return [];
-  return arr.map((k: unknown) => {
-    const ku = k as Record<string, unknown>;
-    return {
-      english: (ku.english as string) || "",
-      chinese: (ku.chinese as string) || "",
-      reason: (ku.reason as string) || "",
-    };
-  });
-}
-
 export interface AnalyzeSpeakingOptions {
   questionContext?: { mode?: string; topic?: string; part?: string };
   /** Previous attempt data for retry context */
   retryContext?: {
-    answerStructure?: AnswerStructureStep[];
-    finalHighScoreAnswer?: string;
-    keyUpgrades?: KeyUpgrade[];
+    final_upgraded_answer?: string;
+    originalAnswer?: string;
+    takeaway_expressions?: SimplifiedSpeakingFeedback["takeaway_expressions"];
   };
 }
 
@@ -250,33 +146,30 @@ export async function analyzeSpeaking(
       { role: "system", content: systemPrompt },
       { role: "user", content: buildFeedbackPrompt(prompt, answer, targetExpressions, opts?.questionContext) },
     ],
-    injectContext: true,
+    speakingFeedback: true,
+    injectContext: false,
     authToken,
   });
 
-  const raw = extractJSON(response.content, {} as Record<string, unknown>);
-
+  const result = parseSpeakingResponse(response.content);
+  const details = result.detailed_analysis;
+  const numeric = (key: string) => typeof details[key] === "number" && Number.isFinite(details[key]) && details[key] >= 0 && details[key] <= 9 ? details[key] as number : null;
+  const strings = (key: string) => Array.isArray(details[key]) ? details[key].filter((v): v is string => typeof v === "string" && targetExpressions.includes(v)) : [];
+  if (opts?.retryContext) {
+    // Ignore accidental generated versions on retry; the learning target is immutable.
+    result.final_upgraded_answer = opts.retryContext.final_upgraded_answer || "";
+    result.reference_answer = "";
+    result.takeaway_expressions = [];
+    result.revision_mode = null;
+  }
   return {
-    naturalVersion: (raw.naturalVersion as string) || answer,
-    fluencyScore: typeof raw.fluencyScore === "number" ? raw.fluencyScore : 0,
-    grammarScore: typeof raw.grammarScore === "number" ? raw.grammarScore : 0,
-    vocabularyScore: typeof raw.vocabularyScore === "number" ? raw.vocabularyScore : 0,
-    naturalnessScore: typeof raw.naturalnessScore === "number" ? raw.naturalnessScore : 0,
-    mainProblems: (raw.mainProblems as string) || "",
-    usefulCorrections: (raw.usefulCorrections as string) || "",
-    betterChunks: (raw.betterChunks as string) || "",
-    oneBetterExample: (raw.oneBetterExample as string) || "",
-    expressionsUsed: Array.isArray(raw.expressionsUsed) ? (raw.expressionsUsed as string[]) : [],
-    expressionsMissed: Array.isArray(raw.expressionsMissed) ? (raw.expressionsMissed as string[]) : [],
-    expressionUpgrade: Array.isArray(raw.expressionUpgrade)
-      ? (raw.expressionUpgrade as ExpressionUpgrade[])
-      : [],
-    contentAnalysis: safeContentAnalysis(raw),
-    answerStructure: safeAnswerStructure(raw),
-    finalHighScoreAnswer: (raw.finalHighScoreAnswer as string) || (raw.structuredBetterAnswer as string) || "",
-    diagnosis: (raw.diagnosis as string) || "",
-    keyImprovements: Array.isArray(raw.keyImprovements) ? (raw.keyImprovements as string[]) : [],
-    keyUpgrades: safeKeyUpgrades(raw),
+    ...result,
+    fluencyScore: numeric("fluencyScore"), grammarScore: numeric("grammarScore"),
+    vocabularyScore: numeric("vocabularyScore"), naturalnessScore: numeric("naturalnessScore"),
+    mainProblems: result.key_issues.map(i => i.message).join("\n"),
+    usefulCorrections: typeof details.usefulCorrections === "string" ? details.usefulCorrections : "",
+    expressionsUsed: strings("expressionsUsed"), expressionsMissed: strings("expressionsMissed"),
+    contentAnalysis: speakingObject(details.contentAnalysis),
   };
 }
 
@@ -288,7 +181,7 @@ export async function generateBetterVersion(
   authToken: string,
 ): Promise<string> {
   const feedback = await analyzeSpeaking(prompt || "Speaking practice", answer, [], authToken);
-  return feedback.naturalVersion;
+  return feedback.final_upgraded_answer;
 }
 
 // ── 5. generateCategoryQuestion ──
@@ -349,8 +242,7 @@ export function buildCombinedFeedback(fb: SpeakingFeedback): string {
   const sections = [
     fb.mainProblems,
     fb.usefulCorrections,
-    fb.betterChunks,
-    fb.oneBetterExample,
+    fb.optimization_summary,
   ].filter(Boolean);
   return sections.length > 0
     ? sections.join("\n\n---\n\n")
@@ -416,27 +308,6 @@ export async function summarizeProgress(
     suggestion: (raw.suggestion as string) || "",
     summaryText: (raw.summaryText as string) || "",
   };
-}
-
-// ── 9. Reference Answer Generation ──
-
-export async function generateReferenceAnswer(
-  question: string,
-  authToken: string,
-): Promise<string> {
-  const response = await callAI({
-    model: "deepseek-chat",
-    maxTokens: 512,
-    messages: [
-      { role: "system", content: GENERATE_REFERENCE_ANSWER_PROMPT },
-      { role: "user", content: `Speaking question: ${question}\n\nGenerate a natural model answer.` },
-    ],
-    injectContext: true,
-    authToken,
-  });
-
-  const raw = extractJSON(response.content, {} as Record<string, unknown>);
-  return (raw.referenceAnswer as string) || "";
 }
 
 // ── 10. Cloze Sentence Generation ──

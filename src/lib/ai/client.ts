@@ -16,6 +16,8 @@ export interface ChatCompletionOptions {
   messages: ChatMessage[];
   /** When true, injects user memory context + learning history into the prompt */
   injectContext?: boolean;
+  /** Restrict speaking feedback to facts in the current transcript. */
+  speakingFeedback?: boolean;
   /** User's JWT session token (required when injectContext is true) */
   authToken?: string;
 }
@@ -64,6 +66,7 @@ export async function callAI(opts: ChatCompletionOptions): Promise<ChatCompletio
           maxTokens: opts.maxTokens || 2048,
           temperature: opts.temperature ?? 0.7,
           inject_context: opts.injectContext === true,
+          ...(opts.speakingFeedback ? { speaking_feedback: true } : {}),
         }),
         signal: controller.signal,
       });

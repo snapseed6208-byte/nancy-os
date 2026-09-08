@@ -826,6 +826,8 @@ serve(async (req: Request) => {
       return jsonResponse(req, { error: "messages array is required" }, 400);
     }
 
+    const speakingFeedback = body.speaking_feedback === true;
+
     // Fetch learning context in parallel
     const [
       confirmedMemories,
@@ -890,7 +892,7 @@ serve(async (req: Request) => {
       || recentScenarios.some((s) => /interview|business|storytelling/i.test(s));
 
     let personalStoryContext = "";
-    if (isStoryScenario) {
+    if (isStoryScenario && !speakingFeedback) {
       try {
         const assets = await getExpressionAssets(supabase, userId, {
           limit: 15,
@@ -919,7 +921,7 @@ serve(async (req: Request) => {
 
     // ── Build messages with context injection ──
     const finalMessages = [...messages];
-    if (learningContext) {
+    if (learningContext && !speakingFeedback) {
       const hasSystem = finalMessages.length > 0 && finalMessages[0].role === "system";
       if (hasSystem) {
         finalMessages[0] = {
@@ -932,12 +934,12 @@ serve(async (req: Request) => {
     }
 
     // Inject personal story context as a high-priority system message
-    if (personalStoryContext) {
+    if (personalStoryContext && !speakingFeedback) {
       finalMessages.unshift({ role: "system", content: personalStoryContext });
     }
 
     // Inject Nancy personal profile as the highest-priority system message
-    if (nancyProfileContext) {
+    if (nancyProfileContext && !speakingFeedback) {
       finalMessages.unshift({ role: "system", content: nancyProfileContext });
     }
 

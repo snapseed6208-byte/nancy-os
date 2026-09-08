@@ -1,3 +1,5 @@
+import { SpeakingFeedbackPanel } from "@/components/english/SpeakingFeedbackPanel";
+import { normalizeSpeakingFeedback, speakingFeedbackStorage } from "@/lib/english/speakingFeedback";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
@@ -9,7 +11,7 @@ import {
 } from "lucide-react";
 import {
   useSpeakingSessions, useSpeakingSession, useCreateSpeakingSessionV2,
-  useCreateSpeakingAttempt, useCreateExpression, uploadAudio, useDueExpressions, useSpeakingStats,
+  useCreateSpeakingAttempt, uploadAudio, useDueExpressions, useSpeakingStats,
   useSpeakingQuestions, useSpeakingQuestionHistory, useRecordSpeakingQuestionUsage,
   useUpdateSpeakingSession, useSoftDeleteSpeakingSession,
 } from "@/lib/hooks/useEnglish";
@@ -18,9 +20,8 @@ import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
 import {
   analyzeSpeaking, buildCombinedFeedback,
   generateCategoryQuestion, generateExpressionPracticeQuestion,
-  generateReferenceAnswer,
 } from "@/lib/ai/englishCoach";
-import type { SpeakingFeedback, ExpressionUpgrade } from "@/lib/ai/englishCoach";
+import type { SpeakingFeedback } from "@/lib/ai/englishCoach";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -134,74 +135,12 @@ function selectQuestionFromBank(
 
 import { useAudioRecorder } from "@/lib/hooks/useAudioRecorder";
 
-// ── Score Bar ──
-
-function ScoreBar({ label, score }: { label: string; score: number }) {
-  const pct = Math.min((score / 9) * 100, 100);
-  const color = score >= 7 ? "bg-emerald-400" : score >= 5.5 ? "bg-amber-400" : "bg-accent-rose/60";
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-ink-light w-20 shrink-0">{label}</span>
-      <div className="flex-1 h-1.5 bg-ink/10 rounded-full overflow-hidden">
-        <div className={cn("h-full rounded-full transition-all duration-700", color)} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs font-mono font-medium text-ink w-7 text-right">{score.toFixed(1)}</span>
-    </div>
-  );
-}
-
 // ── Format duration ──
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-}
-
-// ── Phase 6: Comparison Score Bar ──
-
-function ComparisonScoreBar({ label, before, after }: { label: string; before: number; after: number }) {
-  const delta = after - before;
-  const improved = delta > 0;
-  const barBefore = Math.min((before / 9) * 100, 100);
-  const barAfter = Math.min((after / 9) * 100, 100);
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-[11px]">
-        <span className="text-ink-light">{label}</span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-ink-lighter">{before.toFixed(1)}</span>
-          <span className="text-ink-lighter">→</span>
-          <span className={cn("font-medium", improved ? "text-emerald-600" : "text-accent-rose")}>
-            {after.toFixed(1)}
-          </span>
-          {delta !== 0 && (
-            <span className={cn(
-              "text-[10px] font-medium",
-              improved ? "text-emerald-500" : "text-accent-rose"
-            )}>
-              {improved ? "+" : ""}{delta.toFixed(1)}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="flex gap-1">
-        <div className="flex-1 h-1.5 bg-ink/5 rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all bg-ink/20"
-            style={{ width: `${barBefore}%` }}
-          />
-        </div>
-        <div className="flex-1 h-1.5 bg-ink/5 rounded-full overflow-hidden">
-          <div
-            className={cn("h-full rounded-full transition-all", improved ? "bg-emerald-400" : "bg-accent-rose/60")}
-            style={{ width: `${barAfter}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── SRS auto-lowering for missed expressions ──
@@ -298,14 +237,9 @@ export default function EnglishSpeaking() {
   const [isStarting, setIsStarting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [feedback, setFeedback] = useState<SpeakingFeedback | null>(null);
-  const [referenceAnswer, setReferenceAnswer] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
   const [textMode, setTextMode] = useState(false);
-  const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
-  const [addBankError, setAddBankError] = useState<string | null>(null);
-  const referenceAnswerPromise = useRef<Promise<void> | null>(null);
 
   // Phase 6: Retry flow state
   const [firstFeedback, setFirstFeedback] = useState<SpeakingFeedback | null>(null);
@@ -343,7 +277,6 @@ export default function EnglishSpeaking() {
   const createAttempt = useCreateSpeakingAttempt();
   const updateSession = useUpdateSpeakingSession();
   const deleteSession = useSoftDeleteSpeakingSession();
-  const createExpression = useCreateExpression();
   const recordUsage = useRecordSpeakingQuestionUsage();
 
   // Bank queries
@@ -564,7 +497,7 @@ export default function EnglishSpeaking() {
 
   // ── Phase 6: Retry flow handlers ──
 
-  const [retryReferenceMode, setRetryReferenceMode] = useState<"structure" | "full" | "hidden">("structure");
+  const [retryReferenceMode, setRetryReferenceMode] = useState<"full" | "hidden">("full");
 
   const handleRetryStartRecording = async () => {
     if (isStartingRef.current || recorder.state !== "idle") return;
@@ -639,9 +572,9 @@ export default function EnglishSpeaking() {
         {
           questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart },
           retryContext: {
-            answerStructure: firstFeedback?.answerStructure,
-            finalHighScoreAnswer: firstFeedback?.finalHighScoreAnswer,
-            keyUpgrades: firstFeedback?.keyUpgrades,
+            final_upgraded_answer: firstFeedback?.final_upgraded_answer,
+            originalAnswer: firstTranscript,
+            takeaway_expressions: firstFeedback?.takeaway_expressions,
           },
         },
       );
@@ -701,7 +634,7 @@ export default function EnglishSpeaking() {
         session_id: sessionId,
         answer: retryTranscript || `[Voice recording on: ${question}]`,
         transcribed_text: retryTranscript || null,
-        natural_version: retryFeedback?.naturalVersion || "",
+        natural_version: "",
         combined_feedback: combined,
         fluency_score: retryFeedback?.fluencyScore ?? null,
         grammar_score: retryFeedback?.grammarScore ?? null,
@@ -709,14 +642,14 @@ export default function EnglishSpeaking() {
         naturalness_score: retryFeedback?.naturalnessScore ?? null,
         main_problems: retryFeedback?.mainProblems || null,
         useful_corrections: retryFeedback?.usefulCorrections || null,
-        better_chunks: retryFeedback?.betterChunks || null,
-        one_better_example: retryFeedback?.oneBetterExample || null,
+        better_chunks: null,
+        one_better_example: null,
         audio_url: retryAudioUrlUploaded || null,
         audio_duration: retryDuration,
         expressions_used: retryFeedback?.expressionsUsed || [],
         expressions_missed: retryFeedback?.expressionsMissed || [],
         reference_answer: null,
-        expression_upgrade: retryFeedback?.expressionUpgrade || [],
+        expression_upgrade: [],
         retry_of_attempt_id: firstAttemptId,
         attempt_round: 2,
         is_retry: true,
@@ -725,24 +658,7 @@ export default function EnglishSpeaking() {
         fallback_used: asr.fallbackTriggered,
       };
 
-      if (retryFeedback?.contentAnalysis) {
-        retryData.content_analysis = retryFeedback.contentAnalysis;
-      }
-      if (retryFeedback?.answerStructure && retryFeedback.answerStructure.length > 0) {
-        retryData.answer_structure = retryFeedback.answerStructure;
-      }
-      if (retryFeedback?.finalHighScoreAnswer) {
-        retryData.structured_better_answer = retryFeedback.finalHighScoreAnswer;
-      }
-      if (retryFeedback?.diagnosis) {
-        retryData.diagnosis = retryFeedback.diagnosis;
-      }
-      if (retryFeedback?.keyImprovements && retryFeedback.keyImprovements.length > 0) {
-        retryData.key_improvements = JSON.stringify(retryFeedback.keyImprovements);
-      }
-      if (retryFeedback?.keyUpgrades && retryFeedback.keyUpgrades.length > 0) {
-        retryData.key_upgrades = retryFeedback.keyUpgrades;
-      }
+      if (retryFeedback) Object.assign(retryData, speakingFeedbackStorage(retryFeedback));
 
       await createAttempt.mutateAsync(retryData);
       console.log("[EnglishSpeaking] Retry attempt saved", { session_id: sessionId, retry_of: firstAttemptId });
@@ -792,15 +708,11 @@ export default function EnglishSpeaking() {
       console.log("[EnglishSpeaking] AI analysis complete", {
         fluency: result.fluencyScore, grammar: result.grammarScore,
         vocab: result.vocabularyScore, naturalness: result.naturalnessScore,
-        upgrades: result.expressionUpgrade?.length || 0,
+        takeaways: result.takeaway_expressions.length,
         relevance: result.contentAnalysis?.relevanceScore,
         coherence: result.contentAnalysis?.coherenceScore,
         development: result.contentAnalysis?.developmentScore,
       });
-      const raPromise = generateReferenceAnswer(question, session.access_token)
-        .then((ra) => setReferenceAnswer(ra))
-        .catch(() => {});
-      referenceAnswerPromise.current = raPromise;
       setStep("results");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "AI 分析失败，请稍后重试";
@@ -828,16 +740,6 @@ export default function EnglishSpeaking() {
       recorder.duration,
     );
 
-    // Wait for reference answer if still generating (race with 3s timeout)
-    if (referenceAnswerPromise.current) {
-      try {
-        await Promise.race([
-          referenceAnswerPromise.current,
-          new Promise<void>((r) => setTimeout(r, 3000)),
-        ]);
-      } catch { /* already caught in handleAnalyze */ }
-    }
-
     let audioUrl = "";
     if (recorder.blob) {
       try {
@@ -861,7 +763,7 @@ export default function EnglishSpeaking() {
         session_id: sessionId,
         answer: asr.transcript || `[Voice recording on: ${question}]`,
         transcribed_text: asr.transcript || null,
-        natural_version: feedback?.naturalVersion || "",
+        natural_version: "",
         combined_feedback: combined,
         fluency_score: feedback?.fluencyScore ?? null,
         grammar_score: feedback?.grammarScore ?? null,
@@ -869,14 +771,14 @@ export default function EnglishSpeaking() {
         naturalness_score: feedback?.naturalnessScore ?? null,
         main_problems: feedback?.mainProblems || null,
         useful_corrections: feedback?.usefulCorrections || null,
-        better_chunks: feedback?.betterChunks || null,
-        one_better_example: feedback?.oneBetterExample || null,
+        better_chunks: null,
+        one_better_example: null,
         audio_url: audioUrl || null,
         audio_duration: recorder.duration,
         expressions_used: expressionsUsed,
         expressions_missed: expressionsMissed,
-        reference_answer: referenceAnswer || null,
-        expression_upgrade: feedback?.expressionUpgrade || [],
+        reference_answer: feedback?.reference_answer || null,
+        expression_upgrade: [],
         stt_provider: asr.providerName,
         stt_mode: asr.recognitionMode,
         fallback_used: asr.fallbackTriggered,
@@ -884,24 +786,7 @@ export default function EnglishSpeaking() {
         is_retry: false,
       };
 
-      if (feedback?.contentAnalysis) {
-        attemptData.content_analysis = feedback.contentAnalysis;
-      }
-      if (feedback?.answerStructure && feedback.answerStructure.length > 0) {
-        attemptData.answer_structure = feedback.answerStructure;
-      }
-      if (feedback?.finalHighScoreAnswer) {
-        attemptData.structured_better_answer = feedback.finalHighScoreAnswer;
-      }
-      if (feedback?.diagnosis) {
-        attemptData.diagnosis = feedback.diagnosis;
-      }
-      if (feedback?.keyImprovements && feedback.keyImprovements.length > 0) {
-        attemptData.key_improvements = JSON.stringify(feedback.keyImprovements);
-      }
-      if (feedback?.keyUpgrades && feedback.keyUpgrades.length > 0) {
-        attemptData.key_upgrades = feedback.keyUpgrades;
-      }
+      if (feedback) Object.assign(attemptData, speakingFeedbackStorage(feedback));
 
       const savedAttempt = await createAttempt.mutateAsync(attemptData);
       savedId = (savedAttempt as Record<string, unknown>).id as string;
@@ -966,41 +851,6 @@ export default function EnglishSpeaking() {
     }
   };
 
-  const handleAddToBank = async (upgrade: ExpressionUpgrade, index: number) => {
-    setAddBankError(null);
-    try {
-      const { data: existing } = await supabase
-        .from("expressions")
-        .select("id")
-        .ilike("english", upgrade.english.trim())
-        .eq("archived", false)
-        .limit(1);
-
-      if (existing && existing.length > 0) {
-        setDuplicateUpgrades((prev) => new Set(prev).add(index));
-        return;
-      }
-
-      await createExpression.mutateAsync({
-        english: upgrade.english,
-        chinese: upgrade.chinese,
-        type: upgrade.type,
-        scene: upgrade.scene,
-        example_sentence: upgrade.exampleSentence || null,
-        formality: upgrade.formality || null,
-        notes: upgrade.usageNote || null,
-        source_text: upgrade.sourceChunk || null,
-        source: "speaking-upgrade",
-        usefulness_level: 3,
-      });
-      setAddedUpgrades((prev) => new Set(prev).add(index));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      console.error("[EnglishSpeaking] handleAddToBank failed:", msg);
-      setAddBankError(`加入表达库失败：${msg}`);
-    }
-  };
-
   const handleNew = () => {
     setView("new");
     setStep("generating");
@@ -1015,13 +865,8 @@ export default function EnglishSpeaking() {
     setSuitableExpressions([]);
     setSessionId(null);
     setFeedback(null);
-    setReferenceAnswer("");
     setAiError(null);
-    setAddedUpgrades(new Set());
-    setDuplicateUpgrades(new Set());
-    setAddBankError(null);
     setTextMode(false);
-    referenceAnswerPromise.current = null;
     recorder.reset();
     asr.reset();
   };
@@ -1034,13 +879,8 @@ export default function EnglishSpeaking() {
     setSuitableExpressions([]);
     setSessionId(null);
     setFeedback(null);
-    setReferenceAnswer("");
     setAiError(null);
-    setAddedUpgrades(new Set());
-    setDuplicateUpgrades(new Set());
-    setAddBankError(null);
     setTextMode(false);
-    referenceAnswerPromise.current = null;
     recorder.reset();
     asr.reset();
     // If bank mode, recommend another question
@@ -2141,364 +1981,10 @@ export default function EnglishSpeaking() {
       {/* Step: Results */}
       {step === "results" && feedback && (
         <div className="space-y-3">
-          <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
-            <p className="text-xs font-medium text-ink-light mb-1">四维评分</p>
-            <ScoreBar label="流利度 Fluency" score={feedback.fluencyScore} />
-            <ScoreBar label="语法 Grammar" score={feedback.grammarScore} />
-            <ScoreBar label="词汇 Vocabulary" score={feedback.vocabularyScore} />
-            <ScoreBar label="自然度 Naturalness" score={feedback.naturalnessScore} />
-          </div>
-
-          <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
-            <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
-            <p className="text-sm text-ink leading-relaxed">{feedback.naturalVersion}</p>
-          </div>
-
-          {(feedback.expressionsUsed.length > 0 || feedback.expressionsMissed.length > 0) && (
-            <div className="bg-card rounded-2xl border border-border p-4">
-              <p className="text-xs font-medium text-ink-light mb-3">表达使用 Expression Usage</p>
-              <div className="space-y-3">
-                {feedback.expressionsUsed.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-medium text-emerald-600 mb-1.5">Used</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {feedback.expressionsUsed.map((e, i) => (
-                        <span key={i} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-2.5 py-1 flex items-center gap-1">
-                          <CheckCircle2 size={11} />
-                          {e}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {feedback.expressionsMissed.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-medium text-amber-600 mb-1.5">Missed</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {feedback.expressionsMissed.map((e, i) => (
-                        <span key={i} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-2.5 py-1 flex items-center gap-1">
-                          <X size={11} />
-                          {e}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Language Analysis (collapsible) */}
-          {(feedback.mainProblems || feedback.usefulCorrections || feedback.betterChunks) && (
-            <div className="bg-card rounded-2xl border border-border overflow-hidden">
-              <button
-                onClick={() => setShowLanguageAnalysis(!showLanguageAnalysis)}
-                className="w-full p-4 flex items-center justify-between"
-              >
-                <p className="text-xs font-medium text-ink-light">语言分析 Language Analysis</p>
-                <ChevronDown
-                  size={14}
-                  className={cn("text-ink-lighter transition-transform", !showLanguageAnalysis && "-rotate-90")}
-                />
-              </button>
-              {showLanguageAnalysis && (
-                <div className="px-4 pb-4 space-y-3">
-                  {feedback.mainProblems && (
-                    <div>
-                      <p className="text-[11px] font-medium text-ink-light mb-1.5">主要问题</p>
-                      <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                        {feedback.mainProblems}
-                      </div>
-                    </div>
-                  )}
-                  {feedback.usefulCorrections && (
-                    <div>
-                      <p className="text-[11px] font-medium text-ink-light mb-1.5">纠错建议</p>
-                      <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                        {feedback.usefulCorrections}
-                      </div>
-                    </div>
-                  )}
-                  {feedback.betterChunks && (
-                    <div>
-                      <p className="text-[11px] font-medium text-ink-light mb-1.5">推荐表达</p>
-                      <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                        {feedback.betterChunks}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {feedback.expressionUpgrade && feedback.expressionUpgrade.length > 0 && (
-            <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
-              <div className="flex items-center gap-2 justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} className="text-violet-500" />
-                  <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
-                </div>
-                <button
-                  onClick={async () => {
-                    for (let i = 0; i < feedback.expressionUpgrade.length; i++) {
-                      if (!addedUpgrades.has(i) && !duplicateUpgrades.has(i)) {
-                        await handleAddToBank(feedback.expressionUpgrade[i], i);
-                      }
-                    }
-                  }}
-                  disabled={
-                    feedback.expressionUpgrade.every(
-                      (_: ExpressionUpgrade, i: number) => addedUpgrades.has(i) || duplicateUpgrades.has(i)
-                    ) || createExpression.isPending
-                  }
-                  className="text-[11px] text-violet-600 font-medium hover:underline disabled:text-ink-lighter disabled:no-underline"
-                >
-                  Add All
-                </button>
-              </div>
-
-              {addBankError && (
-                <div className="bg-accent-rose/5 border border-accent-rose/10 rounded-xl p-2.5 flex items-start gap-2">
-                  <AlertTriangle size={13} className="text-accent-rose shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-accent-rose">{addBankError}</p>
-                </div>
-              )}
-              <div className="space-y-2">
-                {feedback.expressionUpgrade.map((upgrade: ExpressionUpgrade, i: number) => (
-                  <div key={i} className="bg-violet-50/50 rounded-xl border border-violet-100 p-3 space-y-1.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-[11px] font-bold text-ink truncate">{upgrade.english}</span>
-                          <span className="text-[10px] bg-white text-ink-lighter border rounded-full px-1.5 py-px shrink-0">{upgrade.type}</span>
-                          <span className="text-[10px] text-ink-lighter shrink-0">{upgrade.formality}</span>
-                        </div>
-                        <p className="text-[11px] text-ink-lighter">{upgrade.chinese}</p>
-                        <p className="text-[11px] text-ink-lighter mt-1">
-                          <span className="font-medium text-ink-light">Scene: </span>{upgrade.scene}
-                        </p>
-                        <p className="text-[11px] text-ink-lighter italic mt-0.5">
-                          "{upgrade.exampleSentence}"
-                        </p>
-                        <p className="text-[10px] text-ink-lighter mt-0.5 leading-relaxed">
-                          {upgrade.usageNote}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleAddToBank(upgrade, i)}
-                        disabled={addedUpgrades.has(i) || duplicateUpgrades.has(i) || createExpression.isPending}
-                        title={duplicateUpgrades.has(i) ? "已存在于表达库" : addedUpgrades.has(i) ? "已加入表达库" : "加入表达库"}
-                        className={cn(
-                          "shrink-0 rounded-lg p-1.5 transition-colors",
-                          addedUpgrades.has(i)
-                            ? "bg-emerald-50 border border-emerald-200 text-emerald-500"
-                            : duplicateUpgrades.has(i)
-                              ? "bg-ink/5 border border-ink/10 text-ink-lighter cursor-not-allowed"
-                              : "bg-white border border-violet-200 text-violet-500 hover:bg-violet-50",
-                        )}
-                      >
-                        {duplicateUpgrades.has(i) ? <span className="text-[10px] font-medium">已存在</span> : addedUpgrades.has(i) ? <CheckCircle2 size={14} /> : <Plus size={14} />}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Phase 6: Content & Structure Diagnosis ── */}
-          {feedback.contentAnalysis && (
-            <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Target size={14} className="text-blue-500" />
-                <p className="text-xs font-semibold text-blue-700">内容与结构诊断 Content Analysis</p>
-              </div>
-
-              {/* Three-dim content scores */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
-                  <p className="text-[10px] text-ink-lighter mb-0.5">切题度</p>
-                  <p className="text-lg font-bold text-blue-600">{feedback.contentAnalysis.relevanceScore.toFixed(1)}</p>
-                  <p className="text-[10px] text-blue-500 mt-0.5">{feedback.contentAnalysis.relevanceLevel}</p>
-                </div>
-                <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
-                  <p className="text-[10px] text-ink-lighter mb-0.5">连贯性</p>
-                  <p className="text-lg font-bold text-blue-600">{feedback.contentAnalysis.coherenceScore.toFixed(1)}</p>
-                  <p className="text-[10px] text-blue-500 mt-0.5">{feedback.contentAnalysis.coherenceLevel}</p>
-                </div>
-                <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
-                  <p className="text-[10px] text-ink-lighter mb-0.5">展开度</p>
-                  <p className="text-lg font-bold text-blue-600">{feedback.contentAnalysis.developmentScore.toFixed(1)}</p>
-                  <p className="text-[10px] text-blue-500 mt-0.5">{feedback.contentAnalysis.developmentLevel}</p>
-                </div>
-              </div>
-
-              {/* Summary */}
-              {feedback.contentAnalysis.summary && (
-                <p className="text-xs text-ink leading-relaxed">{feedback.contentAnalysis.summary}</p>
-              )}
-
-              {/* Requirements analysis */}
-              {feedback.contentAnalysis.questionRequirements.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-medium text-ink-light">题目要求分析</p>
-                  <div className="flex flex-wrap gap-1">
-                    {feedback.contentAnalysis.questionRequirements.map((r, i) => {
-                      const answered = feedback.contentAnalysis!.answeredRequirements.includes(r);
-                      const missed = feedback.contentAnalysis!.missedRequirements.includes(r);
-                      return (
-                        <span key={i} className={cn(
-                          "text-[10px] rounded-full px-2 py-0.5",
-                          answered ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
-                          missed ? "bg-amber-50 text-amber-600 border border-amber-100" :
-                          "bg-ink/5 text-ink-lighter border border-ink/10"
-                        )}>
-                          {answered ? "✓ " : missed ? "✗ " : ""}{r}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Content issues summary */}
-              {(feedback.contentAnalysis.offTopicParts.length > 0 ||
-                feedback.contentAnalysis.repetition.length > 0 ||
-                feedback.contentAnalysis.orderProblems.length > 0 ||
-                feedback.contentAnalysis.contentGaps.length > 0) && (
-                <div className="space-y-1 text-[11px] text-ink-lighter">
-                  {feedback.contentAnalysis.offTopicParts.map((p, i) => (
-                    <p key={i} className="flex items-start gap-1"><span className="text-amber-500 shrink-0">⚠</span> 偏题: {p}</p>
-                  ))}
-                  {feedback.contentAnalysis.repetition.map((p, i) => (
-                    <p key={i} className="flex items-start gap-1"><span className="text-ink-lighter shrink-0">↻</span> 重复: {p}</p>
-                  ))}
-                  {feedback.contentAnalysis.orderProblems.map((p, i) => (
-                    <p key={i} className="flex items-start gap-1"><span className="text-ink-lighter shrink-0">⇄</span> 顺序: {p}</p>
-                  ))}
-                  {feedback.contentAnalysis.contentGaps.map((p, i) => (
-                    <p key={i} className="flex items-start gap-1"><span className="text-blue-500 shrink-0">+</span> 缺失: {p}</p>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Phase 6: Answer Structure ── */}
-          {feedback.answerStructure && feedback.answerStructure.length > 0 && (
-            <div className="bg-card rounded-2xl border border-purple-100 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-purple-100 text-purple-600 rounded-full px-2 py-0.5 font-medium">答案骨架</span>
-                <p className="text-xs font-semibold text-purple-700">Answer Structure</p>
-              </div>
-              <div className="space-y-2">
-                {feedback.answerStructure.map((step, i) => (
-                  <div key={i} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className="h-6 w-6 rounded-full bg-purple-100 text-purple-600 text-[10px] font-bold flex items-center justify-center shrink-0">
-                        {i + 1}
-                      </div>
-                      {i < feedback.answerStructure!.length - 1 && (
-                        <div className="w-px flex-1 bg-purple-100 my-1" />
-                      )}
-                    </div>
-                    <div className="pb-2 flex-1 min-w-0">
-                      <p className="text-[11px] font-semibold text-ink">{step.label}</p>
-                      <p className="text-[11px] text-ink-lighter leading-relaxed mt-0.5">{step.content}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Phase 6: Diagnosis ── */}
-          {feedback.diagnosis && (
-            <div className="bg-card rounded-2xl border border-rose-100 p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-rose-100 text-rose-600 rounded-full px-2 py-0.5 font-medium">问题诊断</span>
-                <p className="text-xs font-semibold text-rose-700">Diagnosis</p>
-              </div>
-              <p className="text-xs text-ink-light leading-relaxed">
-                {feedback.diagnosis}
-              </p>
-            </div>
-          )}
-
-          {/* ── Phase 6: Final High-score Answer ── */}
-          {feedback.finalHighScoreAnswer && (
-            <div className="bg-card rounded-2xl border border-emerald-200 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-emerald-100 text-emerald-600 rounded-full px-2 py-0.5 font-medium">最终高分答案</span>
-                <p className="text-xs font-semibold text-emerald-700">Final High-score Answer ⭐</p>
-              </div>
-              <div className="bg-emerald-50/50 rounded-xl p-3">
-                <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
-                  {feedback.finalHighScoreAnswer}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(feedback.finalHighScoreAnswer || "");
-                }}
-                className="text-[10px] text-emerald-600 hover:underline self-start"
-              >
-                复制文本
-              </button>
-            </div>
-          )}
-
-          {/* ── Phase 6: Key Improvements ── */}
-          {feedback.keyImprovements && feedback.keyImprovements.length > 0 && (
-            <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-blue-100 text-blue-600 rounded-full px-2 py-0.5 font-medium">改进要点</span>
-                <p className="text-xs font-semibold text-blue-700">Key Improvements</p>
-              </div>
-              <div className="space-y-1.5">
-                {feedback.keyImprovements.map((imp, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-ink-light">
-                    <span className="text-blue-400 mt-0.5 shrink-0">+</span>
-                    <span>{imp}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Phase 6: Key Upgrades ── */}
-          {feedback.keyUpgrades && feedback.keyUpgrades.length > 0 && (
-            <div className="bg-card rounded-2xl border border-amber-100 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Zap size={14} className="text-amber-500" />
-                <p className="text-xs font-semibold text-amber-700">重点学习 Key Upgrades</p>
-              </div>
-              <div className="space-y-2">
-                {feedback.keyUpgrades.map((ku, i) => (
-                  <div key={i} className="bg-amber-50/50 rounded-xl border border-amber-100 p-3 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-ink">{ku.english}</span>
-                      <span className="text-[10px] text-ink-lighter">{ku.chinese}</span>
-                    </div>
-                    <p className="text-[10px] text-ink-lighter leading-relaxed">{ku.reason}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {feedback.oneBetterExample && (
-            <div className="bg-card rounded-2xl border border-border p-4">
-              <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
-              <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                {feedback.oneBetterExample}
-              </div>
-            </div>
-          )}
+          <SpeakingFeedbackPanel feedback={feedback} />
 
           {/* ── Phase 6: Retry button ── */}
-          {feedback.contentAnalysis && (
+          {feedback.final_upgraded_answer && (
             <button
               onClick={async () => {
                 setFirstFeedback(feedback);
@@ -2534,7 +2020,7 @@ export default function EnglishSpeaking() {
               ) : (
                 <RefreshCw size={14} />
               )}
-              {uploading ? "保存中..." : "按这个结构重新复述"}
+              {uploading ? "保存中..." : "按最终优化表达重新复述"}
             </button>
           )}
 
@@ -2630,7 +2116,7 @@ export default function EnglishSpeaking() {
                 <RefreshCw size={12} /> 重新复述参考
               </p>
               <div className="flex gap-1">
-                {(["structure", "full", "hidden"] as const).map((mode) => (
+                {(["full", "hidden"] as const).map((mode) => (
                   <button
                     key={mode}
                     onClick={() => setRetryReferenceMode(mode)}
@@ -2641,50 +2127,16 @@ export default function EnglishSpeaking() {
                         : "bg-white text-ink-lighter"
                     )}
                   >
-                    {mode === "structure" ? "只看骨架" : mode === "full" ? "完整答案" : "隐藏参考"}
+                    {mode === "full" ? "显示答案" : "隐藏答案"}
                   </button>
                 ))}
               </div>
             </div>
 
-            {retryReferenceMode !== "hidden" && firstFeedback?.answerStructure && (
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-medium text-purple-600">Answer Structure</p>
-                <div className="space-y-1">
-                  {firstFeedback.answerStructure.map((s, i) => (
-                    <div key={i} className="flex gap-2 text-[11px]">
-                      <span className="text-purple-400 font-bold shrink-0">{i + 1}.</span>
-                      <span>
-                        <span className="font-medium text-ink">{s.label}</span>
-                        {retryReferenceMode === "full" && (
-                          <span className="text-ink-lighter"> — {s.content}</span>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {retryReferenceMode === "full" && firstFeedback?.finalHighScoreAnswer && (
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-medium text-purple-600">Final High-score Answer</p>
-                <p className="text-xs text-ink leading-relaxed bg-white rounded-xl p-3">
-                  {firstFeedback.finalHighScoreAnswer}
-                </p>
-              </div>
-            )}
-
-            {retryReferenceMode !== "hidden" && firstFeedback?.keyUpgrades && firstFeedback.keyUpgrades.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-medium text-purple-600">Key Upgrades</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {firstFeedback.keyUpgrades.map((ku, i) => (
-                    <span key={i} className="text-[10px] bg-white text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">
-                      {ku.english}
-                    </span>
-                  ))}
-                </div>
+            {retryReferenceMode === "full" && firstFeedback?.final_upgraded_answer && (
+              <div><p className="text-xs font-semibold text-sage-deep">最终优化表达</p>
+                <p className="text-sm leading-relaxed whitespace-pre-line mt-2">{firstFeedback.final_upgraded_answer}</p>
+                <p className="text-xs text-ink-light mt-2">{firstFeedback.expansion_notice || "新增解释和例子为参考性展开，请按实际情况复述。"}</p>
               </div>
             )}
           </div>
@@ -2829,34 +2281,7 @@ export default function EnglishSpeaking() {
             </div>
           </div>
 
-          {/* Language scores comparison */}
-          <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
-            <p className="text-xs font-medium text-ink-light mb-2">语言表现对比 Language Scores</p>
-            <ComparisonScoreBar label="流利度 Fluency" before={firstFeedback.fluencyScore} after={retryFeedback.fluencyScore} />
-            <ComparisonScoreBar label="语法 Grammar" before={firstFeedback.grammarScore} after={retryFeedback.grammarScore} />
-            <ComparisonScoreBar label="词汇 Vocabulary" before={firstFeedback.vocabularyScore} after={retryFeedback.vocabularyScore} />
-            <ComparisonScoreBar label="自然度 Naturalness" before={firstFeedback.naturalnessScore} after={retryFeedback.naturalnessScore} />
-          </div>
-
-          {/* Content scores comparison */}
-          {firstFeedback.contentAnalysis && retryFeedback.contentAnalysis && (
-            <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-2">
-              <p className="text-xs font-medium text-ink-light mb-2">内容结构对比 Content Scores</p>
-              <ComparisonScoreBar label="切题度 Relevance" before={firstFeedback.contentAnalysis.relevanceScore} after={retryFeedback.contentAnalysis.relevanceScore} />
-              <ComparisonScoreBar label="连贯性 Coherence" before={firstFeedback.contentAnalysis.coherenceScore} after={retryFeedback.contentAnalysis.coherenceScore} />
-              <ComparisonScoreBar label="展开度 Development" before={firstFeedback.contentAnalysis.developmentScore} after={retryFeedback.contentAnalysis.developmentScore} />
-            </div>
-          )}
-
-          {/* AI summary */}
-          {retryFeedback.contentAnalysis?.summary && (
-            <div className="bg-card rounded-2xl border border-emerald-100 p-4">
-              <p className="text-xs font-medium text-emerald-600 mb-2 flex items-center gap-1.5">
-                <Sparkles size={12} /> AI 进步总结
-              </p>
-              <p className="text-xs text-ink leading-relaxed">{retryFeedback.contentAnalysis.summary}</p>
-            </div>
-          )}
+          <SpeakingFeedbackPanel feedback={retryFeedback} retry />
 
           {/* Save retry */}
           <button
@@ -2967,47 +2392,6 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
   const [editNotes, setEditNotes] = useState("");
   const updateSession = useUpdateSpeakingSession();
 
-  // Expression Upgrade re-add state
-  const [addedUpgrades, setAddedUpgrades] = useState<Set<number>>(new Set());
-  const [duplicateUpgrades, setDuplicateUpgrades] = useState<Set<number>>(new Set());
-  const [addBankError, setAddBankError] = useState<string | null>(null);
-  const createExpression = useCreateExpression();
-
-  const handleAddToBankFromDetail = async (upgrade: Record<string, unknown>, index: number) => {
-    setAddBankError(null);
-    try {
-      const { data: existing } = await supabase
-        .from("expressions")
-        .select("id")
-        .ilike("english", (upgrade.english as string).trim())
-        .eq("archived", false)
-        .limit(1);
-
-      if (existing && existing.length > 0) {
-        setDuplicateUpgrades((prev) => new Set(prev).add(index));
-        return;
-      }
-
-      await createExpression.mutateAsync({
-        english: upgrade.english as string,
-        chinese: upgrade.chinese as string,
-        type: upgrade.type as string,
-        scene: upgrade.scene as string,
-        example_sentence: (upgrade.exampleSentence as string) || null,
-        formality: (upgrade.formality as string) || null,
-        notes: (upgrade.usageNote as string) || null,
-        source_text: (upgrade.sourceChunk as string) || null,
-        source: "speaking-upgrade",
-        usefulness_level: 3,
-      });
-      setAddedUpgrades((prev) => new Set(prev).add(index));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      console.error("[SessionDetail] handleAddToBank failed:", msg);
-      setAddBankError(`加入表达库失败：${msg}`);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="text-center py-12">
@@ -3025,7 +2409,7 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
     );
   }
 
-  const firstAttempt = attempts[0] as Record<string, unknown> | undefined;
+  const firstAttempt = attempts.find(a => !a.is_retry && Number(a.attempt_round || 1) === 1) || attempts[0];
 
   return (
     <div className="space-y-4">
@@ -3105,327 +2489,7 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
         </div>
       )}
 
-      {/* Scores */}
-      {((firstAttempt?.fluency_score as number) || (firstAttempt?.grammar_score as number) || (firstAttempt?.vocabulary_score as number) || (firstAttempt?.naturalness_score as number)) ? (
-        <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
-          <p className="text-xs font-medium text-ink-light mb-1">四维评分</p>
-          <ScoreBar label="流利度 Fluency" score={(firstAttempt?.fluency_score as number) || 0} />
-          <ScoreBar label="语法 Grammar" score={(firstAttempt?.grammar_score as number) || 0} />
-          <ScoreBar label="词汇 Vocabulary" score={(firstAttempt?.vocabulary_score as number) || 0} />
-          <ScoreBar label="自然度 Naturalness" score={(firstAttempt?.naturalness_score as number) || 0} />
-        </div>
-      ) : null}
-
-      {/* Natural version */}
-      {(firstAttempt?.natural_version as string) && (
-        <div className="bg-card rounded-2xl border border-sage-light/50 p-4">
-          <p className="text-xs font-medium text-sage-deep mb-1">更自然的表达</p>
-          <p className="text-sm text-ink leading-relaxed">{firstAttempt?.natural_version as string}</p>
-        </div>
-      )}
-
-      {/* Expression Usage */}
-      {((firstAttempt?.expressions_used as unknown[] | undefined)?.length || (firstAttempt?.expressions_missed as unknown[] | undefined)?.length) ? (
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <p className="text-xs font-medium text-ink-light mb-3">表达使用 Expression Usage</p>
-          <div className="space-y-3">
-            {((firstAttempt?.expressions_used as unknown[] | undefined)?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[11px] font-medium text-emerald-600 mb-1.5">Used</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {(firstAttempt?.expressions_used as unknown[]).map((e, i) => (
-                    <span key={i} className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full px-2.5 py-1 flex items-center gap-1">
-                      <CheckCircle2 size={11} />
-                      {e as string}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {((firstAttempt?.expressions_missed as unknown[] | undefined)?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[11px] font-medium text-amber-600 mb-1.5">Missed</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {(firstAttempt?.expressions_missed as unknown[]).map((e, i) => (
-                    <span key={i} className="text-[11px] bg-amber-50 text-amber-700 border border-amber-100 rounded-full px-2.5 py-1 flex items-center gap-1">
-                      <X size={11} />
-                      {e as string}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {/* Main problems */}
-      {(firstAttempt?.main_problems as string) && (
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <p className="text-xs font-medium text-ink-light mb-2">主要问题</p>
-          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-            {firstAttempt?.main_problems as string}
-          </div>
-        </div>
-      )}
-
-      {/* Useful corrections */}
-      {(firstAttempt?.useful_corrections as string) && (
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <p className="text-xs font-medium text-ink-light mb-2">纠错建议</p>
-          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-            {firstAttempt?.useful_corrections as string}
-          </div>
-        </div>
-      )}
-
-      {/* Better chunks */}
-      {(firstAttempt?.better_chunks as string) && (
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <p className="text-xs font-medium text-ink-light mb-2">推荐表达</p>
-          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-            {firstAttempt?.better_chunks as string}
-          </div>
-        </div>
-      )}
-
-      {/* Expression Upgrade */}
-      {((firstAttempt?.expression_upgrade as unknown[] | undefined)?.length ?? 0) > 0 && (
-        <div className="bg-card rounded-2xl border border-violet-100 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-violet-500" />
-              <p className="text-xs font-semibold text-violet-700">表达升级 Expression Upgrade</p>
-            </div>
-            <button
-              onClick={async () => {
-                const upgrades = firstAttempt?.expression_upgrade as unknown[];
-                for (let i = 0; i < upgrades.length; i++) {
-                  if (!addedUpgrades.has(i) && !duplicateUpgrades.has(i)) {
-                    await handleAddToBankFromDetail(upgrades[i] as Record<string, unknown>, i);
-                  }
-                }
-              }}
-              disabled={
-                ((firstAttempt?.expression_upgrade as unknown[]).every(
-                  (_: unknown, i: number) => addedUpgrades.has(i) || duplicateUpgrades.has(i)
-                )) ||
-                createExpression.isPending
-              }
-              className="text-[11px] text-violet-600 font-medium hover:underline disabled:text-ink-lighter disabled:no-underline"
-            >
-              {createExpression.isPending ? "Adding..." : "Add All"}
-            </button>
-          </div>
-          {addBankError && (
-            <p className="text-[11px] text-red-500">{addBankError}</p>
-          )}
-          <div className="space-y-2">
-            {(firstAttempt?.expression_upgrade as unknown[]).map((upgrade: unknown, i: number) => {
-              const u = upgrade as Record<string, unknown>;
-              const isAdded = addedUpgrades.has(i);
-              const isDuplicate = duplicateUpgrades.has(i);
-              return (
-                <div key={i} className={cn(
-                  "rounded-xl border p-3 space-y-1.5 transition-colors",
-                  isAdded ? "bg-emerald-50/50 border-emerald-100" : "bg-violet-50/50 border-violet-100"
-                )}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-ink">{u.english as string}</span>
-                    <span className="text-[10px] bg-white text-ink-lighter border rounded-full px-1.5 py-px">{u.type as string}</span>
-                    <span className="text-[10px] text-ink-lighter">{u.formality as string}</span>
-                    {isAdded ? (
-                      <span className="text-[10px] text-emerald-600 ml-auto flex items-center gap-0.5">
-                        <CheckCircle2 size={10} /> Added
-                      </span>
-                    ) : isDuplicate ? (
-                      <span className="text-[10px] text-amber-600 ml-auto">Already in bank</span>
-                    ) : (
-                      <button
-                        onClick={() => handleAddToBankFromDetail(u, i)}
-                        disabled={createExpression.isPending}
-                        className="text-[10px] text-violet-600 font-medium hover:underline ml-auto disabled:text-ink-lighter"
-                      >
-                        + Add to Bank
-                      </button>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-ink-lighter">{u.chinese as string}</p>
-                  <p className="text-[11px] text-ink-lighter">
-                    <span className="font-medium text-ink-light">Scene: </span>{u.scene as string}
-                  </p>
-                  {(u.exampleSentence as string) && (
-                    <p className="text-[11px] text-ink-lighter italic">"{u.exampleSentence as string}"</p>
-                  )}
-                  {(u.usageNote as string) && (
-                    <p className="text-[10px] text-ink-lighter leading-relaxed">{u.usageNote as string}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Reference Answer */}
-      {(firstAttempt?.reference_answer as string) && (
-        <div className="bg-card rounded-2xl border border-purple-100 p-4">
-          <p className="text-xs font-medium text-purple-600 mb-2 flex items-center gap-1.5">
-            <Sparkles size={12} />
-            AI 参考回答
-          </p>
-          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-            {firstAttempt?.reference_answer as string}
-          </div>
-        </div>
-      )}
-
-      {/* One better example */}
-      {(firstAttempt?.one_better_example as string) && (
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <p className="text-xs font-medium text-ink-light mb-2">参考范例</p>
-          <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-            {firstAttempt?.one_better_example as string}
-          </div>
-        </div>
-      )}
-
-      {/* Phase 6: Content & Structure (from saved attempt) */}
-      {((firstAttempt?.content_analysis as Record<string, unknown> | undefined) ||
-        (firstAttempt?.structured_better_answer as string) ||
-        (firstAttempt?.diagnosis as string) ||
-        (firstAttempt?.key_improvements as string)) ? (
-        <>
-          {/* Content Analysis */}
-          {(firstAttempt?.content_analysis as Record<string, unknown> | undefined) && (
-            (() => {
-              const ca = firstAttempt?.content_analysis as Record<string, unknown>;
-              return (
-                <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Target size={14} className="text-blue-500" />
-                    <p className="text-xs font-semibold text-blue-700">内容与结构诊断 Content Analysis</p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
-                      <p className="text-[10px] text-ink-lighter mb-0.5">切题度</p>
-                      <p className="text-lg font-bold text-blue-600">{typeof ca.relevanceScore === "number" ? ca.relevanceScore.toFixed(1) : "-"}</p>
-                      <p className="text-[10px] text-blue-500 mt-0.5">{(ca.relevanceLevel as string) || "-"}</p>
-                    </div>
-                    <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
-                      <p className="text-[10px] text-ink-lighter mb-0.5">连贯性</p>
-                      <p className="text-lg font-bold text-blue-600">{typeof ca.coherenceScore === "number" ? ca.coherenceScore.toFixed(1) : "-"}</p>
-                      <p className="text-[10px] text-blue-500 mt-0.5">{(ca.coherenceLevel as string) || "-"}</p>
-                    </div>
-                    <div className="bg-blue-50/50 rounded-xl p-2.5 text-center">
-                      <p className="text-[10px] text-ink-lighter mb-0.5">展开度</p>
-                      <p className="text-lg font-bold text-blue-600">{typeof ca.developmentScore === "number" ? ca.developmentScore.toFixed(1) : "-"}</p>
-                      <p className="text-[10px] text-blue-500 mt-0.5">{(ca.developmentLevel as string) || "-"}</p>
-                    </div>
-                  </div>
-                  {(ca.summary as string) && (
-                    <p className="text-xs text-ink leading-relaxed">{ca.summary as string}</p>
-                  )}
-                </div>
-              );
-            })()
-          )}
-
-          {/* Answer Structure */}
-          {(firstAttempt?.answer_structure as unknown[] | undefined)?.length ? (
-            <div className="bg-card rounded-2xl border border-purple-100 p-4 space-y-3">
-              <p className="text-xs font-semibold text-purple-700">Answer Structure</p>
-              <div className="space-y-2">
-                {(firstAttempt?.answer_structure as unknown[]).map((step: unknown, i: number) => {
-                  const s = step as Record<string, unknown>;
-                  return (
-                    <div key={i} className="flex gap-3">
-                      <div className="h-6 w-6 rounded-full bg-purple-100 text-purple-600 text-[10px] font-bold flex items-center justify-center shrink-0">
-                        {i + 1}
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-semibold text-ink">{s.label as string}</p>
-                        <p className="text-[11px] text-ink-lighter leading-relaxed mt-0.5">{s.content as string}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Diagnosis (saved replay) */}
-          {(firstAttempt?.diagnosis as string) && (
-            <div className="bg-card rounded-2xl border border-rose-100 p-4 space-y-2">
-              <p className="text-xs font-semibold text-rose-700">问题诊断 Diagnosis</p>
-              <p className="text-xs text-ink-light leading-relaxed">
-                {firstAttempt?.diagnosis as string}
-              </p>
-            </div>
-          )}
-
-          {/* Final High-score Answer (saved replay) */}
-          {(firstAttempt?.structured_better_answer as string) && (
-            <div className="bg-card rounded-2xl border border-emerald-200 p-4 space-y-2">
-              <p className="text-xs font-semibold text-emerald-700">最终高分答案 Final High-score Answer ⭐</p>
-              <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
-                {firstAttempt?.structured_better_answer as string}
-              </p>
-            </div>
-          )}
-
-          {/* Key Improvements (saved replay) */}
-          {(firstAttempt?.key_improvements as string) && (
-            (() => {
-              try {
-                const improvements = JSON.parse(firstAttempt?.key_improvements as string) as string[];
-                if (!Array.isArray(improvements) || improvements.length === 0) return null;
-                return (
-                  <div className="bg-card rounded-2xl border border-blue-100 p-4 space-y-2">
-                    <p className="text-xs font-semibold text-blue-700">改进要点 Key Improvements</p>
-                    <div className="space-y-1.5">
-                      {improvements.map((imp, i) => (
-                        <div key={i} className="flex items-start gap-2 text-xs text-ink-light">
-                          <span className="text-blue-400 mt-0.5 shrink-0">+</span>
-                          <span>{imp}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              } catch { return null; }
-            })()
-          )}
-
-          {/* Key Upgrades */}
-          {(firstAttempt?.key_upgrades as unknown[] | undefined)?.length ? (
-            <div className="bg-card rounded-2xl border border-amber-100 p-4 space-y-2">
-              <p className="text-xs font-semibold text-amber-700">重点学习 Key Upgrades</p>
-              <div className="space-y-2">
-                {(firstAttempt?.key_upgrades as unknown[]).map((ku: unknown, i: number) => {
-                  const k = ku as Record<string, unknown>;
-                  return (
-                    <div key={i} className="bg-amber-50/50 rounded-xl border border-amber-100 p-3 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold text-ink">{k.english as string}</span>
-                        <span className="text-[10px] text-ink-lighter">{k.chinese as string}</span>
-                      </div>
-                      <p className="text-[10px] text-ink-lighter leading-relaxed">{k.reason as string}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </>
-      ) : (
-        /* Old attempt without content analysis */
-        <div className="bg-card rounded-2xl border border-border p-4">
-          <p className="text-xs text-ink-lighter text-center">
-            该历史记录尚未进行内容结构分析。
-          </p>
-        </div>
-      )}
+      {firstAttempt && <SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(firstAttempt)} />}
 
       {/* Retry attempt comparison — shown when a retry (Round 2+) exists */}
       {(() => {
@@ -3463,70 +2527,7 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
               </div>
             )}
 
-            {/* Score comparison */}
-            {((retryAttempt.fluency_score as number) || (firstAttempt?.fluency_score as number)) ? (
-              <div className="bg-card rounded-2xl border border-border p-4 space-y-2">
-                <p className="text-xs font-medium text-ink-light mb-1">语言表现对比</p>
-                <ComparisonScoreBar
-                  label="流利度 Fluency"
-                  before={(firstAttempt?.fluency_score as number) || 0}
-                  after={(retryAttempt.fluency_score as number) || 0}
-                />
-                <ComparisonScoreBar
-                  label="语法 Grammar"
-                  before={(firstAttempt?.grammar_score as number) || 0}
-                  after={(retryAttempt.grammar_score as number) || 0}
-                />
-                <ComparisonScoreBar
-                  label="词汇 Vocabulary"
-                  before={(firstAttempt?.vocabulary_score as number) || 0}
-                  after={(retryAttempt.vocabulary_score as number) || 0}
-                />
-                <ComparisonScoreBar
-                  label="自然度 Naturalness"
-                  before={(firstAttempt?.naturalness_score as number) || 0}
-                  after={(retryAttempt.naturalness_score as number) || 0}
-                />
-              </div>
-            ) : null}
-
-            {/* Retry natural version */}
-            {(retryAttempt.natural_version as string) && (
-              <div className="bg-card rounded-2xl border border-purple-100 p-4">
-                <p className="text-xs font-medium text-purple-600 mb-1">重新复述 · 更自然的表达</p>
-                <p className="text-sm text-ink leading-relaxed">{retryAttempt.natural_version as string}</p>
-              </div>
-            )}
-
-            {/* Retry main problems */}
-            {(retryAttempt.main_problems as string) && (
-              <div className="bg-card rounded-2xl border border-purple-100 p-4">
-                <p className="text-xs font-medium text-purple-600 mb-2">重新复述 · 存在的问题</p>
-                <div className="text-xs text-ink leading-relaxed whitespace-pre-line">
-                  {retryAttempt.main_problems as string}
-                </div>
-              </div>
-            )}
-
-            {/* Retry diagnosis */}
-            {(retryAttempt.diagnosis as string) && (
-              <div className="bg-card rounded-2xl border border-rose-100 p-4 space-y-2">
-                <p className="text-xs font-semibold text-rose-700">重新复述诊断 Diagnosis</p>
-                <p className="text-xs text-ink-light leading-relaxed">
-                  {retryAttempt.diagnosis as string}
-                </p>
-              </div>
-            )}
-
-            {/* Retry structured better answer */}
-            {(retryAttempt.structured_better_answer as string) && (
-              <div className="bg-card rounded-2xl border border-emerald-200 p-4 space-y-2">
-                <p className="text-xs font-semibold text-emerald-700">重新复述高分答案</p>
-                <p className="text-sm text-ink leading-relaxed whitespace-pre-line">
-                  {retryAttempt.structured_better_answer as string}
-                </p>
-              </div>
-            )}
+            <SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(retryAttempt)} retry />
           </div>
         );
       })()}
