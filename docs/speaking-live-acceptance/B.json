@@ -1,0 +1,77 @@
+{
+  "id": "B",
+  "input": "I prefer working from home because it's convenient.",
+  "question": "Do you prefer working from home?",
+  "expectedMode": "expand",
+  "elapsedMs": 8443,
+  "model": "deepseek-chat",
+  "raw": "{\n  \"final_upgraded_answer\": \"I prefer working from home because it's convenient for me. I can save time on commuting, which gives me more time for my own tasks or rest. Also, I can create a comfortable environment that helps me focus better. For example, I can set my own schedule and take breaks when I need them. However, I understand that some people might miss the social interaction of an office, but for me, the flexibility and comfort are more important.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"content\", \"message\": \"回答过于简短，缺乏具体理由和展开\"},\n    {\"type\": \"structure\", \"message\": \"没有清晰的结构，如理由、例子或对比\"},\n    {\"type\": \"naturalness\", \"message\": \"表达略显生硬，缺少口语化的连接和细节\"}\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"扩展了原回答，增加了通勤节省时间、环境舒适、灵活安排等具体理由，并加入对比观点以增强逻辑性。保留了原意，但使内容更充实、口语更自然。\",\n  \"expansion_notice\": \"State 参考性展开：新增的通勤节省时间、舒适环境、灵活安排等例子是建议性内容，并非用户真实经历，仅用于展示如何展开回答。\",\n  \"reference_answer\": \"Actually, I lean towards working from home, but not just because it's convenient. The main reason is that it gives me control over my day. I can structure my work around my peak productivity hours, which makes me more efficient. Plus, I avoid the stress of traffic and office distractions. On the flip side, I do miss the casual chats with colleagues, but I compensate by scheduling virtual coffee breaks. So, overall, the benefits outweigh the drawbacks for me.\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"I can save time on commuting\", \"meaning\": \"我可以节省通勤时间\", \"why_useful\": \"具体说明便利性的一个方面，使回答更生动\"},\n    {\"expression\": \"create a comfortable environment\", \"meaning\": \"创造一个舒适的环境\", \"why_useful\": \"展示个人化理由，增强说服力\"},\n    {\"expression\": \"set my own schedule\", \"meaning\": \"安排自己的时间表\", \"why_useful\": \"强调灵活性，是常见且实用的表达\"},\n    {\"expression\": \"the flexibility and comfort are more important\", \"meaning\": \"灵活性和舒适性更重要\", \"why_useful\": \"总结观点，清晰表达偏好\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.5,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 5.0,\n    \"usefulCorrections\": \"原句 'because it's convenient' 过于笼统，建议扩展为 'because it's convenient for me' 并添加具体原因。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 5.0,\n      \"developmentScore\": 4.0,\n      \"summary\": \"回答切题但内容单薄，缺乏细节和结构，需要扩展理由和例子。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\"缺少具体理由\", \"缺少例子或对比\"]\n    }\n  }\n}",
+  "feedback": {
+    "overall_score": 5.5,
+    "target_score": 7,
+    "key_issues": [
+      {
+        "type": "content",
+        "message": "回答过于简短，缺乏具体理由和展开"
+      },
+      {
+        "type": "structure",
+        "message": "没有清晰的结构，如理由、例子或对比"
+      },
+      {
+        "type": "naturalness",
+        "message": "表达略显生硬，缺少口语化的连接和细节"
+      }
+    ],
+    "revision_mode": "expand",
+    "optimization_summary": "扩展了原回答，增加了通勤节省时间、环境舒适、灵活安排等具体理由，并加入对比观点以增强逻辑性。保留了原意，但使内容更充实、口语更自然。",
+    "final_upgraded_answer": "I prefer working from home because it's convenient for me. I can save time on commuting, which gives me more time for my own tasks or rest. Also, I can create a comfortable environment that helps me focus better. For example, I can set my own schedule and take breaks when I need them. However, I understand that some people might miss the social interaction of an office, but for me, the flexibility and comfort are more important.",
+    "reference_answer": "Actually, I lean towards working from home, but not just because it's convenient. The main reason is that it gives me control over my day. I can structure my work around my peak productivity hours, which makes me more efficient. Plus, I avoid the stress of traffic and office distractions. On the flip side, I do miss the casual chats with colleagues, but I compensate by scheduling virtual coffee breaks. So, overall, the benefits outweigh the drawbacks for me.",
+    "expansion_notice": "State 参考性展开：新增的通勤节省时间、舒适环境、灵活安排等例子是建议性内容，并非用户真实经历，仅用于展示如何展开回答。",
+    "takeaway_expressions": [
+      {
+        "expression": "I can save time on commuting",
+        "meaning": "我可以节省通勤时间",
+        "why_useful": "具体说明便利性的一个方面，使回答更生动"
+      },
+      {
+        "expression": "create a comfortable environment",
+        "meaning": "创造一个舒适的环境",
+        "why_useful": "展示个人化理由，增强说服力"
+      },
+      {
+        "expression": "set my own schedule",
+        "meaning": "安排自己的时间表",
+        "why_useful": "强调灵活性，是常见且实用的表达"
+      },
+      {
+        "expression": "the flexibility and comfort are more important",
+        "meaning": "灵活性和舒适性更重要",
+        "why_useful": "总结观点，清晰表达偏好"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 5.5,
+      "grammarScore": 6,
+      "vocabularyScore": 5.5,
+      "naturalnessScore": 5,
+      "usefulCorrections": "原句 'because it's convenient' 过于笼统，建议扩展为 'because it's convenient for me' 并添加具体原因。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 6,
+        "coherenceScore": 5,
+        "developmentScore": 4,
+        "summary": "回答切题但内容单薄，缺乏细节和结构，需要扩展理由和例子。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [],
+        "contentGaps": [
+          "缺少具体理由",
+          "缺少例子或对比"
+        ]
+      }
+    },
+    "retry_checks": []
+  }
+}

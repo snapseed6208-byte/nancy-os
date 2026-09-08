@@ -1,0 +1,85 @@
+{
+  "source": "Synthetic speech WAV; real Aliyun ASR and authenticated Supabase APIs; not physical microphone UI coverage",
+  "sessionId": "67e4b336-2b8f-4f26-a7d5-393b589a7180",
+  "attemptId": "4b9b5e95-c637-483b-9043-703469d883b3",
+  "transcript": "i like living in big cities because there are more jobs. actually, i do not like crowded places. my boyfriend also lives here. the transport is very convenient. so i think big cities are better.",
+  "audioUrl": "https://raiyrrehejwxfyzsjvxj.supabase.co/storage/v1/object/public/speaking-audio/67e4b336-2b8f-4f26-a7d5-393b589a7180/acceptance.wav",
+  "audioBytes": 474766,
+  "durationSeconds": 14.835,
+  "storageRoundtrip": true,
+  "databaseRoundtrip": true,
+  "elapsedMs": 11375,
+  "model": "deepseek-chat",
+  "raw": "{\n  \"final_upgraded_answer\": \"I prefer living in big cities, mainly because they offer more job opportunities. For example, in a big city, I can find work in fields like technology or finance that might not be available in smaller towns. Also, the transport is very convenient, which makes it easy to get around and saves a lot of time. However, I do admit that I'm not a big fan of crowded places—sometimes the rush hour can be overwhelming. But overall, the career benefits and convenience outweigh the downsides, so I'd say big cities are a better fit for me.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 6.5,\n  \"key_issues\": [\n    {\"type\": \"grammar\", \"message\": \"缺少主语和标点，句子结构不完整，如'i like'应为'I like'，且句子间缺少连接\"},\n    {\"type\": \"content\", \"message\": \"观点和理由过于简略，缺乏具体例子或解释来支撑\"},\n    {\"type\": \"structure\", \"message\": \"理由顺序混乱，先提工作，又突然说拥挤和男友，逻辑跳跃\"}\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"将零散理由整合为清晰结构：先亮明观点，用工作机会和交通便利作为主要论据，并加入具体例子；同时承认拥挤的缺点，但用'however'转折强调优点更重要，最后总结。删除了与主题无关的'男友也住这里'，避免偏离问题。\",\n  \"expansion_notice\": \"参考性展开：添加了'technology or finance'作为工作领域的假设性例子，以及'rush hour can be overwhelming'作为对拥挤的具体描述，这些是建议性内容，并非用户真实经历。\",\n  \"reference_answer\": \"Actually, I have mixed feelings about big cities. On one hand, they're exciting—there's always something to do, like concerts, museums, or new restaurants to try. On the other hand, I find the constant noise and crowds draining. For me, it's about balance. If I had to choose, I'd probably pick a big city for the cultural experiences, but I'd make sure to find a quiet neighborhood to escape to when I need a break. So, it depends on what you value most.\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"mainly because\", \"meaning\": \"主要是因为\", \"why_useful\": \"清晰引出主要原因，比简单用'because'更自然\"},\n    {\"expression\": \"I do admit that\", \"meaning\": \"我确实承认\", \"why_useful\": \"用'do'强调，增加口语真实感，同时为转折做铺垫\"},\n    {\"expression\": \"outweigh the downsides\", \"meaning\": \"超过缺点\", \"why_useful\": \"地道表达，用于权衡利弊时显得高级\"},\n    {\"expression\": \"a better fit for me\", \"meaning\": \"更适合我\", \"why_useful\": \"替代'better'，更口语化且个性化\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.0,\n    \"grammarScore\": 5.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 5.5,\n    \"usefulCorrections\": \"'i like' → 'I like'（首字母大写）；'there are more jobs' → 'they offer more job opportunities'（更自然）；'my boyfriend also lives here' → 删除（与问题无关）；'the transport is very convenient' → 'the transport is very convenient'（保留但需连接词）\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 4.5,\n      \"developmentScore\": 4.0,\n      \"summary\": \"观点明确但理由展开不足，且包含无关信息（男友），结构松散\",\n      \"offTopicParts\": [\"my boyfriend also lives here\"],\n      \"repetition\": [],\n      \"orderProblems\": [\"理由顺序跳跃，先工作后拥挤，缺乏过渡\"],\n      \"contentGaps\": [\"缺少具体例子或解释来支撑工作机会和交通便利\"]\n    }\n  }\n}",
+  "feedback": {
+    "overall_score": 5.5,
+    "target_score": 6.5,
+    "key_issues": [
+      {
+        "type": "grammar",
+        "message": "缺少主语和标点，句子结构不完整，如'i like'应为'I like'，且句子间缺少连接"
+      },
+      {
+        "type": "content",
+        "message": "观点和理由过于简略，缺乏具体例子或解释来支撑"
+      },
+      {
+        "type": "structure",
+        "message": "理由顺序混乱，先提工作，又突然说拥挤和男友，逻辑跳跃"
+      }
+    ],
+    "revision_mode": "expand",
+    "optimization_summary": "将零散理由整合为清晰结构：先亮明观点，用工作机会和交通便利作为主要论据，并加入具体例子；同时承认拥挤的缺点，但用'however'转折强调优点更重要，最后总结。删除了与主题无关的'男友也住这里'，避免偏离问题。",
+    "final_upgraded_answer": "I prefer living in big cities, mainly because they offer more job opportunities. For example, in a big city, I can find work in fields like technology or finance that might not be available in smaller towns. Also, the transport is very convenient, which makes it easy to get around and saves a lot of time. However, I do admit that I'm not a big fan of crowded places—sometimes the rush hour can be overwhelming. But overall, the career benefits and convenience outweigh the downsides, so I'd say big cities are a better fit for me.",
+    "reference_answer": "Actually, I have mixed feelings about big cities. On one hand, they're exciting—there's always something to do, like concerts, museums, or new restaurants to try. On the other hand, I find the constant noise and crowds draining. For me, it's about balance. If I had to choose, I'd probably pick a big city for the cultural experiences, but I'd make sure to find a quiet neighborhood to escape to when I need a break. So, it depends on what you value most.",
+    "expansion_notice": "参考性展开：添加了'technology or finance'作为工作领域的假设性例子，以及'rush hour can be overwhelming'作为对拥挤的具体描述，这些是建议性内容，并非用户真实经历。",
+    "takeaway_expressions": [
+      {
+        "expression": "mainly because",
+        "meaning": "主要是因为",
+        "why_useful": "清晰引出主要原因，比简单用'because'更自然"
+      },
+      {
+        "expression": "I do admit that",
+        "meaning": "我确实承认",
+        "why_useful": "用'do'强调，增加口语真实感，同时为转折做铺垫"
+      },
+      {
+        "expression": "outweigh the downsides",
+        "meaning": "超过缺点",
+        "why_useful": "地道表达，用于权衡利弊时显得高级"
+      },
+      {
+        "expression": "a better fit for me",
+        "meaning": "更适合我",
+        "why_useful": "替代'better'，更口语化且个性化"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 5,
+      "grammarScore": 5,
+      "vocabularyScore": 5.5,
+      "naturalnessScore": 5.5,
+      "usefulCorrections": "'i like' → 'I like'（首字母大写）；'there are more jobs' → 'they offer more job opportunities'（更自然）；'my boyfriend also lives here' → 删除（与问题无关）；'the transport is very convenient' → 'the transport is very convenient'（保留但需连接词）",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 6,
+        "coherenceScore": 4.5,
+        "developmentScore": 4,
+        "summary": "观点明确但理由展开不足，且包含无关信息（男友），结构松散",
+        "offTopicParts": [
+          "my boyfriend also lives here"
+        ],
+        "repetition": [],
+        "orderProblems": [
+          "理由顺序跳跃，先工作后拥挤，缺乏过渡"
+        ],
+        "contentGaps": [
+          "缺少具体例子或解释来支撑工作机会和交通便利"
+        ]
+      }
+    },
+    "retry_checks": []
+  }
+}

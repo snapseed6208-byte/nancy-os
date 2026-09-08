@@ -1,0 +1,71 @@
+{
+  "id": "C",
+  "input": "It saves money on transport. I cycle to work. It also gives me exercise. My main reason is staying active. I don't need a separate workout.",
+  "question": "Why do you like cycling?",
+  "expectedMode": "structure",
+  "elapsedMs": 7636,
+  "model": "deepseek-chat",
+  "raw": "{\n  \"final_upgraded_answer\": \"I really enjoy cycling because it's both practical and healthy. For one thing, it saves me money on transport since I cycle to work instead of taking the bus or driving. But more importantly, it keeps me active without needing a separate workout. I can stay fit just by going about my daily routine, which is a huge bonus for someone with a busy schedule.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答内容较为简短，缺乏细节和扩展，如具体好处或感受。\"\n    },\n    {\n      \"type\": \"grammar\",\n      \"message\": \"句子结构简单，缺少连接词和复杂句式，影响流畅度。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"表达略显生硬，如'It also gives me exercise'，可以更自然。\"\n    }\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"扩展了回答，增加了连接词和细节，如'for one thing'、'more importantly'，并解释了为什么方便和健康，使内容更充实、自然。\",\n  \"expansion_notice\": \"参考性展开：添加了'instead of taking the bus or driving'和'for someone with a busy schedule'作为示例，非用户实际经历。\",\n  \"reference_answer\": \"Cycling is my favorite way to stay active because it combines fitness with freedom. When I ride, I feel the wind and see the city from a different perspective, which clears my mind. It's also a great social activity—I often join friends for weekend rides, making exercise feel like fun rather than a chore.\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"for one thing\",\n      \"meaning\": \"首先，一方面\",\n      \"why_useful\": \"用于列举理由，使表达更有条理。\"\n    },\n    {\n      \"expression\": \"more importantly\",\n      \"meaning\": \"更重要的是\",\n      \"why_useful\": \"强调重点，增强逻辑性。\"\n    },\n    {\n      \"expression\": \"without needing a separate workout\",\n      \"meaning\": \"无需单独锻炼\",\n      \"why_useful\": \"简洁表达效率，符合口语习惯。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.0,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"Original: 'It also gives me exercise' → 'it keeps me active' (更自然，避免直译)。Original: 'I don't need a separate workout' → 'without needing a separate workout' (使句子更连贯)。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.0,\n      \"summary\": \"回答切题但内容单薄，缺乏扩展和连接，需要丰富细节。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\"缺少对理由的深入解释或例子\"]\n    }\n  }\n}",
+  "feedback": {
+    "overall_score": 6,
+    "target_score": 7,
+    "key_issues": [
+      {
+        "type": "content",
+        "message": "回答内容较为简短，缺乏细节和扩展，如具体好处或感受。"
+      },
+      {
+        "type": "grammar",
+        "message": "句子结构简单，缺少连接词和复杂句式，影响流畅度。"
+      },
+      {
+        "type": "naturalness",
+        "message": "表达略显生硬，如'It also gives me exercise'，可以更自然。"
+      }
+    ],
+    "revision_mode": "expand",
+    "optimization_summary": "扩展了回答，增加了连接词和细节，如'for one thing'、'more importantly'，并解释了为什么方便和健康，使内容更充实、自然。",
+    "final_upgraded_answer": "I really enjoy cycling because it's both practical and healthy. For one thing, it saves me money on transport since I cycle to work instead of taking the bus or driving. But more importantly, it keeps me active without needing a separate workout. I can stay fit just by going about my daily routine, which is a huge bonus for someone with a busy schedule.",
+    "reference_answer": "Cycling is my favorite way to stay active because it combines fitness with freedom. When I ride, I feel the wind and see the city from a different perspective, which clears my mind. It's also a great social activity—I often join friends for weekend rides, making exercise feel like fun rather than a chore.",
+    "expansion_notice": "参考性展开：添加了'instead of taking the bus or driving'和'for someone with a busy schedule'作为示例，非用户实际经历。",
+    "takeaway_expressions": [
+      {
+        "expression": "for one thing",
+        "meaning": "首先，一方面",
+        "why_useful": "用于列举理由，使表达更有条理。"
+      },
+      {
+        "expression": "more importantly",
+        "meaning": "更重要的是",
+        "why_useful": "强调重点，增强逻辑性。"
+      },
+      {
+        "expression": "without needing a separate workout",
+        "meaning": "无需单独锻炼",
+        "why_useful": "简洁表达效率，符合口语习惯。"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6,
+      "grammarScore": 6,
+      "vocabularyScore": 6,
+      "naturalnessScore": 6,
+      "usefulCorrections": "Original: 'It also gives me exercise' → 'it keeps me active' (更自然，避免直译)。Original: 'I don't need a separate workout' → 'without needing a separate workout' (使句子更连贯)。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 7,
+        "coherenceScore": 6,
+        "developmentScore": 5,
+        "summary": "回答切题但内容单薄，缺乏扩展和连接，需要丰富细节。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [],
+        "contentGaps": [
+          "缺少对理由的深入解释或例子"
+        ]
+      }
+    },
+    "retry_checks": []
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "id": "E",
+  "input": "Big city good. My school wall blue. Jobs because more. More jobs. I no like crowd but bus easy. Better city.",
+  "question": "Do you prefer big cities?",
+  "expectedMode": "rewrite",
+  "elapsedMs": 9393,
+  "model": "deepseek-chat",
+  "raw": "{\n  \"final_upgraded_answer\": \"I do prefer big cities, mainly because they offer more job opportunities. For example, there are more companies and industries in big cities, which means a wider range of career choices. However, I'm not a big fan of crowded places, so I sometimes find the rush hour overwhelming. Still, the convenience of public transportation, like buses and subways, makes up for that. Overall, I think big cities provide a better balance of opportunities and convenience, even though they can be crowded.\",\n  \"overall_score\": 5.0,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"grammar\", \"message\": \"句子碎片化，缺少主谓结构，如'Big city good'和'Jobs because more'\"},\n    {\"type\": \"content\", \"message\": \"包含无关信息（学校墙的颜色），应删除\"},\n    {\"type\": \"structure\", \"message\": \"观点和理由的排列缺乏逻辑顺序\"}\n  ],\n  \"revision_mode\": \"rewrite\",\n  \"optimization_summary\": \"将碎片化表达重组为完整句子，删除无关的学校墙颜色信息，按'观点-理由-让步-总结'的逻辑顺序展开，并补充了具体例子（如公司多、交通便利）来充实内容。\",\n  \"expansion_notice\": \"State 参考性展开：添加了'更多公司和行业'、'高峰时段拥挤'、'公交和地铁'等具体例子，这些是建议性内容，并非用户实际经历。\",\n  \"reference_answer\": \"Actually, I lean toward big cities, but not for the usual reasons. While many people talk about jobs, I value the cultural diversity and social life. In a big city, you can meet people from different backgrounds, try various cuisines, and attend concerts or exhibitions. Sure, it's crowded and sometimes noisy, but the energy is contagious. I think living in a big city pushes you to grow and adapt, which is exciting. So, yes, I prefer big cities for the experiences they offer beyond just employment.\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"mainly because they offer more job opportunities\", \"meaning\": \"主要是因为它们提供更多的工作机会\", \"why_useful\": \"清晰表达核心原因，结构完整\"},\n    {\"expression\": \"I'm not a big fan of crowded places\", \"meaning\": \"我不太喜欢拥挤的地方\", \"why_useful\": \"自然表达个人偏好，避免生硬否定\"},\n    {\"expression\": \"makes up for that\", \"meaning\": \"弥补了这一点\", \"why_useful\": \"常用口语表达，用于平衡优缺点\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 4.0,\n    \"grammarScore\": 3.0,\n    \"vocabularyScore\": 4.0,\n    \"naturalnessScore\": 3.0,\n    \"usefulCorrections\": \"Quote exact original phrases → corrections with brief Chinese explanations, only where needed\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 5.0,\n      \"coherenceScore\": 3.0,\n      \"developmentScore\": 3.0,\n      \"summary\": \"回答基本切题，但包含无关信息（学校墙颜色），观点和理由未充分展开，逻辑跳跃。\",\n      \"offTopicParts\": [\"My school wall blue\"],\n      \"repetition\": [],\n      \"orderProblems\": [\"理由顺序混乱，先提工作机会又跳到交通\"],\n      \"contentGaps\": [\"缺少对'为什么喜欢大城市'的详细解释和例子\"]\n    }\n  }\n}",
+  "feedback": {
+    "overall_score": 5,
+    "target_score": 7,
+    "key_issues": [
+      {
+        "type": "grammar",
+        "message": "句子碎片化，缺少主谓结构，如'Big city good'和'Jobs because more'"
+      },
+      {
+        "type": "content",
+        "message": "包含无关信息（学校墙的颜色），应删除"
+      },
+      {
+        "type": "structure",
+        "message": "观点和理由的排列缺乏逻辑顺序"
+      }
+    ],
+    "revision_mode": "rewrite",
+    "optimization_summary": "将碎片化表达重组为完整句子，删除无关的学校墙颜色信息，按'观点-理由-让步-总结'的逻辑顺序展开，并补充了具体例子（如公司多、交通便利）来充实内容。",
+    "final_upgraded_answer": "I do prefer big cities, mainly because they offer more job opportunities. For example, there are more companies and industries in big cities, which means a wider range of career choices. However, I'm not a big fan of crowded places, so I sometimes find the rush hour overwhelming. Still, the convenience of public transportation, like buses and subways, makes up for that. Overall, I think big cities provide a better balance of opportunities and convenience, even though they can be crowded.",
+    "reference_answer": "Actually, I lean toward big cities, but not for the usual reasons. While many people talk about jobs, I value the cultural diversity and social life. In a big city, you can meet people from different backgrounds, try various cuisines, and attend concerts or exhibitions. Sure, it's crowded and sometimes noisy, but the energy is contagious. I think living in a big city pushes you to grow and adapt, which is exciting. So, yes, I prefer big cities for the experiences they offer beyond just employment.",
+    "expansion_notice": "State 参考性展开：添加了'更多公司和行业'、'高峰时段拥挤'、'公交和地铁'等具体例子，这些是建议性内容，并非用户实际经历。",
+    "takeaway_expressions": [
+      {
+        "expression": "mainly because they offer more job opportunities",
+        "meaning": "主要是因为它们提供更多的工作机会",
+        "why_useful": "清晰表达核心原因，结构完整"
+      },
+      {
+        "expression": "I'm not a big fan of crowded places",
+        "meaning": "我不太喜欢拥挤的地方",
+        "why_useful": "自然表达个人偏好，避免生硬否定"
+      },
+      {
+        "expression": "makes up for that",
+        "meaning": "弥补了这一点",
+        "why_useful": "常用口语表达，用于平衡优缺点"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 4,
+      "grammarScore": 3,
+      "vocabularyScore": 4,
+      "naturalnessScore": 3,
+      "usefulCorrections": "Quote exact original phrases → corrections with brief Chinese explanations, only where needed",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 5,
+        "coherenceScore": 3,
+        "developmentScore": 3,
+        "summary": "回答基本切题，但包含无关信息（学校墙颜色），观点和理由未充分展开，逻辑跳跃。",
+        "offTopicParts": [
+          "My school wall blue"
+        ],
+        "repetition": [],
+        "orderProblems": [
+          "理由顺序混乱，先提工作机会又跳到交通"
+        ],
+        "contentGaps": [
+          "缺少对'为什么喜欢大城市'的详细解释和例子"
+        ]
+      }
+    },
+    "retry_checks": []
+  }
+}
