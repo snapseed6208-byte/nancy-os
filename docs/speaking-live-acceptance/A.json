@@ -3,66 +3,94 @@
   "input": "I enjoy cooking because it helps me unwind after a busy day. I usually makes simple meals with fresh vegetables, and I like sharing them with my family. It is a relaxing way to spend time together.",
   "question": "Do you enjoy cooking?",
   "expectedMode": "light",
-  "elapsedMs": 8910,
+  "elapsedMs": 10746,
   "model": "deepseek-chat",
-  "raw": "{\n  \"final_upgraded_answer\": \"I really enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together, and I find it satisfying to create something healthy from scratch.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"grammar\", \"message\": \"动词形式错误：'makes' 应为 'make'，因主语是 'I'\"},\n    {\"type\": \"content\", \"message\": \"回答略显简短，可适当扩展感受或原因，但无需编造经历\"},\n    {\"type\": \"naturalness\", \"message\": \"结尾可更自然流畅，增加一点口语感\"}\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"修正了语法错误（makes→make），并轻微扩展了结尾，增加了'find it satisfying to create something healthy from scratch'来丰富内容，同时保持了原意和简洁性。未改变用户的核心表达和结构。\",\n  \"expansion_notice\": \"参考性展开：添加了'find it satisfying to create something healthy from scratch'作为通用感受的补充，非用户真实经历，仅为建议性扩展。\",\n  \"reference_answer\": \"Cooking is something I genuinely enjoy, mainly because it gives me a creative outlet. I like experimenting with different ingredients, even if the results aren't always perfect. For me, it's not just about the food—it's a way to relax and also a chance to bond with my family when we cook together.\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"helps me unwind after a busy day\", \"meaning\": \"帮助我在忙碌一天后放松\", \"why_useful\": \"自然表达减压的常用说法\"},\n    {\"expression\": \"a relaxing way for us to spend time together\", \"meaning\": \"一种我们一起放松共度时光的方式\", \"why_useful\": \"强调家庭互动，提升回答的温暖感\"},\n    {\"expression\": \"find it satisfying to create something healthy\", \"meaning\": \"觉得制作健康食物很有满足感\", \"why_useful\": \"增加积极感受，丰富内容\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.0,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"Quote exact original phrases → corrections with brief Chinese explanations, only where needed\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 6.0,\n      \"summary\": \"回答切题，结构清晰，但内容略显单薄，可稍加扩展。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\"缺少对烹饪感受的进一步解释或例子\"]\n    }\n  }\n}",
+  "raw": "{\n  \"final_upgraded_answer\": \"I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together.\",\n  \"overall_score\": 6.5,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"grammar\", \"message\": \"主谓一致错误：'I usually makes' 应为 'I usually make'。\"},\n    {\"type\": \"naturalness\", \"message\": \"结尾 'spend time together' 略显生硬，可调整为更自然的表达。\"}\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"修正了主谓一致错误，并将结尾调整为更自然的口语表达，同时保留了原意的核心内容。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\"original\": \"I usually makes\", \"corrected\": \"I usually make\", \"category\": \"grammar\", \"explanation_zh\": \"主语 I 后应用动词原形 make。\"},\n    {\"original\": \"It is a relaxing way to spend time together.\", \"corrected\": \"It's a relaxing way for us to spend time together.\", \"category\": \"naturalness\", \"explanation_zh\": \"添加 'for us' 使表达更自然，且更明确地指代家人。\"}\n  ],\n  \"answer_structure\": [\n    {\"label\": \"Direct opinion\", \"content\": \"State your enjoyment clearly (e.g., 'I enjoy cooking because...')\"},\n    {\"label\": \"Reason and example\", \"content\": \"Give a reason (e.g., helps unwind) and a concrete detail (e.g., simple meals with vegetables)\"},\n    {\"label\": \"Social aspect\", \"content\": \"Mention sharing with family and the bonding value\"}\n  ],\n  \"reference_answer\": \"Actually, I'm not a big fan of cooking—it feels like a chore most days. I'd rather order takeout or eat out with friends. But I do enjoy baking occasionally, especially when I have time on weekends. It's more like a creative hobby for me than a daily necessity.\",\n  \"reference_angle_summary\": \"从相反立场（不喜欢做饭）切入，并引入烘焙作为例外，展示不同视角。\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"helps me unwind\", \"meaning_zh\": \"帮助我放松\", \"why_useful\": \"地道表达，比 'relax' 更生动\", \"example\": \"Listening to music helps me unwind after work.\", \"usage_note\": \"常用于口语中描述减压方式。\"},\n    {\"expression\": \"a relaxing way for us to spend time together\", \"meaning_zh\": \"一种我们一起度过的放松方式\", \"why_useful\": \"强调共同体验，自然流畅\", \"example\": \"Walking in the park is a relaxing way for us to spend time together.\", \"usage_note\": \"适合描述家庭或朋友间的活动。\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.5,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.5,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"修正了主谓一致错误，并优化了结尾表达的自然度。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 6.5,\n      \"developmentScore\": 6.0,\n      \"summary\": \"回答切题，结构清晰，但内容稍显简短，可适当扩展。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\"缺少具体例子或细节来支撑'放松'和'分享'的观点\"]\n    }\n  }\n}",
   "feedback": {
-    "overall_score": 6,
+    "overall_score": 6.5,
     "target_score": 7,
     "key_issues": [
       {
         "type": "grammar",
-        "message": "动词形式错误：'makes' 应为 'make'，因主语是 'I'"
-      },
-      {
-        "type": "content",
-        "message": "回答略显简短，可适当扩展感受或原因，但无需编造经历"
+        "message": "主谓一致错误：'I usually makes' 应为 'I usually make'。"
       },
       {
         "type": "naturalness",
-        "message": "结尾可更自然流畅，增加一点口语感"
+        "message": "结尾 'spend time together' 略显生硬，可调整为更自然的表达。"
       }
     ],
     "revision_mode": "light",
-    "optimization_summary": "修正了语法错误（makes→make），并轻微扩展了结尾，增加了'find it satisfying to create something healthy from scratch'来丰富内容，同时保持了原意和简洁性。未改变用户的核心表达和结构。",
-    "final_upgraded_answer": "I really enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together, and I find it satisfying to create something healthy from scratch.",
-    "reference_answer": "Cooking is something I genuinely enjoy, mainly because it gives me a creative outlet. I like experimenting with different ingredients, even if the results aren't always perfect. For me, it's not just about the food—it's a way to relax and also a chance to bond with my family when we cook together.",
-    "expansion_notice": "参考性展开：添加了'find it satisfying to create something healthy from scratch'作为通用感受的补充，非用户真实经历，仅为建议性扩展。",
+    "optimization_summary": "修正了主谓一致错误，并将结尾调整为更自然的口语表达，同时保留了原意的核心内容。",
+    "final_upgraded_answer": "I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together.",
+    "reference_answer": "Actually, I'm not a big fan of cooking—it feels like a chore most days. I'd rather order takeout or eat out with friends. But I do enjoy baking occasionally, especially when I have time on weekends. It's more like a creative hobby for me than a daily necessity.",
+    "reference_angle_summary": "从相反立场（不喜欢做饭）切入，并引入烘焙作为例外，展示不同视角。",
+    "expansion_notice": "",
     "takeaway_expressions": [
       {
-        "expression": "helps me unwind after a busy day",
-        "meaning": "帮助我在忙碌一天后放松",
-        "why_useful": "自然表达减压的常用说法"
+        "expression": "helps me unwind",
+        "meaning": "帮助我放松",
+        "meaning_zh": "帮助我放松",
+        "why_useful": "地道表达，比 'relax' 更生动",
+        "example": "Listening to music helps me unwind after work.",
+        "usage_note": "常用于口语中描述减压方式。",
+        "readonly": false
       },
       {
         "expression": "a relaxing way for us to spend time together",
-        "meaning": "一种我们一起放松共度时光的方式",
-        "why_useful": "强调家庭互动，提升回答的温暖感"
+        "meaning": "一种我们一起度过的放松方式",
+        "meaning_zh": "一种我们一起度过的放松方式",
+        "why_useful": "强调共同体验，自然流畅",
+        "example": "Walking in the park is a relaxing way for us to spend time together.",
+        "usage_note": "适合描述家庭或朋友间的活动。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "I usually makes",
+        "corrected": "I usually make",
+        "category": "grammar",
+        "explanation_zh": "主语 I 后应用动词原形 make。"
       },
       {
-        "expression": "find it satisfying to create something healthy",
-        "meaning": "觉得制作健康食物很有满足感",
-        "why_useful": "增加积极感受，丰富内容"
+        "original": "It is a relaxing way to spend time together.",
+        "corrected": "It's a relaxing way for us to spend time together.",
+        "category": "naturalness",
+        "explanation_zh": "添加 'for us' 使表达更自然，且更明确地指代家人。"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "Direct opinion",
+        "content": "State your enjoyment clearly (e.g., 'I enjoy cooking because...')"
+      },
+      {
+        "label": "Reason and example",
+        "content": "Give a reason (e.g., helps unwind) and a concrete detail (e.g., simple meals with vegetables)"
+      },
+      {
+        "label": "Social aspect",
+        "content": "Mention sharing with family and the bonding value"
       }
     ],
     "detailed_analysis": {
-      "fluencyScore": 6,
+      "fluencyScore": 6.5,
       "grammarScore": 6,
-      "vocabularyScore": 6,
+      "vocabularyScore": 6.5,
       "naturalnessScore": 6,
-      "usefulCorrections": "Quote exact original phrases → corrections with brief Chinese explanations, only where needed",
+      "usefulCorrections": "修正了主谓一致错误，并优化了结尾表达的自然度。",
       "expressionsUsed": [],
       "expressionsMissed": [],
       "contentAnalysis": {
-        "relevanceScore": 6,
-        "coherenceScore": 6,
+        "relevanceScore": 7,
+        "coherenceScore": 6.5,
         "developmentScore": 6,
-        "summary": "回答切题，结构清晰，但内容略显单薄，可稍加扩展。",
+        "summary": "回答切题，结构清晰，但内容稍显简短，可适当扩展。",
         "offTopicParts": [],
         "repetition": [],
         "orderProblems": [],
         "contentGaps": [
-          "缺少对烹饪感受的进一步解释或例子"
+          "缺少具体例子或细节来支撑'放松'和'分享'的观点"
         ]
       }
     },

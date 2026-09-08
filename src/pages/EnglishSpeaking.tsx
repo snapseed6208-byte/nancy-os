@@ -1,4 +1,5 @@
 import { SpeakingFeedbackPanel } from "@/components/english/SpeakingFeedbackPanel";
+import { BeforeAfterScores } from "@/components/english/SpeakingScoreBars";
 import { normalizeSpeakingFeedback, speakingFeedbackStorage } from "@/lib/english/speakingFeedback";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
@@ -497,7 +498,7 @@ export default function EnglishSpeaking() {
 
   // ── Phase 6: Retry flow handlers ──
 
-  const [retryReferenceMode, setRetryReferenceMode] = useState<"full" | "hidden">("full");
+  const [retryReferenceMode, setRetryReferenceMode] = useState<"structure" | "full" | "hidden">("structure");
 
   const handleRetryStartRecording = async () => {
     if (isStartingRef.current || recorder.state !== "idle") return;
@@ -575,6 +576,7 @@ export default function EnglishSpeaking() {
             final_upgraded_answer: firstFeedback?.final_upgraded_answer,
             originalAnswer: firstTranscript,
             takeaway_expressions: firstFeedback?.takeaway_expressions,
+            answer_structure: firstFeedback?.answer_structure,
           },
         },
       );
@@ -2116,22 +2118,51 @@ export default function EnglishSpeaking() {
                 <RefreshCw size={12} /> 重新复述参考
               </p>
               <div className="flex gap-1">
-                {(["full", "hidden"] as const).map((mode) => (
+                {([
+                  { mode: "structure", label: "只看骨架" },
+                  { mode: "full", label: "查看完整答案" },
+                  { mode: "hidden", label: "隐藏参考" },
+                ] as const).map(({ mode, label }) => (
                   <button
                     key={mode}
                     onClick={() => setRetryReferenceMode(mode)}
                     className={cn(
-                      "text-[10px] rounded-full px-2 py-0.5 transition-colors",
+                      "text-[10px] rounded-full px-2 py-0.5 transition-colors whitespace-nowrap",
                       retryReferenceMode === mode
                         ? "bg-purple-200 text-purple-700"
                         : "bg-white text-ink-lighter"
                     )}
                   >
-                    {mode === "full" ? "显示答案" : "隐藏答案"}
+                    {label}
                   </button>
                 ))}
               </div>
             </div>
+
+            {retryReferenceMode === "structure" && (
+              <div>
+                <p className="text-xs font-semibold text-sage-deep">复述骨架 Answer Structure</p>
+                {firstFeedback?.answer_structure?.length ? (
+                  <ol className="space-y-2 mt-2">
+                    {firstFeedback.answer_structure.map((s, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="h-5 w-5 rounded-full bg-purple-100 text-purple-600 text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {i + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-ink">{s.label}</p>
+                          {s.content && (
+                            <p className="text-[11px] text-ink-light leading-relaxed mt-0.5 whitespace-pre-line">{s.content}</p>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-xs text-ink-light mt-2">该记录无骨架，可切换到「查看完整答案」参考。</p>
+                )}
+              </div>
+            )}
 
             {retryReferenceMode === "full" && firstFeedback?.final_upgraded_answer && (
               <div><p className="text-xs font-semibold text-sage-deep">最终优化表达</p>
@@ -2248,6 +2279,9 @@ export default function EnglishSpeaking() {
             <BarChart3 size={16} className="text-purple-600" />
             <p className="text-sm font-semibold text-ink">前后对比 Before & After</p>
           </div>
+
+          {/* Real-score comparison (never AI-invented) */}
+          <BeforeAfterScores before={firstFeedback} after={retryFeedback} />
 
           {/* Audio comparison */}
           <div className="space-y-2">
@@ -2505,6 +2539,9 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
               <RefreshCw size={14} className="text-purple-600" />
               <p className="text-sm font-semibold text-ink">重新复述对比 (Round {(retryAttempt.attempt_round as number) || 2})</p>
             </div>
+
+            {/* Real-score comparison (never AI-invented) */}
+            {firstAttempt && <BeforeAfterScores before={normalizeSpeakingFeedback(firstAttempt)} after={normalizeSpeakingFeedback(retryAttempt)} />}
 
             {/* Retry audio */}
             {(retryAttempt.audio_url as string) && (

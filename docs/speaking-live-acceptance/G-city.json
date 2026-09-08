@@ -3,68 +3,121 @@
   "input": "I like living in big cities because there are more jobs. And actually I don't like crowded places. My boyfriend also lives here. The transport is very convenient. So I think big cities are better.",
   "question": "Do you prefer living in big cities?",
   "expectedMode": "structure",
-  "elapsedMs": 10513,
+  "elapsedMs": 15151,
   "model": "deepseek-chat",
-  "raw": "{\n  \"final_upgraded_answer\": \"I prefer living in big cities, mainly because they offer more job opportunities, which is really important for my career growth. Also, the transport here is very convenient, so I can get around easily without wasting too much time. I do admit that big cities can be crowded, and I'm not a big fan of that, but the overall benefits, like better services and more things to do, outweigh the downsides. Plus, my boyfriend lives here, which makes the city feel more like home to me. So, for me, the advantages of big city life definitely make it the better choice.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 6.5,\n  \"key_issues\": [\n    {\"type\": \"structure\", \"message\": \"回答逻辑跳跃，先提优点又突然转向缺点，缺乏连贯过渡\"},\n    {\"type\": \"content\", \"message\": \"观点展开不足，每个理由都只有一句话，缺乏具体解释或例子\"},\n    {\"type\": \"grammar\", \"message\": \"句子之间连接生硬，缺少过渡词，整体显得碎片化\"}\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"主要扩展了每个理由，增加了过渡词使逻辑更连贯，先承认缺点再强调优点形成对比，让回答更有说服力。同时保持了原意，没有添加虚构的个人经历。\",\n  \"expansion_notice\": \"参考性展开：增加了'career growth'、'better services'、'more things to do'等通用理由作为示例，这些是建议性的补充，并非用户实际说过的话。\",\n  \"reference_answer\": \"Actually, I'm torn on this. Big cities have a lot going for them—like job opportunities and entertainment options—but I've always been someone who values peace and quiet. I find crowded places draining, and that's a big part of city life. However, I've noticed that cities also offer a sense of anonymity and freedom that smaller towns don't. You can reinvent yourself, meet diverse people, and have access to better healthcare and education. So, while I might not love the crowds, I think the trade-off is worth it for the opportunities and convenience. It really depends on what you prioritize in life.\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"mainly because they offer more job opportunities\", \"meaning\": \"主要是因为它们提供更多工作机会\", \"why_useful\": \"清晰表达主要原因，比简单说'more jobs'更正式\"},\n    {\"expression\": \"I do admit that...\", \"meaning\": \"我确实承认……\", \"why_useful\": \"用于承认缺点，显得客观有说服力\"},\n    {\"expression\": \"outweigh the downsides\", \"meaning\": \"超过缺点\", \"why_useful\": \"地道表达权衡利弊，比'better'更精准\"},\n    {\"expression\": \"makes the city feel more like home\", \"meaning\": \"让城市更有家的感觉\", \"why_useful\": \"用情感因素增强说服力，自然口语化\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.5,\n    \"grammarScore\": 5.5,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 5.5,\n    \"usefulCorrections\": \"原文'And actually I don't like crowded places' → 建议改为'I do admit that big cities can be crowded, and I'm not a big fan of that'，用让步结构更自然；原文'My boyfriend also lives here' → 建议增加连接词如'Plus'，使逻辑更流畅\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 5.0,\n      \"developmentScore\": 4.5,\n      \"summary\": \"回答切题但内容单薄，每个理由都未展开，逻辑跳跃，需要增加过渡和具体化\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [\"先提优点又突然转向缺点，缺乏过渡\"],\n      \"contentGaps\": [\"缺少对优点的具体解释，缺少对缺点的平衡处理\"]\n    }\n  }\n}",
+  "raw": "```json\n{\n  \"final_upgraded_answer\": \"I prefer living in big cities, mainly because they offer far more job opportunities. For example, in a big city, it's easier to find a job that matches my skills and career goals. Another big advantage is the convenient transport system, which makes it easy to get around and saves a lot of time. However, I do admit that big cities can be crowded, and I'm not a big fan of that. But overall, I think the career and lifestyle benefits outweigh the drawbacks, so I'd still choose a big city.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"content\", \"message\": \"提到了男朋友住在那里，但没有展开说明，属于未发展的个人信息，应删除或解释。\"},\n    {\"type\": \"structure\", \"message\": \"观点和理由之间缺乏逻辑连接，句子之间跳跃，需要更清晰的过渡。\"},\n    {\"type\": \"naturalness\", \"message\": \"表达比较简短和生硬，缺少口语化的自然连接词和细节支撑。\"}\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"删除了未发展的个人信息（男朋友住在那里），因为它没有被解释且与主题无关。扩展了工作机会和交通便利两个理由，加入了具体例子和让步转折（承认拥挤），使回答更有层次和说服力。增加了连接词（mainly because, for example, however, overall）来改善逻辑流畅度。\",\n  \"expansion_notice\": \"参考性展开：在'更多工作机会'和'交通便利'两个理由下添加了'更容易找到匹配技能和职业目标的工作'以及'节省时间'等解释性内容，这些是建议性的展开，并非用户实际经历。\",\n  \"corrections\": [\n    {\"original\": \"I like living in big cities because there are more jobs.\", \"corrected\": \"I prefer living in big cities, mainly because they offer far more job opportunities.\", \"category\": \"expression_upgrade\", \"explanation_zh\": \"用prefer更直接回应'偏好'问题，'offer far more job opportunities'比'there are more jobs'更自然且具体。\"},\n    {\"original\": \"And actually I don't like crowded places.\", \"corrected\": \"However, I do admit that big cities can be crowded, and I'm not a big fan of that.\", \"category\": \"naturalness\", \"explanation_zh\": \"用'However'和'do admit'引出让步，比'And actually'更符合口语逻辑，且承认缺点使回答更平衡。\"},\n    {\"original\": \"The transport is very convenient.\", \"corrected\": \"Another big advantage is the convenient transport system, which makes it easy to get around and saves a lot of time.\", \"category\": \"expression_upgrade\", \"explanation_zh\": \"增加'Another big advantage'作为过渡，并用定语从句补充说明便利带来的好处，使表达更丰满。\"}\n  ],\n  \"answer_structure\": [\n    {\"label\": \"Clear stance\", \"content\": \"直接表明偏好：I prefer living in big cities.\"},\n    {\"label\": \"Reason 1 with example\", \"content\": \"主要理由：更多工作机会，并举例说明（更容易找到匹配技能的工作）。\"},\n    {\"label\": \"Reason 2 with benefit\", \"content\": \"次要理由：交通便利，并说明好处（节省时间、出行方便）。\"},\n    {\"label\": \"Concession and balance\", \"content\": \"承认缺点（拥挤），但说明优点更重要，重申立场。\"}\n  ],\n  \"reference_answer\": \"Actually, I'd rather live in a big city, but not for the usual reasons like jobs. For me, it's more about the lifestyle and the people. In a big city, you can meet all kinds of people from different backgrounds, and that really broadens your mind. There are also countless cultural activities, like concerts, exhibitions, and festivals, which I find really exciting. Of course, it can be noisy and expensive, but I think the energy and the chance to grow as a person make it worth it.\",\n  \"reference_angle_summary\": \"从生活方式和文化社交角度回答，而非常见的就业角度。\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"mainly because\", \"meaning_zh\": \"主要是因为\", \"why_useful\": \"用于引出主要原因，使回答更有条理。\", \"example\": \"I prefer small towns, mainly because they are quieter.\", \"usage_note\": \"口语中常用，比'because'更强调主要性。\"},\n    {\"expression\": \"I do admit that\", \"meaning_zh\": \"我确实承认\", \"why_useful\": \"用于让步，承认缺点，使观点更客观平衡。\", \"example\": \"I do admit that the cost of living is high here.\", \"usage_note\": \"'do'用于强调，增强语气。\"},\n    {\"expression\": \"outweigh the drawbacks\", \"meaning_zh\": \"超过缺点\", \"why_useful\": \"用于总结优缺点对比，表达最终立场。\", \"example\": \"The benefits of this job outweigh the drawbacks.\", \"usage_note\": \"较正式，但在口语中也可用，显得有说服力。\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.5,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 5.0,\n    \"usefulCorrections\": \"将'like living'改为'prefer living'更直接回应问题；用'However, I do admit'替代'And actually'使让步更自然；将'the transport is very convenient'扩展为'Another big advantage is the convenient transport system, which makes it easy to get around and saves a lot of time'，增加过渡和细节。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 5.5,\n      \"coherenceScore\": 5.0,\n      \"developmentScore\": 4.5,\n      \"summary\": \"回答切题但内容单薄，理由未展开，且包含未发展的个人信息（男朋友），逻辑跳跃。\",\n      \"offTopicParts\": [\"My boyfriend also lives here.\"],\n      \"repetition\": [],\n      \"orderProblems\": [\"理由之间缺乏过渡，'And actually'和'So'连接生硬。\"],\n      \"contentGaps\": [\"工作机会和交通便利两个理由都只有一句话，缺少解释或例子。\"]\n    }\n  }\n}\n```",
   "feedback": {
     "overall_score": 5.5,
-    "target_score": 6.5,
+    "target_score": 7,
     "key_issues": [
       {
-        "type": "structure",
-        "message": "回答逻辑跳跃，先提优点又突然转向缺点，缺乏连贯过渡"
-      },
-      {
         "type": "content",
-        "message": "观点展开不足，每个理由都只有一句话，缺乏具体解释或例子"
+        "message": "提到了男朋友住在那里，但没有展开说明，属于未发展的个人信息，应删除或解释。"
       },
       {
-        "type": "grammar",
-        "message": "句子之间连接生硬，缺少过渡词，整体显得碎片化"
+        "type": "structure",
+        "message": "观点和理由之间缺乏逻辑连接，句子之间跳跃，需要更清晰的过渡。"
+      },
+      {
+        "type": "naturalness",
+        "message": "表达比较简短和生硬，缺少口语化的自然连接词和细节支撑。"
       }
     ],
     "revision_mode": "expand",
-    "optimization_summary": "主要扩展了每个理由，增加了过渡词使逻辑更连贯，先承认缺点再强调优点形成对比，让回答更有说服力。同时保持了原意，没有添加虚构的个人经历。",
-    "final_upgraded_answer": "I prefer living in big cities, mainly because they offer more job opportunities, which is really important for my career growth. Also, the transport here is very convenient, so I can get around easily without wasting too much time. I do admit that big cities can be crowded, and I'm not a big fan of that, but the overall benefits, like better services and more things to do, outweigh the downsides. Plus, my boyfriend lives here, which makes the city feel more like home to me. So, for me, the advantages of big city life definitely make it the better choice.",
-    "reference_answer": "Actually, I'm torn on this. Big cities have a lot going for them—like job opportunities and entertainment options—but I've always been someone who values peace and quiet. I find crowded places draining, and that's a big part of city life. However, I've noticed that cities also offer a sense of anonymity and freedom that smaller towns don't. You can reinvent yourself, meet diverse people, and have access to better healthcare and education. So, while I might not love the crowds, I think the trade-off is worth it for the opportunities and convenience. It really depends on what you prioritize in life.",
-    "expansion_notice": "参考性展开：增加了'career growth'、'better services'、'more things to do'等通用理由作为示例，这些是建议性的补充，并非用户实际说过的话。",
+    "optimization_summary": "删除了未发展的个人信息（男朋友住在那里），因为它没有被解释且与主题无关。扩展了工作机会和交通便利两个理由，加入了具体例子和让步转折（承认拥挤），使回答更有层次和说服力。增加了连接词（mainly because, for example, however, overall）来改善逻辑流畅度。",
+    "final_upgraded_answer": "I prefer living in big cities, mainly because they offer far more job opportunities. For example, in a big city, it's easier to find a job that matches my skills and career goals. Another big advantage is the convenient transport system, which makes it easy to get around and saves a lot of time. However, I do admit that big cities can be crowded, and I'm not a big fan of that. But overall, I think the career and lifestyle benefits outweigh the drawbacks, so I'd still choose a big city.",
+    "reference_answer": "Actually, I'd rather live in a big city, but not for the usual reasons like jobs. For me, it's more about the lifestyle and the people. In a big city, you can meet all kinds of people from different backgrounds, and that really broadens your mind. There are also countless cultural activities, like concerts, exhibitions, and festivals, which I find really exciting. Of course, it can be noisy and expensive, but I think the energy and the chance to grow as a person make it worth it.",
+    "reference_angle_summary": "从生活方式和文化社交角度回答，而非常见的就业角度。",
+    "expansion_notice": "参考性展开：在'更多工作机会'和'交通便利'两个理由下添加了'更容易找到匹配技能和职业目标的工作'以及'节省时间'等解释性内容，这些是建议性的展开，并非用户实际经历。",
     "takeaway_expressions": [
       {
-        "expression": "mainly because they offer more job opportunities",
-        "meaning": "主要是因为它们提供更多工作机会",
-        "why_useful": "清晰表达主要原因，比简单说'more jobs'更正式"
+        "expression": "mainly because",
+        "meaning": "主要是因为",
+        "meaning_zh": "主要是因为",
+        "why_useful": "用于引出主要原因，使回答更有条理。",
+        "example": "I prefer small towns, mainly because they are quieter.",
+        "usage_note": "口语中常用，比'because'更强调主要性。",
+        "readonly": false
       },
       {
-        "expression": "outweigh the downsides",
+        "expression": "I do admit that",
+        "meaning": "我确实承认",
+        "meaning_zh": "我确实承认",
+        "why_useful": "用于让步，承认缺点，使观点更客观平衡。",
+        "example": "I do admit that the cost of living is high here.",
+        "usage_note": "'do'用于强调，增强语气。",
+        "readonly": false
+      },
+      {
+        "expression": "outweigh the drawbacks",
         "meaning": "超过缺点",
-        "why_useful": "地道表达权衡利弊，比'better'更精准"
+        "meaning_zh": "超过缺点",
+        "why_useful": "用于总结优缺点对比，表达最终立场。",
+        "example": "The benefits of this job outweigh the drawbacks.",
+        "usage_note": "较正式，但在口语中也可用，显得有说服力。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "I like living in big cities because there are more jobs.",
+        "corrected": "I prefer living in big cities, mainly because they offer far more job opportunities.",
+        "category": "expression_upgrade",
+        "explanation_zh": "用prefer更直接回应'偏好'问题，'offer far more job opportunities'比'there are more jobs'更自然且具体。"
       },
       {
-        "expression": "makes the city feel more like home",
-        "meaning": "让城市更有家的感觉",
-        "why_useful": "用情感因素增强说服力，自然口语化"
+        "original": "And actually I don't like crowded places.",
+        "corrected": "However, I do admit that big cities can be crowded, and I'm not a big fan of that.",
+        "category": "naturalness",
+        "explanation_zh": "用'However'和'do admit'引出让步，比'And actually'更符合口语逻辑，且承认缺点使回答更平衡。"
+      },
+      {
+        "original": "The transport is very convenient.",
+        "corrected": "Another big advantage is the convenient transport system, which makes it easy to get around and saves a lot of time.",
+        "category": "expression_upgrade",
+        "explanation_zh": "增加'Another big advantage'作为过渡，并用定语从句补充说明便利带来的好处，使表达更丰满。"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "Clear stance",
+        "content": "直接表明偏好：I prefer living in big cities."
+      },
+      {
+        "label": "Reason 1 with example",
+        "content": "主要理由：更多工作机会，并举例说明（更容易找到匹配技能的工作）。"
+      },
+      {
+        "label": "Reason 2 with benefit",
+        "content": "次要理由：交通便利，并说明好处（节省时间、出行方便）。"
+      },
+      {
+        "label": "Concession and balance",
+        "content": "承认缺点（拥挤），但说明优点更重要，重申立场。"
       }
     ],
     "detailed_analysis": {
       "fluencyScore": 5.5,
-      "grammarScore": 5.5,
+      "grammarScore": 6,
       "vocabularyScore": 5.5,
-      "naturalnessScore": 5.5,
-      "usefulCorrections": "原文'And actually I don't like crowded places' → 建议改为'I do admit that big cities can be crowded, and I'm not a big fan of that'，用让步结构更自然；原文'My boyfriend also lives here' → 建议增加连接词如'Plus'，使逻辑更流畅",
+      "naturalnessScore": 5,
+      "usefulCorrections": "将'like living'改为'prefer living'更直接回应问题；用'However, I do admit'替代'And actually'使让步更自然；将'the transport is very convenient'扩展为'Another big advantage is the convenient transport system, which makes it easy to get around and saves a lot of time'，增加过渡和细节。",
       "expressionsUsed": [],
       "expressionsMissed": [],
       "contentAnalysis": {
-        "relevanceScore": 6,
+        "relevanceScore": 5.5,
         "coherenceScore": 5,
         "developmentScore": 4.5,
-        "summary": "回答切题但内容单薄，每个理由都未展开，逻辑跳跃，需要增加过渡和具体化",
-        "offTopicParts": [],
+        "summary": "回答切题但内容单薄，理由未展开，且包含未发展的个人信息（男朋友），逻辑跳跃。",
+        "offTopicParts": [
+          "My boyfriend also lives here."
+        ],
         "repetition": [],
         "orderProblems": [
-          "先提优点又突然转向缺点，缺乏过渡"
+          "理由之间缺乏过渡，'And actually'和'So'连接生硬。"
         ],
         "contentGaps": [
-          "缺少对优点的具体解释，缺少对缺点的平衡处理"
+          "工作机会和交通便利两个理由都只有一句话，缺少解释或例子。"
         ]
       }
     },

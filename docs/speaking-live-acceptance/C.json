@@ -3,46 +3,87 @@
   "input": "It saves money on transport. I cycle to work. It also gives me exercise. My main reason is staying active. I don't need a separate workout.",
   "question": "Why do you like cycling?",
   "expectedMode": "structure",
-  "elapsedMs": 7636,
+  "elapsedMs": 12245,
   "model": "deepseek-chat",
-  "raw": "{\n  \"final_upgraded_answer\": \"I really enjoy cycling because it's both practical and healthy. For one thing, it saves me money on transport since I cycle to work instead of taking the bus or driving. But more importantly, it keeps me active without needing a separate workout. I can stay fit just by going about my daily routine, which is a huge bonus for someone with a busy schedule.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答内容较为简短，缺乏细节和扩展，如具体好处或感受。\"\n    },\n    {\n      \"type\": \"grammar\",\n      \"message\": \"句子结构简单，缺少连接词和复杂句式，影响流畅度。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"表达略显生硬，如'It also gives me exercise'，可以更自然。\"\n    }\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"扩展了回答，增加了连接词和细节，如'for one thing'、'more importantly'，并解释了为什么方便和健康，使内容更充实、自然。\",\n  \"expansion_notice\": \"参考性展开：添加了'instead of taking the bus or driving'和'for someone with a busy schedule'作为示例，非用户实际经历。\",\n  \"reference_answer\": \"Cycling is my favorite way to stay active because it combines fitness with freedom. When I ride, I feel the wind and see the city from a different perspective, which clears my mind. It's also a great social activity—I often join friends for weekend rides, making exercise feel like fun rather than a chore.\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"for one thing\",\n      \"meaning\": \"首先，一方面\",\n      \"why_useful\": \"用于列举理由，使表达更有条理。\"\n    },\n    {\n      \"expression\": \"more importantly\",\n      \"meaning\": \"更重要的是\",\n      \"why_useful\": \"强调重点，增强逻辑性。\"\n    },\n    {\n      \"expression\": \"without needing a separate workout\",\n      \"meaning\": \"无需单独锻炼\",\n      \"why_useful\": \"简洁表达效率，符合口语习惯。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.0,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"Original: 'It also gives me exercise' → 'it keeps me active' (更自然，避免直译)。Original: 'I don't need a separate workout' → 'without needing a separate workout' (使句子更连贯)。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.0,\n      \"summary\": \"回答切题但内容单薄，缺乏扩展和连接，需要丰富细节。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\"缺少对理由的深入解释或例子\"]\n    }\n  }\n}",
+  "raw": "{\n  \"final_upgraded_answer\": \"I really enjoy cycling because it's both practical and healthy. For one thing, it saves me money on transport since I can ride to work instead of paying for a bus or train. But the main reason is that it keeps me active without needing a separate workout. I can stay fit just by going about my daily routine, which makes it easy to stick with.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"structure\", \"message\": \"答案缺乏连贯性，各点之间没有连接词或逻辑过渡，显得零散。\"},\n    {\"type\": \"content\", \"message\": \"内容较为单薄，只列出了理由，没有展开说明或举例。\"},\n    {\"type\": \"naturalness\", \"message\": \"表达略显生硬，缺少口语化的连接和自然过渡。\"}\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"将零散的理由整合成连贯的段落，添加了逻辑连接词（如for one thing, but the main reason is）和解释（如不用额外锻炼、容易坚持），使回答更流畅、内容更充实。\",\n  \"expansion_notice\": \"参考性展开：添加了“不用额外锻炼”和“容易坚持”作为对原有理由的延伸解释，属于建议性内容，非用户实际经历。\",\n  \"corrections\": [\n    {\n      \"original\": \"It saves money on transport.\",\n      \"corrected\": \"It saves me money on transport.\",\n      \"category\": \"naturalness\",\n      \"explanation_zh\": \"添加间接宾语使表达更自然，符合口语习惯。\"\n    },\n    {\n      \"original\": \"My main reason is staying active.\",\n      \"corrected\": \"But the main reason is that it keeps me active.\",\n      \"category\": \"expression_upgrade\",\n      \"explanation_zh\": \"使用从句和连接词使句子更完整，逻辑更清晰。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\"label\": \"Opening\", \"content\": \"State overall enjoyment and two main reasons (practical + health).\"},\n    {\"label\": \"Reason 1\", \"content\": \"Mention saving money and riding to work as example.\"},\n    {\"label\": \"Reason 2\", \"content\": \"Emphasize staying active without extra workout, add benefit of easy consistency.\"}\n  ],\n  \"reference_answer\": \"Cycling is my favorite way to get around because it makes me feel free and independent. When I'm on my bike, I can explore new routes and discover parts of the city I wouldn't see from a bus. It's also a great stress reliever—after a long day, pedaling helps me clear my mind and enjoy the outdoors. Plus, it's environmentally friendly, which makes me feel good about reducing my carbon footprint.\",\n  \"reference_angle_summary\": \"从自由探索和减压的角度回答，强调骑行带来的心理和环保益处。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"for one thing\",\n      \"meaning_zh\": \"首先，一方面\",\n      \"why_useful\": \"用于列举理由，使表达更有条理。\",\n      \"example\": \"For one thing, cycling is cheap; for another, it's healthy.\",\n      \"usage_note\": \"常用于口语中引出第一个论点。\"\n    },\n    {\n      \"expression\": \"the main reason is that\",\n      \"meaning_zh\": \"主要原因是\",\n      \"why_useful\": \"强调重点，使回答有主次之分。\",\n      \"example\": \"The main reason is that it saves time.\",\n      \"usage_note\": \"用于突出最重要的理由。\"\n    },\n    {\n      \"expression\": \"stick with\",\n      \"meaning_zh\": \"坚持\",\n      \"why_useful\": \"表达持续做某事，体现习惯的养成。\",\n      \"example\": \"It's easy to stick with cycling because it's fun.\",\n      \"usage_note\": \"常用于谈论习惯或计划。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.0,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"添加间接宾语和从句使表达更自然；使用连接词增强连贯性。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 5.0,\n      \"developmentScore\": 5.0,\n      \"summary\": \"内容切题但缺乏展开，结构零散，需要加强逻辑连接。\",\n      \"offTopicParts\": [],\n      \"repetition\": [\"exercise\", \"staying active\"],\n      \"orderProblems\": [\"理由顺序可以优化，先提省钱再提健康更自然\"],\n      \"contentGaps\": [\"缺少对理由的进一步解释或例子\"]\n    }\n  }\n}",
   "feedback": {
     "overall_score": 6,
     "target_score": 7,
     "key_issues": [
       {
-        "type": "content",
-        "message": "回答内容较为简短，缺乏细节和扩展，如具体好处或感受。"
+        "type": "structure",
+        "message": "答案缺乏连贯性，各点之间没有连接词或逻辑过渡，显得零散。"
       },
       {
-        "type": "grammar",
-        "message": "句子结构简单，缺少连接词和复杂句式，影响流畅度。"
+        "type": "content",
+        "message": "内容较为单薄，只列出了理由，没有展开说明或举例。"
       },
       {
         "type": "naturalness",
-        "message": "表达略显生硬，如'It also gives me exercise'，可以更自然。"
+        "message": "表达略显生硬，缺少口语化的连接和自然过渡。"
       }
     ],
     "revision_mode": "expand",
-    "optimization_summary": "扩展了回答，增加了连接词和细节，如'for one thing'、'more importantly'，并解释了为什么方便和健康，使内容更充实、自然。",
-    "final_upgraded_answer": "I really enjoy cycling because it's both practical and healthy. For one thing, it saves me money on transport since I cycle to work instead of taking the bus or driving. But more importantly, it keeps me active without needing a separate workout. I can stay fit just by going about my daily routine, which is a huge bonus for someone with a busy schedule.",
-    "reference_answer": "Cycling is my favorite way to stay active because it combines fitness with freedom. When I ride, I feel the wind and see the city from a different perspective, which clears my mind. It's also a great social activity—I often join friends for weekend rides, making exercise feel like fun rather than a chore.",
-    "expansion_notice": "参考性展开：添加了'instead of taking the bus or driving'和'for someone with a busy schedule'作为示例，非用户实际经历。",
+    "optimization_summary": "将零散的理由整合成连贯的段落，添加了逻辑连接词（如for one thing, but the main reason is）和解释（如不用额外锻炼、容易坚持），使回答更流畅、内容更充实。",
+    "final_upgraded_answer": "I really enjoy cycling because it's both practical and healthy. For one thing, it saves me money on transport since I can ride to work instead of paying for a bus or train. But the main reason is that it keeps me active without needing a separate workout. I can stay fit just by going about my daily routine, which makes it easy to stick with.",
+    "reference_answer": "Cycling is my favorite way to get around because it makes me feel free and independent. When I'm on my bike, I can explore new routes and discover parts of the city I wouldn't see from a bus. It's also a great stress reliever—after a long day, pedaling helps me clear my mind and enjoy the outdoors. Plus, it's environmentally friendly, which makes me feel good about reducing my carbon footprint.",
+    "reference_angle_summary": "从自由探索和减压的角度回答，强调骑行带来的心理和环保益处。",
+    "expansion_notice": "参考性展开：添加了“不用额外锻炼”和“容易坚持”作为对原有理由的延伸解释，属于建议性内容，非用户实际经历。",
     "takeaway_expressions": [
       {
         "expression": "for one thing",
         "meaning": "首先，一方面",
-        "why_useful": "用于列举理由，使表达更有条理。"
+        "meaning_zh": "首先，一方面",
+        "why_useful": "用于列举理由，使表达更有条理。",
+        "example": "For one thing, cycling is cheap; for another, it's healthy.",
+        "usage_note": "常用于口语中引出第一个论点。",
+        "readonly": false
       },
       {
-        "expression": "more importantly",
-        "meaning": "更重要的是",
-        "why_useful": "强调重点，增强逻辑性。"
+        "expression": "the main reason is that",
+        "meaning": "主要原因是",
+        "meaning_zh": "主要原因是",
+        "why_useful": "强调重点，使回答有主次之分。",
+        "example": "The main reason is that it saves time.",
+        "usage_note": "用于突出最重要的理由。",
+        "readonly": false
       },
       {
-        "expression": "without needing a separate workout",
-        "meaning": "无需单独锻炼",
-        "why_useful": "简洁表达效率，符合口语习惯。"
+        "expression": "stick with",
+        "meaning": "坚持",
+        "meaning_zh": "坚持",
+        "why_useful": "表达持续做某事，体现习惯的养成。",
+        "example": "It's easy to stick with cycling because it's fun.",
+        "usage_note": "常用于谈论习惯或计划。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "It saves money on transport.",
+        "corrected": "It saves me money on transport.",
+        "category": "naturalness",
+        "explanation_zh": "添加间接宾语使表达更自然，符合口语习惯。"
+      },
+      {
+        "original": "My main reason is staying active.",
+        "corrected": "But the main reason is that it keeps me active.",
+        "category": "expression_upgrade",
+        "explanation_zh": "使用从句和连接词使句子更完整，逻辑更清晰。"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "Opening",
+        "content": "State overall enjoyment and two main reasons (practical + health)."
+      },
+      {
+        "label": "Reason 1",
+        "content": "Mention saving money and riding to work as example."
+      },
+      {
+        "label": "Reason 2",
+        "content": "Emphasize staying active without extra workout, add benefit of easy consistency."
       }
     ],
     "detailed_analysis": {
@@ -50,19 +91,24 @@
       "grammarScore": 6,
       "vocabularyScore": 6,
       "naturalnessScore": 6,
-      "usefulCorrections": "Original: 'It also gives me exercise' → 'it keeps me active' (更自然，避免直译)。Original: 'I don't need a separate workout' → 'without needing a separate workout' (使句子更连贯)。",
+      "usefulCorrections": "添加间接宾语和从句使表达更自然；使用连接词增强连贯性。",
       "expressionsUsed": [],
       "expressionsMissed": [],
       "contentAnalysis": {
         "relevanceScore": 7,
-        "coherenceScore": 6,
+        "coherenceScore": 5,
         "developmentScore": 5,
-        "summary": "回答切题但内容单薄，缺乏扩展和连接，需要丰富细节。",
+        "summary": "内容切题但缺乏展开，结构零散，需要加强逻辑连接。",
         "offTopicParts": [],
-        "repetition": [],
-        "orderProblems": [],
+        "repetition": [
+          "exercise",
+          "staying active"
+        ],
+        "orderProblems": [
+          "理由顺序可以优化，先提省钱再提健康更自然"
+        ],
         "contentGaps": [
-          "缺少对理由的深入解释或例子"
+          "缺少对理由的进一步解释或例子"
         ]
       }
     },

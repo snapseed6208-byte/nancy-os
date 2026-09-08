@@ -1,4 +1,7 @@
-import { parseSpeakingResponse, speakingObject, type SimplifiedSpeakingFeedback } from "../english/speakingFeedback";
+import {
+  parseSpeakingResponse, speakingObject, buildCorrectionsText,
+  type SimplifiedSpeakingFeedback, type SpeakingStructureStep,
+} from "../english/speakingFeedback";
 // ============================================
 // Nancy OS — English Coach AI Service
 // Migrated from Expression Builder AI prompts
@@ -125,6 +128,7 @@ export interface AnalyzeSpeakingOptions {
     final_upgraded_answer?: string;
     originalAnswer?: string;
     takeaway_expressions?: SimplifiedSpeakingFeedback["takeaway_expressions"];
+    answer_structure?: SpeakingStructureStep[];
   };
 }
 
@@ -159,15 +163,21 @@ export async function analyzeSpeaking(
     // Ignore accidental generated versions on retry; the learning target is immutable.
     result.final_upgraded_answer = opts.retryContext.final_upgraded_answer || "";
     result.reference_answer = "";
+    result.reference_angle_summary = "";
     result.takeaway_expressions = [];
+    result.corrections = [];
+    result.answer_structure = [];
     result.revision_mode = null;
   }
+  const rawCorrections = typeof details.usefulCorrections === "string" && details.usefulCorrections.trim()
+    ? details.usefulCorrections
+    : buildCorrectionsText(result.corrections);
   return {
     ...result,
     fluencyScore: numeric("fluencyScore"), grammarScore: numeric("grammarScore"),
     vocabularyScore: numeric("vocabularyScore"), naturalnessScore: numeric("naturalnessScore"),
     mainProblems: result.key_issues.map(i => i.message).join("\n"),
-    usefulCorrections: typeof details.usefulCorrections === "string" ? details.usefulCorrections : "",
+    usefulCorrections: rawCorrections,
     expressionsUsed: strings("expressionsUsed"), expressionsMissed: strings("expressionsMissed"),
     contentAnalysis: speakingObject(details.contentAnalysis),
   };

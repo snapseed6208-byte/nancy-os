@@ -3,61 +3,106 @@
   "input": "I like cooking because I can choose fresh ingredients. My school has five buildings. My address is near a bus stop. The weather is sunny today. Choosing fresh ingredients matters to me.",
   "question": "Why do you like cooking?",
   "expectedMode": "trim",
-  "elapsedMs": 7753,
+  "elapsedMs": 11344,
   "model": "deepseek-chat",
-  "raw": "{\n  \"final_upgraded_answer\": \"I enjoy cooking because it lets me choose fresh ingredients, which is something I really care about. For me, picking out vegetables and meat at the market feels satisfying—it's like I'm in control of what goes into my meal. Plus, cooking gives me a chance to be creative and try new recipes, which makes the whole process fun and rewarding.\",\n  \"overall_score\": 4.5,\n  \"target_score\": 6.0,\n  \"key_issues\": [\n    {\"type\": \"relevance\", \"message\": \"包含与主题无关的学校、地址和天气信息，应删除\"},\n    {\"type\": \"content\", \"message\": \"内容过于简短，仅重复一个观点，缺乏展开和具体例子\"},\n    {\"type\": \"structure\", \"message\": \"回答缺乏清晰逻辑，无关信息干扰了主题表达\"}\n  ],\n  \"revision_mode\": \"trim\",\n  \"optimization_summary\": \"删除了所有无关信息（学校、地址、天气），保留了核心观点'选择新鲜食材'，并增加了对选择的满足感和创造性的简要展开，使回答更连贯且符合题目要求。\",\n  \"expansion_notice\": \"参考性展开：增加了'挑选蔬菜和肉类的满足感'和'尝试新食谱的创造性'作为示例，这些是建议性内容，并非用户真实经历。\",\n  \"reference_answer\": \"Cooking appeals to me because it's a hands-on way to relax after a busy day. Unlike other chores, it gives immediate results—I can see and taste what I've made. It also lets me share something personal with friends and family, which makes the effort worthwhile.\",\n  \"takeaway_expressions\": [\n    {\"expression\": \"lets me choose fresh ingredients\", \"meaning\": \"让我能选择新鲜食材\", \"why_useful\": \"直接表达核心原因，简洁自然\"},\n    {\"expression\": \"feels satisfying\", \"meaning\": \"感到满足\", \"why_useful\": \"描述情感反应，增强表达力\"},\n    {\"expression\": \"gives me a chance to be creative\", \"meaning\": \"给我机会发挥创意\", \"why_useful\": \"扩展原因，展示多角度思考\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 4.0,\n    \"grammarScore\": 5.0,\n    \"vocabularyScore\": 4.5,\n    \"naturalnessScore\": 4.0,\n    \"usefulCorrections\": \"Original: 'I like cooking because I can choose fresh ingredients.' → Corrected: 'I enjoy cooking because it lets me choose fresh ingredients.' (更自然且避免重复'like')\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 3.0,\n      \"coherenceScore\": 3.5,\n      \"developmentScore\": 3.0,\n      \"summary\": \"回答包含大量无关信息，核心观点未充分展开，缺乏逻辑连贯性。\",\n      \"offTopicParts\": [\"My school has five buildings.\", \"My address is near a bus stop.\", \"The weather is sunny today.\"],\n      \"repetition\": [\"Choosing fresh ingredients matters to me.\"],\n      \"orderProblems\": [\"无关信息穿插在核心观点之间，破坏逻辑\"],\n      \"contentGaps\": [\"缺少对'为什么选择新鲜食材重要'的解释或例子\"]\n    }\n  }\n}",
+  "raw": "```json\n{\n  \"final_upgraded_answer\": \"I like cooking because it lets me choose fresh ingredients. For me, that choice really matters—it means I can make meals that are both healthy and tasty. Cooking also gives me a sense of control and creativity, since I can try new combinations and adjust flavors to suit my own taste. It's a relaxing way to end the day and share something enjoyable with others.\",\n  \"overall_score\": 4.5,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\":\"relevance\", \"message\":\"回答包含大量与主题无关的内容（学校建筑、地址、天气），应删除\"},\n    {\"type\":\"content\", \"message\":\"核心观点（选择新鲜食材）缺乏展开，未解释原因或结果\"},\n    {\"type\":\"structure\", \"message\":\"内容组织松散，无关信息打断逻辑连贯性\"}\n  ],\n  \"revision_mode\": \"rewrite\",\n  \"optimization_summary\": \"删除了所有无关信息（学校建筑、地址、天气），保留并扩展了核心观点（选择新鲜食材），补充了控制感、创造力和放松感等合理推论，使回答结构清晰、内容充实。\",\n  \"expansion_notice\": \"参考性展开：关于控制感、创造力、放松和分享的表述是基于原观点的合理推论，并非学生明确陈述的个人经历。\",\n  \"corrections\": [\n    {\"original\":\"I like cooking because I can choose fresh ingredients.\", \"corrected\":\"I like cooking because it lets me choose fresh ingredients.\", \"category\":\"expression_upgrade\", \"explanation_zh\":\"使表达更自然流畅，避免重复使用'can'。\"},\n    {\"original\":\"Choosing fresh ingredients matters to me.\", \"corrected\":\"For me, that choice really matters—it means I can make meals that are both healthy and tasty.\", \"category\":\"content\", \"explanation_zh\":\"将简单陈述扩展为有解释的完整观点，说明为什么重要。\"}\n  ],\n  \"answer_structure\": [\n    {\"label\":\"Stance\", \"content\":\"直接表明喜欢烹饪的原因（选择新鲜食材）\"},\n    {\"label\":\"Reason & Explanation\", \"content\":\"解释为什么这个选择重要（健康、美味）\"},\n    {\"label\":\"Additional Benefits\", \"content\":\"补充其他合理理由（控制感、创造力、放松）\"},\n    {\"label\":\"Closing\", \"content\":\"以分享或总结收尾\"}\n  ],\n  \"reference_answer\": \"I enjoy cooking because it's a creative outlet that lets me experiment with flavors and techniques. Unlike following a strict recipe, I can adapt dishes to my own preferences and discover what works through trial and error. It also gives me a sense of accomplishment when I see the final result, and it's a practical skill that helps me eat well without spending too much money.\",\n  \"reference_angle_summary\": \"从创造力和实用技能的角度回答，而非仅强调食材选择。\",\n  \"takeaway_expressions\": [\n    {\"expression\":\"it lets me choose fresh ingredients\", \"meaning_zh\":\"让我能够选择新鲜食材\", \"why_useful\":\"自然表达'允许/使能够'，比'can'更地道\", \"example\":\"Cooking at home lets me choose fresh ingredients every day.\", \"usage_note\":\"用于强调自主选择的能力。\"},\n    {\"expression\":\"a sense of control and creativity\", \"meaning_zh\":\"控制感和创造力\", \"why_useful\":\"概括烹饪带来的心理益处，提升表达深度\", \"example\":\"Baking gives me a sense of control and creativity.\", \"usage_note\":\"常用于描述爱好带来的内在满足感。\"},\n    {\"expression\":\"a relaxing way to end the day\", \"meaning_zh\":\"结束一天放松的方式\", \"why_useful\":\"自然描述日常活动带来的放松效果\", \"example\":\"For me, gardening is a relaxing way to end the day.\", \"usage_note\":\"用于表达活动对情绪的积极影响。\"}\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 4.0,\n    \"grammarScore\": 5.0,\n    \"vocabularyScore\": 4.0,\n    \"naturalnessScore\": 3.5,\n    \"usefulCorrections\": \"删除了无关内容，扩展了核心观点，改进了表达自然度。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 2.0,\n      \"coherenceScore\": 3.0,\n      \"developmentScore\": 2.5,\n      \"summary\": \"回答大部分内容与问题无关，核心观点未展开，缺乏连贯性。\",\n      \"offTopicParts\": [\"My school has five buildings.\", \"My address is near a bus stop.\", \"The weather is sunny today.\"],\n      \"repetition\": [\"Choosing fresh ingredients matters to me.\"],\n      \"orderProblems\": [\"无关信息插入在核心观点之间，破坏逻辑\"],\n      \"contentGaps\": [\"未解释为什么选择新鲜食材重要\", \"未提供任何具体例子或结果\"]\n    }\n  }\n}\n```",
   "feedback": {
     "overall_score": 4.5,
-    "target_score": 6,
+    "target_score": 7,
     "key_issues": [
       {
         "type": "relevance",
-        "message": "包含与主题无关的学校、地址和天气信息，应删除"
+        "message": "回答包含大量与主题无关的内容（学校建筑、地址、天气），应删除"
       },
       {
         "type": "content",
-        "message": "内容过于简短，仅重复一个观点，缺乏展开和具体例子"
+        "message": "核心观点（选择新鲜食材）缺乏展开，未解释原因或结果"
       },
       {
         "type": "structure",
-        "message": "回答缺乏清晰逻辑，无关信息干扰了主题表达"
+        "message": "内容组织松散，无关信息打断逻辑连贯性"
       }
     ],
-    "revision_mode": "trim",
-    "optimization_summary": "删除了所有无关信息（学校、地址、天气），保留了核心观点'选择新鲜食材'，并增加了对选择的满足感和创造性的简要展开，使回答更连贯且符合题目要求。",
-    "final_upgraded_answer": "I enjoy cooking because it lets me choose fresh ingredients, which is something I really care about. For me, picking out vegetables and meat at the market feels satisfying—it's like I'm in control of what goes into my meal. Plus, cooking gives me a chance to be creative and try new recipes, which makes the whole process fun and rewarding.",
-    "reference_answer": "Cooking appeals to me because it's a hands-on way to relax after a busy day. Unlike other chores, it gives immediate results—I can see and taste what I've made. It also lets me share something personal with friends and family, which makes the effort worthwhile.",
-    "expansion_notice": "参考性展开：增加了'挑选蔬菜和肉类的满足感'和'尝试新食谱的创造性'作为示例，这些是建议性内容，并非用户真实经历。",
+    "revision_mode": "rewrite",
+    "optimization_summary": "删除了所有无关信息（学校建筑、地址、天气），保留并扩展了核心观点（选择新鲜食材），补充了控制感、创造力和放松感等合理推论，使回答结构清晰、内容充实。",
+    "final_upgraded_answer": "I like cooking because it lets me choose fresh ingredients. For me, that choice really matters—it means I can make meals that are both healthy and tasty. Cooking also gives me a sense of control and creativity, since I can try new combinations and adjust flavors to suit my own taste. It's a relaxing way to end the day and share something enjoyable with others.",
+    "reference_answer": "I enjoy cooking because it's a creative outlet that lets me experiment with flavors and techniques. Unlike following a strict recipe, I can adapt dishes to my own preferences and discover what works through trial and error. It also gives me a sense of accomplishment when I see the final result, and it's a practical skill that helps me eat well without spending too much money.",
+    "reference_angle_summary": "从创造力和实用技能的角度回答，而非仅强调食材选择。",
+    "expansion_notice": "参考性展开：关于控制感、创造力、放松和分享的表述是基于原观点的合理推论，并非学生明确陈述的个人经历。",
     "takeaway_expressions": [
       {
-        "expression": "lets me choose fresh ingredients",
-        "meaning": "让我能选择新鲜食材",
-        "why_useful": "直接表达核心原因，简洁自然"
+        "expression": "it lets me choose fresh ingredients",
+        "meaning": "让我能够选择新鲜食材",
+        "meaning_zh": "让我能够选择新鲜食材",
+        "why_useful": "自然表达'允许/使能够'，比'can'更地道",
+        "example": "Cooking at home lets me choose fresh ingredients every day.",
+        "usage_note": "用于强调自主选择的能力。",
+        "readonly": false
       },
       {
-        "expression": "feels satisfying",
-        "meaning": "感到满足",
-        "why_useful": "描述情感反应，增强表达力"
+        "expression": "a sense of control and creativity",
+        "meaning": "控制感和创造力",
+        "meaning_zh": "控制感和创造力",
+        "why_useful": "概括烹饪带来的心理益处，提升表达深度",
+        "example": "Baking gives me a sense of control and creativity.",
+        "usage_note": "常用于描述爱好带来的内在满足感。",
+        "readonly": false
       },
       {
-        "expression": "gives me a chance to be creative",
-        "meaning": "给我机会发挥创意",
-        "why_useful": "扩展原因，展示多角度思考"
+        "expression": "a relaxing way to end the day",
+        "meaning": "结束一天放松的方式",
+        "meaning_zh": "结束一天放松的方式",
+        "why_useful": "自然描述日常活动带来的放松效果",
+        "example": "For me, gardening is a relaxing way to end the day.",
+        "usage_note": "用于表达活动对情绪的积极影响。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "I like cooking because I can choose fresh ingredients.",
+        "corrected": "I like cooking because it lets me choose fresh ingredients.",
+        "category": "expression_upgrade",
+        "explanation_zh": "使表达更自然流畅，避免重复使用'can'。"
+      },
+      {
+        "original": "Choosing fresh ingredients matters to me.",
+        "corrected": "For me, that choice really matters—it means I can make meals that are both healthy and tasty.",
+        "category": "",
+        "explanation_zh": "将简单陈述扩展为有解释的完整观点，说明为什么重要。"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "Stance",
+        "content": "直接表明喜欢烹饪的原因（选择新鲜食材）"
+      },
+      {
+        "label": "Reason & Explanation",
+        "content": "解释为什么这个选择重要（健康、美味）"
+      },
+      {
+        "label": "Additional Benefits",
+        "content": "补充其他合理理由（控制感、创造力、放松）"
+      },
+      {
+        "label": "Closing",
+        "content": "以分享或总结收尾"
       }
     ],
     "detailed_analysis": {
       "fluencyScore": 4,
       "grammarScore": 5,
-      "vocabularyScore": 4.5,
-      "naturalnessScore": 4,
-      "usefulCorrections": "Original: 'I like cooking because I can choose fresh ingredients.' → Corrected: 'I enjoy cooking because it lets me choose fresh ingredients.' (更自然且避免重复'like')",
+      "vocabularyScore": 4,
+      "naturalnessScore": 3.5,
+      "usefulCorrections": "删除了无关内容，扩展了核心观点，改进了表达自然度。",
       "expressionsUsed": [],
       "expressionsMissed": [],
       "contentAnalysis": {
-        "relevanceScore": 3,
-        "coherenceScore": 3.5,
-        "developmentScore": 3,
-        "summary": "回答包含大量无关信息，核心观点未充分展开，缺乏逻辑连贯性。",
+        "relevanceScore": 2,
+        "coherenceScore": 3,
+        "developmentScore": 2.5,
+        "summary": "回答大部分内容与问题无关，核心观点未展开，缺乏连贯性。",
         "offTopicParts": [
           "My school has five buildings.",
           "My address is near a bus stop.",
@@ -67,10 +112,11 @@
           "Choosing fresh ingredients matters to me."
         ],
         "orderProblems": [
-          "无关信息穿插在核心观点之间，破坏逻辑"
+          "无关信息插入在核心观点之间，破坏逻辑"
         ],
         "contentGaps": [
-          "缺少对'为什么选择新鲜食材重要'的解释或例子"
+          "未解释为什么选择新鲜食材重要",
+          "未提供任何具体例子或结果"
         ]
       }
     },

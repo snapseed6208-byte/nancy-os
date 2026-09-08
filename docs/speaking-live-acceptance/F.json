@@ -3,67 +3,102 @@
   "input": "Teamwork is useful because people have different skills.",
   "question": "Why is teamwork useful?",
   "expectedMode": "expand",
-  "elapsedMs": 9453,
+  "elapsedMs": 10900,
   "model": "deepseek-chat",
-  "raw": "{\n  \"final_upgraded_answer\": \"Teamwork is useful because it brings together people with different skills, which allows us to solve problems more creatively and efficiently. For example, in a school project, one person might be good at designing, another at writing, and another at presenting. By working together, we can combine these strengths and produce a better result than any one person could alone. Also, teamwork helps us learn from each other and build communication skills, which are valuable in both study and future work. So, overall, teamwork not only improves the quality of the outcome but also makes the process more enjoyable and educational.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答过于简短，缺乏具体例子和深入解释\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"只有一个观点，没有展开或逻辑连接\"\n    },\n    {\n      \"type\": \"grammar\",\n      \"message\": \"原句语法正确但过于简单，缺少复杂句式\"\n    }\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"扩展了原句，增加了具体例子（学校项目中的分工）和额外理由（互相学习、提升沟通能力），并添加了总结句。保持了原意，但使回答更充实、更有逻辑。\",\n  \"expansion_notice\": \"参考性展开：添加了学校项目的假设例子和关于学习与沟通的额外观点，这些是建议性内容，并非用户真实经历。\",\n  \"reference_answer\": \"Teamwork is useful because it encourages shared responsibility and reduces individual pressure. When people work as a team, tasks can be divided according to each person's strengths, which makes the work more efficient. Moreover, team members can support each other when facing challenges, which builds confidence and resilience. In my opinion, teamwork also fosters a sense of belonging, as everyone feels their contribution matters. This not only leads to better outcomes but also helps develop important social skills that are essential in any career.\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"brings together people with different skills\",\n      \"meaning\": \"将具有不同技能的人聚集在一起\",\n      \"why_useful\": \"简洁地表达了团队合作的核心优势\"\n    },\n    {\n      \"expression\": \"combine these strengths\",\n      \"meaning\": \"结合这些优势\",\n      \"why_useful\": \"强调协作的整合作用\"\n    },\n    {\n      \"expression\": \"makes the process more enjoyable and educational\",\n      \"meaning\": \"使过程更有趣且具有教育意义\",\n      \"why_useful\": \"从体验角度补充了团队合作的价值\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 5.5,\n    \"usefulCorrections\": \"原句 'Teamwork is useful because people have different skills.' 语法正确，但可扩展为 'Teamwork is useful because it brings together people with different skills, which allows us to solve problems more creatively and efficiently.' 增加从句使表达更流畅。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 5.0,\n      \"developmentScore\": 4.0,\n      \"summary\": \"回答切题但内容单薄，只有一个理由，缺乏展开和例子。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"缺少具体例子\",\n        \"缺少额外理由或总结\"\n      ]\n    }\n  }\n}",
+  "raw": "{\n  \"final_upgraded_answer\": \"Teamwork is useful because it brings together people with different skills, which allows us to solve problems more effectively. For example, in a school project, one person might be good at writing, another at designing, and another at presenting. By combining these strengths, we can produce a better result than if we worked alone. Also, teamwork helps us learn from each other and builds a sense of shared responsibility, making the work more enjoyable and less stressful.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 7.0,\n  \"key_issues\": [\n    {\"type\": \"content\", \"message\": \"回答过于简短，只提到一个观点，缺乏展开和例子。\"},\n    {\"type\": \"structure\", \"message\": \"没有清晰的结构，只有一个简单句，缺乏逻辑推进。\"},\n    {\"type\": \"naturalness\", \"message\": \"表达虽然正确但过于简单，缺乏口语化的自然连接和细节。\"}\n  ],\n  \"revision_mode\": \"expand\",\n  \"optimization_summary\": \"在保留原意的基础上，增加了具体例子（如学校项目中的分工）、补充了团队合作的其他好处（互相学习、分担责任），并添加了逻辑连接词使回答更连贯。所有新增内容均为参考性展开，非用户实际经历。\",\n  \"expansion_notice\": \"参考性展开：添加了学校项目的假设例子，以及互相学习和分担责任等观点，这些是建议性的展开，不是用户陈述的事实。\",\n  \"corrections\": [\n    {\n      \"original\": \"Teamwork is useful because people have different skills.\",\n      \"corrected\": \"Teamwork is useful because it brings together people with different skills.\",\n      \"category\": \"expression_upgrade\",\n      \"explanation_zh\": \"原句正确但略显生硬，改为更自然的表达，强调团队的作用。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\"label\": \"Stance\", \"content\": \"直接回答团队合作有用，并给出核心原因（不同技能）。\"},\n    {\"label\": \"Example\", \"content\": \"用具体例子说明，如学校项目中的分工合作。\"},\n    {\"label\": \"Additional benefits\", \"content\": \"补充其他好处，如互相学习、分担责任，使回答更充实。\"}\n  ],\n  \"reference_answer\": \"Teamwork is valuable because it encourages creativity and innovation. When people from different backgrounds work together, they share unique perspectives that can lead to fresh ideas. For instance, in a business setting, a marketing expert and an engineer might approach a problem differently, and their combined insights can result in a more innovative solution. Moreover, teamwork builds trust and communication skills, which are essential in both personal and professional life. Working as a team also makes tasks feel lighter, as members support each other and celebrate successes together.\",\n  \"reference_angle_summary\": \"从创新和社交技能的角度展开，强调不同视角带来的创意和信任建立。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"brings together people with different skills\",\n      \"meaning_zh\": \"将具有不同技能的人聚集在一起\",\n      \"why_useful\": \"比简单说'people have different skills'更生动，强调团队的作用。\",\n      \"example\": \"Teamwork brings together people with different skills, making the project stronger.\",\n      \"usage_note\": \"常用于解释团队合作的好处。\"\n    },\n    {\n      \"expression\": \"combining these strengths\",\n      \"meaning_zh\": \"结合这些优势\",\n      \"why_useful\": \"展示如何利用多样性，使回答更有逻辑。\",\n      \"example\": \"By combining these strengths, we can achieve more.\",\n      \"usage_note\": \"用于总结例子后的效果。\"\n    },\n    {\n      \"expression\": \"shared responsibility\",\n      \"meaning_zh\": \"共同责任\",\n      \"why_useful\": \"体现团队合作的情感和社会价值，提升回答深度。\",\n      \"example\": \"Shared responsibility makes the workload feel lighter.\",\n      \"usage_note\": \"适合在讨论团队好处时使用。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.0,\n    \"naturalnessScore\": 5.0,\n    \"usefulCorrections\": \"原句语法正确，但表达可以更自然。建议改为'it brings together people with different skills'以增强流畅性。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 5.0,\n      \"developmentScore\": 4.0,\n      \"summary\": \"回答切题但内容过于单薄，缺乏展开和例子，结构不完整。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\"缺少具体例子\", \"缺少其他好处或解释\"]\n    }\n  }\n}",
   "feedback": {
     "overall_score": 5.5,
     "target_score": 7,
     "key_issues": [
       {
         "type": "content",
-        "message": "回答过于简短，缺乏具体例子和深入解释"
+        "message": "回答过于简短，只提到一个观点，缺乏展开和例子。"
       },
       {
         "type": "structure",
-        "message": "只有一个观点，没有展开或逻辑连接"
+        "message": "没有清晰的结构，只有一个简单句，缺乏逻辑推进。"
       },
       {
-        "type": "grammar",
-        "message": "原句语法正确但过于简单，缺少复杂句式"
+        "type": "naturalness",
+        "message": "表达虽然正确但过于简单，缺乏口语化的自然连接和细节。"
       }
     ],
     "revision_mode": "expand",
-    "optimization_summary": "扩展了原句，增加了具体例子（学校项目中的分工）和额外理由（互相学习、提升沟通能力），并添加了总结句。保持了原意，但使回答更充实、更有逻辑。",
-    "final_upgraded_answer": "Teamwork is useful because it brings together people with different skills, which allows us to solve problems more creatively and efficiently. For example, in a school project, one person might be good at designing, another at writing, and another at presenting. By working together, we can combine these strengths and produce a better result than any one person could alone. Also, teamwork helps us learn from each other and build communication skills, which are valuable in both study and future work. So, overall, teamwork not only improves the quality of the outcome but also makes the process more enjoyable and educational.",
-    "reference_answer": "Teamwork is useful because it encourages shared responsibility and reduces individual pressure. When people work as a team, tasks can be divided according to each person's strengths, which makes the work more efficient. Moreover, team members can support each other when facing challenges, which builds confidence and resilience. In my opinion, teamwork also fosters a sense of belonging, as everyone feels their contribution matters. This not only leads to better outcomes but also helps develop important social skills that are essential in any career.",
-    "expansion_notice": "参考性展开：添加了学校项目的假设例子和关于学习与沟通的额外观点，这些是建议性内容，并非用户真实经历。",
+    "optimization_summary": "在保留原意的基础上，增加了具体例子（如学校项目中的分工）、补充了团队合作的其他好处（互相学习、分担责任），并添加了逻辑连接词使回答更连贯。所有新增内容均为参考性展开，非用户实际经历。",
+    "final_upgraded_answer": "Teamwork is useful because it brings together people with different skills, which allows us to solve problems more effectively. For example, in a school project, one person might be good at writing, another at designing, and another at presenting. By combining these strengths, we can produce a better result than if we worked alone. Also, teamwork helps us learn from each other and builds a sense of shared responsibility, making the work more enjoyable and less stressful.",
+    "reference_answer": "Teamwork is valuable because it encourages creativity and innovation. When people from different backgrounds work together, they share unique perspectives that can lead to fresh ideas. For instance, in a business setting, a marketing expert and an engineer might approach a problem differently, and their combined insights can result in a more innovative solution. Moreover, teamwork builds trust and communication skills, which are essential in both personal and professional life. Working as a team also makes tasks feel lighter, as members support each other and celebrate successes together.",
+    "reference_angle_summary": "从创新和社交技能的角度展开，强调不同视角带来的创意和信任建立。",
+    "expansion_notice": "参考性展开：添加了学校项目的假设例子，以及互相学习和分担责任等观点，这些是建议性的展开，不是用户陈述的事实。",
     "takeaway_expressions": [
       {
         "expression": "brings together people with different skills",
         "meaning": "将具有不同技能的人聚集在一起",
-        "why_useful": "简洁地表达了团队合作的核心优势"
+        "meaning_zh": "将具有不同技能的人聚集在一起",
+        "why_useful": "比简单说'people have different skills'更生动，强调团队的作用。",
+        "example": "Teamwork brings together people with different skills, making the project stronger.",
+        "usage_note": "常用于解释团队合作的好处。",
+        "readonly": false
       },
       {
-        "expression": "combine these strengths",
+        "expression": "combining these strengths",
         "meaning": "结合这些优势",
-        "why_useful": "强调协作的整合作用"
+        "meaning_zh": "结合这些优势",
+        "why_useful": "展示如何利用多样性，使回答更有逻辑。",
+        "example": "By combining these strengths, we can achieve more.",
+        "usage_note": "用于总结例子后的效果。",
+        "readonly": false
       },
       {
-        "expression": "makes the process more enjoyable and educational",
-        "meaning": "使过程更有趣且具有教育意义",
-        "why_useful": "从体验角度补充了团队合作的价值"
+        "expression": "shared responsibility",
+        "meaning": "共同责任",
+        "meaning_zh": "共同责任",
+        "why_useful": "体现团队合作的情感和社会价值，提升回答深度。",
+        "example": "Shared responsibility makes the workload feel lighter.",
+        "usage_note": "适合在讨论团队好处时使用。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "Teamwork is useful because people have different skills.",
+        "corrected": "Teamwork is useful because it brings together people with different skills.",
+        "category": "expression_upgrade",
+        "explanation_zh": "原句正确但略显生硬，改为更自然的表达，强调团队的作用。"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "Stance",
+        "content": "直接回答团队合作有用，并给出核心原因（不同技能）。"
+      },
+      {
+        "label": "Example",
+        "content": "用具体例子说明，如学校项目中的分工合作。"
+      },
+      {
+        "label": "Additional benefits",
+        "content": "补充其他好处，如互相学习、分担责任，使回答更充实。"
       }
     ],
     "detailed_analysis": {
       "fluencyScore": 5,
       "grammarScore": 6,
-      "vocabularyScore": 5.5,
-      "naturalnessScore": 5.5,
-      "usefulCorrections": "原句 'Teamwork is useful because people have different skills.' 语法正确，但可扩展为 'Teamwork is useful because it brings together people with different skills, which allows us to solve problems more creatively and efficiently.' 增加从句使表达更流畅。",
+      "vocabularyScore": 5,
+      "naturalnessScore": 5,
+      "usefulCorrections": "原句语法正确，但表达可以更自然。建议改为'it brings together people with different skills'以增强流畅性。",
       "expressionsUsed": [],
       "expressionsMissed": [],
       "contentAnalysis": {
         "relevanceScore": 6,
         "coherenceScore": 5,
         "developmentScore": 4,
-        "summary": "回答切题但内容单薄，只有一个理由，缺乏展开和例子。",
+        "summary": "回答切题但内容过于单薄，缺乏展开和例子，结构不完整。",
         "offTopicParts": [],
         "repetition": [],
         "orderProblems": [],
         "contentGaps": [
           "缺少具体例子",
-          "缺少额外理由或总结"
+          "缺少其他好处或解释"
         ]
       }
     },
