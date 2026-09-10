@@ -17,6 +17,17 @@ vi.mock("../lib/english/speakingBank", () => ({
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Speaking feedback contract and rendering", () => {
+  it("preserves unchecked status through storage and visibly warns without certifying", () => {
+    const stored=speakingFeedbackStorage(normalizeSpeakingFeedback({final_upgraded_answer:"Keep this draft",answer_status:"unchecked"}));
+    render(<SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(stored)} />);
+    expect(screen.getByText(/原意核对暂未完成/)).toBeInTheDocument();
+    expect(screen.queryByText(/这是你的想法，只是表达得更好了/)).toBeNull();
+  });
+  it("explains hidden teaching feedback while retaining the verified answer", () => {
+    render(<SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback({final_upgraded_answer:"Verified answer",answer_status:"verified",teaching_status:"needs_review"})} />);
+    expect(screen.getByText("Verified answer")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("纠错说明存在不一致");
+  });
   it.each(speakingCases)("$id: transports real mock input and renders one learning answer", async c => {
     vi.mocked(callAI).mockResolvedValueOnce({ content: JSON.stringify(responseFor(c)), model: "mock" }).mockResolvedValueOnce({ content: JSON.stringify({reference_answer:c.reference}), model:"mock" }).mockResolvedValueOnce({content: JSON.stringify({faithful:true,revision_mode:c.mode}),model:"mock"}).mockResolvedValueOnce({content: JSON.stringify({independent:true}),model:"mock"});
     const result = await analyzeSpeaking(c.question, c.input, [], "test-token");

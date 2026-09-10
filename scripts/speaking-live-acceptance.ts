@@ -1,5 +1,6 @@
 import { runSpeakingPipeline } from "../src/lib/ai/speakingPipeline";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { SPEAKING_FEEDBACK_PROMPT, buildFeedbackPrompt, buildRetryFeedbackPrompt } from "../src/lib/ai/prompts";
 import { parseSpeakingResponse, normalizeSpeakingFeedback, speakingFeedbackStorage } from "../src/lib/english/speakingFeedback";
@@ -8,7 +9,8 @@ import { speakingCases } from "../src/__tests__/fixtures/speaking-feedback-cases
 const config = Object.fromEntries(fs.readFileSync('.env.local','utf8').split(/\r?\n/).filter(l=>/^\w+=/.test(l)).map(l=>{const i=l.indexOf('=');return [l.slice(0,i),l.slice(i+1).replace(/^["']|["']$/g,'')]}));
 const url = config.VITE_SUPABASE_URL;
 const secretFile = '.env.speaking-qa.local';
-const outDir = 'docs/speaking-independent-acceptance';
+const outDir = 'docs/speaking-audit-state-acceptance';
+const sourceFingerprint = createHash('sha256').update(['src/lib/ai/speakingPipeline.ts','src/lib/ai/prompts.ts','src/lib/english/speakingFeedback.ts','src/lib/ai/client.ts'].map(path=>fs.readFileSync(path,'utf8')).join('\n')).digest('hex');
 fs.mkdirSync(outDir,{recursive:true});
 const auth = createClient(url, config.VITE_SUPABASE_ANON_KEY, {auth:{persistSession:false}});
 const mode = process.argv[2] || 'semantic';
@@ -53,7 +55,7 @@ async function fullFeedback(question:string, transcript:string) {
    calls.push({kind:options.messages[0].content.includes('audit gate')?'fidelity-review':options.messages[0].content.includes('reviewer')?'independence-review':options.messages[0].content.includes('strong conversational English speaker')?'model-answer':'my-best-version',...r});
    return {content:r.raw,model:r.model||'unknown'};
  },question,transcript,[],token);
- return {elapsedMs:Date.now()-started,feedback,calls};
+ return {sourceFingerprint,executedAt:new Date().toISOString(),elapsedMs:Date.now()-started,feedback,calls};
 }
 if(mode==='semantic') {
   const only=(process.argv[3]||'').split(',').map(s=>s.trim()).filter(Boolean);

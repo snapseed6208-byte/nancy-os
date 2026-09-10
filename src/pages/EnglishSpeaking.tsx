@@ -237,6 +237,7 @@ export default function EnglishSpeaking() {
   // AI analysis state
   const [isStarting, setIsStarting] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState("");
   const [feedback, setFeedback] = useState<SpeakingFeedback | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -704,7 +705,7 @@ export default function EnglishSpeaking() {
       console.log("[EnglishSpeaking] Starting AI analysis", { transcript_len: text.length, session_id: sessionId });
       const result = await analyzeSpeaking(
         question, text, suitableExpressions.map(e => e.english), session.access_token,
-        { questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart } },
+        { questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart }, onProgress: setAnalysisProgress },
       );
       setFeedback(result);
       console.log("[EnglishSpeaking] AI analysis complete", {
@@ -1976,7 +1977,8 @@ export default function EnglishSpeaking() {
         <div className="bg-card rounded-2xl border border-border p-8 text-center space-y-3">
           <Loader2 size={32} className="animate-spin text-sage-deep mx-auto" />
           <p className="text-sm font-medium text-ink">AI 正在分析你的回答...</p>
-          <p className="text-xs text-ink-lighter">四维评分 + 纠错 + 推荐表达</p>
+          <p role="status" className="text-xs text-ink-lighter">{analysisProgress || "正在准备分析…"}</p>
+          <p className="text-xs text-ink-lighter">完整核对可能需要几分钟，请保持页面打开。</p>
         </div>
       )}
 

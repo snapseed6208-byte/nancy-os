@@ -1,0 +1,399 @@
+{
+  "id": "D",
+  "input": "I like cooking because I can choose fresh ingredients. My school has five buildings. My address is near a bus stop. The weather is sunny today. Choosing fresh ingredients matters to me.",
+  "question": "Why do you like cooking?",
+  "expectedMode": "trim",
+  "sourceFingerprint": "a7d40203a72ded9d5547e9f4bbf7ef21b2fa5678094d12fe47c363059e83a132",
+  "executedAt": "2026-09-10T03:16:14.582Z",
+  "elapsedMs": 82917,
+  "feedback": {
+    "overall_score": 4,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "relevance",
+        "message": "回答中混入了与“为什么喜欢做饭”无关的内容：“My school has five buildings.”“My address is near a bus stop.”“The weather is sunny today.”，这些句子没有回答题目。"
+      },
+      {
+        "type": "content",
+        "message": "核心原因只有“I can choose fresh ingredients.”，但缺少具体展开，例如为什么新鲜食材对你重要、它如何影响做饭体验。"
+      },
+      {
+        "type": "structure",
+        "message": "信息顺序混乱：先给出原因，再插入无关信息，最后又重复“Choosing fresh ingredients matters to me.”，导致主线不清晰。"
+      },
+      {
+        "type": "naturalness",
+        "message": "“Choosing fresh ingredients matters to me.” 语法正确，但和前面“I can choose fresh ingredients”重复，口语中显得啰嗦。"
+      }
+    ],
+    "revision_mode": "trim",
+    "optimization_summary": "删除了与题目无关的学校、地址和天气信息，保留用户真实原因“可以自己选择新鲜食材”。把重复的“Choosing fresh ingredients matters to me.”合并进主句，使回答更连贯、简洁。没有添加用户未提供的新理由或经历。",
+    "final_upgraded_answer": "I like cooking because I can choose fresh ingredients, and that really matters to me.",
+    "reference_answer": "Honestly, it's the one part of my day where I get to switch off completely. Following a recipe keeps my hands busy, so my mind stops racing about work and deadlines. I also like that it's a bit of a creative outlet — you can take whatever's in the fridge and turn it into something decent, and there's a real sense of achievement when it actually comes together. Plus, cooking for other people is my way of showing I care without having to say it out loud. It's not always relaxing, though — if I'm trying something new and it goes wrong, it can be pretty frustrating. But most nights it's the thing I look forward to.",
+    "reference_angle_summary": "独立主线：把做饭当作下班后关掉工作思绪的仪式，兼有创意出口和表达关心的方式，并承认偶尔也会翻车；示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "unchecked",
+    "content_diagnosis": "原回答直接回应了“为什么喜欢做饭”，核心原因是“I can choose fresh ingredients.”，但随后加入学校建筑、地址和天气，这些内容与题目无关，属于跑题。最后一句重复了核心原因，没有增加新信息。整体内容单薄，需要补充具体细节才能达到较高分数。",
+    "structure_diagnosis": "原回答的信息顺序为：原因 → 无关信息 → 重复原因。逻辑连接缺失，无关信息打断了主线，导致听者难以抓住重点。修改后应围绕“喜欢做饭—选择新鲜食材—为什么这对我重要”展开。",
+    "optimization_advice": "建议保留“I can choose fresh ingredients”作为核心原因，并补充1–2句具体说明：例如新鲜食材如何影响味道、健康或做饭的乐趣。不要加入学校、地址、天气等无关内容。可以练习用“because”“so”“that’s why”等连接词把原因和结果串起来。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "choose fresh ingredients",
+        "meaning": "选择新鲜食材",
+        "meaning_zh": "选择新鲜食材",
+        "why_useful": "谈论做饭、健康饮食、购物时非常高频，搭配自然。",
+        "example": "I prefer cooking at home because I can choose fresh ingredients.",
+        "usage_note": "可替换为 choose my own ingredients，强调自主选择。",
+        "readonly": false
+      },
+      {
+        "expression": "that really matters to me",
+        "meaning": "那对我来说真的很重要",
+        "meaning_zh": "那对我来说真的很重要",
+        "why_useful": "用来强调个人理由或价值观，自然且口语化。",
+        "example": "Being able to relax on weekends really matters to me.",
+        "usage_note": "matters to me 比 is important to me 更口语、更有个人色彩。",
+        "readonly": false
+      },
+      {
+        "expression": "switch off completely",
+        "meaning": "彻底放松、让大脑停下来",
+        "meaning_zh": "彻底放松、让大脑停下来",
+        "why_useful": "谈论爱好、减压、下班后放松时几乎万能，比只说 relax 更自然具体",
+        "example": "I go for a run after work just to switch off completely.",
+        "usage_note": "常与 get to / need to 连用，口语中很常见",
+        "readonly": false
+      },
+      {
+        "expression": "my mind stops racing",
+        "meaning": "脑子不再胡思乱想、停不下来",
+        "meaning_zh": "脑子不再胡思乱想、停不下来",
+        "why_useful": "描述焦虑、忙碌或专注状态的高频搭配，适合压力、爱好、运动等话题",
+        "example": "Once I start playing the piano, my mind stops racing.",
+        "usage_note": "race 在这里指思绪飞转，不是跑步",
+        "readonly": false
+      },
+      {
+        "expression": "a real sense of achievement",
+        "meaning": "实实在在的成就感",
+        "meaning_zh": "实实在在的成就感",
+        "why_useful": "回答“为什么喜欢做某事”时用来解释深层原因，比 it's fun 更有说服力",
+        "example": "Finishing a painting gives me a real sense of achievement.",
+        "usage_note": "可替换 achievement 为 satisfaction / pride",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "My school has five buildings.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与“为什么喜欢做饭”无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "My address is near a bus stop.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与题目无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "The weather is sunny today.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与题目无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "Choosing fresh ingredients matters to me.",
+        "corrected": "and that really matters to me",
+        "category": "naturalness",
+        "explanation_zh": "原句语法正确，但与前句重复；改为从句合并后更自然、简洁。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "直接回答原因",
+        "content": "用 because 引出核心原因：可以自己选择新鲜食材。",
+        "reusable_expression": "I like cooking because I can choose fresh ingredients."
+      },
+      {
+        "label": "强调个人感受",
+        "content": "用 and that really matters to me 把原因和个人重视程度连接起来，避免重复。",
+        "reusable_expression": "and that really matters to me"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 4,
+      "grammarScore": 5,
+      "vocabularyScore": 5,
+      "naturalnessScore": 4.5,
+      "usefulCorrections": "删除无关信息；合并重复句；用 and that really matters to me 增强连贯性。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 3,
+        "coherenceScore": 3.5,
+        "developmentScore": 3,
+        "summary": "原回答只有一句相关原因，其余三句跑题，最后一句重复。内容严重不足，需要补充具体细节。",
+        "offTopicParts": [
+          "My school has five buildings.",
+          "My address is near a bus stop.",
+          "The weather is sunny today."
+        ],
+        "repetition": [
+          "Choosing fresh ingredients matters to me. 与 I can choose fresh ingredients. 语义重复。"
+        ],
+        "orderProblems": [
+          "无关信息插在原因和重复句之间，打断逻辑。"
+        ],
+        "contentGaps": [
+          "为什么新鲜食材对你重要？",
+          "选择新鲜食材如何影响你的做饭体验或结果？",
+          "有没有具体的例子或感受？"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4690,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, it's the one part of my day where I get to switch off completely. Following a recipe keeps my hands busy, so my mind stops racing about work and deadlines. I also like that it's a bit of a creative outlet — you can take whatever's in the fridge and turn it into something decent, and there's a real sense of achievement when it actually comes together. Plus, cooking for other people is my way of showing I care without having to say it out loud. It's not always relaxing, though — if I'm trying something new and it goes wrong, it can be pretty frustrating. But most nights it's the thing I look forward to.\",\n  \"reference_angle_summary\": \"独立主线：把做饭当作下班后关掉工作思绪的仪式，兼有创意出口和表达关心的方式，并承认偶尔也会翻车；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"switch off completely\",\n      \"meaning_zh\": \"彻底放松、让大脑停下来\",\n      \"why_useful\": \"谈论爱好、减压、下班后放松时几乎万能，比只说 relax 更自然具体\",\n      \"example\": \"I go for a run after work just to switch off completely.\",\n      \"usage_note\": \"常与 get to / need to 连用，口语中很常见\"\n    },\n    {\n      \"expression\": \"my mind stops racing\",\n      \"meaning_zh\": \"脑子不再胡思乱想、停不下来\",\n      \"why_useful\": \"描述焦虑、忙碌或专注状态的高频搭配，适合压力、爱好、运动等话题\",\n      \"example\": \"Once I start playing the piano, my mind stops racing.\",\n      \"usage_note\": \"race 在这里指思绪飞转，不是跑步\"\n    },\n    {\n      \"expression\": \"a real sense of achievement\",\n      \"meaning_zh\": \"实实在在的成就感\",\n      \"why_useful\": \"回答“为什么喜欢做某事”时用来解释深层原因，比 it's fun 更有说服力\",\n      \"example\": \"Finishing a painting gives me a real sense of achievement.\",\n      \"usage_note\": \"可替换 achievement 为 satisfaction / pride\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, it's the one part of my day where I get to switch off completely. Following a recipe keeps my hands busy, so my mind stops racing about work and deadlines. I also like that it's a bit of a creative outlet — you can take whatever's in the fridge and turn it into something decent, and there's a real sense of achievement when it actually comes together. Plus, cooking for other people is my way of showing I care without having to say it out loud. It's not always relaxing, though — if I'm trying something new and it goes wrong, it can be pretty frustrating. But most nights it's the thing I look forward to.",
+        "reference_angle_summary": "独立主线：把做饭当作下班后关掉工作思绪的仪式，兼有创意出口和表达关心的方式，并承认偶尔也会翻车；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "switch off completely",
+            "meaning": "彻底放松、让大脑停下来",
+            "meaning_zh": "彻底放松、让大脑停下来",
+            "why_useful": "谈论爱好、减压、下班后放松时几乎万能，比只说 relax 更自然具体",
+            "example": "I go for a run after work just to switch off completely.",
+            "usage_note": "常与 get to / need to 连用，口语中很常见",
+            "readonly": false
+          },
+          {
+            "expression": "my mind stops racing",
+            "meaning": "脑子不再胡思乱想、停不下来",
+            "meaning_zh": "脑子不再胡思乱想、停不下来",
+            "why_useful": "描述焦虑、忙碌或专注状态的高频搭配，适合压力、爱好、运动等话题",
+            "example": "Once I start playing the piano, my mind stops racing.",
+            "usage_note": "race 在这里指思绪飞转，不是跑步",
+            "readonly": false
+          },
+          {
+            "expression": "a real sense of achievement",
+            "meaning": "实实在在的成就感",
+            "meaning_zh": "实实在在的成就感",
+            "why_useful": "回答“为什么喜欢做某事”时用来解释深层原因，比 it's fun 更有说服力",
+            "example": "Finishing a painting gives me a real sense of achievement.",
+            "usage_note": "可替换 achievement 为 satisfaction / pride",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 8377,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I like cooking because I can choose fresh ingredients, and that really matters to me.\",\n  \"overall_score\": 4.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"relevance\",\n      \"message\": \"回答中混入了与“为什么喜欢做饭”无关的内容：“My school has five buildings.”“My address is near a bus stop.”“The weather is sunny today.”，这些句子没有回答题目。\"\n    },\n    {\n      \"type\": \"content\",\n      \"message\": \"核心原因只有“I can choose fresh ingredients.”，但缺少具体展开，例如为什么新鲜食材对你重要、它如何影响做饭体验。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"信息顺序混乱：先给出原因，再插入无关信息，最后又重复“Choosing fresh ingredients matters to me.”，导致主线不清晰。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"“Choosing fresh ingredients matters to me.” 语法正确，但和前面“I can choose fresh ingredients”重复，口语中显得啰嗦。\"\n    }\n  ],\n  \"revision_mode\": \"trim\",\n  \"optimization_summary\": \"删除了与题目无关的学校、地址和天气信息，保留用户真实原因“可以自己选择新鲜食材”。把重复的“Choosing fresh ingredients matters to me.”合并进主句，使回答更连贯、简洁。没有添加用户未提供的新理由或经历。\",\n  \"content_diagnosis\": \"原回答直接回应了“为什么喜欢做饭”，核心原因是“I can choose fresh ingredients.”，但随后加入学校建筑、地址和天气，这些内容与题目无关，属于跑题。最后一句重复了核心原因，没有增加新信息。整体内容单薄，需要补充具体细节才能达到较高分数。\",\n  \"structure_diagnosis\": \"原回答的信息顺序为：原因 → 无关信息 → 重复原因。逻辑连接缺失，无关信息打断了主线，导致听者难以抓住重点。修改后应围绕“喜欢做饭—选择新鲜食材—为什么这对我重要”展开。\",\n  \"optimization_advice\": \"建议保留“I can choose fresh ingredients”作为核心原因，并补充1–2句具体说明：例如新鲜食材如何影响味道、健康或做饭的乐趣。不要加入学校、地址、天气等无关内容。可以练习用“because”“so”“that’s why”等连接词把原因和结果串起来。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"My school has five buildings.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与“为什么喜欢做饭”无关，应删除。\"\n    },\n    {\n      \"original\": \"My address is near a bus stop.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与题目无关，应删除。\"\n    },\n    {\n      \"original\": \"The weather is sunny today.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与题目无关，应删除。\"\n    },\n    {\n      \"original\": \"Choosing fresh ingredients matters to me.\",\n      \"corrected\": \"and that really matters to me\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句语法正确，但与前句重复；改为从句合并后更自然、简洁。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回答原因\",\n      \"content\": \"用 because 引出核心原因：可以自己选择新鲜食材。\",\n      \"reusable_expression\": \"I like cooking because I can choose fresh ingredients.\"\n    },\n    {\n      \"label\": \"强调个人感受\",\n      \"content\": \"用 and that really matters to me 把原因和个人重视程度连接起来，避免重复。\",\n      \"reusable_expression\": \"and that really matters to me\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"choose fresh ingredients\",\n      \"meaning_zh\": \"选择新鲜食材\",\n      \"why_useful\": \"谈论做饭、健康饮食、购物时非常高频，搭配自然。\",\n      \"example\": \"I prefer cooking at home because I can choose fresh ingredients.\",\n      \"usage_note\": \"可替换为 choose my own ingredients，强调自主选择。\"\n    },\n    {\n      \"expression\": \"that really matters to me\",\n      \"meaning_zh\": \"那对我来说真的很重要\",\n      \"why_useful\": \"用来强调个人理由或价值观，自然且口语化。\",\n      \"example\": \"Being able to relax on weekends really matters to me.\",\n      \"usage_note\": \"matters to me 比 is important to me 更口语、更有个人色彩。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 4.0,\n    \"grammarScore\": 5.0,\n    \"vocabularyScore\": 5.0,\n    \"naturalnessScore\": 4.5,\n    \"usefulCorrections\": \"删除无关信息；合并重复句；用 and that really matters to me 增强连贯性。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 3.0,\n      \"coherenceScore\": 3.5,\n      \"developmentScore\": 3.0,\n      \"summary\": \"原回答只有一句相关原因，其余三句跑题，最后一句重复。内容严重不足，需要补充具体细节。\",\n      \"offTopicParts\": [\n        \"My school has five buildings.\",\n        \"My address is near a bus stop.\",\n        \"The weather is sunny today.\"\n      ],\n      \"repetition\": [\n        \"Choosing fresh ingredients matters to me. 与 I can choose fresh ingredients. 语义重复。\"\n      ],\n      \"orderProblems\": [\n        \"无关信息插在原因和重复句之间，打断逻辑。\"\n      ],\n      \"contentGaps\": [\n        \"为什么新鲜食材对你重要？\",\n        \"选择新鲜食材如何影响你的做饭体验或结果？\",\n        \"有没有具体的例子或感受？\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 4,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "relevance",
+            "message": "回答中混入了与“为什么喜欢做饭”无关的内容：“My school has five buildings.”“My address is near a bus stop.”“The weather is sunny today.”，这些句子没有回答题目。"
+          },
+          {
+            "type": "content",
+            "message": "核心原因只有“I can choose fresh ingredients.”，但缺少具体展开，例如为什么新鲜食材对你重要、它如何影响做饭体验。"
+          },
+          {
+            "type": "structure",
+            "message": "信息顺序混乱：先给出原因，再插入无关信息，最后又重复“Choosing fresh ingredients matters to me.”，导致主线不清晰。"
+          },
+          {
+            "type": "naturalness",
+            "message": "“Choosing fresh ingredients matters to me.” 语法正确，但和前面“I can choose fresh ingredients”重复，口语中显得啰嗦。"
+          }
+        ],
+        "revision_mode": "trim",
+        "optimization_summary": "删除了与题目无关的学校、地址和天气信息，保留用户真实原因“可以自己选择新鲜食材”。把重复的“Choosing fresh ingredients matters to me.”合并进主句，使回答更连贯、简洁。没有添加用户未提供的新理由或经历。",
+        "final_upgraded_answer": "I like cooking because I can choose fresh ingredients, and that really matters to me.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了“为什么喜欢做饭”，核心原因是“I can choose fresh ingredients.”，但随后加入学校建筑、地址和天气，这些内容与题目无关，属于跑题。最后一句重复了核心原因，没有增加新信息。整体内容单薄，需要补充具体细节才能达到较高分数。",
+        "structure_diagnosis": "原回答的信息顺序为：原因 → 无关信息 → 重复原因。逻辑连接缺失，无关信息打断了主线，导致听者难以抓住重点。修改后应围绕“喜欢做饭—选择新鲜食材—为什么这对我重要”展开。",
+        "optimization_advice": "建议保留“I can choose fresh ingredients”作为核心原因，并补充1–2句具体说明：例如新鲜食材如何影响味道、健康或做饭的乐趣。不要加入学校、地址、天气等无关内容。可以练习用“because”“so”“that’s why”等连接词把原因和结果串起来。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "choose fresh ingredients",
+            "meaning": "选择新鲜食材",
+            "meaning_zh": "选择新鲜食材",
+            "why_useful": "谈论做饭、健康饮食、购物时非常高频，搭配自然。",
+            "example": "I prefer cooking at home because I can choose fresh ingredients.",
+            "usage_note": "可替换为 choose my own ingredients，强调自主选择。",
+            "readonly": false
+          },
+          {
+            "expression": "that really matters to me",
+            "meaning": "那对我来说真的很重要",
+            "meaning_zh": "那对我来说真的很重要",
+            "why_useful": "用来强调个人理由或价值观，自然且口语化。",
+            "example": "Being able to relax on weekends really matters to me.",
+            "usage_note": "matters to me 比 is important to me 更口语、更有个人色彩。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "My school has five buildings.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与“为什么喜欢做饭”无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "My address is near a bus stop.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与题目无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "The weather is sunny today.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与题目无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "Choosing fresh ingredients matters to me.",
+            "corrected": "and that really matters to me",
+            "category": "naturalness",
+            "explanation_zh": "原句语法正确，但与前句重复；改为从句合并后更自然、简洁。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回答原因",
+            "content": "用 because 引出核心原因：可以自己选择新鲜食材。",
+            "reusable_expression": "I like cooking because I can choose fresh ingredients."
+          },
+          {
+            "label": "强调个人感受",
+            "content": "用 and that really matters to me 把原因和个人重视程度连接起来，避免重复。",
+            "reusable_expression": "and that really matters to me"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 4,
+          "grammarScore": 5,
+          "vocabularyScore": 5,
+          "naturalnessScore": 4.5,
+          "usefulCorrections": "删除无关信息；合并重复句；用 and that really matters to me 增强连贯性。",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 3,
+            "coherenceScore": 3.5,
+            "developmentScore": 3,
+            "summary": "原回答只有一句相关原因，其余三句跑题，最后一句重复。内容严重不足，需要补充具体细节。",
+            "offTopicParts": [
+              "My school has five buildings.",
+              "My address is near a bus stop.",
+              "The weather is sunny today."
+            ],
+            "repetition": [
+              "Choosing fresh ingredients matters to me. 与 I can choose fresh ingredients. 语义重复。"
+            ],
+            "orderProblems": [
+              "无关信息插在原因和重复句之间，打断逻辑。"
+            ],
+            "contentGaps": [
+              "为什么新鲜食材对你重要？",
+              "选择新鲜食材如何影响你的做饭体验或结果？",
+              "有没有具体的例子或感受？"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 66494,
+      "model": "deepseek-v4-pro",
+      "raw": "",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 8046,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"我喜欢做饭因为可以选择新鲜食材\",\"选择新鲜食材对我来说很重要\"],\"model_arguments\":[\"做饭时可以完全放松、停止想工作和截止日期\",\"做饭是一种创意出口，能把冰箱里的食材做成像样的菜\",\"为别人做饭是表达关心的方式\"],\"overlapping_arguments\":[],\"reason\":\"用户的核心论点是选择新鲜食材，AI回答围绕放松、创意和关心他人展开，没有复用新鲜食材这一论点或相关例证，属于不同的实质性理由。\",\"independent\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

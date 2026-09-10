@@ -1,0 +1,479 @@
+{
+  "id": "C",
+  "input": "It saves money on transport. I cycle to work. It also gives me exercise. My main reason is staying active. I don't need a separate workout.",
+  "question": "Why do you like cycling?",
+  "expectedMode": "structure",
+  "sourceFingerprint": "a7d40203a72ded9d5547e9f4bbf7ef21b2fa5678094d12fe47c363059e83a132",
+  "executedAt": "2026-09-10T03:14:51.663Z",
+  "elapsedMs": 108190,
+  "feedback": {
+    "overall_score": 6,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "structure",
+        "message": "句子顺序削弱了主线：先说“It saves money on transport”，再说“My main reason is staying active”，主要理由被放在最后，听起来像补充信息。"
+      },
+      {
+        "type": "naturalness",
+        "message": "“It also gives me exercise”与“My main reason is staying active”语义重叠，分开成两句显得重复、不够紧凑。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "“gives me exercise”搭配偏生硬，更自然的是“it gives me exercise”可保留，但用“it keeps me active”或“it's a workout”会更像口语。"
+      },
+      {
+        "type": "content",
+        "message": "回答直接切题，但展开较少；除省钱、通勤、锻炼外，没有说明为什么“staying active”对你重要。"
+      }
+    ],
+    "revision_mode": "structure",
+    "optimization_summary": "保留了原回答的全部真实信息：省钱、骑车上班、锻炼、主要理由是保持活跃、不需要额外健身。主要调整了句子顺序，把“my main reason is staying active”提前，并用破折号把“锻炼”和“不需要单独健身”连成因果，减少重复。没有添加任何新理由或新经历。",
+    "final_upgraded_answer": "It saves money on transport, and I cycle to work. But my main reason is staying active — it gives me exercise, so I don't need a separate workout.",
+    "reference_answer": "Honestly, I like cycling because it's the one part of my day when nobody can reach me. I don't answer calls or check messages while I'm riding — I just can't, and that's the whole point. It's a bit like a moving break: twenty minutes of nothing but the road and my own thoughts. The trade-off is that I have to plan around the weather, and in winter it's genuinely unpleasant, so I don't go as often. But that limitation actually makes the good rides feel more valuable. So it's not really about fitness or saving money for me — it's about having a small window of time that belongs entirely to me.",
+    "reference_angle_summary": "独立主线：骑车是唯一无人打扰的“移动休息时间”，并主动承认天气限制这一代价；示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "unchecked",
+    "content_diagnosis": "原回答直接回答“为什么喜欢骑车”，给出了省钱、通勤、锻炼和保持活跃几个理由，相关性好。但主线不够清楚：主要理由“staying active”出现在最后，前面“It also gives me exercise”和它意思重叠，导致内容显得零散、展开不足。",
+    "structure_diagnosis": "信息顺序为：省钱 → 骑车上班 → 锻炼 → 主要理由是保持活跃 → 不需要单独健身。逻辑连接主要靠并列，缺少主次区分；把主要理由后置会削弱回答重点。",
+    "optimization_advice": "下次回答时，可以先说主要理由，再补充次要理由，例如“My main reason is... It also...”。如果想展开，可以补充一句具体说明“staying active”为什么重要，比如它让你白天更有精神、缓解久坐或改善心情——但这些需要你根据自己的真实情况补充，不要编造。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "my main reason is staying active",
+        "meaning": "我的主要理由是保持活跃",
+        "meaning_zh": "我的主要理由是保持活跃",
+        "why_useful": "直接点明主要理由，适合回答“Why do you like...?”这类问题，避免理由堆砌没有重点。",
+        "example": "My main reason is staying active, so I walk whenever I can.",
+        "usage_note": "后面可以接动名词或名词，如“my main reason is saving time”。",
+        "readonly": false
+      },
+      {
+        "expression": "it gives me exercise",
+        "meaning": "它让我得到锻炼",
+        "meaning_zh": "它让我得到锻炼",
+        "why_useful": "简单自然，适合谈论运动、通勤或日常活动带来的锻炼效果。",
+        "example": "I take the stairs because it gives me exercise during the day.",
+        "usage_note": "也可以说“it keeps me active”或“it's a good workout”。",
+        "readonly": false
+      },
+      {
+        "expression": "I don't need a separate workout",
+        "meaning": "我不需要再单独健身",
+        "meaning_zh": "我不需要再单独健身",
+        "why_useful": "用结果收束理由，让回答更完整，也显得口语自然。",
+        "example": "I cycle everywhere, so I don't need a separate workout.",
+        "usage_note": "separate 在这里表示“额外的、单独的”。",
+        "readonly": false
+      },
+      {
+        "expression": "nobody can reach me",
+        "meaning": "没人能联系到我、没人打扰我",
+        "meaning_zh": "没人能联系到我、没人打扰我",
+        "why_useful": "描述独处、专注或放松时非常自然的口语说法，比 alone 更具体。",
+        "example": "I love swimming early in the morning because nobody can reach me then.",
+        "usage_note": "常与 because 连用，说明某活动让人放松的原因。",
+        "readonly": false
+      },
+      {
+        "expression": "the trade-off is that",
+        "meaning": "代价是……；权衡之处在于……",
+        "meaning_zh": "代价是……；权衡之处在于……",
+        "why_useful": "在口语中引入限制或缺点，展示辩证思维，适合 Part 3 深入讨论。",
+        "example": "Working from home saves time, but the trade-off is that I never switch off.",
+        "usage_note": "后接完整句子，语气比 but 更成熟。",
+        "readonly": false
+      },
+      {
+        "expression": "makes the good rides feel more valuable",
+        "meaning": "让那些好的骑行体验显得更珍贵",
+        "meaning_zh": "让那些好的骑行体验显得更珍贵",
+        "why_useful": "用比较级表达“因限制而更珍惜”，可迁移到天气、时间、机会等话题。",
+        "example": "Rainy days are annoying, but they make sunny afternoons feel more valuable.",
+        "usage_note": "结构 make + 名词 + feel more + 形容词，口语中很实用。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "It saves money on transport. I cycle to work.",
+        "corrected": "It saves money on transport, and I cycle to work.",
+        "category": "naturalness",
+        "explanation_zh": "两个短句合并后更连贯，但原句本身没有语法错误，只是口语中连接可以更自然。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "It also gives me exercise. My main reason is staying active.",
+        "corrected": "But my main reason is staying active — it gives me exercise,",
+        "category": "logic",
+        "explanation_zh": "把主要理由提前，并用破折号连接“锻炼”，避免两句重复，同时突出主次。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "I don't need a separate workout.",
+        "corrected": "so I don't need a separate workout.",
+        "category": "logic",
+        "explanation_zh": "加上“so”明确因果关系：因为骑车已经锻炼了，所以不需要额外健身。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "先给次要理由并连接通勤事实",
+        "content": "用“It saves money on transport, and I cycle to work.”保留省钱和骑车上班两个真实信息，并用and自然连接。",
+        "reusable_expression": "It saves money on transport, and I cycle to work."
+      },
+      {
+        "label": "突出主要理由并解释",
+        "content": "用“But my main reason is staying active — it gives me exercise,”把主要理由提前，并用破折号把锻炼作为解释。",
+        "reusable_expression": "my main reason is staying active"
+      },
+      {
+        "label": "说明结果",
+        "content": "用“so I don't need a separate workout.”说明保持活跃带来的实际结果，收束回答。",
+        "reusable_expression": "I don't need a separate workout."
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6,
+      "grammarScore": 5.5,
+      "vocabularyScore": 6.5,
+      "naturalnessScore": 6,
+      "usefulCorrections": "It saves money on transport, and I cycle to work.; But my main reason is staying active — it gives me exercise,; so I don't need a separate workout.",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 6,
+        "coherenceScore": 6,
+        "developmentScore": 5.5,
+        "summary": "原回答直接切题，给出了省钱、通勤、锻炼和保持活跃等理由，但主要理由后置且与“gives me exercise”重复，展开不足。",
+        "offTopicParts": [],
+        "repetition": [
+          "It also gives me exercise. My main reason is staying active."
+        ],
+        "orderProblems": [
+          "主要理由“My main reason is staying active”放在最后，前面先说了次要理由，主次不够清楚。"
+        ],
+        "contentGaps": [
+          "没有具体说明“staying active”为什么重要，例如对精力、健康或日常状态的影响。"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4532,
+      "model": "deepseek-chat",
+      "raw": "{\"reference_answer\":\"I like cycling mainly because it gives me a sense of freedom that driving never really does. When I'm on my bike, I can take side streets, stop by a canal, or just change my route on a whim — no traffic jams, no parking worries. It also keeps me fit without feeling like exercise, since I'm actually going somewhere instead of running on a treadmill. Another thing is the pace: you notice small details, like neighbours chatting or a bakery opening up, which you'd completely miss in a car. So for me it's less about sport and more about how it makes an ordinary trip feel enjoyable.\",\"reference_angle_summary\":\"独立主线：骑行带来的自由感、顺带健身与慢速观察城市细节；示例不代表用户经历。\",\"takeaway_expressions\":[{\"expression\":\"on a whim\",\"meaning_zh\":\"一时兴起、临时决定\",\"why_useful\":\"口语中描述随性决定非常自然，比 suddenly 更地道\",\"example\":\"We decided to stop for coffee on a whim.\",\"usage_note\":\"常与 decide/change/stop 等动词搭配\"},{\"expression\":\"keeps me fit without feeling like exercise\",\"meaning_zh\":\"让我保持健康却不像在锻炼\",\"why_useful\":\"对比结构，适合回答运动、健康类问题，避免只说 it's healthy\",\"example\":\"Swimming keeps me fit without feeling like exercise.\",\"usage_note\":\"可替换运动项目，灵活迁移\"},{\"expression\":\"you'd completely miss in a car\",\"meaning_zh\":\"开车的话你完全会错过\",\"why_useful\":\"用对比突出骑行优势，自然带出细节，提升回答具体度\",\"example\":\"You see street life you'd completely miss on the subway.\",\"usage_note\":\"虚拟语气 would，注意与前面 you notice 呼应\"}]}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "I like cycling mainly because it gives me a sense of freedom that driving never really does. When I'm on my bike, I can take side streets, stop by a canal, or just change my route on a whim — no traffic jams, no parking worries. It also keeps me fit without feeling like exercise, since I'm actually going somewhere instead of running on a treadmill. Another thing is the pace: you notice small details, like neighbours chatting or a bakery opening up, which you'd completely miss in a car. So for me it's less about sport and more about how it makes an ordinary trip feel enjoyable.",
+        "reference_angle_summary": "独立主线：骑行带来的自由感、顺带健身与慢速观察城市细节；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "on a whim",
+            "meaning": "一时兴起、临时决定",
+            "meaning_zh": "一时兴起、临时决定",
+            "why_useful": "口语中描述随性决定非常自然，比 suddenly 更地道",
+            "example": "We decided to stop for coffee on a whim.",
+            "usage_note": "常与 decide/change/stop 等动词搭配",
+            "readonly": false
+          },
+          {
+            "expression": "keeps me fit without feeling like exercise",
+            "meaning": "让我保持健康却不像在锻炼",
+            "meaning_zh": "让我保持健康却不像在锻炼",
+            "why_useful": "对比结构，适合回答运动、健康类问题，避免只说 it's healthy",
+            "example": "Swimming keeps me fit without feeling like exercise.",
+            "usage_note": "可替换运动项目，灵活迁移",
+            "readonly": false
+          },
+          {
+            "expression": "you'd completely miss in a car",
+            "meaning": "开车的话你完全会错过",
+            "meaning_zh": "开车的话你完全会错过",
+            "why_useful": "用对比突出骑行优势，自然带出细节，提升回答具体度",
+            "example": "You see street life you'd completely miss on the subway.",
+            "usage_note": "虚拟语气 would，注意与前面 you notice 呼应",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 10255,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"It saves money on transport, and I cycle to work. But my main reason is staying active — it gives me exercise, so I don't need a separate workout.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"structure\",\n      \"message\": \"句子顺序削弱了主线：先说“It saves money on transport”，再说“My main reason is staying active”，主要理由被放在最后，听起来像补充信息。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"“It also gives me exercise”与“My main reason is staying active”语义重叠，分开成两句显得重复、不够紧凑。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“gives me exercise”搭配偏生硬，更自然的是“it gives me exercise”可保留，但用“it keeps me active”或“it's a workout”会更像口语。\"\n    },\n    {\n      \"type\": \"content\",\n      \"message\": \"回答直接切题，但展开较少；除省钱、通勤、锻炼外，没有说明为什么“staying active”对你重要。\"\n    }\n  ],\n  \"revision_mode\": \"structure\",\n  \"optimization_summary\": \"保留了原回答的全部真实信息：省钱、骑车上班、锻炼、主要理由是保持活跃、不需要额外健身。主要调整了句子顺序，把“my main reason is staying active”提前，并用破折号把“锻炼”和“不需要单独健身”连成因果，减少重复。没有添加任何新理由或新经历。\",\n  \"content_diagnosis\": \"原回答直接回答“为什么喜欢骑车”，给出了省钱、通勤、锻炼和保持活跃几个理由，相关性好。但主线不够清楚：主要理由“staying active”出现在最后，前面“It also gives me exercise”和它意思重叠，导致内容显得零散、展开不足。\",\n  \"structure_diagnosis\": \"信息顺序为：省钱 → 骑车上班 → 锻炼 → 主要理由是保持活跃 → 不需要单独健身。逻辑连接主要靠并列，缺少主次区分；把主要理由后置会削弱回答重点。\",\n  \"optimization_advice\": \"下次回答时，可以先说主要理由，再补充次要理由，例如“My main reason is... It also...”。如果想展开，可以补充一句具体说明“staying active”为什么重要，比如它让你白天更有精神、缓解久坐或改善心情——但这些需要你根据自己的真实情况补充，不要编造。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"It saves money on transport. I cycle to work.\",\n      \"corrected\": \"It saves money on transport, and I cycle to work.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"两个短句合并后更连贯，但原句本身没有语法错误，只是口语中连接可以更自然。\"\n    },\n    {\n      \"original\": \"It also gives me exercise. My main reason is staying active.\",\n      \"corrected\": \"But my main reason is staying active — it gives me exercise,\",\n      \"category\": \"logic\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"把主要理由提前，并用破折号连接“锻炼”，避免两句重复，同时突出主次。\"\n    },\n    {\n      \"original\": \"I don't need a separate workout.\",\n      \"corrected\": \"so I don't need a separate workout.\",\n      \"category\": \"logic\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"加上“so”明确因果关系：因为骑车已经锻炼了，所以不需要额外健身。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"先给次要理由并连接通勤事实\",\n      \"content\": \"用“It saves money on transport, and I cycle to work.”保留省钱和骑车上班两个真实信息，并用and自然连接。\",\n      \"reusable_expression\": \"It saves money on transport, and I cycle to work.\"\n    },\n    {\n      \"label\": \"突出主要理由并解释\",\n      \"content\": \"用“But my main reason is staying active — it gives me exercise,”把主要理由提前，并用破折号把锻炼作为解释。\",\n      \"reusable_expression\": \"my main reason is staying active\"\n    },\n    {\n      \"label\": \"说明结果\",\n      \"content\": \"用“so I don't need a separate workout.”说明保持活跃带来的实际结果，收束回答。\",\n      \"reusable_expression\": \"I don't need a separate workout.\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"my main reason is staying active\",\n      \"meaning_zh\": \"我的主要理由是保持活跃\",\n      \"why_useful\": \"直接点明主要理由，适合回答“Why do you like...?”这类问题，避免理由堆砌没有重点。\",\n      \"example\": \"My main reason is staying active, so I walk whenever I can.\",\n      \"usage_note\": \"后面可以接动名词或名词，如“my main reason is saving time”。\"\n    },\n    {\n      \"expression\": \"it gives me exercise\",\n      \"meaning_zh\": \"它让我得到锻炼\",\n      \"why_useful\": \"简单自然，适合谈论运动、通勤或日常活动带来的锻炼效果。\",\n      \"example\": \"I take the stairs because it gives me exercise during the day.\",\n      \"usage_note\": \"也可以说“it keeps me active”或“it's a good workout”。\"\n    },\n    {\n      \"expression\": \"I don't need a separate workout\",\n      \"meaning_zh\": \"我不需要再单独健身\",\n      \"why_useful\": \"用结果收束理由，让回答更完整，也显得口语自然。\",\n      \"example\": \"I cycle everywhere, so I don't need a separate workout.\",\n      \"usage_note\": \"separate 在这里表示“额外的、单独的”。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 5.5,\n    \"vocabularyScore\": 6.5,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"It saves money on transport, and I cycle to work.; But my main reason is staying active — it gives me exercise,; so I don't need a separate workout.\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.5,\n      \"summary\": \"原回答直接切题，给出了省钱、通勤、锻炼和保持活跃等理由，但主要理由后置且与“gives me exercise”重复，展开不足。\",\n      \"offTopicParts\": [],\n      \"repetition\": [\n        \"It also gives me exercise. My main reason is staying active.\"\n      ],\n      \"orderProblems\": [\n        \"主要理由“My main reason is staying active”放在最后，前面先说了次要理由，主次不够清楚。\"\n      ],\n      \"contentGaps\": [\n        \"没有具体说明“staying active”为什么重要，例如对精力、健康或日常状态的影响。\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "structure",
+            "message": "句子顺序削弱了主线：先说“It saves money on transport”，再说“My main reason is staying active”，主要理由被放在最后，听起来像补充信息。"
+          },
+          {
+            "type": "naturalness",
+            "message": "“It also gives me exercise”与“My main reason is staying active”语义重叠，分开成两句显得重复、不够紧凑。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“gives me exercise”搭配偏生硬，更自然的是“it gives me exercise”可保留，但用“it keeps me active”或“it's a workout”会更像口语。"
+          },
+          {
+            "type": "content",
+            "message": "回答直接切题，但展开较少；除省钱、通勤、锻炼外，没有说明为什么“staying active”对你重要。"
+          }
+        ],
+        "revision_mode": "structure",
+        "optimization_summary": "保留了原回答的全部真实信息：省钱、骑车上班、锻炼、主要理由是保持活跃、不需要额外健身。主要调整了句子顺序，把“my main reason is staying active”提前，并用破折号把“锻炼”和“不需要单独健身”连成因果，减少重复。没有添加任何新理由或新经历。",
+        "final_upgraded_answer": "It saves money on transport, and I cycle to work. But my main reason is staying active — it gives me exercise, so I don't need a separate workout.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回答“为什么喜欢骑车”，给出了省钱、通勤、锻炼和保持活跃几个理由，相关性好。但主线不够清楚：主要理由“staying active”出现在最后，前面“It also gives me exercise”和它意思重叠，导致内容显得零散、展开不足。",
+        "structure_diagnosis": "信息顺序为：省钱 → 骑车上班 → 锻炼 → 主要理由是保持活跃 → 不需要单独健身。逻辑连接主要靠并列，缺少主次区分；把主要理由后置会削弱回答重点。",
+        "optimization_advice": "下次回答时，可以先说主要理由，再补充次要理由，例如“My main reason is... It also...”。如果想展开，可以补充一句具体说明“staying active”为什么重要，比如它让你白天更有精神、缓解久坐或改善心情——但这些需要你根据自己的真实情况补充，不要编造。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "my main reason is staying active",
+            "meaning": "我的主要理由是保持活跃",
+            "meaning_zh": "我的主要理由是保持活跃",
+            "why_useful": "直接点明主要理由，适合回答“Why do you like...?”这类问题，避免理由堆砌没有重点。",
+            "example": "My main reason is staying active, so I walk whenever I can.",
+            "usage_note": "后面可以接动名词或名词，如“my main reason is saving time”。",
+            "readonly": false
+          },
+          {
+            "expression": "it gives me exercise",
+            "meaning": "它让我得到锻炼",
+            "meaning_zh": "它让我得到锻炼",
+            "why_useful": "简单自然，适合谈论运动、通勤或日常活动带来的锻炼效果。",
+            "example": "I take the stairs because it gives me exercise during the day.",
+            "usage_note": "也可以说“it keeps me active”或“it's a good workout”。",
+            "readonly": false
+          },
+          {
+            "expression": "I don't need a separate workout",
+            "meaning": "我不需要再单独健身",
+            "meaning_zh": "我不需要再单独健身",
+            "why_useful": "用结果收束理由，让回答更完整，也显得口语自然。",
+            "example": "I cycle everywhere, so I don't need a separate workout.",
+            "usage_note": "separate 在这里表示“额外的、单独的”。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "It saves money on transport. I cycle to work.",
+            "corrected": "It saves money on transport, and I cycle to work.",
+            "category": "naturalness",
+            "explanation_zh": "两个短句合并后更连贯，但原句本身没有语法错误，只是口语中连接可以更自然。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "It also gives me exercise. My main reason is staying active.",
+            "corrected": "But my main reason is staying active — it gives me exercise,",
+            "category": "logic",
+            "explanation_zh": "把主要理由提前，并用破折号连接“锻炼”，避免两句重复，同时突出主次。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "I don't need a separate workout.",
+            "corrected": "so I don't need a separate workout.",
+            "category": "logic",
+            "explanation_zh": "加上“so”明确因果关系：因为骑车已经锻炼了，所以不需要额外健身。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "先给次要理由并连接通勤事实",
+            "content": "用“It saves money on transport, and I cycle to work.”保留省钱和骑车上班两个真实信息，并用and自然连接。",
+            "reusable_expression": "It saves money on transport, and I cycle to work."
+          },
+          {
+            "label": "突出主要理由并解释",
+            "content": "用“But my main reason is staying active — it gives me exercise,”把主要理由提前，并用破折号把锻炼作为解释。",
+            "reusable_expression": "my main reason is staying active"
+          },
+          {
+            "label": "说明结果",
+            "content": "用“so I don't need a separate workout.”说明保持活跃带来的实际结果，收束回答。",
+            "reusable_expression": "I don't need a separate workout."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6,
+          "grammarScore": 5.5,
+          "vocabularyScore": 6.5,
+          "naturalnessScore": 6,
+          "usefulCorrections": "It saves money on transport, and I cycle to work.; But my main reason is staying active — it gives me exercise,; so I don't need a separate workout.",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 6,
+            "coherenceScore": 6,
+            "developmentScore": 5.5,
+            "summary": "原回答直接切题，给出了省钱、通勤、锻炼和保持活跃等理由，但主要理由后置且与“gives me exercise”重复，展开不足。",
+            "offTopicParts": [],
+            "repetition": [
+              "It also gives me exercise. My main reason is staying active."
+            ],
+            "orderProblems": [
+              "主要理由“My main reason is staying active”放在最后，前面先说了次要理由，主次不够清楚。"
+            ],
+            "contentGaps": [
+              "没有具体说明“staying active”为什么重要，例如对精力、健康或日常状态的影响。"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 67153,
+      "model": "deepseek-v4-pro",
+      "raw": "",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 15545,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"骑车节省交通费\",\n    \"骑车通勤上班\",\n    \"骑车能锻炼身体\",\n    \"主要原因是保持活跃\",\n    \"不需要单独锻炼\"\n  ],\n  \"model_arguments\": [\n    \"主要喜欢骑车的自由感\",\n    \"可以走小路、随时改路线\",\n    \"没有堵车和停车烦恼\",\n    \"骑车能在通勤中保持健康而不像专门锻炼\",\n    \"骑车速度让人注意到生活细节\",\n    \"让普通出行变得有趣\"\n  ],\n  \"overlapping_arguments\": [\n    \"骑车能锻炼身体/保持健康且不需要单独锻炼\"\n  ],\n  \"reason\": \"AI答案虽然主论点转向自由感，但在实质段落中仍复用并展开了用户“骑车顺带锻炼、保持活跃、不需要单独锻炼”的核心理由，因此不独立。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 5288,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, I like cycling because it's the one part of my day when nobody can reach me. I don't answer calls or check messages while I'm riding — I just can't, and that's the whole point. It's a bit like a moving break: twenty minutes of nothing but the road and my own thoughts. The trade-off is that I have to plan around the weather, and in winter it's genuinely unpleasant, so I don't go as often. But that limitation actually makes the good rides feel more valuable. So it's not really about fitness or saving money for me — it's about having a small window of time that belongs entirely to me.\",\n  \"reference_angle_summary\": \"独立主线：骑车是唯一无人打扰的“移动休息时间”，并主动承认天气限制这一代价；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"nobody can reach me\",\n      \"meaning_zh\": \"没人能联系到我、没人打扰我\",\n      \"why_useful\": \"描述独处、专注或放松时非常自然的口语说法，比 alone 更具体。\",\n      \"example\": \"I love swimming early in the morning because nobody can reach me then.\",\n      \"usage_note\": \"常与 because 连用，说明某活动让人放松的原因。\"\n    },\n    {\n      \"expression\": \"the trade-off is that\",\n      \"meaning_zh\": \"代价是……；权衡之处在于……\",\n      \"why_useful\": \"在口语中引入限制或缺点，展示辩证思维，适合 Part 3 深入讨论。\",\n      \"example\": \"Working from home saves time, but the trade-off is that I never switch off.\",\n      \"usage_note\": \"后接完整句子，语气比 but 更成熟。\"\n    },\n    {\n      \"expression\": \"makes the good rides feel more valuable\",\n      \"meaning_zh\": \"让那些好的骑行体验显得更珍贵\",\n      \"why_useful\": \"用比较级表达“因限制而更珍惜”，可迁移到天气、时间、机会等话题。\",\n      \"example\": \"Rainy days are annoying, but they make sunny afternoons feel more valuable.\",\n      \"usage_note\": \"结构 make + 名词 + feel more + 形容词，口语中很实用。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, I like cycling because it's the one part of my day when nobody can reach me. I don't answer calls or check messages while I'm riding — I just can't, and that's the whole point. It's a bit like a moving break: twenty minutes of nothing but the road and my own thoughts. The trade-off is that I have to plan around the weather, and in winter it's genuinely unpleasant, so I don't go as often. But that limitation actually makes the good rides feel more valuable. So it's not really about fitness or saving money for me — it's about having a small window of time that belongs entirely to me.",
+        "reference_angle_summary": "独立主线：骑车是唯一无人打扰的“移动休息时间”，并主动承认天气限制这一代价；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "nobody can reach me",
+            "meaning": "没人能联系到我、没人打扰我",
+            "meaning_zh": "没人能联系到我、没人打扰我",
+            "why_useful": "描述独处、专注或放松时非常自然的口语说法，比 alone 更具体。",
+            "example": "I love swimming early in the morning because nobody can reach me then.",
+            "usage_note": "常与 because 连用，说明某活动让人放松的原因。",
+            "readonly": false
+          },
+          {
+            "expression": "the trade-off is that",
+            "meaning": "代价是……；权衡之处在于……",
+            "meaning_zh": "代价是……；权衡之处在于……",
+            "why_useful": "在口语中引入限制或缺点，展示辩证思维，适合 Part 3 深入讨论。",
+            "example": "Working from home saves time, but the trade-off is that I never switch off.",
+            "usage_note": "后接完整句子，语气比 but 更成熟。",
+            "readonly": false
+          },
+          {
+            "expression": "makes the good rides feel more valuable",
+            "meaning": "让那些好的骑行体验显得更珍贵",
+            "meaning_zh": "让那些好的骑行体验显得更珍贵",
+            "why_useful": "用比较级表达“因限制而更珍惜”，可迁移到天气、时间、机会等话题。",
+            "example": "Rainy days are annoying, but they make sunny afternoons feel more valuable.",
+            "usage_note": "结构 make + 名词 + feel more + 形容词，口语中很实用。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 9946,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"骑车省钱，省交通费\",\"骑车通勤上班\",\"骑车能锻炼身体\",\"主要原因是保持活力\",\"不需要另外安排锻炼\"],\"model_arguments\":[\"骑车时没人能联系自己，不接电话不看消息\",\"骑车像一段移动中的休息，只有道路和自己的思绪\",\"需要根据天气安排，冬天骑车体验差\",\"不是因为健身或省钱，而是因为拥有一段完全属于自己的时间\"],\"overlapping_arguments\":[],\"reason\":\"AI答案的核心论点是独处、不被打扰和拥有属于自己的时间，与用户强调的省钱通勤、锻炼保持活力不同；虽然提到健身和省钱，但只是作为否定性让步，并未展开为用户理由。\",\"independent\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

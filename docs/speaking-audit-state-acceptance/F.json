@@ -1,0 +1,459 @@
+{
+  "id": "F",
+  "input": "Teamwork is useful because people have different skills.",
+  "question": "Why is teamwork useful?",
+  "expectedMode": "expand",
+  "sourceFingerprint": "a7d40203a72ded9d5547e9f4bbf7ef21b2fa5678094d12fe47c363059e83a132",
+  "executedAt": "2026-09-10T03:20:16.091Z",
+  "elapsedMs": 124129,
+  "feedback": {
+    "overall_score": 6,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "vocabulary",
+        "message": "“people have different skills”语法正确但偏平淡，用“bring different skills to the table”更地道、更有画面感。"
+      },
+      {
+        "type": "content",
+        "message": "回答只有一句，直接点出原因但缺少任何展开或例子，内容单薄。"
+      },
+      {
+        "type": "structure",
+        "message": "没有连接或分层，仅一个简单因果句，逻辑推进不足。"
+      }
+    ],
+    "revision_mode": "light",
+    "optimization_summary": "保留原句核心意思和因果结构，只把“have different skills”升级为更自然的“bring different skills to the table”。没有添加任何新信息，因为原回答本身已完整但简短。",
+    "final_upgraded_answer": "Teamwork is useful because people bring different skills to the table.",
+    "reference_answer": "I'd say teamwork is useful less for what it adds and more for what it prevents. When you work alone, there's nobody to challenge your assumptions, so small mistakes can quietly grow into big ones. In a team, though, someone usually notices when something doesn't add up, and that early catch saves a lot of trouble later. I've seen this in part-time jobs — one person misses a detail, another spots it before it reaches the customer. So the real value isn't just extra hands; it's having a natural check on your own blind spots. That said, it only works if people feel comfortable speaking up. If everyone just agrees to keep the peace, you lose that safety net entirely.",
+    "reference_angle_summary": "独立主线：团队合作的价值在于“预防错误”而非“增加产出”，强调早期纠错与心理安全的条件；示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "verified",
+    "content_diagnosis": "原回答直接回应了问题，给出了一个明确原因（人们技能不同），没有跑题或重复。但内容非常单薄，仅一句话，没有进一步解释为什么技能不同会让团队合作有用。",
+    "structure_diagnosis": "信息顺序合理：先给结论，再给原因。但缺少任何连接词或展开，整体是一个简单句，逻辑层次单一。",
+    "optimization_advice": "如果想让回答更充实，可以补充一个具体例子，比如“有人擅长规划，有人擅长执行”，或者说明不同技能如何互补。但不要编造个人经历，只补充常识性解释即可。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "bring different skills to the table",
+        "meaning": "带来不同的技能（做出贡献）",
+        "meaning_zh": "带来不同的技能（做出贡献）",
+        "why_useful": "在讨论团队合作、项目分工、解决问题等话题时非常高频，比“have different skills”更生动自然。",
+        "example": "In a group project, everyone brings different skills to the table.",
+        "usage_note": "后面可接具体技能或抽象贡献，如“bring different perspectives to the table”。",
+        "readonly": false
+      },
+      {
+        "expression": "doesn't add up",
+        "meaning": "（情况、说法）不对劲、不合逻辑",
+        "meaning_zh": "（情况、说法）不对劲、不合逻辑",
+        "why_useful": "口语中高频用来表达发现疑点或矛盾，自然且地道。",
+        "example": "Something about his story doesn't add up.",
+        "usage_note": "常用于描述逻辑或事实上的不一致。",
+        "readonly": false
+      },
+      {
+        "expression": "a natural check on",
+        "meaning": "对……的一种自然制约/检查",
+        "meaning_zh": "对……的一种自然制约/检查",
+        "why_useful": "可迁移到讨论制度、习惯、团队等话题，表达“制衡”概念。",
+        "example": "Having a deadline is a natural check on procrastination.",
+        "usage_note": "后接名词或动名词。",
+        "readonly": false
+      },
+      {
+        "expression": "keep the peace",
+        "meaning": "维持和睦、避免冲突",
+        "meaning_zh": "维持和睦、避免冲突",
+        "why_useful": "描述人际互动时非常常用，能体现让步或妥协的语境。",
+        "example": "He didn't argue just to keep the peace.",
+        "usage_note": "常与 just to 连用，表示为了和谐而忍让。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "people have different skills",
+        "corrected": "people bring different skills to the table",
+        "category": "vocabulary",
+        "explanation_zh": "原表达正确但普通；“bring ... to the table”是英语中描述贡献技能/资源的常用习语，更自然、更地道。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "直接回答并给出原因",
+        "content": "用“Teamwork is useful because...”点明观点，并用“bring different skills to the table”说明原因。",
+        "reusable_expression": "bring different skills to the table"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6,
+      "grammarScore": 5.5,
+      "vocabularyScore": 6.5,
+      "naturalnessScore": 6,
+      "usefulCorrections": "people have different skills → people bring different skills to the table",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 6,
+        "coherenceScore": 6,
+        "developmentScore": 5.5,
+        "summary": "原回答直接答题，但只有一句话，缺少展开和例子，内容单薄。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [],
+        "contentGaps": [
+          "没有解释不同技能为什么能让团队合作有用",
+          "没有举例说明不同技能如何互补"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 6005,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"I'd say teamwork is useful mainly because it lets people cover each other's weak spots. Nobody's good at everything, so when you work with others, you can lean on their strengths and they can lean on yours. For example, in a group project, one person might be great at planning while another is better at actually getting things done, and together they produce something neither could manage alone. It also takes some pressure off you, because you're not carrying the whole thing by yourself. That said, teamwork only works if people actually communicate, otherwise it just turns into confusion. So for me, the real value is that it turns a bunch of individual skills into something bigger than the sum of its parts.\",\n  \"reference_angle_summary\": \"独立主线：从“互补短板、分担压力”切入，用小组项目举例，并补充“沟通不到位反而添乱”的转折；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"cover each other's weak spots\",\n      \"meaning_zh\": \"互相弥补彼此的短板\",\n      \"why_useful\": \"谈合作、团队、友谊、家庭分工都能用，比只说 help each other 更具体自然。\",\n      \"example\": \"In a good team, people cover each other's weak spots instead of competing.\",\n      \"usage_note\": \"weak spots 偏口语，正式写作可用 weaknesses。\"\n    },\n    {\n      \"expression\": \"lean on their strengths\",\n      \"meaning_zh\": \"依靠、借助别人的长处\",\n      \"why_useful\": \"lean on 是高频口语搭配，可接 strengths / experience / support，表达“依靠”很地道。\",\n      \"example\": \"You can lean on their strengths when your own skills aren't enough.\",\n      \"usage_note\": \"lean on 也可表示“向某人寻求情感支持”。\"\n    },\n    {\n      \"expression\": \"bigger than the sum of its parts\",\n      \"meaning_zh\": \"整体大于各部分之和（合作产生额外价值）\",\n      \"why_useful\": \"总结团队、合作、集体成果时非常有力，比 simply say teamwork is good 更有说服力。\",\n      \"example\": \"A strong team is bigger than the sum of its parts.\",\n      \"usage_note\": \"固定说法，注意用 the sum of its parts。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "I'd say teamwork is useful mainly because it lets people cover each other's weak spots. Nobody's good at everything, so when you work with others, you can lean on their strengths and they can lean on yours. For example, in a group project, one person might be great at planning while another is better at actually getting things done, and together they produce something neither could manage alone. It also takes some pressure off you, because you're not carrying the whole thing by yourself. That said, teamwork only works if people actually communicate, otherwise it just turns into confusion. So for me, the real value is that it turns a bunch of individual skills into something bigger than the sum of its parts.",
+        "reference_angle_summary": "独立主线：从“互补短板、分担压力”切入，用小组项目举例，并补充“沟通不到位反而添乱”的转折；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "cover each other's weak spots",
+            "meaning": "互相弥补彼此的短板",
+            "meaning_zh": "互相弥补彼此的短板",
+            "why_useful": "谈合作、团队、友谊、家庭分工都能用，比只说 help each other 更具体自然。",
+            "example": "In a good team, people cover each other's weak spots instead of competing.",
+            "usage_note": "weak spots 偏口语，正式写作可用 weaknesses。",
+            "readonly": false
+          },
+          {
+            "expression": "lean on their strengths",
+            "meaning": "依靠、借助别人的长处",
+            "meaning_zh": "依靠、借助别人的长处",
+            "why_useful": "lean on 是高频口语搭配，可接 strengths / experience / support，表达“依靠”很地道。",
+            "example": "You can lean on their strengths when your own skills aren't enough.",
+            "usage_note": "lean on 也可表示“向某人寻求情感支持”。",
+            "readonly": false
+          },
+          {
+            "expression": "bigger than the sum of its parts",
+            "meaning": "整体大于各部分之和（合作产生额外价值）",
+            "meaning_zh": "整体大于各部分之和（合作产生额外价值）",
+            "why_useful": "总结团队、合作、集体成果时非常有力，比 simply say teamwork is good 更有说服力。",
+            "example": "A strong team is bigger than the sum of its parts.",
+            "usage_note": "固定说法，注意用 the sum of its parts。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 7047,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"Teamwork is useful because people bring different skills to the table.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“people have different skills”语法正确但偏平淡，用“bring different skills to the table”更地道、更有画面感。\"\n    },\n    {\n      \"type\": \"content\",\n      \"message\": \"回答只有一句，直接点出原因但缺少任何展开或例子，内容单薄。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"没有连接或分层，仅一个简单因果句，逻辑推进不足。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"保留原句核心意思和因果结构，只把“have different skills”升级为更自然的“bring different skills to the table”。没有添加任何新信息，因为原回答本身已完整但简短。\",\n  \"content_diagnosis\": \"原回答直接回应了问题，给出了一个明确原因（人们技能不同），没有跑题或重复。但内容非常单薄，仅一句话，没有进一步解释为什么技能不同会让团队合作有用。\",\n  \"structure_diagnosis\": \"信息顺序合理：先给结论，再给原因。但缺少任何连接词或展开，整体是一个简单句，逻辑层次单一。\",\n  \"optimization_advice\": \"如果想让回答更充实，可以补充一个具体例子，比如“有人擅长规划，有人擅长执行”，或者说明不同技能如何互补。但不要编造个人经历，只补充常识性解释即可。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"people have different skills\",\n      \"corrected\": \"people bring different skills to the table\",\n      \"category\": \"vocabulary\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原表达正确但普通；“bring ... to the table”是英语中描述贡献技能/资源的常用习语，更自然、更地道。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回答并给出原因\",\n      \"content\": \"用“Teamwork is useful because...”点明观点，并用“bring different skills to the table”说明原因。\",\n      \"reusable_expression\": \"bring different skills to the table\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"bring different skills to the table\",\n      \"meaning_zh\": \"带来不同的技能（做出贡献）\",\n      \"why_useful\": \"在讨论团队合作、项目分工、解决问题等话题时非常高频，比“have different skills”更生动自然。\",\n      \"example\": \"In a group project, everyone brings different skills to the table.\",\n      \"usage_note\": \"后面可接具体技能或抽象贡献，如“bring different perspectives to the table”。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 5.5,\n    \"vocabularyScore\": 6.5,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"people have different skills → people bring different skills to the table\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.5,\n      \"summary\": \"原回答直接答题，但只有一句话，缺少展开和例子，内容单薄。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"没有解释不同技能为什么能让团队合作有用\",\n        \"没有举例说明不同技能如何互补\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "vocabulary",
+            "message": "“people have different skills”语法正确但偏平淡，用“bring different skills to the table”更地道、更有画面感。"
+          },
+          {
+            "type": "content",
+            "message": "回答只有一句，直接点出原因但缺少任何展开或例子，内容单薄。"
+          },
+          {
+            "type": "structure",
+            "message": "没有连接或分层，仅一个简单因果句，逻辑推进不足。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "保留原句核心意思和因果结构，只把“have different skills”升级为更自然的“bring different skills to the table”。没有添加任何新信息，因为原回答本身已完整但简短。",
+        "final_upgraded_answer": "Teamwork is useful because people bring different skills to the table.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了问题，给出了一个明确原因（人们技能不同），没有跑题或重复。但内容非常单薄，仅一句话，没有进一步解释为什么技能不同会让团队合作有用。",
+        "structure_diagnosis": "信息顺序合理：先给结论，再给原因。但缺少任何连接词或展开，整体是一个简单句，逻辑层次单一。",
+        "optimization_advice": "如果想让回答更充实，可以补充一个具体例子，比如“有人擅长规划，有人擅长执行”，或者说明不同技能如何互补。但不要编造个人经历，只补充常识性解释即可。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "bring different skills to the table",
+            "meaning": "带来不同的技能（做出贡献）",
+            "meaning_zh": "带来不同的技能（做出贡献）",
+            "why_useful": "在讨论团队合作、项目分工、解决问题等话题时非常高频，比“have different skills”更生动自然。",
+            "example": "In a group project, everyone brings different skills to the table.",
+            "usage_note": "后面可接具体技能或抽象贡献，如“bring different perspectives to the table”。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "people have different skills",
+            "corrected": "people bring different skills to the table",
+            "category": "vocabulary",
+            "explanation_zh": "原表达正确但普通；“bring ... to the table”是英语中描述贡献技能/资源的常用习语，更自然、更地道。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回答并给出原因",
+            "content": "用“Teamwork is useful because...”点明观点，并用“bring different skills to the table”说明原因。",
+            "reusable_expression": "bring different skills to the table"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6,
+          "grammarScore": 5.5,
+          "vocabularyScore": 6.5,
+          "naturalnessScore": 6,
+          "usefulCorrections": "people have different skills → people bring different skills to the table",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 6,
+            "coherenceScore": 6,
+            "developmentScore": 5.5,
+            "summary": "原回答直接答题，但只有一句话，缺少展开和例子，内容单薄。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [],
+            "contentGaps": [
+              "没有解释不同技能为什么能让团队合作有用",
+              "没有举例说明不同技能如何互补"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 59846,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"claim_evidence\": [\n    {\n      \"sentence\": \"Teamwork is useful because people bring different skills to the table.\",\n      \"evidence\": \"Teamwork is useful because people have different skills.\"\n    }\n  ],\n  \"unsupported_claims\": [],\n  \"teaching_errors\": [],\n  \"revision_mode\": \"expand\",\n  \"issues\": [\n    \"原回答内容单薄，仅一个因果句；建议补充一个具体例子或进一步解释不同技能如何让团队合作更有效。\"\n  ],\n  \"faithful\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "expand",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 9762,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"团队合作有用是因为人们有不同的技能\"],\"model_arguments\":[\"团队合作让人们互补弱项、依靠彼此的长处\",\"不同技能组合能完成个人无法完成的事\",\"团队合作还能分担压力\"],\"overlapping_arguments\":[\"人们有不同的技能/长处并互相补充\"],\"reason\":\"AI回答虽然换了例子并增加了分担压力等理由，但核心仍复用并展开了用户“不同技能互补”的论点，因此不独立。\",\"independent\":false}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 5305,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"For me, the real usefulness of teamwork shows up when a problem is too big or too messy for one person to even see clearly. A single person tends to get stuck in their own way of thinking, but once you put three or four heads together, someone usually spots the angle you completely missed. I noticed this when a friend's small business was losing customers — she kept blaming the product, but her staff pointed out it was actually the slow replies to messages. That's something she'd never have seen alone. So teamwork isn't just about sharing the workload; it's about catching each other's blind spots. Of course, that only works if people feel safe enough to speak up, otherwise you just get one voice and a lot of nodding.\",\n  \"reference_angle_summary\": \"独立主线：团队合作的价值在于帮人看见个人视角的盲区，并以小生意案例说明；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"get stuck in their own way of thinking\",\n      \"meaning_zh\": \"陷入自己固有的思维方式\",\n      \"why_useful\": \"描述思维局限的高频口语搭配，可用于讨论合作、学习、决策等话题。\",\n      \"example\": \"When you work alone too long, you get stuck in your own way of thinking.\",\n      \"usage_note\": \"their 可替换为 my/his/her，视主语而定。\"\n    },\n    {\n      \"expression\": \"spots the angle you completely missed\",\n      \"meaning_zh\": \"发现你完全忽略的角度\",\n      \"why_useful\": \"自然表达“别人看到你看不到的东西”，适合团队、沟通、创意类话题。\",\n      \"example\": \"A good teammate spots the angle you completely missed.\",\n      \"usage_note\": \"angle 在此指看问题的角度，不是物理角度。\"\n    },\n    {\n      \"expression\": \"feel safe enough to speak up\",\n      \"meaning_zh\": \"有足够安全感敢于开口表达\",\n      \"why_useful\": \"讨论团队氛围、沟通条件时非常实用，比 simply say 更具体。\",\n      \"example\": \"Teamwork only works if people feel safe enough to speak up.\",\n      \"usage_note\": \"speak up 指主动说出想法，常与 safe enough 搭配。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "For me, the real usefulness of teamwork shows up when a problem is too big or too messy for one person to even see clearly. A single person tends to get stuck in their own way of thinking, but once you put three or four heads together, someone usually spots the angle you completely missed. I noticed this when a friend's small business was losing customers — she kept blaming the product, but her staff pointed out it was actually the slow replies to messages. That's something she'd never have seen alone. So teamwork isn't just about sharing the workload; it's about catching each other's blind spots. Of course, that only works if people feel safe enough to speak up, otherwise you just get one voice and a lot of nodding.",
+        "reference_angle_summary": "独立主线：团队合作的价值在于帮人看见个人视角的盲区，并以小生意案例说明；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "get stuck in their own way of thinking",
+            "meaning": "陷入自己固有的思维方式",
+            "meaning_zh": "陷入自己固有的思维方式",
+            "why_useful": "描述思维局限的高频口语搭配，可用于讨论合作、学习、决策等话题。",
+            "example": "When you work alone too long, you get stuck in your own way of thinking.",
+            "usage_note": "their 可替换为 my/his/her，视主语而定。",
+            "readonly": false
+          },
+          {
+            "expression": "spots the angle you completely missed",
+            "meaning": "发现你完全忽略的角度",
+            "meaning_zh": "发现你完全忽略的角度",
+            "why_useful": "自然表达“别人看到你看不到的东西”，适合团队、沟通、创意类话题。",
+            "example": "A good teammate spots the angle you completely missed.",
+            "usage_note": "angle 在此指看问题的角度，不是物理角度。",
+            "readonly": false
+          },
+          {
+            "expression": "feel safe enough to speak up",
+            "meaning": "有足够安全感敢于开口表达",
+            "meaning_zh": "有足够安全感敢于开口表达",
+            "why_useful": "讨论团队氛围、沟通条件时非常实用，比 simply say 更具体。",
+            "example": "Teamwork only works if people feel safe enough to speak up.",
+            "usage_note": "speak up 指主动说出想法，常与 safe enough 搭配。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 23729,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\"团队合作有用是因为人们有不同的技能。\"],\n  \"model_arguments\": [\"团队合作的价值在于多人一起思考能发现单人忽略的角度、抓住彼此的盲点，避免个人思维定式。\", \"团队合作不只是分担工作量，而是帮助彼此发现看不见的问题。\"],\n  \"overlapping_arguments\": [\"不同人带来不同的技能/视角/角度，从而互补并发现单人难以注意的问题\"],\n  \"reason\": \"AI虽然换了新故事并把“不同技能”表述为“发现不同角度/盲点”，但核心论证仍是利用成员间的差异互补，与用户理由实质重合。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4855,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"I'd say teamwork is useful less for what it adds and more for what it prevents. When you work alone, there's nobody to challenge your assumptions, so small mistakes can quietly grow into big ones. In a team, though, someone usually notices when something doesn't add up, and that early catch saves a lot of trouble later. I've seen this in part-time jobs — one person misses a detail, another spots it before it reaches the customer. So the real value isn't just extra hands; it's having a natural check on your own blind spots. That said, it only works if people feel comfortable speaking up. If everyone just agrees to keep the peace, you lose that safety net entirely.\",\n  \"reference_angle_summary\": \"独立主线：团队合作的价值在于“预防错误”而非“增加产出”，强调早期纠错与心理安全的条件；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"doesn't add up\",\n      \"meaning_zh\": \"（情况、说法）不对劲、不合逻辑\",\n      \"why_useful\": \"口语中高频用来表达发现疑点或矛盾，自然且地道。\",\n      \"example\": \"Something about his story doesn't add up.\",\n      \"usage_note\": \"常用于描述逻辑或事实上的不一致。\"\n    },\n    {\n      \"expression\": \"a natural check on\",\n      \"meaning_zh\": \"对……的一种自然制约/检查\",\n      \"why_useful\": \"可迁移到讨论制度、习惯、团队等话题，表达“制衡”概念。\",\n      \"example\": \"Having a deadline is a natural check on procrastination.\",\n      \"usage_note\": \"后接名词或动名词。\"\n    },\n    {\n      \"expression\": \"keep the peace\",\n      \"meaning_zh\": \"维持和睦、避免冲突\",\n      \"why_useful\": \"描述人际互动时非常常用，能体现让步或妥协的语境。\",\n      \"example\": \"He didn't argue just to keep the peace.\",\n      \"usage_note\": \"常与 just to 连用，表示为了和谐而忍让。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "I'd say teamwork is useful less for what it adds and more for what it prevents. When you work alone, there's nobody to challenge your assumptions, so small mistakes can quietly grow into big ones. In a team, though, someone usually notices when something doesn't add up, and that early catch saves a lot of trouble later. I've seen this in part-time jobs — one person misses a detail, another spots it before it reaches the customer. So the real value isn't just extra hands; it's having a natural check on your own blind spots. That said, it only works if people feel comfortable speaking up. If everyone just agrees to keep the peace, you lose that safety net entirely.",
+        "reference_angle_summary": "独立主线：团队合作的价值在于“预防错误”而非“增加产出”，强调早期纠错与心理安全的条件；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "doesn't add up",
+            "meaning": "（情况、说法）不对劲、不合逻辑",
+            "meaning_zh": "（情况、说法）不对劲、不合逻辑",
+            "why_useful": "口语中高频用来表达发现疑点或矛盾，自然且地道。",
+            "example": "Something about his story doesn't add up.",
+            "usage_note": "常用于描述逻辑或事实上的不一致。",
+            "readonly": false
+          },
+          {
+            "expression": "a natural check on",
+            "meaning": "对……的一种自然制约/检查",
+            "meaning_zh": "对……的一种自然制约/检查",
+            "why_useful": "可迁移到讨论制度、习惯、团队等话题，表达“制衡”概念。",
+            "example": "Having a deadline is a natural check on procrastination.",
+            "usage_note": "后接名词或动名词。",
+            "readonly": false
+          },
+          {
+            "expression": "keep the peace",
+            "meaning": "维持和睦、避免冲突",
+            "meaning_zh": "维持和睦、避免冲突",
+            "why_useful": "描述人际互动时非常常用，能体现让步或妥协的语境。",
+            "example": "He didn't argue just to keep the peace.",
+            "usage_note": "常与 just to 连用，表示为了和谐而忍让。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 13583,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"人们有不同技能，所以团队合作有用\"],\"model_arguments\":[\"团队合作主要防止错误和盲点，因为有人能挑战假设、发现疏漏\",\"团队合作的价值是检查个人盲点，不是增加人手\",\"只有人们愿意发言指出问题，这种防止错误的作用才成立\"],\"overlapping_arguments\":[],\"reason\":\"用户核心论点是不同技能使团队合作有用，AI答案核心论点是团队合作用于防止错误和检查盲点，并围绕提出异议、发现疏漏展开，没有复用或同义改写用户的技能差异论点。\",\"independent\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

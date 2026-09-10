@@ -252,7 +252,8 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
           <section className="rounded-2xl border-2 border-sage-deep/40 bg-sage-light/30 p-5 space-y-3 min-w-0" aria-label="我的回答·最佳表达">
             <h2 className="font-semibold text-sage-deep">我的回答·最佳表达</h2>
             <p className="text-base leading-relaxed whitespace-pre-line">{feedback.final_upgraded_answer || (feedback.answer_status === "unavailable" ? "本次表达未通过原意核对，请重新分析。" : "未生成有效的优化表达，请重新分析。")}</p>
-            <p className="text-xs text-ink-light">这是你的想法，只是表达得更好了。{feedback.expansion_notice}</p>
+            <p className="text-xs text-ink-light">{feedback.answer_status === "unchecked" ? "原意核对暂未完成：已保留生成的表达，请对照原文确认有无新增意思。" : feedback.answer_status === "unavailable" ? "请重新分析后再使用。" : "这是你的想法，只是表达得更好了。"}{feedback.expansion_notice}</p>
+            {feedback.teaching_status === "needs_review" && <p role="status" className="text-xs text-amber-700">最佳表达已通过原意核对；纠错说明存在不一致，已暂时隐藏。请重新分析以修复教学反馈。</p>}
           </section>
 
           {/* Block 6 — Answer Structure (collapsible scaffold) */}

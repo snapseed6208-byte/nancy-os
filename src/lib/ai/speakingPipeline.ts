@@ -4,6 +4,7 @@ import { normalizeSpeakingFeedback, parseSpeakingResponse } from "../english/spe
 
 type Call = (options: ChatCompletionOptions) => Promise<ChatCompletionResponse>;
 export interface SpeakingPipelineOptions {
+  onProgress?: (message: string) => void;
   questionContext?: { mode?: string; topic?: string; part?: string };
   targetLevel?: string;
   retryContext?: Parameters<typeof buildRetryFeedbackPrompt>[0];
@@ -11,6 +12,7 @@ export interface SpeakingPipelineOptions {
 
 /** The answer generator never sees the transcript; the reviewer cannot author answers. */
 export async function runSpeakingPipeline(call: Call, question: string, transcript: string, targets: string[], authToken: string, options?: SpeakingPipelineOptions) {
+  options?.onProgress?.("正在生成反馈与独立示范…");
   const ask = (system: string, user: string, maxTokens = 4096) => call({
     model: system === SPEAKING_FIDELITY_CHECK_PROMPT || system === SPEAKING_INDEPENDENCE_CHECK_PROMPT ? "deepseek-v4-pro" : "deepseek-chat",
     maxTokens: system === SPEAKING_FIDELITY_CHECK_PROMPT || system === SPEAKING_INDEPENDENCE_CHECK_PROMPT ? 4096 : maxTokens,
@@ -36,8 +38,10 @@ export async function runSpeakingPipeline(call: Call, question: string, transcri
   let malformed = false;
   try { JSON.parse(main.value.content.slice(main.value.content.indexOf("{"), main.value.content.lastIndexOf("}") + 1)); } catch { malformed = true; }
   if (result.final_upgraded_answer) {
+    options?.onProgress?.("正在逐项核对原意，请稍候…");
     let approved = false;
-    let auditUnavailable = false;
+    let currentRejected = false;
+    result.answer_status = "unchecked";
     for (let attempt = 0; attempt < 3; attempt++) {
       let verdict: any = null;
       try {
@@ -47,28 +51,37 @@ export async function runSpeakingPipeline(call: Call, question: string, transcri
       } catch {
         // The audit call itself failed (timeout/network). That is not evidence of fabrication —
         // keep the student's best version instead of discarding it.
-        auditUnavailable = true;
         break;
       }
-      if (!verdict) { auditUnavailable = true; break; }
+      if (!verdict || typeof verdict !== "object" || Array.isArray(verdict)) break;
       // Only a real unfaithfulness verdict or unsupported content vetoes; teaching-field wording
       // inconsistencies (teaching_errors) are advisory and must not discard a faithful answer.
       const unfaithful = verdict.faithful === false || (verdict.unsupported_claims?.length ?? 0) > 0;
-      if (!malformed && !unfaithful) {
+      currentRejected = unfaithful;
+      const validLists = [verdict.unsupported_claims, verdict.teaching_errors].every(value => value === undefined || (Array.isArray(value) && value.every(item => typeof item === "string")));
+      if (!malformed && validLists && verdict.faithful === true && !unfaithful) {
         result = normalizeSpeakingFeedback({...result,revision_mode:result.revision_mode || verdict.revision_mode,answer_status:"verified"});
+        if (verdict.teaching_errors?.length) {
+          // Keep the verified answer, but do not teach from explanations the audit rejected.
+          result = {...result, teaching_status:"needs_review", corrections:[], key_issues:[], optimization_summary:"", content_diagnosis:"", structure_diagnosis:"", optimization_advice:"", answer_structure:[], takeaway_expressions:[], detailed_analysis:{}};
+        }
         approved = true;
         break;
       }
+      if (!unfaithful && !malformed) break;
       if (attempt < 2) {
+        options?.onProgress?.("发现需要修正的内容，正在修复并重新核对…");
         try {
           const revision = await ask(SPEAKING_FEEDBACK_PROMPT, "优先修复以下审计问题，输出完整且严格有效的反馈 JSON。不要反复使用被拒绝的措辞。\n" + JSON.stringify({required_fixes:malformed?["上次 JSON 无法解析，请输出完整有效的 JSON，数组中的说明用中文引号。",...(verdict.issues||[])]:verdict.issues,previous_answer:result.final_upgraded_answer,previous_corrections:result.corrections}) + "\n" + buildFeedbackPrompt(question,transcript,targets,options?.questionContext));
           result = parseSpeakingResponse(revision.content);
+          result.answer_status = "unchecked";
+          currentRejected = false;
           try { JSON.parse(revision.content.slice(revision.content.indexOf("{"),revision.content.lastIndexOf("}")+1)); malformed=false; } catch { malformed=true; }
-        } catch { auditUnavailable = true; break; }
+        } catch { break; }
       }
     }
-    // Clear only when the audit genuinely rejected the content and no audit call itself failed.
-    if (!approved && !auditUnavailable) result = {...result,final_upgraded_answer:"",answer_status:"unavailable",takeaway_expressions:[],answer_structure:[]};
+    // A failed repair cannot erase a rejection of the current candidate.
+    if (!approved && (currentRejected || malformed)) result = {...result,final_upgraded_answer:"",answer_status:"unavailable",takeaway_expressions:[],answer_structure:[]};
   }
   result.corrections = result.corrections.filter(c=>transcript.includes(c.original));
   // Never trust a reference produced by the transcript-aware main call.
@@ -77,6 +90,7 @@ export async function runSpeakingPipeline(call: Call, question: string, transcri
   result.reference_status = "unavailable";
   if (!result.final_upgraded_answer || reference.status === "rejected") return result;
   let candidate = parseSpeakingResponse(reference.value.content);
+  options?.onProgress?.("正在检查示范是否采用独立思路…");
   for (let attempt = 0; attempt < 3; attempt++) {
     if (!candidate.reference_answer) break;
     try {

@@ -3,6 +3,18 @@ import { runSpeakingPipeline } from "../lib/ai/speakingPipeline";
 import { normalizeSpeakingFeedback } from "../lib/english/speakingFeedback";
 const response=(obj:unknown)=>({content:JSON.stringify(obj),model:"mock"});
 describe("Independent speaking answer boundaries",()=>{
+  it.each([{}, {faithful:"true"}, {faithful:null}, {faithful:true,unsupported_claims:""}])("does not certify invalid verdict %j",async verdict=>{
+    const call=vi.fn().mockResolvedValueOnce(response({final_upgraded_answer:"I cycle to work",answer_status:"verified"})).mockResolvedValueOnce(response({reference_answer:"Other route"})).mockResolvedValueOnce(response(verdict)).mockResolvedValueOnce(response({independent:true}));
+    const result=await runSpeakingPipeline(call,"Why cycling?","I cycle to work",[],"token");
+    expect(result.answer_status).toBe("unchecked");
+    expect(normalizeSpeakingFeedback(result).answer_status).toBe("unchecked");
+  });
+  it("does not revive a rejected answer when its repair fails",async()=>{
+    const call=vi.fn().mockResolvedValueOnce(response({final_upgraded_answer:"I cycle every day"})).mockResolvedValueOnce(response({reference_answer:"Other route"})).mockResolvedValueOnce(response({faithful:false,unsupported_claims:["every day"]})).mockRejectedValueOnce(new Error("repair timeout"));
+    const result=await runSpeakingPipeline(call,"Why cycling?","I cycle to work",[],"token");
+    expect(result.final_upgraded_answer).toBe("");
+    expect(result.answer_status).toBe("unavailable");
+  });
   it("never sends transcript or best answer to the reference generator and regenerates overlap",async()=>{
     const call=vi.fn().mockResolvedValueOnce(response({final_upgraded_answer:"My secret personal story",reference_answer:"Untrusted main-call paraphrase"}))
       .mockResolvedValueOnce(response({reference_answer:"First candidate"}))
@@ -71,6 +83,9 @@ describe("Independent speaking answer boundaries",()=>{
     const result=await runSpeakingPipeline(call,"Do you prefer working from home?","I prefer working from home because it's convenient.",[],"token");
     expect(result.final_upgraded_answer).toBe("I prefer working from home because it's convenient.");
     expect(result.answer_status).toBe("verified");
+    expect(result.teaching_status).toBe("needs_review");
+    expect(result.corrections).toEqual([]);
+    expect(result.optimization_summary).toBe("");
   });
   it("still clears the best version when the audit proves fabricated content",async()=>{
     const bad=response({faithful:false,unsupported_claims:["every day"],issues:["remove every day"]});

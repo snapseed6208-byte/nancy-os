@@ -52,7 +52,8 @@ export interface SimplifiedSpeakingFeedback {
   /** One-line Chinese note describing the independent angle of reference_answer. */
   reference_angle_summary: string;
   reference_status?: "verified" | "unavailable";
-  answer_status?: "verified" | "unavailable";
+  answer_status?: "verified" | "unavailable" | "unchecked";
+  teaching_status?: "needs_review";
   content_diagnosis?: string;
   structure_diagnosis?: string;
   optimization_advice?: string;
@@ -207,7 +208,8 @@ export function normalizeSpeakingFeedback(value: unknown): SimplifiedSpeakingFee
     reference_answer: first(raw.reference_answer, raw.referenceAnswer, raw.one_better_example, raw.oneBetterExample),
     reference_angle_summary: first(raw.reference_angle_summary, raw.referenceAngleSummary, raw.reference_angle) || "",
     reference_status: raw.reference_status === "verified" || raw.reference_status === "unavailable" ? raw.reference_status : undefined,
-    answer_status: raw.answer_status === "verified" || raw.answer_status === "unavailable" ? raw.answer_status : undefined,
+    answer_status: raw.answer_status === "verified" || raw.answer_status === "unavailable" || raw.answer_status === "unchecked" ? raw.answer_status : undefined,
+    teaching_status: raw.teaching_status === "needs_review" ? "needs_review" : undefined,
     content_diagnosis: first(raw.content_diagnosis, speakingObject(details.contentAnalysis).summary, content.summary),
     structure_diagnosis: str(raw.structure_diagnosis),
     optimization_advice: first(raw.optimization_advice, raw.optimization_summary),

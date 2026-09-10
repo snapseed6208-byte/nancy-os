@@ -1,0 +1,513 @@
+{
+  "id": "A",
+  "input": "I enjoy cooking because it helps me unwind after a busy day. I usually makes simple meals with fresh vegetables, and I like sharing them with my family. It is a relaxing way to spend time together.",
+  "question": "Do you enjoy cooking?",
+  "expectedMode": "light",
+  "sourceFingerprint": "a7d40203a72ded9d5547e9f4bbf7ef21b2fa5678094d12fe47c363059e83a132",
+  "executedAt": "2026-09-10T03:10:13.246Z",
+  "elapsedMs": 148103,
+  "feedback": {
+    "overall_score": 6.5,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "grammar",
+        "message": "主谓不一致：\"I usually makes simple meals\" 中主语 I 后应用动词原形 make，而非第三人称单数 makes。"
+      },
+      {
+        "type": "structure",
+        "message": "最后一句 \"It is a relaxing way to spend time together\" 的 it 指代不够清晰，读者需回读才能确定它指的是 cooking 还是 sharing meals，建议用破折号或连接词直接并入前句。"
+      },
+      {
+        "type": "naturalness",
+        "message": "整体表达自然，但句子之间以 and 简单并列，缺少更口语化的衔接，可考虑用破折号或 so 让节奏更自然。"
+      }
+    ],
+    "revision_mode": "light",
+    "optimization_summary": "修正了 \"I usually makes\" 的主谓不一致错误，改为 make。将最后一句用破折号并入前句，使 it 的指代更清晰、句子衔接更自然。其余措辞和内容基本保留，改动幅度很小。",
+    "final_upgraded_answer": "I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family — it's a relaxing way to spend time together.",
+    "reference_answer": "I enjoy it, but only under a very specific condition — I have to be cooking something I've never made before. If it's a dish I already know by heart, my brain checks out and it just feels like assembly work. So I rarely repeat recipes. Last month I tried making hand-pulled noodles, and they came out thick and lumpy, nothing like the real thing, but I was completely absorbed for two hours. That's the part I actually enjoy: the problem-solving. Once I've cracked a dish, the fun is basically over, which is why my cooking is a bit inconsistent. It's not really about eating — it's about having something to figure out.",
+    "reference_angle_summary": "独立主线：只在新菜谱、需要解决新问题时才享受做饭，重复做熟悉的菜就失去兴趣；示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "unchecked",
+    "content_diagnosis": "原回答直接回应了问题，主线清晰：喜欢做饭 → 原因（放松）→ 具体做法（简单饭菜、新鲜蔬菜）→ 与家人分享 → 放松的相处方式。内容相关、无跑题、无明显重复，但展开较浅，每个点都只给了一句，缺少具体细节（如做什么菜、为什么放松）。",
+    "structure_diagnosis": "信息顺序合理：先给态度和主因，再补充做法和分享对象，最后回到放松这一主题，形成首尾呼应。问题在于句子之间主要靠 and 并列，最后一句与前句的逻辑关系（解释 sharing 的意义）没有用连接手段点明。",
+    "optimization_advice": "语言上已基本达标，重点可放在内容展开：可以补充一两个具体细节，例如常做的菜名、做饭时具体如何放松（如听音乐、专注切菜），或与家人分享时的一个小场景。这样能把回答从 6.5 提升到 7.5 的充实度，但需由你自己补充真实细节，不要编造。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "helps me unwind after a busy day",
+        "meaning": "帮我在忙碌一天后放松下来",
+        "meaning_zh": "帮我在忙碌一天后放松下来",
+        "why_useful": "描述爱好或减压方式的高频表达，unwind 比 relax 更地道，可迁移到运动、听音乐等话题。",
+        "example": "I go for a run after work — it really helps me unwind after a busy day.",
+        "usage_note": "unwind 后常接 after + 名词，表示放松的时机。",
+        "readonly": false
+      },
+      {
+        "expression": "a relaxing way to spend time together",
+        "meaning": "一种放松的共度时光的方式",
+        "meaning_zh": "一种放松的共度时光的方式",
+        "why_useful": "把活动与情感/关系价值联系起来，适用于家庭、朋友类话题。",
+        "example": "Cooking at home is a relaxing way to spend time together.",
+        "usage_note": "可替换 relaxing 为 fun、cheap 等形容词灵活使用。",
+        "readonly": false
+      },
+      {
+        "expression": "under a very specific condition",
+        "meaning": "在某个非常具体的条件下",
+        "meaning_zh": "在某个非常具体的条件下",
+        "why_useful": "回答偏好类问题时，用来限定条件，避免绝对化，显得思考细致。",
+        "example": "I like working from home, but only under a very specific condition — no meetings before ten.",
+        "usage_note": "后面常接 that 从句或破折号解释条件。",
+        "readonly": false
+      },
+      {
+        "expression": "my brain checks out",
+        "meaning": "我的大脑就停止运转了／走神了",
+        "meaning_zh": "我的大脑就停止运转了／走神了",
+        "why_useful": "口语中自然表达失去兴趣或注意力，比 I lose interest 更生动。",
+        "example": "If a lecture is too easy, my brain checks out after ten minutes.",
+        "usage_note": "非正式表达，适合口语，不适合正式写作。",
+        "readonly": false
+      },
+      {
+        "expression": "the fun is basically over",
+        "meaning": "乐趣基本上就结束了",
+        "meaning_zh": "乐趣基本上就结束了",
+        "why_useful": "简洁说明某个阶段后兴趣消失，可用于爱好、活动、项目等话题。",
+        "example": "Once the puzzle is solved, the fun is basically over for me.",
+        "usage_note": "basically 可替换为 pretty much，语气更口语。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "I usually makes simple meals",
+        "corrected": "I usually make simple meals",
+        "category": "grammar",
+        "explanation_zh": "主语 I 后应接动词原形 make，makes 是第三人称单数形式，属主谓不一致。",
+        "nature": "Error"
+      },
+      {
+        "original": "It is a relaxing way to spend time together.",
+        "corrected": "— it's a relaxing way to spend time together.",
+        "category": "naturalness",
+        "explanation_zh": "用破折号把最后一句并入前句，it 的指代更清楚，句子衔接也更口语自然；原句语法本身无误，属升级。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "表态 + 主因",
+        "content": "开门见山说明喜欢做饭，并给出核心原因：帮助放松。",
+        "reusable_expression": "it helps me unwind after a busy day"
+      },
+      {
+        "label": "具体做法",
+        "content": "补充做饭的类型和食材，让回答更具体。",
+        "reusable_expression": "I usually make simple meals with fresh vegetables"
+      },
+      {
+        "label": "分享对象 + 意义",
+        "content": "说明与家人分享，并用破折号点明这是一种放松的相处方式。",
+        "reusable_expression": "it's a relaxing way to spend time together"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6.5,
+      "grammarScore": 6,
+      "vocabularyScore": 6.5,
+      "naturalnessScore": 6.5,
+      "usefulCorrections": "I usually makes → I usually make（主谓一致）；用破折号连接最后一句使指代清晰。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 7,
+        "coherenceScore": 6.5,
+        "developmentScore": 5.5,
+        "summary": "回答切题、主线清晰、无跑题，但每个要点只有一句，展开不足，缺少具体细节支撑。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [],
+        "contentGaps": [
+          "缺少具体菜名或做饭场景",
+          "未说明做饭如何让人放松（如专注、听音乐）",
+          "与家人分享的具体情形未展开"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 6524,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"I do enjoy cooking, though I'd say I'm more of a weekend cook than a daily one. During the week I'm usually too wiped out to do anything fancy, so it's mostly quick pasta or something I can throw together in twenty minutes. But on weekends, I like taking my time — trying out a new recipe, chopping everything properly, that sort of thing. What I really enjoy is the process itself; it's a nice way to switch off from screens and just focus on one task. Plus, there's something satisfying about making a meal from scratch and actually tasting the difference. I wouldn't call myself a great cook, but I've definitely improved over the past couple of years, mainly because I got tired of ordering takeout all the time.\",\n  \"reference_angle_summary\": \"独立主线：以“周末做饭 vs 工作日凑合”的对比展开，强调做饭作为放松方式和技能成长；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"more of a weekend cook than a daily one\",\n      \"meaning_zh\": \"更像是周末做饭的人，而不是每天做饭的人\",\n      \"why_useful\": \"用对比结构自然说明习惯频率，比直接说 sometimes 更具体、更像真实口语。\",\n      \"example\": \"I'm more of a weekend runner than a daily one — I just can't fit it in on workdays.\",\n      \"usage_note\": \"可套用为 more of a ... than a ...，替换活动或身份即可。\"\n    },\n    {\n      \"expression\": \"switch off from screens\",\n      \"meaning_zh\": \"从屏幕中抽离、放松下来\",\n      \"why_useful\": \"描述放松原因时很自然，避免只说 it is relaxing，能具体到现代生活场景。\",\n      \"example\": \"Gardening helps me switch off from screens after a long day.\",\n      \"usage_note\": \"switch off 常与 from 搭配，也可说 switch off mentally。\"\n    },\n    {\n      \"expression\": \"from scratch\",\n      \"meaning_zh\": \"从零开始（尤指做饭不用现成材料）\",\n      \"why_useful\": \"高频口语短语，谈做饭、学习、项目都能用，显得地道。\",\n      \"example\": \"I made the soup from scratch instead of using a packet.\",\n      \"usage_note\": \"固定搭配，不加 the 或 a。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "I do enjoy cooking, though I'd say I'm more of a weekend cook than a daily one. During the week I'm usually too wiped out to do anything fancy, so it's mostly quick pasta or something I can throw together in twenty minutes. But on weekends, I like taking my time — trying out a new recipe, chopping everything properly, that sort of thing. What I really enjoy is the process itself; it's a nice way to switch off from screens and just focus on one task. Plus, there's something satisfying about making a meal from scratch and actually tasting the difference. I wouldn't call myself a great cook, but I've definitely improved over the past couple of years, mainly because I got tired of ordering takeout all the time.",
+        "reference_angle_summary": "独立主线：以“周末做饭 vs 工作日凑合”的对比展开，强调做饭作为放松方式和技能成长；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "more of a weekend cook than a daily one",
+            "meaning": "更像是周末做饭的人，而不是每天做饭的人",
+            "meaning_zh": "更像是周末做饭的人，而不是每天做饭的人",
+            "why_useful": "用对比结构自然说明习惯频率，比直接说 sometimes 更具体、更像真实口语。",
+            "example": "I'm more of a weekend runner than a daily one — I just can't fit it in on workdays.",
+            "usage_note": "可套用为 more of a ... than a ...，替换活动或身份即可。",
+            "readonly": false
+          },
+          {
+            "expression": "switch off from screens",
+            "meaning": "从屏幕中抽离、放松下来",
+            "meaning_zh": "从屏幕中抽离、放松下来",
+            "why_useful": "描述放松原因时很自然，避免只说 it is relaxing，能具体到现代生活场景。",
+            "example": "Gardening helps me switch off from screens after a long day.",
+            "usage_note": "switch off 常与 from 搭配，也可说 switch off mentally。",
+            "readonly": false
+          },
+          {
+            "expression": "from scratch",
+            "meaning": "从零开始（尤指做饭不用现成材料）",
+            "meaning_zh": "从零开始（尤指做饭不用现成材料）",
+            "why_useful": "高频口语短语，谈做饭、学习、项目都能用，显得地道。",
+            "example": "I made the soup from scratch instead of using a packet.",
+            "usage_note": "固定搭配，不加 the 或 a。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 9659,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family — it's a relaxing way to spend time together.\",\n  \"overall_score\": 6.5,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"grammar\",\n      \"message\": \"主谓不一致：\\\"I usually makes simple meals\\\" 中主语 I 后应用动词原形 make，而非第三人称单数 makes。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"最后一句 \\\"It is a relaxing way to spend time together\\\" 的 it 指代不够清晰，读者需回读才能确定它指的是 cooking 还是 sharing meals，建议用破折号或连接词直接并入前句。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"整体表达自然，但句子之间以 and 简单并列，缺少更口语化的衔接，可考虑用破折号或 so 让节奏更自然。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"修正了 \\\"I usually makes\\\" 的主谓不一致错误，改为 make。将最后一句用破折号并入前句，使 it 的指代更清晰、句子衔接更自然。其余措辞和内容基本保留，改动幅度很小。\",\n  \"content_diagnosis\": \"原回答直接回应了问题，主线清晰：喜欢做饭 → 原因（放松）→ 具体做法（简单饭菜、新鲜蔬菜）→ 与家人分享 → 放松的相处方式。内容相关、无跑题、无明显重复，但展开较浅，每个点都只给了一句，缺少具体细节（如做什么菜、为什么放松）。\",\n  \"structure_diagnosis\": \"信息顺序合理：先给态度和主因，再补充做法和分享对象，最后回到放松这一主题，形成首尾呼应。问题在于句子之间主要靠 and 并列，最后一句与前句的逻辑关系（解释 sharing 的意义）没有用连接手段点明。\",\n  \"optimization_advice\": \"语言上已基本达标，重点可放在内容展开：可以补充一两个具体细节，例如常做的菜名、做饭时具体如何放松（如听音乐、专注切菜），或与家人分享时的一个小场景。这样能把回答从 6.5 提升到 7.5 的充实度，但需由你自己补充真实细节，不要编造。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"I usually makes simple meals\",\n      \"corrected\": \"I usually make simple meals\",\n      \"category\": \"grammar\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"主语 I 后应接动词原形 make，makes 是第三人称单数形式，属主谓不一致。\"\n    },\n    {\n      \"original\": \"It is a relaxing way to spend time together.\",\n      \"corrected\": \"— it's a relaxing way to spend time together.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"用破折号把最后一句并入前句，it 的指代更清楚，句子衔接也更口语自然；原句语法本身无误，属升级。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"表态 + 主因\",\n      \"content\": \"开门见山说明喜欢做饭，并给出核心原因：帮助放松。\",\n      \"reusable_expression\": \"it helps me unwind after a busy day\"\n    },\n    {\n      \"label\": \"具体做法\",\n      \"content\": \"补充做饭的类型和食材，让回答更具体。\",\n      \"reusable_expression\": \"I usually make simple meals with fresh vegetables\"\n    },\n    {\n      \"label\": \"分享对象 + 意义\",\n      \"content\": \"说明与家人分享，并用破折号点明这是一种放松的相处方式。\",\n      \"reusable_expression\": \"it's a relaxing way to spend time together\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"helps me unwind after a busy day\",\n      \"meaning_zh\": \"帮我在忙碌一天后放松下来\",\n      \"why_useful\": \"描述爱好或减压方式的高频表达，unwind 比 relax 更地道，可迁移到运动、听音乐等话题。\",\n      \"example\": \"I go for a run after work — it really helps me unwind after a busy day.\",\n      \"usage_note\": \"unwind 后常接 after + 名词，表示放松的时机。\"\n    },\n    {\n      \"expression\": \"a relaxing way to spend time together\",\n      \"meaning_zh\": \"一种放松的共度时光的方式\",\n      \"why_useful\": \"把活动与情感/关系价值联系起来，适用于家庭、朋友类话题。\",\n      \"example\": \"Cooking at home is a relaxing way to spend time together.\",\n      \"usage_note\": \"可替换 relaxing 为 fun、cheap 等形容词灵活使用。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.5,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.5,\n    \"naturalnessScore\": 6.5,\n    \"usefulCorrections\": \"I usually makes → I usually make（主谓一致）；用破折号连接最后一句使指代清晰。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 6.5,\n      \"developmentScore\": 5.5,\n      \"summary\": \"回答切题、主线清晰、无跑题，但每个要点只有一句，展开不足，缺少具体细节支撑。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"缺少具体菜名或做饭场景\",\n        \"未说明做饭如何让人放松（如专注、听音乐）\",\n        \"与家人分享的具体情形未展开\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6.5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "grammar",
+            "message": "主谓不一致：\"I usually makes simple meals\" 中主语 I 后应用动词原形 make，而非第三人称单数 makes。"
+          },
+          {
+            "type": "structure",
+            "message": "最后一句 \"It is a relaxing way to spend time together\" 的 it 指代不够清晰，读者需回读才能确定它指的是 cooking 还是 sharing meals，建议用破折号或连接词直接并入前句。"
+          },
+          {
+            "type": "naturalness",
+            "message": "整体表达自然，但句子之间以 and 简单并列，缺少更口语化的衔接，可考虑用破折号或 so 让节奏更自然。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "修正了 \"I usually makes\" 的主谓不一致错误，改为 make。将最后一句用破折号并入前句，使 it 的指代更清晰、句子衔接更自然。其余措辞和内容基本保留，改动幅度很小。",
+        "final_upgraded_answer": "I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family — it's a relaxing way to spend time together.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了问题，主线清晰：喜欢做饭 → 原因（放松）→ 具体做法（简单饭菜、新鲜蔬菜）→ 与家人分享 → 放松的相处方式。内容相关、无跑题、无明显重复，但展开较浅，每个点都只给了一句，缺少具体细节（如做什么菜、为什么放松）。",
+        "structure_diagnosis": "信息顺序合理：先给态度和主因，再补充做法和分享对象，最后回到放松这一主题，形成首尾呼应。问题在于句子之间主要靠 and 并列，最后一句与前句的逻辑关系（解释 sharing 的意义）没有用连接手段点明。",
+        "optimization_advice": "语言上已基本达标，重点可放在内容展开：可以补充一两个具体细节，例如常做的菜名、做饭时具体如何放松（如听音乐、专注切菜），或与家人分享时的一个小场景。这样能把回答从 6.5 提升到 7.5 的充实度，但需由你自己补充真实细节，不要编造。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "helps me unwind after a busy day",
+            "meaning": "帮我在忙碌一天后放松下来",
+            "meaning_zh": "帮我在忙碌一天后放松下来",
+            "why_useful": "描述爱好或减压方式的高频表达，unwind 比 relax 更地道，可迁移到运动、听音乐等话题。",
+            "example": "I go for a run after work — it really helps me unwind after a busy day.",
+            "usage_note": "unwind 后常接 after + 名词，表示放松的时机。",
+            "readonly": false
+          },
+          {
+            "expression": "a relaxing way to spend time together",
+            "meaning": "一种放松的共度时光的方式",
+            "meaning_zh": "一种放松的共度时光的方式",
+            "why_useful": "把活动与情感/关系价值联系起来，适用于家庭、朋友类话题。",
+            "example": "Cooking at home is a relaxing way to spend time together.",
+            "usage_note": "可替换 relaxing 为 fun、cheap 等形容词灵活使用。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "I usually makes simple meals",
+            "corrected": "I usually make simple meals",
+            "category": "grammar",
+            "explanation_zh": "主语 I 后应接动词原形 make，makes 是第三人称单数形式，属主谓不一致。",
+            "nature": "Error"
+          },
+          {
+            "original": "It is a relaxing way to spend time together.",
+            "corrected": "— it's a relaxing way to spend time together.",
+            "category": "naturalness",
+            "explanation_zh": "用破折号把最后一句并入前句，it 的指代更清楚，句子衔接也更口语自然；原句语法本身无误，属升级。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "表态 + 主因",
+            "content": "开门见山说明喜欢做饭，并给出核心原因：帮助放松。",
+            "reusable_expression": "it helps me unwind after a busy day"
+          },
+          {
+            "label": "具体做法",
+            "content": "补充做饭的类型和食材，让回答更具体。",
+            "reusable_expression": "I usually make simple meals with fresh vegetables"
+          },
+          {
+            "label": "分享对象 + 意义",
+            "content": "说明与家人分享，并用破折号点明这是一种放松的相处方式。",
+            "reusable_expression": "it's a relaxing way to spend time together"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6.5,
+          "grammarScore": 6,
+          "vocabularyScore": 6.5,
+          "naturalnessScore": 6.5,
+          "usefulCorrections": "I usually makes → I usually make（主谓一致）；用破折号连接最后一句使指代清晰。",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 7,
+            "coherenceScore": 6.5,
+            "developmentScore": 5.5,
+            "summary": "回答切题、主线清晰、无跑题，但每个要点只有一句，展开不足，缺少具体细节支撑。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [],
+            "contentGaps": [
+              "缺少具体菜名或做饭场景",
+              "未说明做饭如何让人放松（如专注、听音乐）",
+              "与家人分享的具体情形未展开"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 74035,
+      "model": "deepseek-v4-pro",
+      "raw": "",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 23314,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\"烹饪帮助我在忙碌一天后放松\", \"我通常做简单的新鲜蔬菜餐\", \"我喜欢与家人分享饭菜\", \"这是一种放松的共度时光方式\"],\n  \"model_arguments\": [\"我更偏向周末做饭，工作日太累只做快手菜\", \"周末享受烹饪过程，尝试新食谱\", \"烹饪是从屏幕中抽离、专注单一任务的方式\", \"从零开始做菜并尝到差别很有满足感\", \"因厌倦外卖而厨艺提高\"],\n  \"overlapping_arguments\": [\"烹饪帮助在忙碌后放松/从其他事务中抽离并专注单一任务\"],\n  \"reason\": \"AI答案虽然引入了周末与工作日区分等新角度，但其关于烹饪是从屏幕中抽离、专注单一任务的论述与用户'忙碌后放松'的核心论点实质重合，属于复用解压理由，因此不独立。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 5744,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, not as much as I'd like to. I can cook — I just don't get much joy out of it when I'm cooking only for myself. It feels like a chore: chopping, waiting, then ten minutes of eating and a sink full of dishes. The one time I genuinely enjoy it is when there's company. If a friend comes over, suddenly it's worth the effort — I'll actually plan a proper meal and take my time with it. So for me it's less about the cooking itself and more about who's at the table. Left to my own devices, I'd happily live on toast and fruit.\",\n  \"reference_angle_summary\": \"独立主线：以“独处时做饭像家务、有人一起吃才值得”为唯一理由，回答是否喜欢做饭；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"not as much as I'd like to\",\n      \"meaning_zh\": \"没有我希望的那么喜欢/那么多\",\n      \"why_useful\": \"回答喜好类问题时自然留有余地，比直接说 no 更口语、更有层次\",\n      \"example\": \"Do I read these days? Not as much as I'd like to, honestly.\",\n      \"usage_note\": \"常放句首，后面可自然接原因\"\n    },\n    {\n      \"expression\": \"it feels like a chore\",\n      \"meaning_zh\": \"感觉像一件不得不做的杂活\",\n      \"why_useful\": \"高频表达，用来解释为什么某件事缺乏乐趣，适用于家务、工作、日常任务\",\n      \"example\": \"Grocery shopping on a Sunday feels like a chore to me.\",\n      \"usage_note\": \"chore 是可数名词，前面常加 a\"\n    },\n    {\n      \"expression\": \"left to my own devices\",\n      \"meaning_zh\": \"如果由我自己决定/没人管我的话\",\n      \"why_useful\": \"地道习语，用来说明个人习惯或真实选择，适合对比“有人陪”和“独自”的场景\",\n      \"example\": \"Left to my own devices, I'd probably skip breakfast entirely.\",\n      \"usage_note\": \"常放句首，后接 would 或一般现在时\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, not as much as I'd like to. I can cook — I just don't get much joy out of it when I'm cooking only for myself. It feels like a chore: chopping, waiting, then ten minutes of eating and a sink full of dishes. The one time I genuinely enjoy it is when there's company. If a friend comes over, suddenly it's worth the effort — I'll actually plan a proper meal and take my time with it. So for me it's less about the cooking itself and more about who's at the table. Left to my own devices, I'd happily live on toast and fruit.",
+        "reference_angle_summary": "独立主线：以“独处时做饭像家务、有人一起吃才值得”为唯一理由，回答是否喜欢做饭；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "not as much as I'd like to",
+            "meaning": "没有我希望的那么喜欢/那么多",
+            "meaning_zh": "没有我希望的那么喜欢/那么多",
+            "why_useful": "回答喜好类问题时自然留有余地，比直接说 no 更口语、更有层次",
+            "example": "Do I read these days? Not as much as I'd like to, honestly.",
+            "usage_note": "常放句首，后面可自然接原因",
+            "readonly": false
+          },
+          {
+            "expression": "it feels like a chore",
+            "meaning": "感觉像一件不得不做的杂活",
+            "meaning_zh": "感觉像一件不得不做的杂活",
+            "why_useful": "高频表达，用来解释为什么某件事缺乏乐趣，适用于家务、工作、日常任务",
+            "example": "Grocery shopping on a Sunday feels like a chore to me.",
+            "usage_note": "chore 是可数名词，前面常加 a",
+            "readonly": false
+          },
+          {
+            "expression": "left to my own devices",
+            "meaning": "如果由我自己决定/没人管我的话",
+            "meaning_zh": "如果由我自己决定/没人管我的话",
+            "why_useful": "地道习语，用来说明个人习惯或真实选择，适合对比“有人陪”和“独自”的场景",
+            "example": "Left to my own devices, I'd probably skip breakfast entirely.",
+            "usage_note": "常放句首，后接 would 或一般现在时",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 13891,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"烹饪帮助我在忙碌一天后放松\",\"通常用新鲜蔬菜做简单饭菜\",\"喜欢与家人分享饭菜\",\"是一种一起放松相处的方式\"],\"model_arguments\":[\"不太享受独自烹饪，感觉像家务\",\"有人陪伴或朋友来访时才愿意花心思做饭\",\"享受与否更多取决于和谁一起吃饭，而非烹饪本身\"],\"overlapping_arguments\":[\"与家人或朋友分享饭菜、有人一起吃饭时才享受烹饪\"],\"reason\":\"AI答案整体立场虽为否定，但复用了用户“与家人分享饭菜、有人一起吃饭才享受烹饪”的核心社交理由，仅将家人替换为朋友或同伴，并展开为是否有人陪伴。\",\"independent\":false}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 5230,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"I enjoy it, but only under a very specific condition — I have to be cooking something I've never made before. If it's a dish I already know by heart, my brain checks out and it just feels like assembly work. So I rarely repeat recipes. Last month I tried making hand-pulled noodles, and they came out thick and lumpy, nothing like the real thing, but I was completely absorbed for two hours. That's the part I actually enjoy: the problem-solving. Once I've cracked a dish, the fun is basically over, which is why my cooking is a bit inconsistent. It's not really about eating — it's about having something to figure out.\",\n  \"reference_angle_summary\": \"独立主线：只在新菜谱、需要解决新问题时才享受做饭，重复做熟悉的菜就失去兴趣；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"under a very specific condition\",\n      \"meaning_zh\": \"在某个非常具体的条件下\",\n      \"why_useful\": \"回答偏好类问题时，用来限定条件，避免绝对化，显得思考细致。\",\n      \"example\": \"I like working from home, but only under a very specific condition — no meetings before ten.\",\n      \"usage_note\": \"后面常接 that 从句或破折号解释条件。\"\n    },\n    {\n      \"expression\": \"my brain checks out\",\n      \"meaning_zh\": \"我的大脑就停止运转了／走神了\",\n      \"why_useful\": \"口语中自然表达失去兴趣或注意力，比 I lose interest 更生动。\",\n      \"example\": \"If a lecture is too easy, my brain checks out after ten minutes.\",\n      \"usage_note\": \"非正式表达，适合口语，不适合正式写作。\"\n    },\n    {\n      \"expression\": \"the fun is basically over\",\n      \"meaning_zh\": \"乐趣基本上就结束了\",\n      \"why_useful\": \"简洁说明某个阶段后兴趣消失，可用于爱好、活动、项目等话题。\",\n      \"example\": \"Once the puzzle is solved, the fun is basically over for me.\",\n      \"usage_note\": \"basically 可替换为 pretty much，语气更口语。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "I enjoy it, but only under a very specific condition — I have to be cooking something I've never made before. If it's a dish I already know by heart, my brain checks out and it just feels like assembly work. So I rarely repeat recipes. Last month I tried making hand-pulled noodles, and they came out thick and lumpy, nothing like the real thing, but I was completely absorbed for two hours. That's the part I actually enjoy: the problem-solving. Once I've cracked a dish, the fun is basically over, which is why my cooking is a bit inconsistent. It's not really about eating — it's about having something to figure out.",
+        "reference_angle_summary": "独立主线：只在新菜谱、需要解决新问题时才享受做饭，重复做熟悉的菜就失去兴趣；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "under a very specific condition",
+            "meaning": "在某个非常具体的条件下",
+            "meaning_zh": "在某个非常具体的条件下",
+            "why_useful": "回答偏好类问题时，用来限定条件，避免绝对化，显得思考细致。",
+            "example": "I like working from home, but only under a very specific condition — no meetings before ten.",
+            "usage_note": "后面常接 that 从句或破折号解释条件。",
+            "readonly": false
+          },
+          {
+            "expression": "my brain checks out",
+            "meaning": "我的大脑就停止运转了／走神了",
+            "meaning_zh": "我的大脑就停止运转了／走神了",
+            "why_useful": "口语中自然表达失去兴趣或注意力，比 I lose interest 更生动。",
+            "example": "If a lecture is too easy, my brain checks out after ten minutes.",
+            "usage_note": "非正式表达，适合口语，不适合正式写作。",
+            "readonly": false
+          },
+          {
+            "expression": "the fun is basically over",
+            "meaning": "乐趣基本上就结束了",
+            "meaning_zh": "乐趣基本上就结束了",
+            "why_useful": "简洁说明某个阶段后兴趣消失，可用于爱好、活动、项目等话题。",
+            "example": "Once the puzzle is solved, the fun is basically over for me.",
+            "usage_note": "basically 可替换为 pretty much，语气更口语。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 16224,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"烹饪帮助我在忙碌一天后放松\",\n    \"通常做简单的新鲜蔬菜餐\",\n    \"喜欢与家人分享饭菜\",\n    \"一起做饭是放松的相处方式\"\n  ],\n  \"model_arguments\": [\n    \"只在尝试从未做过的新菜时享受烹饪\",\n    \"做已知食谱感觉像流水线组装\",\n    \"很少重复食谱\",\n    \"上个月做手拉面并完全专注两小时\",\n    \"真正享受的是解决问题\",\n    \"破解一道菜后乐趣就基本消失\",\n    \"享受烹饪与吃无关，而是有东西可以琢磨\"\n  ],\n  \"overlapping_arguments\": [],\n  \"reason\": \"AI回答围绕新奇感和解决问题展开，没有复用用户关于放松、与家人分享或简单新鲜蔬菜餐的论点、例子或结构。\",\n  \"independent\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

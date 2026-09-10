@@ -1,0 +1,510 @@
+{
+  "id": "B",
+  "input": "I prefer working from home because it's convenient.",
+  "question": "Do you prefer working from home?",
+  "expectedMode": "expand",
+  "sourceFingerprint": "a7d40203a72ded9d5547e9f4bbf7ef21b2fa5678094d12fe47c363059e83a132",
+  "executedAt": "2026-09-10T03:13:03.471Z",
+  "elapsedMs": 170223,
+  "feedback": {
+    "overall_score": 6,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "content",
+        "message": "回答只有一句，理由“convenient”没有具体表现，内容展开不足，难以体现词汇和句式能力。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "“convenient”虽然正确，但过于笼统，缺少具体场景或细节支撑。"
+      },
+      {
+        "type": "structure",
+        "message": "直接给出偏好和理由，结构完整但过于简短，没有进一步说明或对比。"
+      }
+    ],
+    "revision_mode": "light",
+    "optimization_summary": "本次未改动用户原句，因为原句语法正确、意思清楚，且用户未提供可确认的具体细节，不能替用户编造理由。优化建议集中在如何补充“方便”的具体表现，而不是修改现有措辞。",
+    "final_upgraded_answer": "I prefer working from home because it's convenient.",
+    "reference_answer": "Honestly, it depends on the kind of work I'm doing. If it's something that needs deep focus, like writing a report or preparing a presentation, I'd much rather be at home, because I can shut the door and get into a rhythm without anyone tapping me on the shoulder. But for anything creative or collaborative, working from home actually slows me down. I remember trying to brainstorm ideas over a video call, and it just felt flat — nobody was building on each other's suggestions the way we would in the same room. So I wouldn't say I prefer it across the board. I'd choose it for certain tasks, not as a fixed way of working.",
+    "reference_angle_summary": "独立主线：以“任务类型”为唯一判断标准，用深度专注与协作创意两种任务对比，得出有条件偏好；示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "verified",
+    "content_diagnosis": "原回答直接回答了问题，主线明确：偏好居家办公，理由是方便。但内容非常单薄，没有解释“方便”体现在哪里，也没有任何例子或对比，展开严重不足。",
+    "structure_diagnosis": "信息顺序合理：先表明偏好，再给出理由。但只有一层理由，没有进一步展开或连接，逻辑链完整但过于简短。",
+    "optimization_advice": "建议用户补充“方便”的具体表现，例如：节省通勤时间、可以灵活安排休息、减少干扰、穿着随意、能自己做饭等。也可以加入一个简短对比，比如“在公司会被同事打断，在家能更专注”。补充时请使用自己真实的情况，不要编造。",
+    "expansion_notice": "未在最终答案中添加任何用户未提供的内容。",
+    "takeaway_expressions": [
+      {
+        "expression": "I prefer working from home",
+        "meaning": "我更喜欢居家办公",
+        "meaning_zh": "我更喜欢居家办公",
+        "why_useful": "直接表达偏好的高频句型，适用于多种话题。",
+        "example": "I prefer working from home because I can save time on commuting.",
+        "usage_note": "prefer 后接动名词或名词，表示长期偏好。",
+        "readonly": false
+      },
+      {
+        "expression": "because it's convenient",
+        "meaning": "因为这样很方便",
+        "meaning_zh": "因为这样很方便",
+        "why_useful": "简洁给出理由，适合口语快速回应。",
+        "example": "I like shopping online because it's convenient.",
+        "usage_note": "convenient 主语通常是事物或行为，不用人作主语。",
+        "readonly": false
+      },
+      {
+        "expression": "it depends on the kind of work I'm doing",
+        "meaning": "这取决于我在做哪种工作",
+        "meaning_zh": "这取决于我在做哪种工作",
+        "why_useful": "回答偏好类问题时，用条件化表达避免绝对化，自然引出对比。",
+        "example": "It depends on the kind of work I'm doing — some tasks need quiet, others need people.",
+        "usage_note": "后面常接 because 或具体分类，让理由落地。",
+        "readonly": false
+      },
+      {
+        "expression": "get into a rhythm",
+        "meaning": "进入状态、找到节奏",
+        "meaning_zh": "进入状态、找到节奏",
+        "why_useful": "描述专注或高效状态时比 be focused 更自然，适合工作学习话题。",
+        "example": "Once I get into a rhythm, I can work for hours without checking my phone.",
+        "usage_note": "常与 once、without interruptions 等搭配。",
+        "readonly": false
+      },
+      {
+        "expression": "I wouldn't say I prefer it across the board",
+        "meaning": "我不会说我在所有情况下都更喜欢它",
+        "meaning_zh": "我不会说我在所有情况下都更喜欢它",
+        "why_useful": "用于给出有保留的偏好，语气自然，避免 yes/no 的绝对回答。",
+        "example": "I wouldn't say I prefer it across the board, but for long tasks it works well.",
+        "usage_note": "across the board 表示“在所有方面/情况下”。",
+        "readonly": false
+      }
+    ],
+    "corrections": [],
+    "answer_structure": [
+      {
+        "label": "表明偏好",
+        "content": "直接回答“I prefer working from home”，开门见山。",
+        "reusable_expression": "I prefer working from home"
+      },
+      {
+        "label": "给出理由",
+        "content": "用 because 引出理由“it's convenient”，简洁明了。",
+        "reusable_expression": "because it's convenient"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6,
+      "grammarScore": 6.5,
+      "vocabularyScore": 5.5,
+      "naturalnessScore": 6.5,
+      "usefulCorrections": "",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 7,
+        "coherenceScore": 6.5,
+        "developmentScore": 4,
+        "summary": "回答切题，但内容过于简略，没有展开“方便”的具体含义，缺乏细节和例子。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [],
+        "contentGaps": [
+          "没有解释“方便”具体指什么",
+          "没有提供任何例子或对比",
+          "没有进一步说明这种偏好带来的影响"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4906,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Yes, I do prefer working from home, mainly because it saves me a lot of commuting time. That extra hour or so each day adds up, and I can use it to exercise or just start work earlier when my mind is fresh. I also find I concentrate better at home since there are fewer interruptions than in a busy office. That said, I wouldn't want to do it every single day. I miss the casual chats with colleagues, and sometimes talking things through face to face is much quicker than sending messages back and forth. So on balance, I'd go for a hybrid arrangement, maybe two or three days at home and the rest in the office.\",\n  \"reference_angle_summary\": \"独立主线：以通勤时间与专注度为主要理由，承认办公室社交与沟通优势，最终倾向混合办公；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"adds up\",\n      \"meaning_zh\": \"积少成多；累计起来很可观\",\n      \"why_useful\": \"谈论时间、金钱或小习惯的累积影响时非常自然，口语高频。\",\n      \"example\": \"Saving twenty minutes a day doesn't sound like much, but it adds up over a year.\",\n      \"usage_note\": \"通常用主动形式，主语多为时间、费用、小变化等。\"\n    },\n    {\n      \"expression\": \"on balance\",\n      \"meaning_zh\": \"权衡之后；总的来说\",\n      \"why_useful\": \"在比较利弊后给出最终倾向时很实用，比 in conclusion 更口语化。\",\n      \"example\": \"On balance, I think the benefits of living alone outweigh the drawbacks.\",\n      \"usage_note\": \"常放在句首，后接最终判断或选择。\"\n    },\n    {\n      \"expression\": \"go for a hybrid arrangement\",\n      \"meaning_zh\": \"选择混合办公安排\",\n      \"why_useful\": \"讨论工作方式时很具体，也能自然表达折中方案，避免只说 advantages。\",\n      \"example\": \"I'd go for a hybrid arrangement so I get both flexibility and team contact.\",\n      \"usage_note\": \"go for 表示选择、倾向；hybrid arrangement 可替换为 flexible setup。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Yes, I do prefer working from home, mainly because it saves me a lot of commuting time. That extra hour or so each day adds up, and I can use it to exercise or just start work earlier when my mind is fresh. I also find I concentrate better at home since there are fewer interruptions than in a busy office. That said, I wouldn't want to do it every single day. I miss the casual chats with colleagues, and sometimes talking things through face to face is much quicker than sending messages back and forth. So on balance, I'd go for a hybrid arrangement, maybe two or three days at home and the rest in the office.",
+        "reference_angle_summary": "独立主线：以通勤时间与专注度为主要理由，承认办公室社交与沟通优势，最终倾向混合办公；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "adds up",
+            "meaning": "积少成多；累计起来很可观",
+            "meaning_zh": "积少成多；累计起来很可观",
+            "why_useful": "谈论时间、金钱或小习惯的累积影响时非常自然，口语高频。",
+            "example": "Saving twenty minutes a day doesn't sound like much, but it adds up over a year.",
+            "usage_note": "通常用主动形式，主语多为时间、费用、小变化等。",
+            "readonly": false
+          },
+          {
+            "expression": "on balance",
+            "meaning": "权衡之后；总的来说",
+            "meaning_zh": "权衡之后；总的来说",
+            "why_useful": "在比较利弊后给出最终倾向时很实用，比 in conclusion 更口语化。",
+            "example": "On balance, I think the benefits of living alone outweigh the drawbacks.",
+            "usage_note": "常放在句首，后接最终判断或选择。",
+            "readonly": false
+          },
+          {
+            "expression": "go for a hybrid arrangement",
+            "meaning": "选择混合办公安排",
+            "meaning_zh": "选择混合办公安排",
+            "why_useful": "讨论工作方式时很具体，也能自然表达折中方案，避免只说 advantages。",
+            "example": "I'd go for a hybrid arrangement so I get both flexibility and team contact.",
+            "usage_note": "go for 表示选择、倾向；hybrid arrangement 可替换为 flexible setup。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 7271,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I prefer working from home because it's convenient.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答只有一句，理由仅停留在“convenient”这一笼统形容词，没有说明方便在哪里，展开不足。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“convenient”本身正确，但过于宽泛，缺少具体化表达，难以体现词汇灵活性。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"结构完整但过于简单：只有“偏好 + 原因”，没有进一步解释或举例，信息量偏少。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"原句语法正确、意思清楚，因此保留原句核心结构和用词，只做最小限度的语言修正。主要问题不在语言错误，而在内容展开不足；建议在回答中补充“方便”的具体表现，但不应替用户编造细节。\",\n  \"content_diagnosis\": \"原回答直接回应了问题，明确表达偏好“working from home”，并给出原因“convenient”，相关性没有问题。但内容非常单薄，只有一个笼统理由，没有解释“方便”具体指什么，也没有例子或对比，因此展开程度不足。\",\n  \"structure_diagnosis\": \"信息顺序合理：先表达偏好，再给原因，逻辑连接词“because”使用正确。但整体只有一层因果关系，缺少进一步说明，结构上可以接受但不够充分。\",\n  \"optimization_advice\": \"建议保留原句作为核心回答，然后补充一个具体的“方便”之处，例如节省通勤时间、安排时间更灵活、减少干扰等，但必须是你自己真实的理由。也可以加一句对比，例如在家和去办公室的区别。不要为了凑长度而堆砌不相关的细节。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"I prefer working from home because it's convenient.\",\n      \"corrected\": \"I prefer working from home because it's convenient.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句本身没有语法错误，这里保留原句作为最佳版本；若想升级，可把“convenient”具体化为“it saves me the commute”或“it gives me more flexibility”，但不应在未提供真实理由时强行添加。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接表明偏好\",\n      \"content\": \"用“I prefer working from home”直接回答问题，不绕弯。\",\n      \"reusable_expression\": \"I prefer working from home\"\n    },\n    {\n      \"label\": \"给出核心原因\",\n      \"content\": \"用“because it's convenient”说明主要原因，保持简洁。\",\n      \"reusable_expression\": \"because it's convenient\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"I prefer working from home\",\n      \"meaning_zh\": \"我更喜欢在家工作\",\n      \"why_useful\": \"直接回应偏好类问题，自然且高频，可替换为“I prefer working in an office”等。\",\n      \"example\": \"I prefer working from home because I can focus better.\",\n      \"usage_note\": \"后面常接 because 说明理由。\"\n    },\n    {\n      \"expression\": \"because it's convenient\",\n      \"meaning_zh\": \"因为这样很方便\",\n      \"why_useful\": \"简洁的原因表达，适合口语快速回答，但建议后续补充具体化内容。\",\n      \"example\": \"I like shopping online because it's convenient.\",\n      \"usage_note\": \"如果想让回答更充实，可以把 convenient 具体化为节省时间、灵活等。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 6.5,\n    \"usefulCorrections\": \"\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 4.5,\n      \"summary\": \"原回答直接答题，但内容过于简略，只有一个笼统理由，缺少具体说明和例子，展开明显不足。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"没有说明“convenient”具体指什么\",\n        \"没有提供任何例子或对比\",\n        \"没有进一步解释为什么这一点对你重要\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "content",
+            "message": "回答只有一句，理由仅停留在“convenient”这一笼统形容词，没有说明方便在哪里，展开不足。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“convenient”本身正确，但过于宽泛，缺少具体化表达，难以体现词汇灵活性。"
+          },
+          {
+            "type": "structure",
+            "message": "结构完整但过于简单：只有“偏好 + 原因”，没有进一步解释或举例，信息量偏少。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "原句语法正确、意思清楚，因此保留原句核心结构和用词，只做最小限度的语言修正。主要问题不在语言错误，而在内容展开不足；建议在回答中补充“方便”的具体表现，但不应替用户编造细节。",
+        "final_upgraded_answer": "I prefer working from home because it's convenient.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了问题，明确表达偏好“working from home”，并给出原因“convenient”，相关性没有问题。但内容非常单薄，只有一个笼统理由，没有解释“方便”具体指什么，也没有例子或对比，因此展开程度不足。",
+        "structure_diagnosis": "信息顺序合理：先表达偏好，再给原因，逻辑连接词“because”使用正确。但整体只有一层因果关系，缺少进一步说明，结构上可以接受但不够充分。",
+        "optimization_advice": "建议保留原句作为核心回答，然后补充一个具体的“方便”之处，例如节省通勤时间、安排时间更灵活、减少干扰等，但必须是你自己真实的理由。也可以加一句对比，例如在家和去办公室的区别。不要为了凑长度而堆砌不相关的细节。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "I prefer working from home",
+            "meaning": "我更喜欢在家工作",
+            "meaning_zh": "我更喜欢在家工作",
+            "why_useful": "直接回应偏好类问题，自然且高频，可替换为“I prefer working in an office”等。",
+            "example": "I prefer working from home because I can focus better.",
+            "usage_note": "后面常接 because 说明理由。",
+            "readonly": false
+          },
+          {
+            "expression": "because it's convenient",
+            "meaning": "因为这样很方便",
+            "meaning_zh": "因为这样很方便",
+            "why_useful": "简洁的原因表达，适合口语快速回答，但建议后续补充具体化内容。",
+            "example": "I like shopping online because it's convenient.",
+            "usage_note": "如果想让回答更充实，可以把 convenient 具体化为节省时间、灵活等。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [
+          {
+            "label": "直接表明偏好",
+            "content": "用“I prefer working from home”直接回答问题，不绕弯。",
+            "reusable_expression": "I prefer working from home"
+          },
+          {
+            "label": "给出核心原因",
+            "content": "用“because it's convenient”说明主要原因，保持简洁。",
+            "reusable_expression": "because it's convenient"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6,
+          "grammarScore": 6,
+          "vocabularyScore": 5.5,
+          "naturalnessScore": 6.5,
+          "usefulCorrections": "",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 6,
+            "coherenceScore": 6,
+            "developmentScore": 4.5,
+            "summary": "原回答直接答题，但内容过于简略，只有一个笼统理由，缺少具体说明和例子，展开明显不足。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [],
+            "contentGaps": [
+              "没有说明“convenient”具体指什么",
+              "没有提供任何例子或对比",
+              "没有进一步解释为什么这一点对你重要"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 41085,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"unsupported_claims\":[],\"teaching_errors\":[\"optimization_summary 称“只做最小限度的语言修正”，但 final_upgraded_answer 与原 transcript 完全一致且 corrections 为空，实际未发生任何语言修正；描述与实际改动不符。\"],\"revision_mode\":\"expand\",\"issues\":[\"优化总结需与实际改动一致：当前最终答案未改动，不应写成“只做最小限度的语言修正”。\",\"若已诊断内容展开不足，应基于用户可确认的细节补充“方便”的具体表现，但不能替用户编造理由；否则应保持原句并说明未做语言修正。\"],\"faithful\":false}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "expand",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 7306,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I prefer working from home because it's convenient.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答只有一句，理由“convenient”没有具体表现，内容展开不足，难以体现词汇和句式能力。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“convenient”虽然正确，但过于笼统，缺少具体场景或细节支撑。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"直接给出偏好和理由，结构完整但过于简短，没有进一步说明或对比。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"本次未改动用户原句，因为原句语法正确、意思清楚，且用户未提供可确认的具体细节，不能替用户编造理由。优化建议集中在如何补充“方便”的具体表现，而不是修改现有措辞。\",\n  \"content_diagnosis\": \"原回答直接回答了问题，主线明确：偏好居家办公，理由是方便。但内容非常单薄，没有解释“方便”体现在哪里，也没有任何例子或对比，展开严重不足。\",\n  \"structure_diagnosis\": \"信息顺序合理：先表明偏好，再给出理由。但只有一层理由，没有进一步展开或连接，逻辑链完整但过于简短。\",\n  \"optimization_advice\": \"建议用户补充“方便”的具体表现，例如：节省通勤时间、可以灵活安排休息、减少干扰、穿着随意、能自己做饭等。也可以加入一个简短对比，比如“在公司会被同事打断，在家能更专注”。补充时请使用自己真实的情况，不要编造。\",\n  \"expansion_notice\": \"未在最终答案中添加任何用户未提供的内容。\",\n  \"corrections\": [],\n  \"answer_structure\": [\n    {\n      \"label\": \"表明偏好\",\n      \"content\": \"直接回答“I prefer working from home”，开门见山。\",\n      \"reusable_expression\": \"I prefer working from home\"\n    },\n    {\n      \"label\": \"给出理由\",\n      \"content\": \"用 because 引出理由“it's convenient”，简洁明了。\",\n      \"reusable_expression\": \"because it's convenient\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"I prefer working from home\",\n      \"meaning_zh\": \"我更喜欢居家办公\",\n      \"why_useful\": \"直接表达偏好的高频句型，适用于多种话题。\",\n      \"example\": \"I prefer working from home because I can save time on commuting.\",\n      \"usage_note\": \"prefer 后接动名词或名词，表示长期偏好。\"\n    },\n    {\n      \"expression\": \"because it's convenient\",\n      \"meaning_zh\": \"因为这样很方便\",\n      \"why_useful\": \"简洁给出理由，适合口语快速回应。\",\n      \"example\": \"I like shopping online because it's convenient.\",\n      \"usage_note\": \"convenient 主语通常是事物或行为，不用人作主语。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.5,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 6.5,\n    \"usefulCorrections\": \"\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 6.5,\n      \"developmentScore\": 4.0,\n      \"summary\": \"回答切题，但内容过于简略，没有展开“方便”的具体含义，缺乏细节和例子。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"没有解释“方便”具体指什么\",\n        \"没有提供任何例子或对比\",\n        \"没有进一步说明这种偏好带来的影响\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "content",
+            "message": "回答只有一句，理由“convenient”没有具体表现，内容展开不足，难以体现词汇和句式能力。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“convenient”虽然正确，但过于笼统，缺少具体场景或细节支撑。"
+          },
+          {
+            "type": "structure",
+            "message": "直接给出偏好和理由，结构完整但过于简短，没有进一步说明或对比。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "本次未改动用户原句，因为原句语法正确、意思清楚，且用户未提供可确认的具体细节，不能替用户编造理由。优化建议集中在如何补充“方便”的具体表现，而不是修改现有措辞。",
+        "final_upgraded_answer": "I prefer working from home because it's convenient.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回答了问题，主线明确：偏好居家办公，理由是方便。但内容非常单薄，没有解释“方便”体现在哪里，也没有任何例子或对比，展开严重不足。",
+        "structure_diagnosis": "信息顺序合理：先表明偏好，再给出理由。但只有一层理由，没有进一步展开或连接，逻辑链完整但过于简短。",
+        "optimization_advice": "建议用户补充“方便”的具体表现，例如：节省通勤时间、可以灵活安排休息、减少干扰、穿着随意、能自己做饭等。也可以加入一个简短对比，比如“在公司会被同事打断，在家能更专注”。补充时请使用自己真实的情况，不要编造。",
+        "expansion_notice": "未在最终答案中添加任何用户未提供的内容。",
+        "takeaway_expressions": [
+          {
+            "expression": "I prefer working from home",
+            "meaning": "我更喜欢居家办公",
+            "meaning_zh": "我更喜欢居家办公",
+            "why_useful": "直接表达偏好的高频句型，适用于多种话题。",
+            "example": "I prefer working from home because I can save time on commuting.",
+            "usage_note": "prefer 后接动名词或名词，表示长期偏好。",
+            "readonly": false
+          },
+          {
+            "expression": "because it's convenient",
+            "meaning": "因为这样很方便",
+            "meaning_zh": "因为这样很方便",
+            "why_useful": "简洁给出理由，适合口语快速回应。",
+            "example": "I like shopping online because it's convenient.",
+            "usage_note": "convenient 主语通常是事物或行为，不用人作主语。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [
+          {
+            "label": "表明偏好",
+            "content": "直接回答“I prefer working from home”，开门见山。",
+            "reusable_expression": "I prefer working from home"
+          },
+          {
+            "label": "给出理由",
+            "content": "用 because 引出理由“it's convenient”，简洁明了。",
+            "reusable_expression": "because it's convenient"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6,
+          "grammarScore": 6.5,
+          "vocabularyScore": 5.5,
+          "naturalnessScore": 6.5,
+          "usefulCorrections": "",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 7,
+            "coherenceScore": 6.5,
+            "developmentScore": 4,
+            "summary": "回答切题，但内容过于简略，没有展开“方便”的具体含义，缺乏细节和例子。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [],
+            "contentGaps": [
+              "没有解释“方便”具体指什么",
+              "没有提供任何例子或对比",
+              "没有进一步说明这种偏好带来的影响"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 30832,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"unsupported_claims\":[],\"teaching_errors\":[],\"revision_mode\":\"expand\",\"issues\":[\"回答只有一句且理由“convenient”过于笼统，建议基于用户真实情况补充1-2个具体例子来说明方便之处，但不要编造原文没有的事实。\"],\"faithful\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "expand",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 51278,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\"居家办公更方便\"],\n  \"model_arguments\": [\"节省大量通勤时间\", \"多出的时间可锻炼或提前工作\", \"在家干扰少、更专注\", \"想念同事闲聊、面对面沟通更快\", \"倾向混合办公\"],\n  \"overlapping_arguments\": [\"居家办公方便（AI 将“方便”展开为节省通勤时间、减少干扰）\"],\n  \"reason\": \"用户唯一理由是居家办公方便，AI 虽未直接用“方便”一词，但主要理由中的节省通勤时间、减少干扰是“方便”的具体展开，属于复用并展开用户核心论点，因此不独立。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 5806,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, it depends on the kind of work I'm doing. If it's something that needs deep focus, like writing a report or preparing a presentation, I'd much rather be at home, because I can shut the door and get into a rhythm without anyone tapping me on the shoulder. But for anything creative or collaborative, working from home actually slows me down. I remember trying to brainstorm ideas over a video call, and it just felt flat — nobody was building on each other's suggestions the way we would in the same room. So I wouldn't say I prefer it across the board. I'd choose it for certain tasks, not as a fixed way of working.\",\n  \"reference_angle_summary\": \"独立主线：以“任务类型”为唯一判断标准，用深度专注与协作创意两种任务对比，得出有条件偏好；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"it depends on the kind of work I'm doing\",\n      \"meaning_zh\": \"这取决于我在做哪种工作\",\n      \"why_useful\": \"回答偏好类问题时，用条件化表达避免绝对化，自然引出对比。\",\n      \"example\": \"It depends on the kind of work I'm doing — some tasks need quiet, others need people.\",\n      \"usage_note\": \"后面常接 because 或具体分类，让理由落地。\"\n    },\n    {\n      \"expression\": \"get into a rhythm\",\n      \"meaning_zh\": \"进入状态、找到节奏\",\n      \"why_useful\": \"描述专注或高效状态时比 be focused 更自然，适合工作学习话题。\",\n      \"example\": \"Once I get into a rhythm, I can work for hours without checking my phone.\",\n      \"usage_note\": \"常与 once、without interruptions 等搭配。\"\n    },\n    {\n      \"expression\": \"I wouldn't say I prefer it across the board\",\n      \"meaning_zh\": \"我不会说我在所有情况下都更喜欢它\",\n      \"why_useful\": \"用于给出有保留的偏好，语气自然，避免 yes/no 的绝对回答。\",\n      \"example\": \"I wouldn't say I prefer it across the board, but for long tasks it works well.\",\n      \"usage_note\": \"across the board 表示“在所有方面/情况下”。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, it depends on the kind of work I'm doing. If it's something that needs deep focus, like writing a report or preparing a presentation, I'd much rather be at home, because I can shut the door and get into a rhythm without anyone tapping me on the shoulder. But for anything creative or collaborative, working from home actually slows me down. I remember trying to brainstorm ideas over a video call, and it just felt flat — nobody was building on each other's suggestions the way we would in the same room. So I wouldn't say I prefer it across the board. I'd choose it for certain tasks, not as a fixed way of working.",
+        "reference_angle_summary": "独立主线：以“任务类型”为唯一判断标准，用深度专注与协作创意两种任务对比，得出有条件偏好；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "it depends on the kind of work I'm doing",
+            "meaning": "这取决于我在做哪种工作",
+            "meaning_zh": "这取决于我在做哪种工作",
+            "why_useful": "回答偏好类问题时，用条件化表达避免绝对化，自然引出对比。",
+            "example": "It depends on the kind of work I'm doing — some tasks need quiet, others need people.",
+            "usage_note": "后面常接 because 或具体分类，让理由落地。",
+            "readonly": false
+          },
+          {
+            "expression": "get into a rhythm",
+            "meaning": "进入状态、找到节奏",
+            "meaning_zh": "进入状态、找到节奏",
+            "why_useful": "描述专注或高效状态时比 be focused 更自然，适合工作学习话题。",
+            "example": "Once I get into a rhythm, I can work for hours without checking my phone.",
+            "usage_note": "常与 once、without interruptions 等搭配。",
+            "readonly": false
+          },
+          {
+            "expression": "I wouldn't say I prefer it across the board",
+            "meaning": "我不会说我在所有情况下都更喜欢它",
+            "meaning_zh": "我不会说我在所有情况下都更喜欢它",
+            "why_useful": "用于给出有保留的偏好，语气自然，避免 yes/no 的绝对回答。",
+            "example": "I wouldn't say I prefer it across the board, but for long tasks it works well.",
+            "usage_note": "across the board 表示“在所有方面/情况下”。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 26639,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\"更喜欢在家工作，因为方便\"],\n  \"model_arguments\": [\"答案取决于任务类型；需要深度专注的任务更喜欢在家，因为安静、不被打扰、能进入节奏；创意或协作任务在家效率低；视频会议头脑风暴缺乏互动\"],\n  \"overlapping_arguments\": [],\n  \"reason\": \"用户仅给出“方便”这一笼统理由，AI 回答的核心立场是分任务而定，并围绕专注与协作展开，未复用或展开“方便”这一论点，也没有使用用户的具体事例。\",\n  \"independent\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

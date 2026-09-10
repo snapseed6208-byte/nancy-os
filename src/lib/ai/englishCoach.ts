@@ -120,6 +120,7 @@ export async function generateSpeakingQuestion(
 // ── 3. analyzeSpeaking / generateBetterVersion ──
 
 export interface AnalyzeSpeakingOptions {
+  onProgress?: (message: string) => void;
   targetLevel?: string;
   questionContext?: { mode?: string; topic?: string; part?: string };
   /** Previous attempt data for retry context */
