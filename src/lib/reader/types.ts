@@ -42,6 +42,7 @@ export type ParsedEpubChapter = {
   href: string;
   content: string;
   wordCount: number;
+  blocks?: import("./content").ReaderBlock[];
 };
 
 export type ParsedEpub = {

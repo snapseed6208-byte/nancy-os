@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import JSZip from "jszip";
 import ReadingExperience, { ReadingAIPanel } from "@/components/english/reading/ReadingExperience";
 import { parseEpubFile } from "@/lib/reader/epubParser";
+import { encodeReaderContent } from "@/lib/reader/content";
 import { readerProgressPercentage } from "@/lib/reader/sentences";
 import type { ReaderSentenceAnalysis } from "@/lib/reader/types";
 import {
@@ -37,6 +38,23 @@ afterEach(cleanup);
 beforeEach(() => analyzeSentence.mockReset());
 
 describe("English Reading shared sentence engine", () => {
+  it("renders stored images in place without adding them to sentence indices or AI context", async () => {
+    analyzeSentence.mockResolvedValue(analysis);
+    const activate = vi.fn();
+    const content = encodeReaderContent("", [
+      { type: "text", text: "Before the picture." },
+      { type: "image", src: "data:image/png;base64,aGVsbG8=", alt: "Book illustration" },
+      { type: "text", text: "After the picture." },
+    ]);
+    const { container } = render(<ReadingExperience content={content} fontSize={19} sourceKey="image-book" sourceKind="epub" sourceTitle="Picture Book" onSentenceActivate={activate} onSaveExpression={vi.fn()} />);
+    expect(Array.from(container.firstElementChild!.children).map((element) => element.tagName)).toEqual(["P", "FIGURE", "P"]);
+    expect(screen.getByRole("img", { name: "Book illustration" })).toHaveClass("max-w-full", "h-auto");
+    fireEvent.click(screen.getByRole("button", { name: "After the picture." }));
+    expect(activate).toHaveBeenCalledWith({ text: "After the picture.", index: 1 }, 2);
+    expect(analyzeSentence).toHaveBeenCalledWith(expect.objectContaining({ sentence: "After the picture.", context: "Before the picture. After the picture." }));
+    await screen.findByText("我无法让自己告诉他。");
+  });
+
   it("sends exactly one request while the same sentence is in flight", async () => {
     let resolveAnalysis!: (value: ReaderSentenceAnalysis) => void;
     analyzeSentence.mockReturnValue(new Promise<ReaderSentenceAnalysis>((resolve) => { resolveAnalysis = resolve; }));

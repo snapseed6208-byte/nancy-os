@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import type { ParsedEpub, ParsedEpubChapter } from "./types";
+import type { ReaderBlock } from "./content";
 
 const MAX_EPUB_SIZE = 25 * 1024 * 1024;
 
@@ -33,20 +34,49 @@ function textContent(document: Document, selectors: string[]): string | null {
   return null;
 }
 
-function chapterText(html: string): { title: string | null; content: string } {
+async function chapterText(html: string, resolveImage: (src: string) => Promise<string | null>) {
   const document = new DOMParser().parseFromString(html, "text/html");
-  document.querySelectorAll("script,style,nav,svg").forEach((node) => node.remove());
+  document.querySelectorAll("script,style,nav,iframe,object").forEach((node) => node.remove());
   const title = document.querySelector("h1,h2,h3")?.textContent?.trim()
     || document.querySelector("title")?.textContent?.trim()
     || null;
-  const blocks = Array.from(document.querySelectorAll("h1,h2,h3,h4,p,blockquote,li"))
-    .map((node) => node.textContent?.replace(/\s+/g, " ").trim() || "")
-    .filter(Boolean);
-  const content = (blocks.length ? blocks.join("\n\n") : document.body.textContent || "")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return { title, content };
+  const blocks: ReaderBlock[] = [];
+  let buffer = "";
+  const flush = () => {
+    const text = buffer.replace(/\s+/g, " ").trim();
+    if (text) blocks.push({ type: "text", text });
+    buffer = "";
+  };
+  const walk = async (node: Node): Promise<void> => {
+    if (node.nodeType === 3) { buffer += node.textContent || ""; return; }
+    if (node.nodeType !== 1) return;
+    const element = node as Element;
+    const tag = element.localName.toLowerCase();
+    if (tag === "img" || tag === "image") {
+      flush();
+      const href = element.getAttribute("src") || element.getAttribute("href") || element.getAttribute("xlink:href");
+      const src = href ? await resolveImage(href) : null;
+      const alt = element.getAttribute("alt") || element.getAttribute("aria-label") || "";
+      if (src) blocks.push({ type: "image", src, alt });
+      else blocks.push({ type: "text", text: `[图片不可用${alt ? `：${alt}` : ""}]` });
+      return;
+    }
+    // SVG cover wrappers commonly reference a raster image; don't ingest SVG scripts/text.
+    if (tag === "svg") {
+      for (const image of Array.from(element.querySelectorAll("image"))) await walk(image);
+      return;
+    }
+    if (tag === "br") { buffer += " "; return; }
+    const boundary = /^(h[1-6]|p|div|section|article|blockquote|li|figure|figcaption|tr|hr)$/.test(tag);
+    if (boundary) flush();
+    for (const child of Array.from(node.childNodes)) await walk(child);
+    if (tag === "td" || tag === "th") buffer += " ";
+    if (boundary) flush();
+  };
+  await walk(document.body);
+  flush();
+  const content = blocks.filter((block) => block.type === "text").map((block) => block.text).join("\n\n");
+  return { title, content, blocks };
 }
 
 export async function parseEpubFile(file: File): Promise<ParsedEpub> {
@@ -78,6 +108,8 @@ export async function parseEpubFile(file: File): Promise<ParsedEpub> {
   });
 
   const chapters: ParsedEpubChapter[] = [];
+  const imageCache = new Map<string, string>();
+  let embeddedSize = 0;
   const spineItems = Array.from(opf.querySelectorAll("spine > itemref"));
   for (const [index, itemref] of spineItems.entries()) {
     const idref = itemref.getAttribute("idref");
@@ -86,12 +118,34 @@ export async function parseEpubFile(file: File): Promise<ParsedEpub> {
     const path = normalizePath(opfDir, item.href);
     const entry = zip.file(path);
     if (!entry) continue;
-    const parsed = chapterText(await entry.async("text"));
-    if (parsed.content.length < 20) continue;
+    const parsed = await chapterText(await entry.async("text"), async (src) => {
+      // Only read packaged assets; never fetch remote URLs supplied by a book.
+      if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src)) return null;
+      let decoded: string;
+      try { decoded = decodeURIComponent(src.split(/[?#]/)[0]); } catch { return null; }
+      const imagePath = normalizePath(dirname(path), decoded);
+      let data = imageCache.get(imagePath);
+      if (!data) {
+        const imageEntry = zip.file(imagePath);
+        const extension = imagePath.split(".").pop()?.toLowerCase() || "";
+        const mime = ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", avif: "image/avif", svg: "image/svg+xml" } as Record<string, string>)[extension];
+        if (!imageEntry || !mime) return null;
+        const bytes = await imageEntry.async("uint8array");
+        if (bytes.length > 5 * 1024 * 1024) throw new Error("EPUB 单张图片不能超过 5MB，请压缩图片后重试");
+        if (!bytes.length) return null;
+        data = `data:${mime};base64,${await imageEntry.async("base64")}`;
+        imageCache.set(imagePath, data);
+      }
+      embeddedSize += data.length;
+      if (embeddedSize > 40 * 1024 * 1024) throw new Error("EPUB 图片总量过大，请压缩图片或拆分书籍后重试");
+      return data;
+    });
+    if (!parsed.content && !parsed.blocks.some((block) => block.type === "image")) continue;
     chapters.push({
       title: parsed.title || `Chapter ${index + 1}`,
       href: item.href,
       content: parsed.content,
+      blocks: parsed.blocks,
       wordCount: parsed.content.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g)?.length || 0,
     });
   }

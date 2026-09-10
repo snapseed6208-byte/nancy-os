@@ -1,8 +1,9 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import { parseEpubFile } from "../src/lib/reader/epubParser";
+import { decodeReaderContent, encodeReaderContent } from "../src/lib/reader/content";
 
-async function createEpub(): Promise<File> {
+async function createEpub(chapterHtml?: string): Promise<File> {
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip");
   zip.file("META-INF/container.xml", `<?xml version="1.0"?>
@@ -26,7 +27,8 @@ async function createEpub(): Promise<File> {
         <itemref idref="chapter-two"/>
       </spine>
     </package>`);
-  zip.file("OEBPS/text/chapter-1.xhtml", `
+  zip.file("OEBPS/images/test image.png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", { base64: true });
+  zip.file("OEBPS/text/chapter-1.xhtml", chapterHtml ?? `
     <html><head><title>Opening</title><script>bad()</script></head><body>
       <h1>Chapter One</h1><p>It is a truth universally acknowledged.</p>
       <p>She wouldn't give up her morning walk.</p>
@@ -55,5 +57,40 @@ describe("English Reader EPUB parser", () => {
 
   it("rejects files that are not EPUBs", async () => {
     await expect(parseEpubFile(new File(["text"], "notes.txt"))).rejects.toThrow("EPUB");
+  });
+
+  it("preserves nested text and packaged images in order across storage round trips", async () => {
+    const parsed = await parseEpubFile(await createEpub(`<body><blockquote><p>Before the picture.</p></blockquote>
+      <figure><img src="../images/test%20image.png?size=1#cover" alt="A diagram"/><figcaption>Figure one.</figcaption></figure>
+      <p>After the <em>picture</em>.</p></body>`));
+    const chapter = parsed.chapters[0];
+    expect(chapter.blocks?.map((block) => block.type)).toEqual(["text", "image", "text", "text"]);
+    expect(chapter.content).toBe("Before the picture.\n\nFigure one.\n\nAfter the picture.");
+    expect(chapter.wordCount).toBe(8);
+    expect(chapter.blocks?.[1]).toMatchObject({ alt: "A diagram", src: expect.stringMatching(/^data:image\/png;base64,/) });
+    expect(decodeReaderContent(encodeReaderContent(chapter.content, chapter.blocks))).toEqual(chapter.blocks);
+  });
+
+  it("keeps image-only chapters including SVG cover wrappers", async () => {
+    const parsed = await parseEpubFile(await createEpub(`<body><svg><image xlink:href="../images/test%20image.png"/></svg></body>`));
+    expect(parsed.chapters).toHaveLength(2);
+    expect(parsed.chapters[0].blocks?.[0].type).toBe("image");
+    expect(parsed.chapters[0].wordCount).toBe(0);
+  });
+
+  it("keeps text readable when images are missing or remote", async () => {
+    const parsed = await parseEpubFile(await createEpub(`<body><p>Still readable.</p>
+      <img src="../missing.png" alt="Missing diagram"/><img src="https://example.com/tracker.png"/>
+      <script>bad()</script></body>`));
+    expect(parsed.chapters[0].content).toContain("Still readable.");
+    expect(parsed.chapters[0].content).toContain("图片不可用：Missing diagram");
+    expect(parsed.chapters[0].blocks?.every((block) => block.type === "text")).toBe(true);
+    expect(parsed.chapters[0].content).not.toContain("bad()");
+  });
+
+  it("reads legacy text and refuses unsafe image sources in stored blocks", () => {
+    expect(decodeReaderContent("First.\n\nSecond.")).toEqual([{ type: "text", text: "First." }, { type: "text", text: "Second." }]);
+    const unsafe = '{"format":"english-reader-blocks-v1","blocks":[{"type":"image","src":"javascript:alert(1)","alt":""}]}';
+    expect(decodeReaderContent(unsafe)[0].type).toBe("text");
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BookmarkPlus, Check, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { useAnalyzeReaderSentence } from "@/lib/hooks/useEnglishReader";
 import { splitReaderSentences } from "@/lib/reader/sentences";
+import { decodeReaderContent } from "@/lib/reader/content";
 import type {
   ReaderKeyExpression,
   ReaderSentenceAnalysis,
@@ -59,11 +60,13 @@ export default function ReadingExperience({
 
   const paragraphs = useMemo(() => {
     let sentenceIndex = 0;
-    return content.split(/\n{2,}/)
-      .map((paragraph) => splitReaderSentences(paragraph).map((text) => ({ text, index: sentenceIndex++ })))
-      .filter((items) => items.length > 0);
-  }, [content]);
-  const sentences = useMemo(() => paragraphs.flat(), [paragraphs]);
+    const blocks = sourceKind === "epub" ? decodeReaderContent(content) : content.split(/\n{2,}/).map((text) => ({ type: "text" as const, text }));
+    return blocks.map((block) => block.type === "image" ? block : ({
+      type: "text" as const,
+      items: splitReaderSentences(block.text).map((text) => ({ text, index: sentenceIndex++ })),
+    }));
+  }, [content, sourceKind]);
+  const sentences = useMemo(() => paragraphs.flatMap((block) => block.type === "text" ? block.items : []), [paragraphs]);
 
   useEffect(() => {
     activeKey.current = "";
@@ -135,9 +138,13 @@ export default function ReadingExperience({
   return (
     <>
       <div className="w-full max-w-full min-w-0 font-serif text-ink [overflow-wrap:anywhere]" style={{ fontSize, lineHeight: 1.95 }}>
-        {paragraphs.map((items, paragraphIndex) => (
+        {paragraphs.map((block, paragraphIndex) => block.type === "image" ? (
+          <figure key={`${sourceKey}:${paragraphIndex}`} className="my-6 w-full min-w-0">
+            <img src={block.src} alt={block.alt} loading="lazy" decoding="async" className="block mx-auto max-w-full h-auto rounded-sm" />
+          </figure>
+        ) : (
           <p key={paragraphIndex} className="mb-6 w-full max-w-full min-w-0 whitespace-normal [overflow-wrap:anywhere]">
-            {items.map((item) => (
+            {block.items.map((item) => (
               <button
                 id={`reading-sentence-${item.index}`}
                 key={item.index}

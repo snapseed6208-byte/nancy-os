@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invokeAI } from "@/lib/ai/aiService";
 import { getUserId } from "@/lib/auth";
 import { parseEpubFile } from "@/lib/reader/epubParser";
+import { encodeReaderContent } from "@/lib/reader/content";
 import type {
   ReadingArticle,
   ReadingExpressionSaveResult,
@@ -94,7 +95,7 @@ export function useImportEpub() {
           file_name: file.name,
           file_size: file.size,
           chapter_count: parsed.chapters.length,
-          metadata: { identifier: parsed.identifier, parser: "client_jszip_v1" },
+          metadata: { identifier: parsed.identifier, parser: "client_jszip_v2" },
         })
         .select()
         .single();
@@ -107,7 +108,7 @@ export function useImportEpub() {
           chapter_index: chapterIndex,
           title: chapter.title,
           href: chapter.href,
-          content: chapter.content,
+          content: encodeReaderContent(chapter.content, chapter.blocks),
           word_count: chapter.wordCount,
         }));
         for (let index = 0; index < chapterRows.length; index += 20) {

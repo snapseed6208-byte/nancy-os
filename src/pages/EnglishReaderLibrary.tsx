@@ -85,7 +85,7 @@ export default function EnglishReaderLibrary() {
           </span>
           <span>
             <span className="block text-sm font-semibold">上传第一本英文原著</span>
-            <span className="block text-xs text-ink-lighter mt-1">EPUB · 最大 25MB</span>
+            <span className="block text-xs text-ink-lighter mt-1">EPUB · 保留正文与插图 · 最大 25MB</span>
           </span>
         </button>
       ) : (
