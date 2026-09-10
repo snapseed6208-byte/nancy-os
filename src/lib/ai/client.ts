@@ -51,7 +51,8 @@ export async function callAI(opts: ChatCompletionOptions): Promise<ChatCompletio
 
   for (let attempt = 0; attempt <= AI_MAX_RETRIES; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+    const requestTimeout = opts.speakingFeedback && opts.model === "deepseek-v4-pro" ? 180_000 : AI_TIMEOUT_MS;
+    const timeout = setTimeout(() => controller.abort(), requestTimeout);
 
     try {
       const res = await fetch(`${EDGE_FUNCTION_URL}/english-coach`, {
@@ -93,7 +94,7 @@ export async function callAI(opts: ChatCompletionOptions): Promise<ChatCompletio
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (err instanceof DOMException && err.name === "AbortError") {
-        lastError = new Error(`AI request timed out after ${AI_TIMEOUT_MS / 1000}s`);
+        lastError = new Error(`AI request timed out after ${requestTimeout / 1000}s`);
         if (attempt < AI_MAX_RETRIES) {
           console.warn(`[callAI] Timeout, retry ${attempt + 1}/${AI_MAX_RETRIES + 1}`);
           continue;

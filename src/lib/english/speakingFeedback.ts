@@ -8,6 +8,9 @@ export type CorrectionCategory =
   | "naturalness"
   | "sentence_structure"
   | "expression_upgrade"
+  | "logic"
+  | "relevance"
+  | "vocabulary"
   | "";
 
 export interface SpeakingCorrection {
@@ -15,6 +18,7 @@ export interface SpeakingCorrection {
   corrected: string;
   category: CorrectionCategory;
   explanation_zh: string;
+  nature?: "Error" | "Upgrade";
 }
 
 export interface SpeakingStructureStep {
@@ -22,6 +26,7 @@ export interface SpeakingStructureStep {
   step?: string;
   label: string;
   content: string;
+  reusable_expression?: string;
 }
 
 export interface SpeakingTakeaway {
@@ -46,6 +51,11 @@ export interface SimplifiedSpeakingFeedback {
   reference_answer: string;
   /** One-line Chinese note describing the independent angle of reference_answer. */
   reference_angle_summary: string;
+  reference_status?: "verified" | "unavailable";
+  answer_status?: "verified" | "unavailable";
+  content_diagnosis?: string;
+  structure_diagnosis?: string;
+  optimization_advice?: string;
   expansion_notice: string;
   takeaway_expressions: SpeakingTakeaway[];
   /** Structured corrections — quote exact original phrases. */
@@ -65,7 +75,7 @@ const first = (...values: unknown[]) => values.map(str).find(Boolean) || "";
 const items = (v: unknown) => Array.isArray(v) ? v.map(speakingObject) : [];
 const score = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 9 ? v : null;
 
-const CORRECTION_CATEGORIES = new Set(["grammar", "collocation", "word_choice", "naturalness", "sentence_structure", "expression_upgrade"]);
+const CORRECTION_CATEGORIES = new Set(["grammar", "collocation", "word_choice", "naturalness", "sentence_structure", "expression_upgrade", "logic", "relevance", "vocabulary"]);
 
 function mapCorrections(raw: Record<string, unknown>): SpeakingCorrection[] {
   const arr = items(raw.corrections)
@@ -77,8 +87,9 @@ function mapCorrections(raw: Record<string, unknown>): SpeakingCorrection[] {
         return CORRECTION_CATEGORIES.has(c) ? c as CorrectionCategory : "";
       })(),
       explanation_zh: first(i.explanation_zh, i.explanation, i.why, i.reason),
+      nature: (i.nature === "Error" || i.nature === "Upgrade" ? i.nature : undefined) as SpeakingCorrection["nature"],
     }))
-    .filter(i => i.original || i.corrected)
+    .filter(i => (i.original || i.corrected) && i.original.toLowerCase() !== i.corrected.toLowerCase())
     .filter((i, n, all) => all.findIndex(a =>
       a.original.toLowerCase() === i.original.toLowerCase() && a.corrected.toLowerCase() === i.corrected.toLowerCase()
     ) === n);
@@ -112,7 +123,7 @@ function mapStructure(raw: Record<string, unknown>): SpeakingStructureStep[] {
     .map(i => {
       const label = first(i.label, i.title);
       const content = str(i.content);
-      return { step: str(i.step) || undefined, label, content };
+      return { step: str(i.step) || undefined, label, content, reusable_expression: str(i.reusable_expression) || undefined };
     })
     .filter(i => i.label || i.content)
     .slice(0, 6);
@@ -149,7 +160,7 @@ function mapTakeaways(raw: Record<string, unknown>, final: string): SpeakingTake
     .filter(i => i.expression)
     .filter(i => !keepInFinal || final.toLowerCase().includes(i.expression.toLowerCase()))
     .filter((i, n, all) => all.findIndex(a => a.expression.toLowerCase() === i.expression.toLowerCase()) === n)
-    .slice(0, 4);
+    .slice(0, hasCanonical ? 6 : 4);
 }
 
 function findStructureLegacy(row: Record<string, unknown>, content: Record<string, unknown>, details: Record<string, unknown>): unknown[] | null {
@@ -174,7 +185,7 @@ export function normalizeSpeakingFeedback(value: unknown): SimplifiedSpeakingFee
   const details = speakingObject(raw.detailed_analysis);
   const scores = ["fluency", "grammar", "vocabulary", "naturalness"].map(k =>
     score(details[`${k}Score`] ?? raw[`${k}Score`] ?? raw[`${k}_score`])).filter((v): v is number => v !== null);
-  const issues = items(raw.key_issues).filter(i => str(i.message)).map(i => ({ type: str(i.type), message: str(i.message) })).slice(0, 3);
+  const issues = items(raw.key_issues).filter(i => str(i.message)).map(i => ({ type: str(i.type), message: str(i.message) })).slice(0, 5);
   if (!issues.length) {
     const legacy = first(raw.mainProblems, raw.main_problems);
     if (legacy) issues.push(...legacy.split(/\n+/).filter(Boolean).slice(0, 3).map(message => ({ type: "", message })));
@@ -195,8 +206,13 @@ export function normalizeSpeakingFeedback(value: unknown): SimplifiedSpeakingFee
     final_upgraded_answer: final,
     reference_answer: first(raw.reference_answer, raw.referenceAnswer, raw.one_better_example, raw.oneBetterExample),
     reference_angle_summary: first(raw.reference_angle_summary, raw.referenceAngleSummary, raw.reference_angle) || "",
+    reference_status: raw.reference_status === "verified" || raw.reference_status === "unavailable" ? raw.reference_status : undefined,
+    answer_status: raw.answer_status === "verified" || raw.answer_status === "unavailable" ? raw.answer_status : undefined,
+    content_diagnosis: first(raw.content_diagnosis, speakingObject(details.contentAnalysis).summary, content.summary),
+    structure_diagnosis: str(raw.structure_diagnosis),
+    optimization_advice: first(raw.optimization_advice, raw.optimization_summary),
     expansion_notice: str(raw.expansion_notice),
-    takeaway_expressions: mapTakeaways(raw, final),
+    takeaway_expressions: mapTakeaways(raw, final + "\n" + first(raw.reference_answer, raw.referenceAnswer, raw.one_better_example)),
     corrections: mapCorrections(raw),
     answer_structure: mapStructure({ answer_structure: structureRaw }),
     detailed_analysis: Object.keys(details).length ? details : { ...content,

@@ -1,0 +1,417 @@
+{
+  "id": "C",
+  "input": "It saves money on transport. I cycle to work. It also gives me exercise. My main reason is staying active. I don't need a separate workout.",
+  "question": "Why do you like cycling?",
+  "expectedMode": "structure",
+  "elapsedMs": 109724,
+  "feedback": {
+    "overall_score": 6.5,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "structure",
+        "message": "句子顺序把次要理由（saves money）放在最前，而用户明确说 \"My main reason is staying active\"，主线被埋在后面，建议把主要理由提前或明确标记。"
+      },
+      {
+        "type": "naturalness",
+        "message": "\"It also gives me exercise\" 与 \"My main reason is staying active\" 语义高度重叠，读起来像两条并列理由，实际是同一件事，容易让听者误以为有两个独立原因。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "\"gives me exercise\" 搭配偏生硬，英语中更常说 \"it keeps me active\" 或 \"it's a good workout\"。"
+      },
+      {
+        "type": "structure",
+        "message": "\"I cycle to work\" 作为独立短句插在理由之间，缺少与前后句的连接，显得像补充信息而非支撑理由。"
+      }
+    ],
+    "revision_mode": "structure",
+    "optimization_summary": "保留了用户全部原有信息（省钱、骑车上班、锻炼、主要理由是保持活跃、不需要额外健身），没有新增任何事实。主要调整是把 \"My main reason is staying active\" 提前并用破折号引出，让主次关系清晰；把 \"gives me exercise\" 与 \"don't need a separate workout\" 合并为因果关系，消除重复感；用 and 把省钱和骑车上班连成一句，减少碎片化短句。",
+    "final_upgraded_answer": "It saves money on transport, and I cycle to work. But my main reason is staying active — it gives me exercise, so I don't need a separate workout.",
+    "reference_answer": "Honestly, it's the freedom that gets me. When I'm on my bike, I can just weave through side streets and stop wherever something catches my eye — no timetables, no traffic jams. It's also my way of switching off after a long day; the rhythm of pedalling kind of clears my head. And since I started cycling to work instead of driving, I've noticed I'm less stressed and I sleep better. It's one of those rare things that's good for you and actually fun at the same time.",
+    "reference_angle_summary": "独立主线：以“自由感 + 减压 + 实际生活改变”为个人化理由，示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "verified",
+    "content_diagnosis": "原回答直接回应了问题，给出了三个理由：省钱、锻炼、保持活跃，并说明不需要额外健身，内容相关且不跑题。主要问题是主次不分：用户自己声明 \"My main reason is staying active\"，但这句话出现在第三句，前面已经列了两个理由，听者容易把三者当成并列。另外 \"gives me exercise\" 和 \"staying active\" 实质是同一理由的两种说法，构成重复。整体展开偏薄，每个理由都只有一句话，没有具体说明。",
+    "structure_diagnosis": "信息顺序为：省钱 → 骑车上班 → 锻炼 → 主要理由（保持活跃）→ 不需要额外健身。逻辑连接几乎为零，五句话之间没有连接词，靠并列堆叠。\"I cycle to work\" 位置尴尬，既不是理由也不是结论，更像事实补充。最后一句 \"I don't need a separate workout\" 本应支撑 \"staying active\"，但被隔开，因果关系没有显性化。",
+    "optimization_advice": "1) 把主要理由放在最前或紧接第一句之后，用 \"my main reason is...\" 明确标记，避免听者误判主次。2) 把 \"gives me exercise\" 和 \"staying active\" 合并成一个理由，不要分成两句。3) 如果想拿更高分，可以补充一个具体细节，例如骑车路线的长度、频率、或哪一段路让你觉得最舒服，但这是你需要自己提供的真实信息，我不替你编造。4) 可以加一个具体场景说明 \"staying active\" 对你意味着什么，比如不用特意去健身房、通勤时间就完成了运动。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "my main reason is staying active",
+        "meaning": "我的主要理由是保持活跃",
+        "meaning_zh": "我的主要理由是保持活跃",
+        "why_useful": "在 IELTS 口语中明确标记主要理由，能立刻建立主次结构，避免理由并列导致重点模糊，适用于所有 \"Why do you like...\" 类问题。",
+        "example": "My main reason is staying active, not saving money.",
+        "usage_note": "可以放在第一句之后，用 But 或 Actually 引出，效果更自然。",
+        "readonly": false
+      },
+      {
+        "expression": "I don't need a separate workout",
+        "meaning": "我不需要额外再健身",
+        "meaning_zh": "我不需要额外再健身",
+        "why_useful": "用具体结果支撑抽象理由，比单纯说 \"it's good for me\" 更有说服力，且句型可迁移到任何 \"省时间/省事\" 的场景。",
+        "example": "I walk to the office, so I don't need a separate workout.",
+        "usage_note": "前面加 so 或 which means 能显性化因果关系。",
+        "readonly": false
+      },
+      {
+        "expression": "It saves money on transport",
+        "meaning": "它在交通上省钱",
+        "meaning_zh": "它在交通上省钱",
+        "why_useful": "\"save money on + 名词\" 是高频地道搭配，比 \"save money for transport\" 更准确，适用于购物、出行、生活成本等话题。",
+        "example": "Cooking at home saves money on takeaway.",
+        "usage_note": "介词固定用 on，不要用 for 或 in。",
+        "readonly": false
+      },
+      {
+        "expression": "the freedom that gets me",
+        "meaning": "最吸引我的是那种自由感",
+        "meaning_zh": "最吸引我的是那种自由感",
+        "why_useful": "自然表达“喜欢某事的核心原因”，比 I like it because it is free 更地道，可用于爱好、旅行、职业等话题。",
+        "example": "It's the freedom that gets me — I can work from anywhere.",
+        "usage_note": "口语中常用 that gets me 表示“打动我的点”。",
+        "readonly": false
+      },
+      {
+        "expression": "switching off",
+        "meaning": "放松、停止思考工作或压力",
+        "meaning_zh": "放松、停止思考工作或压力",
+        "why_useful": "高频口语短语，替换 relax，适合描述减压方式、周末活动、爱好。",
+        "example": "I go for a run after work just to switch off.",
+        "usage_note": "常与 after work / at the weekend 搭配。",
+        "readonly": false
+      },
+      {
+        "expression": "clears my head",
+        "meaning": "让头脑清醒、理清思绪",
+        "meaning_zh": "让头脑清醒、理清思绪",
+        "why_useful": "形象且高频，用于说明运动、散步、独处等带来的心理效果。",
+        "example": "A walk by the river always clears my head.",
+        "usage_note": "主语通常是活动或事物，如 it / a walk / cycling。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "It also gives me exercise.",
+        "corrected": "it gives me exercise",
+        "category": "naturalness",
+        "explanation_zh": "语法无误，但 \"gives me exercise\" 搭配偏生硬；更重要的是它与下一句 \"staying active\" 重复，合并后更自然。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "My main reason is staying active.",
+        "corrected": "But my main reason is staying active",
+        "category": "logic",
+        "explanation_zh": "原句正确，但位置靠后导致主次不清；用 But 引出并提前，能明确这是主要理由而非并列理由。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "I cycle to work.",
+        "corrected": "and I cycle to work",
+        "category": "logic",
+        "explanation_zh": "原句语法正确，但作为独立短句缺少与 \"saves money\" 的连接；用 and 并入前句，使省钱这一理由有具体支撑。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "I don't need a separate workout.",
+        "corrected": "so I don't need a separate workout",
+        "category": "logic",
+        "explanation_zh": "原句正确，但与前句的因果关系是隐含的；加 so 显性化，说明不需要额外健身是保持活跃的结果。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "次要理由 + 具体支撑",
+        "content": "先用一句话交代省钱这一附加好处，并用骑车上班作为具体支撑，避免碎片化短句。",
+        "reusable_expression": "It saves money on transport, and I cycle to work."
+      },
+      {
+        "label": "转折引出主要理由",
+        "content": "用 But 明确标记主次，把用户自己声明的主要理由提前，让听者立刻抓住重点。",
+        "reusable_expression": "But my main reason is staying active"
+      },
+      {
+        "label": "结果说明，消除重复",
+        "content": "把锻炼和不需要额外健身合并成因果关系，说明保持活跃带来的实际好处，不再重复同一理由。",
+        "reusable_expression": "so I don't need a separate workout"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6.5,
+      "grammarScore": 6.5,
+      "vocabularyScore": 6,
+      "naturalnessScore": 6.5,
+      "usefulCorrections": "It also gives me exercise → it gives me exercise（合并重复）；My main reason is staying active → But my main reason is staying active（提前并标记主次）；I cycle to work → and I cycle to work（并入前句）；I don't need a separate workout → so I don't need a separate workout（显性化因果）",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 7,
+        "coherenceScore": 6,
+        "developmentScore": 5.5,
+        "summary": "原回答直接答题，三个理由都相关，但主次不分、理由重复、展开偏薄。用户自己声明的主要理由被放在第三句，前面两个理由容易让听者误判为并列。\"gives me exercise\" 与 \"staying active\" 实质重复。每个理由都只有一句话，缺少具体细节支撑。",
+        "offTopicParts": [],
+        "repetition": [
+          "It also gives me exercise 与 My main reason is staying active 语义重叠，实质是同一理由的两种说法"
+        ],
+        "orderProblems": [
+          "My main reason is staying active 出现在第三句，主次关系不清晰",
+          "I cycle to work 作为独立短句插在理由之间，缺少与前后句的连接"
+        ],
+        "contentGaps": [
+          "没有说明骑车通勤的具体情况（频率、距离、路线等），可自行补充真实细节",
+          "没有具体说明 staying active 对日常生活的实际影响，除了不需要额外健身之外"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 5492,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, it's the freedom that gets me. When I'm on my bike, I can just weave through side streets and stop wherever something catches my eye — no timetables, no traffic jams. It's also my way of switching off after a long day; the rhythm of pedalling kind of clears my head. And since I started cycling to work instead of driving, I've noticed I'm less stressed and I sleep better. It's one of those rare things that's good for you and actually fun at the same time.\",\n  \"reference_angle_summary\": \"独立主线：以“自由感 + 减压 + 实际生活改变”为个人化理由，示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"the freedom that gets me\",\n      \"meaning_zh\": \"最吸引我的是那种自由感\",\n      \"why_useful\": \"自然表达“喜欢某事的核心原因”，比 I like it because it is free 更地道，可用于爱好、旅行、职业等话题。\",\n      \"example\": \"It's the freedom that gets me — I can work from anywhere.\",\n      \"usage_note\": \"口语中常用 that gets me 表示“打动我的点”。\"\n    },\n    {\n      \"expression\": \"switching off\",\n      \"meaning_zh\": \"放松、停止思考工作或压力\",\n      \"why_useful\": \"高频口语短语，替换 relax，适合描述减压方式、周末活动、爱好。\",\n      \"example\": \"I go for a run after work just to switch off.\",\n      \"usage_note\": \"常与 after work / at the weekend 搭配。\"\n    },\n    {\n      \"expression\": \"clears my head\",\n      \"meaning_zh\": \"让头脑清醒、理清思绪\",\n      \"why_useful\": \"形象且高频，用于说明运动、散步、独处等带来的心理效果。\",\n      \"example\": \"A walk by the river always clears my head.\",\n      \"usage_note\": \"主语通常是活动或事物，如 it / a walk / cycling。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, it's the freedom that gets me. When I'm on my bike, I can just weave through side streets and stop wherever something catches my eye — no timetables, no traffic jams. It's also my way of switching off after a long day; the rhythm of pedalling kind of clears my head. And since I started cycling to work instead of driving, I've noticed I'm less stressed and I sleep better. It's one of those rare things that's good for you and actually fun at the same time.",
+        "reference_angle_summary": "独立主线：以“自由感 + 减压 + 实际生活改变”为个人化理由，示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "the freedom that gets me",
+            "meaning": "最吸引我的是那种自由感",
+            "meaning_zh": "最吸引我的是那种自由感",
+            "why_useful": "自然表达“喜欢某事的核心原因”，比 I like it because it is free 更地道，可用于爱好、旅行、职业等话题。",
+            "example": "It's the freedom that gets me — I can work from anywhere.",
+            "usage_note": "口语中常用 that gets me 表示“打动我的点”。",
+            "readonly": false
+          },
+          {
+            "expression": "switching off",
+            "meaning": "放松、停止思考工作或压力",
+            "meaning_zh": "放松、停止思考工作或压力",
+            "why_useful": "高频口语短语，替换 relax，适合描述减压方式、周末活动、爱好。",
+            "example": "I go for a run after work just to switch off.",
+            "usage_note": "常与 after work / at the weekend 搭配。",
+            "readonly": false
+          },
+          {
+            "expression": "clears my head",
+            "meaning": "让头脑清醒、理清思绪",
+            "meaning_zh": "让头脑清醒、理清思绪",
+            "why_useful": "形象且高频，用于说明运动、散步、独处等带来的心理效果。",
+            "example": "A walk by the river always clears my head.",
+            "usage_note": "主语通常是活动或事物，如 it / a walk / cycling。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 12261,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"It saves money on transport, and I cycle to work. But my main reason is staying active — it gives me exercise, so I don't need a separate workout.\",\n  \"overall_score\": 6.5,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"structure\",\n      \"message\": \"句子顺序把次要理由（saves money）放在最前，而用户明确说 \\\"My main reason is staying active\\\"，主线被埋在后面，建议把主要理由提前或明确标记。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"\\\"It also gives me exercise\\\" 与 \\\"My main reason is staying active\\\" 语义高度重叠，读起来像两条并列理由，实际是同一件事，容易让听者误以为有两个独立原因。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"\\\"gives me exercise\\\" 搭配偏生硬，英语中更常说 \\\"it keeps me active\\\" 或 \\\"it's a good workout\\\"。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"\\\"I cycle to work\\\" 作为独立短句插在理由之间，缺少与前后句的连接，显得像补充信息而非支撑理由。\"\n    }\n  ],\n  \"revision_mode\": \"structure\",\n  \"optimization_summary\": \"保留了用户全部原有信息（省钱、骑车上班、锻炼、主要理由是保持活跃、不需要额外健身），没有新增任何事实。主要调整是把 \\\"My main reason is staying active\\\" 提前并用破折号引出，让主次关系清晰；把 \\\"gives me exercise\\\" 与 \\\"don't need a separate workout\\\" 合并为因果关系，消除重复感；用 and 把省钱和骑车上班连成一句，减少碎片化短句。\",\n  \"content_diagnosis\": \"原回答直接回应了问题，给出了三个理由：省钱、锻炼、保持活跃，并说明不需要额外健身，内容相关且不跑题。主要问题是主次不分：用户自己声明 \\\"My main reason is staying active\\\"，但这句话出现在第三句，前面已经列了两个理由，听者容易把三者当成并列。另外 \\\"gives me exercise\\\" 和 \\\"staying active\\\" 实质是同一理由的两种说法，构成重复。整体展开偏薄，每个理由都只有一句话，没有具体说明。\",\n  \"structure_diagnosis\": \"信息顺序为：省钱 → 骑车上班 → 锻炼 → 主要理由（保持活跃）→ 不需要额外健身。逻辑连接几乎为零，五句话之间没有连接词，靠并列堆叠。\\\"I cycle to work\\\" 位置尴尬，既不是理由也不是结论，更像事实补充。最后一句 \\\"I don't need a separate workout\\\" 本应支撑 \\\"staying active\\\"，但被隔开，因果关系没有显性化。\",\n  \"optimization_advice\": \"1) 把主要理由放在最前或紧接第一句之后，用 \\\"my main reason is...\\\" 明确标记，避免听者误判主次。2) 把 \\\"gives me exercise\\\" 和 \\\"staying active\\\" 合并成一个理由，不要分成两句。3) 如果想拿更高分，可以补充一个具体细节，例如骑车路线的长度、频率、或哪一段路让你觉得最舒服，但这是你需要自己提供的真实信息，我不替你编造。4) 可以加一个具体场景说明 \\\"staying active\\\" 对你意味着什么，比如不用特意去健身房、通勤时间就完成了运动。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"It also gives me exercise.\",\n      \"corrected\": \"it gives me exercise\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"语法无误，但 \\\"gives me exercise\\\" 搭配偏生硬；更重要的是它与下一句 \\\"staying active\\\" 重复，合并后更自然。\"\n    },\n    {\n      \"original\": \"My main reason is staying active.\",\n      \"corrected\": \"But my main reason is staying active\",\n      \"category\": \"logic\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句正确，但位置靠后导致主次不清；用 But 引出并提前，能明确这是主要理由而非并列理由。\"\n    },\n    {\n      \"original\": \"I cycle to work.\",\n      \"corrected\": \"and I cycle to work\",\n      \"category\": \"logic\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句语法正确，但作为独立短句缺少与 \\\"saves money\\\" 的连接；用 and 并入前句，使省钱这一理由有具体支撑。\"\n    },\n    {\n      \"original\": \"I don't need a separate workout.\",\n      \"corrected\": \"so I don't need a separate workout\",\n      \"category\": \"logic\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句正确，但与前句的因果关系是隐含的；加 so 显性化，说明不需要额外健身是保持活跃的结果。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"次要理由 + 具体支撑\",\n      \"content\": \"先用一句话交代省钱这一附加好处，并用骑车上班作为具体支撑，避免碎片化短句。\",\n      \"reusable_expression\": \"It saves money on transport, and I cycle to work.\"\n    },\n    {\n      \"label\": \"转折引出主要理由\",\n      \"content\": \"用 But 明确标记主次，把用户自己声明的主要理由提前，让听者立刻抓住重点。\",\n      \"reusable_expression\": \"But my main reason is staying active\"\n    },\n    {\n      \"label\": \"结果说明，消除重复\",\n      \"content\": \"把锻炼和不需要额外健身合并成因果关系，说明保持活跃带来的实际好处，不再重复同一理由。\",\n      \"reusable_expression\": \"so I don't need a separate workout\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"my main reason is staying active\",\n      \"meaning_zh\": \"我的主要理由是保持活跃\",\n      \"why_useful\": \"在 IELTS 口语中明确标记主要理由，能立刻建立主次结构，避免理由并列导致重点模糊，适用于所有 \\\"Why do you like...\\\" 类问题。\",\n      \"example\": \"My main reason is staying active, not saving money.\",\n      \"usage_note\": \"可以放在第一句之后，用 But 或 Actually 引出，效果更自然。\"\n    },\n    {\n      \"expression\": \"I don't need a separate workout\",\n      \"meaning_zh\": \"我不需要额外再健身\",\n      \"why_useful\": \"用具体结果支撑抽象理由，比单纯说 \\\"it's good for me\\\" 更有说服力，且句型可迁移到任何 \\\"省时间/省事\\\" 的场景。\",\n      \"example\": \"I walk to the office, so I don't need a separate workout.\",\n      \"usage_note\": \"前面加 so 或 which means 能显性化因果关系。\"\n    },\n    {\n      \"expression\": \"It saves money on transport\",\n      \"meaning_zh\": \"它在交通上省钱\",\n      \"why_useful\": \"\\\"save money on + 名词\\\" 是高频地道搭配，比 \\\"save money for transport\\\" 更准确，适用于购物、出行、生活成本等话题。\",\n      \"example\": \"Cooking at home saves money on takeaway.\",\n      \"usage_note\": \"介词固定用 on，不要用 for 或 in。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.5,\n    \"grammarScore\": 6.5,\n    \"vocabularyScore\": 6.0,\n    \"naturalnessScore\": 6.5,\n    \"usefulCorrections\": \"It also gives me exercise → it gives me exercise（合并重复）；My main reason is staying active → But my main reason is staying active（提前并标记主次）；I cycle to work → and I cycle to work（并入前句）；I don't need a separate workout → so I don't need a separate workout（显性化因果）\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.5,\n      \"summary\": \"原回答直接答题，三个理由都相关，但主次不分、理由重复、展开偏薄。用户自己声明的主要理由被放在第三句，前面两个理由容易让听者误判为并列。\\\"gives me exercise\\\" 与 \\\"staying active\\\" 实质重复。每个理由都只有一句话，缺少具体细节支撑。\",\n      \"offTopicParts\": [],\n      \"repetition\": [\n        \"It also gives me exercise 与 My main reason is staying active 语义重叠，实质是同一理由的两种说法\"\n      ],\n      \"orderProblems\": [\n        \"My main reason is staying active 出现在第三句，主次关系不清晰\",\n        \"I cycle to work 作为独立短句插在理由之间，缺少与前后句的连接\"\n      ],\n      \"contentGaps\": [\n        \"没有说明骑车通勤的具体情况（频率、距离、路线等），可自行补充真实细节\",\n        \"没有具体说明 staying active 对日常生活的实际影响，除了不需要额外健身之外\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6.5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "structure",
+            "message": "句子顺序把次要理由（saves money）放在最前，而用户明确说 \"My main reason is staying active\"，主线被埋在后面，建议把主要理由提前或明确标记。"
+          },
+          {
+            "type": "naturalness",
+            "message": "\"It also gives me exercise\" 与 \"My main reason is staying active\" 语义高度重叠，读起来像两条并列理由，实际是同一件事，容易让听者误以为有两个独立原因。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "\"gives me exercise\" 搭配偏生硬，英语中更常说 \"it keeps me active\" 或 \"it's a good workout\"。"
+          },
+          {
+            "type": "structure",
+            "message": "\"I cycle to work\" 作为独立短句插在理由之间，缺少与前后句的连接，显得像补充信息而非支撑理由。"
+          }
+        ],
+        "revision_mode": "structure",
+        "optimization_summary": "保留了用户全部原有信息（省钱、骑车上班、锻炼、主要理由是保持活跃、不需要额外健身），没有新增任何事实。主要调整是把 \"My main reason is staying active\" 提前并用破折号引出，让主次关系清晰；把 \"gives me exercise\" 与 \"don't need a separate workout\" 合并为因果关系，消除重复感；用 and 把省钱和骑车上班连成一句，减少碎片化短句。",
+        "final_upgraded_answer": "It saves money on transport, and I cycle to work. But my main reason is staying active — it gives me exercise, so I don't need a separate workout.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了问题，给出了三个理由：省钱、锻炼、保持活跃，并说明不需要额外健身，内容相关且不跑题。主要问题是主次不分：用户自己声明 \"My main reason is staying active\"，但这句话出现在第三句，前面已经列了两个理由，听者容易把三者当成并列。另外 \"gives me exercise\" 和 \"staying active\" 实质是同一理由的两种说法，构成重复。整体展开偏薄，每个理由都只有一句话，没有具体说明。",
+        "structure_diagnosis": "信息顺序为：省钱 → 骑车上班 → 锻炼 → 主要理由（保持活跃）→ 不需要额外健身。逻辑连接几乎为零，五句话之间没有连接词，靠并列堆叠。\"I cycle to work\" 位置尴尬，既不是理由也不是结论，更像事实补充。最后一句 \"I don't need a separate workout\" 本应支撑 \"staying active\"，但被隔开，因果关系没有显性化。",
+        "optimization_advice": "1) 把主要理由放在最前或紧接第一句之后，用 \"my main reason is...\" 明确标记，避免听者误判主次。2) 把 \"gives me exercise\" 和 \"staying active\" 合并成一个理由，不要分成两句。3) 如果想拿更高分，可以补充一个具体细节，例如骑车路线的长度、频率、或哪一段路让你觉得最舒服，但这是你需要自己提供的真实信息，我不替你编造。4) 可以加一个具体场景说明 \"staying active\" 对你意味着什么，比如不用特意去健身房、通勤时间就完成了运动。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "my main reason is staying active",
+            "meaning": "我的主要理由是保持活跃",
+            "meaning_zh": "我的主要理由是保持活跃",
+            "why_useful": "在 IELTS 口语中明确标记主要理由，能立刻建立主次结构，避免理由并列导致重点模糊，适用于所有 \"Why do you like...\" 类问题。",
+            "example": "My main reason is staying active, not saving money.",
+            "usage_note": "可以放在第一句之后，用 But 或 Actually 引出，效果更自然。",
+            "readonly": false
+          },
+          {
+            "expression": "I don't need a separate workout",
+            "meaning": "我不需要额外再健身",
+            "meaning_zh": "我不需要额外再健身",
+            "why_useful": "用具体结果支撑抽象理由，比单纯说 \"it's good for me\" 更有说服力，且句型可迁移到任何 \"省时间/省事\" 的场景。",
+            "example": "I walk to the office, so I don't need a separate workout.",
+            "usage_note": "前面加 so 或 which means 能显性化因果关系。",
+            "readonly": false
+          },
+          {
+            "expression": "It saves money on transport",
+            "meaning": "它在交通上省钱",
+            "meaning_zh": "它在交通上省钱",
+            "why_useful": "\"save money on + 名词\" 是高频地道搭配，比 \"save money for transport\" 更准确，适用于购物、出行、生活成本等话题。",
+            "example": "Cooking at home saves money on takeaway.",
+            "usage_note": "介词固定用 on，不要用 for 或 in。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "It also gives me exercise.",
+            "corrected": "it gives me exercise",
+            "category": "naturalness",
+            "explanation_zh": "语法无误，但 \"gives me exercise\" 搭配偏生硬；更重要的是它与下一句 \"staying active\" 重复，合并后更自然。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "My main reason is staying active.",
+            "corrected": "But my main reason is staying active",
+            "category": "logic",
+            "explanation_zh": "原句正确，但位置靠后导致主次不清；用 But 引出并提前，能明确这是主要理由而非并列理由。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "I cycle to work.",
+            "corrected": "and I cycle to work",
+            "category": "logic",
+            "explanation_zh": "原句语法正确，但作为独立短句缺少与 \"saves money\" 的连接；用 and 并入前句，使省钱这一理由有具体支撑。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "I don't need a separate workout.",
+            "corrected": "so I don't need a separate workout",
+            "category": "logic",
+            "explanation_zh": "原句正确，但与前句的因果关系是隐含的；加 so 显性化，说明不需要额外健身是保持活跃的结果。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "次要理由 + 具体支撑",
+            "content": "先用一句话交代省钱这一附加好处，并用骑车上班作为具体支撑，避免碎片化短句。",
+            "reusable_expression": "It saves money on transport, and I cycle to work."
+          },
+          {
+            "label": "转折引出主要理由",
+            "content": "用 But 明确标记主次，把用户自己声明的主要理由提前，让听者立刻抓住重点。",
+            "reusable_expression": "But my main reason is staying active"
+          },
+          {
+            "label": "结果说明，消除重复",
+            "content": "把锻炼和不需要额外健身合并成因果关系，说明保持活跃带来的实际好处，不再重复同一理由。",
+            "reusable_expression": "so I don't need a separate workout"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6.5,
+          "grammarScore": 6.5,
+          "vocabularyScore": 6,
+          "naturalnessScore": 6.5,
+          "usefulCorrections": "It also gives me exercise → it gives me exercise（合并重复）；My main reason is staying active → But my main reason is staying active（提前并标记主次）；I cycle to work → and I cycle to work（并入前句）；I don't need a separate workout → so I don't need a separate workout（显性化因果）",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 7,
+            "coherenceScore": 6,
+            "developmentScore": 5.5,
+            "summary": "原回答直接答题，三个理由都相关，但主次不分、理由重复、展开偏薄。用户自己声明的主要理由被放在第三句，前面两个理由容易让听者误判为并列。\"gives me exercise\" 与 \"staying active\" 实质重复。每个理由都只有一句话，缺少具体细节支撑。",
+            "offTopicParts": [],
+            "repetition": [
+              "It also gives me exercise 与 My main reason is staying active 语义重叠，实质是同一理由的两种说法"
+            ],
+            "orderProblems": [
+              "My main reason is staying active 出现在第三句，主次关系不清晰",
+              "I cycle to work 作为独立短句插在理由之间，缺少与前后句的连接"
+            ],
+            "contentGaps": [
+              "没有说明骑车通勤的具体情况（频率、距离、路线等），可自行补充真实细节",
+              "没有具体说明 staying active 对日常生活的实际影响，除了不需要额外健身之外"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 85920,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"unsupported_claims\":[],\"teaching_errors\":[],\"revision_mode\":\"structure\",\"issues\":[],\"faithful\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "structure",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 11539,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"骑车省交通费\",\"骑车上班\",\"骑车能锻炼身体\",\"主要原因是保持活力\",\"不需要单独安排锻炼\"],\"model_arguments\":[\"骑车带来自由感\",\"可以穿行小路、随时停下，不用受时刻表和堵车限制\",\"骑车是下班后放松和清空头脑的方式\",\"骑车上班后压力更小、睡眠更好\",\"既对身体好又很有趣\"],\"overlapping_arguments\":[],\"reason\":\"用户的核心论点是骑车省钱、顺带锻炼、保持活力且不必单独健身；AI回答主要围绕自由感、放松减压和改善睡眠展开，仅顺带提到骑车上班，并未复用或展开用户的关键论点。\",\"independent\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

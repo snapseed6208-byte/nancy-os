@@ -1,0 +1,520 @@
+{
+  "id": "G-tv",
+  "input": "I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.",
+  "question": "How much time do you spend watching TV?",
+  "expectedMode": "light",
+  "elapsedMs": 198657,
+  "feedback": {
+    "overall_score": 6,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "content",
+        "message": "题目问“花多少时间”，回答只给了“quite a lot”和“三天看完四季”这样的间接信息，没有直接给出频率或时长（如每天几小时、每周几次），答题不够直接。"
+      },
+      {
+        "type": "structure",
+        "message": "三个句子是并列罗列，缺少连接和主次；先给总述、再举例、再补充另一类节目会更清晰。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "“family relationships”可以，但“family dynamics”在描述剧中家庭成员互动时更地道，属于升级而非错误。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "“AI short dramas”表意可懂，但“short AI-generated dramas”更准确自然，属于升级而非错误。"
+      },
+      {
+        "type": "naturalness",
+        "message": "“I watch quite a lot of TV”偏书面/笼统，口语中更常说“I watch a fair amount of TV”或“I'm a big TV watcher”，但原句并不算错。"
+      }
+    ],
+    "revision_mode": "light",
+    "optimization_summary": "原回答语法正确、意思清楚，因此只做轻微调整：保留全部个人事实和原有措辞，仅把“family relationships”和“AI short dramas”作为可选升级建议列出，最终答案未采纳这两处升级，仍使用原词。",
+    "final_upgraded_answer": "I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.",
+    "reference_answer": "Honestly, not that much these days — maybe an hour or so in the evening, and even then it's usually just something light while I'm having dinner. I used to binge-watch series for hours when I was a student, but once I started working, I found I just didn't have the energy or the time. Now I'd rather watch a documentary or a football match at the weekend, something I can actually pay attention to. If I'm honest, my screen time has mostly shifted to my phone, which is probably worse, but at least I can stop anytime.",
+    "reference_angle_summary": "独立主线：以“现在看得少、过去看很多”的时间变化对比展开，并自然带出注意力与屏幕时间转移的反思；示例不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "verified",
+    "content_diagnosis": "回答直接回应了“看多少电视”这一话题，用“quite a lot”给出总量，并用“三天看完四季Trying”和“看AI短剧放松”两个具体例子支撑，相关性好。但缺少直接的时间量（每天/每周几小时），展开偏薄，两个例子之间也没有说明哪个是主要习惯。",
+    "structure_diagnosis": "信息顺序为：总量→具体剧集例子→另一类节目。逻辑基本可懂，但三句之间只有“Recently”和“also”连接，缺少“总体—举例—补充”的层次标记，读起来像清单而非连贯回答。",
+    "optimization_advice": "建议在开头直接补一个时间量，例如每天或每周看多久，让“quite a lot”有具体支撑；然后说明Trying是你最近集中追的剧，AI短剧是你日常放松的方式，用“On top of that”或“When I just want to switch off”把两类观看区分开。这些细节需要你自己补充，我不替你编造。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "I watch quite a lot of TV",
+        "meaning": "我看相当多的电视",
+        "meaning_zh": "我看相当多的电视",
+        "why_useful": "直接回应“how much”类问题，简洁自然，适合口语开场。",
+        "example": "I watch quite a lot of TV, especially on weekends.",
+        "usage_note": "后面最好接一个具体时间量或例子，避免太空泛。",
+        "readonly": false
+      },
+      {
+        "expression": "to unwind",
+        "meaning": "为了放松",
+        "meaning_zh": "为了放松",
+        "why_useful": "高频口语短语，说明做某事的目的，适用于看电视、听音乐、散步等话题。",
+        "example": "I listen to podcasts to unwind after work.",
+        "usage_note": "比“to relax”更口语、更自然。",
+        "readonly": false
+      },
+      {
+        "expression": "not that much these days",
+        "meaning": "现在没那么多了",
+        "meaning_zh": "现在没那么多了",
+        "why_useful": "回答频率/时间类问题时非常自然，比直接说 a little 更口语化，也能顺势引出变化。",
+        "example": "I don't go to the cinema that much these days — maybe once every couple of months.",
+        "usage_note": "常放句尾，语气偏轻松、非正式。",
+        "readonly": false
+      },
+      {
+        "expression": "I used to binge-watch series for hours",
+        "meaning": "我以前会连着刷剧好几个小时",
+        "meaning_zh": "我以前会连着刷剧好几个小时",
+        "why_useful": "used to 结构高频且能清楚对比过去与现在；binge-watch 是日常媒体话题中的自然搭配。",
+        "example": "I used to binge-watch cooking shows on weekends, but now I barely turn the TV on.",
+        "usage_note": "binge-watch 后可接具体内容，如 series, shows, documentaries。",
+        "readonly": false
+      },
+      {
+        "expression": "my screen time has mostly shifted to my phone",
+        "meaning": "我的屏幕时间大多转移到手机上了",
+        "meaning_zh": "我的屏幕时间大多转移到手机上了",
+        "why_useful": "screen time 和 shift to 都是现代生活高频表达，适合谈习惯变化、科技影响等话题。",
+        "example": "My reading time has mostly shifted to my tablet because it's easier to carry around.",
+        "usage_note": "shift to 表示逐渐转移，比 change to 更强调趋势。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "I liked the family relationships",
+        "corrected": "I liked the family dynamics",
+        "category": "naturalness",
+        "explanation_zh": "“family dynamics”更常用于描述家庭成员之间的互动关系，比“family relationships”更地道；这只是升级建议，原句并非错误，最终答案未采纳。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "AI short dramas",
+        "corrected": "short AI-generated dramas",
+        "category": "vocabulary",
+        "explanation_zh": "“AI-generated”更准确地说明是AI生成的短剧，表达更自然；这只是升级建议，原句并非错误，最终答案未采纳。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "总述观看量",
+        "content": "用“I watch quite a lot of TV”直接回应题目中的“how much time”，给出总体印象。",
+        "reusable_expression": "I watch quite a lot of TV"
+      },
+      {
+        "label": "具体剧集例子",
+        "content": "用“Recently I watched four seasons of Trying in three days”给出一个可量化的极端例子，说明观看量确实大。",
+        "reusable_expression": "Recently I watched four seasons of ... in three days"
+      },
+      {
+        "label": "说明原因",
+        "content": "用“because I liked the family relationships”解释为什么看得这么快，让例子有动机。",
+        "reusable_expression": "because I liked the family relationships"
+      },
+      {
+        "label": "补充另一类观看",
+        "content": "用“I also watch AI short dramas to unwind”补充日常放松型观看，与前面的集中追剧形成对比。",
+        "reusable_expression": "I also watch ... to unwind"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6,
+      "grammarScore": 6.5,
+      "vocabularyScore": 6,
+      "naturalnessScore": 6,
+      "usefulCorrections": "I liked the family relationships → I liked the family dynamics（升级建议，非错误）；AI short dramas → short AI-generated dramas（升级建议，非错误）。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 6.5,
+        "coherenceScore": 6,
+        "developmentScore": 5.5,
+        "summary": "回答切题，有总量和两个具体例子，但缺少直接的时间量，两个例子之间缺少层次说明，展开偏薄。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [
+          "总量、具体剧集、另一类节目之间缺少连接词，读起来像并列清单。"
+        ],
+        "contentGaps": [
+          "没有直接给出每天或每周观看的具体时长。",
+          "没有说明Trying和AI短剧哪个是主要习惯、哪个是偶尔为之。"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 7650,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, not that much these days — maybe an hour or so in the evening, and even then it's usually just something light while I'm having dinner. I used to binge-watch series for hours when I was a student, but once I started working, I found I just didn't have the energy or the time. Now I'd rather watch a documentary or a football match at the weekend, something I can actually pay attention to. If I'm honest, my screen time has mostly shifted to my phone, which is probably worse, but at least I can stop anytime.\",\n  \"reference_angle_summary\": \"独立主线：以“现在看得少、过去看很多”的时间变化对比展开，并自然带出注意力与屏幕时间转移的反思；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"not that much these days\",\n      \"meaning_zh\": \"现在没那么多了\",\n      \"why_useful\": \"回答频率/时间类问题时非常自然，比直接说 a little 更口语化，也能顺势引出变化。\",\n      \"example\": \"I don't go to the cinema that much these days — maybe once every couple of months.\",\n      \"usage_note\": \"常放句尾，语气偏轻松、非正式。\"\n    },\n    {\n      \"expression\": \"I used to binge-watch series for hours\",\n      \"meaning_zh\": \"我以前会连着刷剧好几个小时\",\n      \"why_useful\": \"used to 结构高频且能清楚对比过去与现在；binge-watch 是日常媒体话题中的自然搭配。\",\n      \"example\": \"I used to binge-watch cooking shows on weekends, but now I barely turn the TV on.\",\n      \"usage_note\": \"binge-watch 后可接具体内容，如 series, shows, documentaries。\"\n    },\n    {\n      \"expression\": \"my screen time has mostly shifted to my phone\",\n      \"meaning_zh\": \"我的屏幕时间大多转移到手机上了\",\n      \"why_useful\": \"screen time 和 shift to 都是现代生活高频表达，适合谈习惯变化、科技影响等话题。\",\n      \"example\": \"My reading time has mostly shifted to my tablet because it's easier to carry around.\",\n      \"usage_note\": \"shift to 表示逐渐转移，比 change to 更强调趋势。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, not that much these days — maybe an hour or so in the evening, and even then it's usually just something light while I'm having dinner. I used to binge-watch series for hours when I was a student, but once I started working, I found I just didn't have the energy or the time. Now I'd rather watch a documentary or a football match at the weekend, something I can actually pay attention to. If I'm honest, my screen time has mostly shifted to my phone, which is probably worse, but at least I can stop anytime.",
+        "reference_angle_summary": "独立主线：以“现在看得少、过去看很多”的时间变化对比展开，并自然带出注意力与屏幕时间转移的反思；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "not that much these days",
+            "meaning": "现在没那么多了",
+            "meaning_zh": "现在没那么多了",
+            "why_useful": "回答频率/时间类问题时非常自然，比直接说 a little 更口语化，也能顺势引出变化。",
+            "example": "I don't go to the cinema that much these days — maybe once every couple of months.",
+            "usage_note": "常放句尾，语气偏轻松、非正式。",
+            "readonly": false
+          },
+          {
+            "expression": "I used to binge-watch series for hours",
+            "meaning": "我以前会连着刷剧好几个小时",
+            "meaning_zh": "我以前会连着刷剧好几个小时",
+            "why_useful": "used to 结构高频且能清楚对比过去与现在；binge-watch 是日常媒体话题中的自然搭配。",
+            "example": "I used to binge-watch cooking shows on weekends, but now I barely turn the TV on.",
+            "usage_note": "binge-watch 后可接具体内容，如 series, shows, documentaries。",
+            "readonly": false
+          },
+          {
+            "expression": "my screen time has mostly shifted to my phone",
+            "meaning": "我的屏幕时间大多转移到手机上了",
+            "meaning_zh": "我的屏幕时间大多转移到手机上了",
+            "why_useful": "screen time 和 shift to 都是现代生活高频表达，适合谈习惯变化、科技影响等话题。",
+            "example": "My reading time has mostly shifted to my tablet because it's easier to carry around.",
+            "usage_note": "shift to 表示逐渐转移，比 change to 更强调趋势。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 9272,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.\",\n  \"overall_score\": 7.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答没有直接回应“how much time”，只说了“quite a lot”和具体剧集，缺少时间量的概括（如每天几小时）。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"信息顺序可以更清晰：先给总体时间，再举例说明，最后补充其他观看习惯。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“AI short dramas”表达可以更自然，如“short AI-generated dramas”或“AI short series”。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"“I liked the family relationships”略显生硬，更自然的说法是“I liked the family dynamics”。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"原回答基本切题，语言自然，但未直接回答“多少时间”。本次仅做轻微调整：保留全部个人细节，将“family relationships”改为更地道的“family dynamics”，并建议在开头补充时间量。\",\n  \"content_diagnosis\": \"原回答直接回应了看电视的习惯，但未明确回答“how much time”，只用了“quite a lot”和具体剧集来间接说明。主线清晰，例子具体，但缺少时间量的概括。\",\n  \"structure_diagnosis\": \"信息顺序为：总体频率→具体例子→其他习惯。逻辑连接自然，但若先给出时间量再举例，会更直接扣题。\",\n  \"optimization_advice\": \"建议在开头补充一个具体的时间量，例如“I probably watch around two hours a day”或“I spend a few hours a day watching TV”，然后再举例。这样能更直接地回答“how much time”。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"I liked the family relationships\",\n      \"corrected\": \"I liked the family dynamics\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"“family dynamics”更常用于描述家庭成员之间的互动关系，比“family relationships”更地道。\"\n    },\n    {\n      \"original\": \"AI short dramas\",\n      \"corrected\": \"short AI-generated dramas\",\n      \"category\": \"vocabulary\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"“AI-generated”更准确地说明是AI生成的短剧，表达更自然。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"总体时间量\",\n      \"content\": \"直接回答“how much time”，给出概括性时间。\",\n      \"reusable_expression\": \"I watch quite a lot of TV.\"\n    },\n    {\n      \"label\": \"具体例子\",\n      \"content\": \"用最近看剧的例子说明观看量和原因。\",\n      \"reusable_expression\": \"Recently I watched four seasons of Trying in three days because I liked the family dynamics.\"\n    },\n    {\n      \"label\": \"补充其他习惯\",\n      \"content\": \"补充另一种观看内容，说明放松目的。\",\n      \"reusable_expression\": \"I also watch short AI-generated dramas to unwind.\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"quite a lot of\",\n      \"meaning_zh\": \"相当多的\",\n      \"why_useful\": \"高频口语表达，用于描述数量或频率，自然且可迁移。\",\n      \"example\": \"I spend quite a lot of time reading.\",\n      \"usage_note\": \"可替换“a lot of”，语气更委婉。\"\n    },\n    {\n      \"expression\": \"to unwind\",\n      \"meaning_zh\": \"放松、解压\",\n      \"why_useful\": \"描述休闲活动的常用短语，比“relax”更生动。\",\n      \"example\": \"I listen to music to unwind after work.\",\n      \"usage_note\": \"常与watch、listen、take a walk等搭配。\"\n    },\n    {\n      \"expression\": \"family dynamics\",\n      \"meaning_zh\": \"家庭互动关系\",\n      \"why_useful\": \"比“family relationships”更具体，常用于讨论家庭剧或人际关系。\",\n      \"example\": \"The show explores complex family dynamics.\",\n      \"usage_note\": \"适合描述家庭成员之间的相处模式。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 7.0,\n    \"grammarScore\": 7.0,\n    \"vocabularyScore\": 7.0,\n    \"naturalnessScore\": 7.0,\n    \"usefulCorrections\": \"family relationships → family dynamics; AI short dramas → short AI-generated dramas\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 7.0,\n      \"developmentScore\": 6.5,\n      \"summary\": \"原回答切题，有具体例子，但未直接给出时间量，展开稍显不足。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"缺少具体的时间量（如每天几小时）\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 7,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "content",
+            "message": "回答没有直接回应“how much time”，只说了“quite a lot”和具体剧集，缺少时间量的概括（如每天几小时）。"
+          },
+          {
+            "type": "structure",
+            "message": "信息顺序可以更清晰：先给总体时间，再举例说明，最后补充其他观看习惯。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“AI short dramas”表达可以更自然，如“short AI-generated dramas”或“AI short series”。"
+          },
+          {
+            "type": "naturalness",
+            "message": "“I liked the family relationships”略显生硬，更自然的说法是“I liked the family dynamics”。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "原回答基本切题，语言自然，但未直接回答“多少时间”。本次仅做轻微调整：保留全部个人细节，将“family relationships”改为更地道的“family dynamics”，并建议在开头补充时间量。",
+        "final_upgraded_answer": "I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了看电视的习惯，但未明确回答“how much time”，只用了“quite a lot”和具体剧集来间接说明。主线清晰，例子具体，但缺少时间量的概括。",
+        "structure_diagnosis": "信息顺序为：总体频率→具体例子→其他习惯。逻辑连接自然，但若先给出时间量再举例，会更直接扣题。",
+        "optimization_advice": "建议在开头补充一个具体的时间量，例如“I probably watch around two hours a day”或“I spend a few hours a day watching TV”，然后再举例。这样能更直接地回答“how much time”。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "quite a lot of",
+            "meaning": "相当多的",
+            "meaning_zh": "相当多的",
+            "why_useful": "高频口语表达，用于描述数量或频率，自然且可迁移。",
+            "example": "I spend quite a lot of time reading.",
+            "usage_note": "可替换“a lot of”，语气更委婉。",
+            "readonly": false
+          },
+          {
+            "expression": "to unwind",
+            "meaning": "放松、解压",
+            "meaning_zh": "放松、解压",
+            "why_useful": "描述休闲活动的常用短语，比“relax”更生动。",
+            "example": "I listen to music to unwind after work.",
+            "usage_note": "常与watch、listen、take a walk等搭配。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "I liked the family relationships",
+            "corrected": "I liked the family dynamics",
+            "category": "naturalness",
+            "explanation_zh": "“family dynamics”更常用于描述家庭成员之间的互动关系，比“family relationships”更地道。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "AI short dramas",
+            "corrected": "short AI-generated dramas",
+            "category": "vocabulary",
+            "explanation_zh": "“AI-generated”更准确地说明是AI生成的短剧，表达更自然。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "总体时间量",
+            "content": "直接回答“how much time”，给出概括性时间。",
+            "reusable_expression": "I watch quite a lot of TV."
+          },
+          {
+            "label": "具体例子",
+            "content": "用最近看剧的例子说明观看量和原因。",
+            "reusable_expression": "Recently I watched four seasons of Trying in three days because I liked the family dynamics."
+          },
+          {
+            "label": "补充其他习惯",
+            "content": "补充另一种观看内容，说明放松目的。",
+            "reusable_expression": "I also watch short AI-generated dramas to unwind."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 7,
+          "grammarScore": 7,
+          "vocabularyScore": 7,
+          "naturalnessScore": 7,
+          "usefulCorrections": "family relationships → family dynamics; AI short dramas → short AI-generated dramas",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 7,
+            "coherenceScore": 7,
+            "developmentScore": 6.5,
+            "summary": "原回答切题，有具体例子，但未直接给出时间量，展开稍显不足。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [],
+            "contentGaps": [
+              "缺少具体的时间量（如每天几小时）"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 56729,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"unsupported_claims\": [],\n  \"teaching_errors\": [\n    \"优化总结声称已将“family relationships”改为“family dynamics”，并将“AI short dramas”改为“short AI-generated dramas”，但 final_upgraded_answer 与原文逐字相同，未做任何修改；corrections 与实际最终答案不一致。\"\n  ],\n  \"revision_mode\": \"light\",\n  \"issues\": [\n    \"不要声称最终答案已替换 upgrade 词汇；final_upgraded_answer 未采纳任何 corrections。\",\n    \"如保留这些 upgrade 建议，请在优化总结中明确它们是“建议”，或将 final_upgraded_answer 实际改为“family dynamics”和“short AI-generated dramas”后再声称已修改。\"\n  ],\n  \"faithful\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "light",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 10604,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"题目问“花多少时间”，回答只给了“quite a lot”和“三天看完四季”这样的间接信息，没有直接给出频率或时长（如每天几小时、每周几次），答题不够直接。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"三个句子是并列罗列，缺少连接和主次；先给总述、再举例、再补充另一类节目会更清晰。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“family relationships”可以，但“family dynamics”在描述剧中家庭成员互动时更地道，属于升级而非错误。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“AI short dramas”表意可懂，但“short AI-generated dramas”更准确自然，属于升级而非错误。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"“I watch quite a lot of TV”偏书面/笼统，口语中更常说“I watch a fair amount of TV”或“I'm a big TV watcher”，但原句并不算错。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"原回答语法正确、意思清楚，因此只做轻微调整：保留全部个人事实和原有措辞，仅把“family relationships”和“AI short dramas”作为可选升级建议列出，最终答案未采纳这两处升级，仍使用原词。\",\n  \"content_diagnosis\": \"回答直接回应了“看多少电视”这一话题，用“quite a lot”给出总量，并用“三天看完四季Trying”和“看AI短剧放松”两个具体例子支撑，相关性好。但缺少直接的时间量（每天/每周几小时），展开偏薄，两个例子之间也没有说明哪个是主要习惯。\",\n  \"structure_diagnosis\": \"信息顺序为：总量→具体剧集例子→另一类节目。逻辑基本可懂，但三句之间只有“Recently”和“also”连接，缺少“总体—举例—补充”的层次标记，读起来像清单而非连贯回答。\",\n  \"optimization_advice\": \"建议在开头直接补一个时间量，例如每天或每周看多久，让“quite a lot”有具体支撑；然后说明Trying是你最近集中追的剧，AI短剧是你日常放松的方式，用“On top of that”或“When I just want to switch off”把两类观看区分开。这些细节需要你自己补充，我不替你编造。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"I liked the family relationships\",\n      \"corrected\": \"I liked the family dynamics\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"“family dynamics”更常用于描述家庭成员之间的互动关系，比“family relationships”更地道；这只是升级建议，原句并非错误，最终答案未采纳。\"\n    },\n    {\n      \"original\": \"AI short dramas\",\n      \"corrected\": \"short AI-generated dramas\",\n      \"category\": \"vocabulary\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"“AI-generated”更准确地说明是AI生成的短剧，表达更自然；这只是升级建议，原句并非错误，最终答案未采纳。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"总述观看量\",\n      \"content\": \"用“I watch quite a lot of TV”直接回应题目中的“how much time”，给出总体印象。\",\n      \"reusable_expression\": \"I watch quite a lot of TV\"\n    },\n    {\n      \"label\": \"具体剧集例子\",\n      \"content\": \"用“Recently I watched four seasons of Trying in three days”给出一个可量化的极端例子，说明观看量确实大。\",\n      \"reusable_expression\": \"Recently I watched four seasons of ... in three days\"\n    },\n    {\n      \"label\": \"说明原因\",\n      \"content\": \"用“because I liked the family relationships”解释为什么看得这么快，让例子有动机。\",\n      \"reusable_expression\": \"because I liked the family relationships\"\n    },\n    {\n      \"label\": \"补充另一类观看\",\n      \"content\": \"用“I also watch AI short dramas to unwind”补充日常放松型观看，与前面的集中追剧形成对比。\",\n      \"reusable_expression\": \"I also watch ... to unwind\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"I watch quite a lot of TV\",\n      \"meaning_zh\": \"我看相当多的电视\",\n      \"why_useful\": \"直接回应“how much”类问题，简洁自然，适合口语开场。\",\n      \"example\": \"I watch quite a lot of TV, especially on weekends.\",\n      \"usage_note\": \"后面最好接一个具体时间量或例子，避免太空泛。\"\n    },\n    {\n      \"expression\": \"watched four seasons ... in three days\",\n      \"meaning_zh\": \"三天看完四季\",\n      \"why_useful\": \"用具体数字量化观看量，比“a lot”更有说服力，可迁移到任何“花多少时间”类问题。\",\n      \"example\": \"I watched two seasons in one weekend.\",\n      \"usage_note\": \"数字要真实，不要为了效果夸大。\"\n    },\n    {\n      \"expression\": \"to unwind\",\n      \"meaning_zh\": \"为了放松\",\n      \"why_useful\": \"高频口语短语，说明做某事的目的，适用于看电视、听音乐、散步等话题。\",\n      \"example\": \"I listen to podcasts to unwind after work.\",\n      \"usage_note\": \"比“to relax”更口语、更自然。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 6.5,\n    \"vocabularyScore\": 6.0,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"I liked the family relationships → I liked the family dynamics（升级建议，非错误）；AI short dramas → short AI-generated dramas（升级建议，非错误）。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.5,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.5,\n      \"summary\": \"回答切题，有总量和两个具体例子，但缺少直接的时间量，两个例子之间缺少层次说明，展开偏薄。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [\n        \"总量、具体剧集、另一类节目之间缺少连接词，读起来像并列清单。\"\n      ],\n      \"contentGaps\": [\n        \"没有直接给出每天或每周观看的具体时长。\",\n        \"没有说明Trying和AI短剧哪个是主要习惯、哪个是偶尔为之。\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "content",
+            "message": "题目问“花多少时间”，回答只给了“quite a lot”和“三天看完四季”这样的间接信息，没有直接给出频率或时长（如每天几小时、每周几次），答题不够直接。"
+          },
+          {
+            "type": "structure",
+            "message": "三个句子是并列罗列，缺少连接和主次；先给总述、再举例、再补充另一类节目会更清晰。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“family relationships”可以，但“family dynamics”在描述剧中家庭成员互动时更地道，属于升级而非错误。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“AI short dramas”表意可懂，但“short AI-generated dramas”更准确自然，属于升级而非错误。"
+          },
+          {
+            "type": "naturalness",
+            "message": "“I watch quite a lot of TV”偏书面/笼统，口语中更常说“I watch a fair amount of TV”或“I'm a big TV watcher”，但原句并不算错。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "原回答语法正确、意思清楚，因此只做轻微调整：保留全部个人事实和原有措辞，仅把“family relationships”和“AI short dramas”作为可选升级建议列出，最终答案未采纳这两处升级，仍使用原词。",
+        "final_upgraded_answer": "I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "回答直接回应了“看多少电视”这一话题，用“quite a lot”给出总量，并用“三天看完四季Trying”和“看AI短剧放松”两个具体例子支撑，相关性好。但缺少直接的时间量（每天/每周几小时），展开偏薄，两个例子之间也没有说明哪个是主要习惯。",
+        "structure_diagnosis": "信息顺序为：总量→具体剧集例子→另一类节目。逻辑基本可懂，但三句之间只有“Recently”和“also”连接，缺少“总体—举例—补充”的层次标记，读起来像清单而非连贯回答。",
+        "optimization_advice": "建议在开头直接补一个时间量，例如每天或每周看多久，让“quite a lot”有具体支撑；然后说明Trying是你最近集中追的剧，AI短剧是你日常放松的方式，用“On top of that”或“When I just want to switch off”把两类观看区分开。这些细节需要你自己补充，我不替你编造。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "I watch quite a lot of TV",
+            "meaning": "我看相当多的电视",
+            "meaning_zh": "我看相当多的电视",
+            "why_useful": "直接回应“how much”类问题，简洁自然，适合口语开场。",
+            "example": "I watch quite a lot of TV, especially on weekends.",
+            "usage_note": "后面最好接一个具体时间量或例子，避免太空泛。",
+            "readonly": false
+          },
+          {
+            "expression": "to unwind",
+            "meaning": "为了放松",
+            "meaning_zh": "为了放松",
+            "why_useful": "高频口语短语，说明做某事的目的，适用于看电视、听音乐、散步等话题。",
+            "example": "I listen to podcasts to unwind after work.",
+            "usage_note": "比“to relax”更口语、更自然。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "I liked the family relationships",
+            "corrected": "I liked the family dynamics",
+            "category": "naturalness",
+            "explanation_zh": "“family dynamics”更常用于描述家庭成员之间的互动关系，比“family relationships”更地道；这只是升级建议，原句并非错误，最终答案未采纳。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "AI short dramas",
+            "corrected": "short AI-generated dramas",
+            "category": "vocabulary",
+            "explanation_zh": "“AI-generated”更准确地说明是AI生成的短剧，表达更自然；这只是升级建议，原句并非错误，最终答案未采纳。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "总述观看量",
+            "content": "用“I watch quite a lot of TV”直接回应题目中的“how much time”，给出总体印象。",
+            "reusable_expression": "I watch quite a lot of TV"
+          },
+          {
+            "label": "具体剧集例子",
+            "content": "用“Recently I watched four seasons of Trying in three days”给出一个可量化的极端例子，说明观看量确实大。",
+            "reusable_expression": "Recently I watched four seasons of ... in three days"
+          },
+          {
+            "label": "说明原因",
+            "content": "用“because I liked the family relationships”解释为什么看得这么快，让例子有动机。",
+            "reusable_expression": "because I liked the family relationships"
+          },
+          {
+            "label": "补充另一类观看",
+            "content": "用“I also watch AI short dramas to unwind”补充日常放松型观看，与前面的集中追剧形成对比。",
+            "reusable_expression": "I also watch ... to unwind"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6,
+          "grammarScore": 6.5,
+          "vocabularyScore": 6,
+          "naturalnessScore": 6,
+          "usefulCorrections": "I liked the family relationships → I liked the family dynamics（升级建议，非错误）；AI short dramas → short AI-generated dramas（升级建议，非错误）。",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 6.5,
+            "coherenceScore": 6,
+            "developmentScore": 5.5,
+            "summary": "回答切题，有总量和两个具体例子，但缺少直接的时间量，两个例子之间缺少层次说明，展开偏薄。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [
+              "总量、具体剧集、另一类节目之间缺少连接词，读起来像并列清单。"
+            ],
+            "contentGaps": [
+              "没有直接给出每天或每周观看的具体时长。",
+              "没有说明Trying和AI短剧哪个是主要习惯、哪个是偶尔为之。"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 109757,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"claim_evidence\": [\n    {\n      \"sentence\": \"I watch quite a lot of TV.\",\n      \"evidence\": \"I watch quite a lot of TV.\"\n    },\n    {\n      \"sentence\": \"Recently I watched four seasons of Trying in three days because I liked the family relationships.\",\n      \"evidence\": \"Recently I watched four seasons of Trying in three days because I liked the family relationships.\"\n    },\n    {\n      \"sentence\": \"I also watch AI short dramas to unwind.\",\n      \"evidence\": \"I also watch AI short dramas to unwind.\"\n    }\n  ],\n  \"unsupported_claims\": [],\n  \"teaching_errors\": [],\n  \"revision_mode\": \"light\",\n  \"issues\": [],\n  \"faithful\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "light",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 12293,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"我看电视相当多\",\"最近三天看完了《Trying》四季，因为喜欢其中的家庭关系\",\"我也会看AI短剧来放松\"],\"model_arguments\":[\"我现在看电视不多，大概晚上一小时左右\",\"学生时代会连续追剧，但工作后没有精力和时间\",\"现在更愿意看纪录片或足球赛\",\"屏幕时间主要转移到了手机上\"],\"overlapping_arguments\":[],\"reason\":\"用户强调看电视很多、追完《Trying》并因家庭关系喜欢、看AI短剧放松；AI回答则表达现在看电视不多，没有复用用户的节目、理由或放松论点，走的是另一条实质性论述路径。\",\"independent\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

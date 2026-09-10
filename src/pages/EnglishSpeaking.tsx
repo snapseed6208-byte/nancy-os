@@ -2022,7 +2022,7 @@ export default function EnglishSpeaking() {
               ) : (
                 <RefreshCw size={14} />
               )}
-              {uploading ? "保存中..." : "按最终优化表达重新复述"}
+              {uploading ? "保存中..." : "按我的回答·最佳表达重新复述"}
             </button>
           )}
 
@@ -2165,7 +2165,7 @@ export default function EnglishSpeaking() {
             )}
 
             {retryReferenceMode === "full" && firstFeedback?.final_upgraded_answer && (
-              <div><p className="text-xs font-semibold text-sage-deep">最终优化表达</p>
+              <div><p className="text-xs font-semibold text-sage-deep">我的回答·最佳表达</p>
                 <p className="text-sm leading-relaxed whitespace-pre-line mt-2">{firstFeedback.final_upgraded_answer}</p>
                 <p className="text-xs text-ink-light mt-2">{firstFeedback.expansion_notice || "新增解释和例子为参考性展开，请按实际情况复述。"}</p>
               </div>

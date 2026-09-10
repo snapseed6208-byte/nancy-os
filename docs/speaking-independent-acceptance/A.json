@@ -1,0 +1,492 @@
+{
+  "id": "A",
+  "input": "I enjoy cooking because it helps me unwind after a busy day. I usually makes simple meals with fresh vegetables, and I like sharing them with my family. It is a relaxing way to spend time together.",
+  "question": "Do you enjoy cooking?",
+  "expectedMode": "light",
+  "elapsedMs": 79831,
+  "feedback": {
+    "overall_score": 6.5,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "grammar",
+        "message": "主谓一致错误：'I usually makes' 应为 'I usually make'。"
+      },
+      {
+        "type": "naturalness",
+        "message": "'It is a relaxing way to spend time together' 中 'to spend time together' 略显正式，口语中更自然的是 'for us to spend time together' 或 'to spend time together as a family'。"
+      }
+    ],
+    "revision_mode": "light",
+    "optimization_summary": "修正了主谓一致错误，并将结尾短语调整为更自然的口语表达，整体内容保持不变。",
+    "final_upgraded_answer": "I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together.",
+    "reference_answer": "To be honest, I wouldn't say I love cooking, but I do enjoy it under the right circumstances. My enjoyment really depends on who I'm cooking for. When I'm just making something for myself, I tend to see it as a bit of a chore—I'll grab whatever's quick, like eggs on toast or instant noodles. But when I'm cooking for other people, it's a completely different story. I get a real kick out of planning a menu, picking out fresh ingredients, and then seeing everyone enjoy what I've made. There's something deeply satisfying about that. For instance, last month I hosted a small dinner for a few friends and made a slow-cooked beef stew. Watching them go back for seconds made all the effort worthwhile. So I suppose my answer is: I enjoy cooking, but mainly as a social activity rather than a daily routine.",
+    "reference_angle_summary": "主线：是否享受烹饪取决于为谁做饭——为自己做饭视为杂务，为他人做饭则乐在其中。示例为朋友做炖牛肉。",
+    "reference_status": "verified",
+    "answer_status": "verified",
+    "content_diagnosis": "原回答直接回答了问题，主线清晰（烹饪帮助放松、做简单菜、与家人分享），内容相关且无重复。展开程度适中，但可以进一步说明为何烹饪能放松或分享的具体感受。",
+    "structure_diagnosis": "信息顺序合理：先给出观点，再解释原因，最后补充细节。逻辑连接自然，无需调整。",
+    "optimization_advice": "内容已足够，但若想提升，可补充一个具体例子，如'比如周末我会做一道蔬菜炒面'，或解释'为什么烹饪能让你放松'，例如'因为切菜和炒菜让我专注'。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "helps me unwind",
+        "meaning": "帮助我放松",
+        "meaning_zh": "帮助我放松",
+        "why_useful": "比 'relax' 更具体、自然，常用于口语。",
+        "example": "Listening to music helps me unwind after work.",
+        "usage_note": "常用于描述减压活动。",
+        "readonly": false
+      },
+      {
+        "expression": "spend time together",
+        "meaning": "一起度过时光",
+        "meaning_zh": "一起度过时光",
+        "why_useful": "高频短语，适用于家庭、朋友等社交场景。",
+        "example": "We often spend time together on weekends.",
+        "usage_note": "可替换为 'hang out'，但更正式一些。",
+        "readonly": false
+      },
+      {
+        "expression": "under the right circumstances",
+        "meaning": "在合适的情况下",
+        "meaning_zh": "在合适的情况下",
+        "why_useful": "用于表达条件性观点，避免绝对化，是口语中自然的限定表达。",
+        "example": "I enjoy exercising, but only under the right circumstances—like when I'm not too tired.",
+        "usage_note": "常用于句首或句尾，引出条件或转折。",
+        "readonly": false
+      },
+      {
+        "expression": "get a real kick out of",
+        "meaning": "从……中获得极大乐趣",
+        "meaning_zh": "从……中获得极大乐趣",
+        "why_useful": "比简单的'enjoy'更生动口语化，表达强烈兴趣。",
+        "example": "I get a real kick out of solving tricky puzzles.",
+        "usage_note": "后接名词或动名词。",
+        "readonly": false
+      },
+      {
+        "expression": "go back for seconds",
+        "meaning": "再添一份（食物）",
+        "meaning_zh": "再添一份（食物）",
+        "why_useful": "描述用餐场景的高频表达，体现食物受欢迎程度。",
+        "example": "The pasta was so good that everyone went back for seconds.",
+        "usage_note": "常用于谈论做饭或聚餐时。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "I usually makes simple meals",
+        "corrected": "I usually make simple meals",
+        "category": "grammar",
+        "explanation_zh": "主语是 I，动词应用原形 make，而非 makes。",
+        "nature": "Error"
+      },
+      {
+        "original": "It is a relaxing way to spend time together.",
+        "corrected": "It's a relaxing way for us to spend time together.",
+        "category": "naturalness",
+        "explanation_zh": "口语中常用缩略形式，且加上 'for us' 更明确地表达是家人一起放松。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "直接回答并给出原因",
+        "content": "开头直接表明态度，并给出主要理由（放松）。",
+        "reusable_expression": "I enjoy cooking because it helps me..."
+      },
+      {
+        "label": "补充具体做法",
+        "content": "说明烹饪的具体内容（简单菜、新鲜蔬菜），增加可信度。",
+        "reusable_expression": "I usually make simple meals with..."
+      },
+      {
+        "label": "提及社交层面",
+        "content": "提到与家人分享，并总结为放松方式，使回答完整。",
+        "reusable_expression": "It's a relaxing way for us to..."
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6.5,
+      "grammarScore": 6,
+      "vocabularyScore": 6.5,
+      "naturalnessScore": 6.5,
+      "usefulCorrections": "修正了主谓一致错误，并优化了结尾表达的自然度。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 7,
+        "coherenceScore": 7,
+        "developmentScore": 6,
+        "summary": "回答直接且相关，但展开略少，可增加具体例子或原因。",
+        "offTopicParts": [],
+        "repetition": [],
+        "orderProblems": [],
+        "contentGaps": [
+          "未解释为何烹饪能放松",
+          "未提及具体菜式或分享时的感受"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 8707,
+      "model": "deepseek-chat",
+      "raw": "{\"reference_answer\": \"Honestly, I have a love-hate relationship with cooking. On weekdays, when I'm exhausted after work, I just want something quick, so I often rely on takeaways or simple pasta. But on weekends, I genuinely enjoy it—it's almost therapeutic for me. I love the whole process of chopping vegetables, smelling the herbs, and watching a dish come together. It's like a creative outlet where I can experiment with new recipes without any pressure. For example, last Sunday I tried making a Thai green curry from scratch, and even though it wasn't perfect, the sense of accomplishment was really rewarding. So I'd say I enjoy it, but only when I have the time and energy to truly savor it.\", \"reference_angle_summary\": \"主线是'又爱又恨'：工作日嫌麻烦，周末当疗愈和创意出口，用具体例子支撑。示例不代表用户经历。\", \"takeaway_expressions\": [{\"expression\": \"a love-hate relationship with\", \"meaning_zh\": \"对……又爱又恨的关系\", \"why_useful\": \"表达复杂感受，比简单说like/dislike更自然地道，适用于任何话题\", \"example\": \"I have a love-hate relationship with social media.\", \"usage_note\": \"后接名词或动名词，常用于口语开场\"}, {\"expression\": \"it's almost therapeutic for me\", \"meaning_zh\": \"对我几乎有疗愈作用\", \"why_useful\": \"用具体形容词描述活动带来的心理好处，避免空洞的'relaxing'\", \"example\": \"Gardening is almost therapeutic for me after a stressful week.\", \"usage_note\": \"almost可换成really/truly调整语气\"}, {\"expression\": \"a sense of accomplishment\", \"meaning_zh\": \"成就感\", \"why_useful\": \"描述完成某事后的积极心理状态，高频用于工作、学习、爱好话题\", \"example\": \"Finishing that marathon gave me a real sense of accomplishment.\", \"usage_note\": \"可用real/strong修饰，增强表达力度\"}]}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, I have a love-hate relationship with cooking. On weekdays, when I'm exhausted after work, I just want something quick, so I often rely on takeaways or simple pasta. But on weekends, I genuinely enjoy it—it's almost therapeutic for me. I love the whole process of chopping vegetables, smelling the herbs, and watching a dish come together. It's like a creative outlet where I can experiment with new recipes without any pressure. For example, last Sunday I tried making a Thai green curry from scratch, and even though it wasn't perfect, the sense of accomplishment was really rewarding. So I'd say I enjoy it, but only when I have the time and energy to truly savor it.",
+        "reference_angle_summary": "主线是'又爱又恨'：工作日嫌麻烦，周末当疗愈和创意出口，用具体例子支撑。示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "a love-hate relationship with",
+            "meaning": "对……又爱又恨的关系",
+            "meaning_zh": "对……又爱又恨的关系",
+            "why_useful": "表达复杂感受，比简单说like/dislike更自然地道，适用于任何话题",
+            "example": "I have a love-hate relationship with social media.",
+            "usage_note": "后接名词或动名词，常用于口语开场",
+            "readonly": false
+          },
+          {
+            "expression": "it's almost therapeutic for me",
+            "meaning": "对我几乎有疗愈作用",
+            "meaning_zh": "对我几乎有疗愈作用",
+            "why_useful": "用具体形容词描述活动带来的心理好处，避免空洞的'relaxing'",
+            "example": "Gardening is almost therapeutic for me after a stressful week.",
+            "usage_note": "almost可换成really/truly调整语气",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 10325,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together.\",\n  \"overall_score\": 6.5,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"grammar\",\n      \"message\": \"主谓一致错误：'I usually makes' 应为 'I usually make'。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"'It is a relaxing way to spend time together' 中 'to spend time together' 略显正式，口语中更自然的是 'for us to spend time together' 或 'to spend time together as a family'。\"\n    }\n  ],\n  \"revision_mode\": \"light\",\n  \"optimization_summary\": \"修正了主谓一致错误，并将结尾短语调整为更自然的口语表达，整体内容保持不变。\",\n  \"content_diagnosis\": \"原回答直接回答了问题，主线清晰（烹饪帮助放松、做简单菜、与家人分享），内容相关且无重复。展开程度适中，但可以进一步说明为何烹饪能放松或分享的具体感受。\",\n  \"structure_diagnosis\": \"信息顺序合理：先给出观点，再解释原因，最后补充细节。逻辑连接自然，无需调整。\",\n  \"optimization_advice\": \"内容已足够，但若想提升，可补充一个具体例子，如'比如周末我会做一道蔬菜炒面'，或解释'为什么烹饪能让你放松'，例如'因为切菜和炒菜让我专注'。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"I usually makes simple meals\",\n      \"corrected\": \"I usually make simple meals\",\n      \"category\": \"grammar\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"主语是 I，动词应用原形 make，而非 makes。\"\n    },\n    {\n      \"original\": \"It is a relaxing way to spend time together.\",\n      \"corrected\": \"It's a relaxing way for us to spend time together.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"口语中常用缩略形式，且加上 'for us' 更明确地表达是家人一起放松。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回答并给出原因\",\n      \"content\": \"开头直接表明态度，并给出主要理由（放松）。\",\n      \"reusable_expression\": \"I enjoy cooking because it helps me...\"\n    },\n    {\n      \"label\": \"补充具体做法\",\n      \"content\": \"说明烹饪的具体内容（简单菜、新鲜蔬菜），增加可信度。\",\n      \"reusable_expression\": \"I usually make simple meals with...\"\n    },\n    {\n      \"label\": \"提及社交层面\",\n      \"content\": \"提到与家人分享，并总结为放松方式，使回答完整。\",\n      \"reusable_expression\": \"It's a relaxing way for us to...\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"helps me unwind\",\n      \"meaning_zh\": \"帮助我放松\",\n      \"why_useful\": \"比 'relax' 更具体、自然，常用于口语。\",\n      \"example\": \"Listening to music helps me unwind after work.\",\n      \"usage_note\": \"常用于描述减压活动。\"\n    },\n    {\n      \"expression\": \"spend time together\",\n      \"meaning_zh\": \"一起度过时光\",\n      \"why_useful\": \"高频短语，适用于家庭、朋友等社交场景。\",\n      \"example\": \"We often spend time together on weekends.\",\n      \"usage_note\": \"可替换为 'hang out'，但更正式一些。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.5,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 6.5,\n    \"naturalnessScore\": 6.5,\n    \"usefulCorrections\": \"修正了主谓一致错误，并优化了结尾表达的自然度。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 7.0,\n      \"coherenceScore\": 7.0,\n      \"developmentScore\": 6.0,\n      \"summary\": \"回答直接且相关，但展开略少，可增加具体例子或原因。\",\n      \"offTopicParts\": [],\n      \"repetition\": [],\n      \"orderProblems\": [],\n      \"contentGaps\": [\n        \"未解释为何烹饪能放松\",\n        \"未提及具体菜式或分享时的感受\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6.5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "grammar",
+            "message": "主谓一致错误：'I usually makes' 应为 'I usually make'。"
+          },
+          {
+            "type": "naturalness",
+            "message": "'It is a relaxing way to spend time together' 中 'to spend time together' 略显正式，口语中更自然的是 'for us to spend time together' 或 'to spend time together as a family'。"
+          }
+        ],
+        "revision_mode": "light",
+        "optimization_summary": "修正了主谓一致错误，并将结尾短语调整为更自然的口语表达，整体内容保持不变。",
+        "final_upgraded_answer": "I enjoy cooking because it helps me unwind after a busy day. I usually make simple meals with fresh vegetables, and I like sharing them with my family. It's a relaxing way for us to spend time together.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回答了问题，主线清晰（烹饪帮助放松、做简单菜、与家人分享），内容相关且无重复。展开程度适中，但可以进一步说明为何烹饪能放松或分享的具体感受。",
+        "structure_diagnosis": "信息顺序合理：先给出观点，再解释原因，最后补充细节。逻辑连接自然，无需调整。",
+        "optimization_advice": "内容已足够，但若想提升，可补充一个具体例子，如'比如周末我会做一道蔬菜炒面'，或解释'为什么烹饪能让你放松'，例如'因为切菜和炒菜让我专注'。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "helps me unwind",
+            "meaning": "帮助我放松",
+            "meaning_zh": "帮助我放松",
+            "why_useful": "比 'relax' 更具体、自然，常用于口语。",
+            "example": "Listening to music helps me unwind after work.",
+            "usage_note": "常用于描述减压活动。",
+            "readonly": false
+          },
+          {
+            "expression": "spend time together",
+            "meaning": "一起度过时光",
+            "meaning_zh": "一起度过时光",
+            "why_useful": "高频短语，适用于家庭、朋友等社交场景。",
+            "example": "We often spend time together on weekends.",
+            "usage_note": "可替换为 'hang out'，但更正式一些。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "I usually makes simple meals",
+            "corrected": "I usually make simple meals",
+            "category": "grammar",
+            "explanation_zh": "主语是 I，动词应用原形 make，而非 makes。",
+            "nature": "Error"
+          },
+          {
+            "original": "It is a relaxing way to spend time together.",
+            "corrected": "It's a relaxing way for us to spend time together.",
+            "category": "naturalness",
+            "explanation_zh": "口语中常用缩略形式，且加上 'for us' 更明确地表达是家人一起放松。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回答并给出原因",
+            "content": "开头直接表明态度，并给出主要理由（放松）。",
+            "reusable_expression": "I enjoy cooking because it helps me..."
+          },
+          {
+            "label": "补充具体做法",
+            "content": "说明烹饪的具体内容（简单菜、新鲜蔬菜），增加可信度。",
+            "reusable_expression": "I usually make simple meals with..."
+          },
+          {
+            "label": "提及社交层面",
+            "content": "提到与家人分享，并总结为放松方式，使回答完整。",
+            "reusable_expression": "It's a relaxing way for us to..."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6.5,
+          "grammarScore": 6,
+          "vocabularyScore": 6.5,
+          "naturalnessScore": 6.5,
+          "usefulCorrections": "修正了主谓一致错误，并优化了结尾表达的自然度。",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 7,
+            "coherenceScore": 7,
+            "developmentScore": 6,
+            "summary": "回答直接且相关，但展开略少，可增加具体例子或原因。",
+            "offTopicParts": [],
+            "repetition": [],
+            "orderProblems": [],
+            "contentGaps": [
+              "未解释为何烹饪能放松",
+              "未提及具体菜式或分享时的感受"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 2921,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"unsupported_claims\": [],\n  \"teaching_errors\": [],\n  \"revision_mode\": \"light\",\n  \"issues\": [],\n  \"faithful\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "light",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 17922,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"做饭帮助我在忙碌一天后放松\",\n    \"我通常用新鲜蔬菜做简单的饭菜\",\n    \"我喜欢与家人分享饭菜\",\n    \"这是一起放松相处的方式\"\n  ],\n  \"model_arguments\": [\n    \"对做饭又爱又恨，工作日疲惫时只想快速解决\",\n    \"周末做饭几乎有疗愈效果，很享受\",\n    \"喜欢切蔬菜、闻香料、看菜肴成形\",\n    \"做饭是创意出口，可以无压力尝试新菜谱\",\n    \"举例做泰式绿咖喱并获得成就感\",\n    \"只在有时间精力时才真正享受做饭\"\n  ],\n  \"overlapping_arguments\": [\n    \"做饭帮助在忙碌/疲惫后放松或疗愈\"\n  ],\n  \"reason\": \"用户的核心理由是做饭帮助忙碌一天后放松，AI回答虽改为又爱又恨并加入创意、成就感等新内容，但仍将周末做饭描述为几乎有疗愈效果，实质复用了放松这一核心论点。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 7471,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Actually, I've come to enjoy it, but that wasn't always the case. When I first moved out on my own, I saw cooking as a chore—I'd just boil pasta or microwave ready meals because I had no confidence in the kitchen. But over the past couple of years, I've started to see it differently. It's become a way for me to unwind after a long day, especially when I put on some music and take my time with the prep. I also love the social side of it—inviting friends over and cooking for them gives me a real sense of pride. That said, I'm not into fancy or complicated dishes; I stick to simple, hearty meals that I know will turn out well. So yes, I genuinely enjoy it now, mainly because it's become more about connection and relaxation than just feeding myself.\",\n  \"reference_angle_summary\": \"以时间变化为主线：从讨厌做饭到享受做饭，原因是它从任务变成了放松和社交的方式，并强调只做简单可靠的菜。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"I saw cooking as a chore\",\n      \"meaning_zh\": \"我把做饭看作一件苦差事\",\n      \"why_useful\": \"表达对某事的负面看法，比直接说'I didn't like it'更自然具体，常用于描述态度转变。\",\n      \"example\": \"I used to see exercise as a chore, but now I look forward to it.\",\n      \"usage_note\": \"常用于对比过去和现在的态度。\"\n    },\n    {\n      \"expression\": \"a way for me to unwind\",\n      \"meaning_zh\": \"一种让我放松的方式\",\n      \"why_useful\": \"unwind是比relax更地道的口语词，表达减压放松，适合谈论爱好或日常习惯。\",\n      \"example\": \"Reading before bed is a way for me to unwind after a hectic day.\",\n      \"usage_note\": \"后面常接after + 压力来源。\"\n    },\n    {\n      \"expression\": \"stick to simple, hearty meals\",\n      \"meaning_zh\": \"坚持做简单而丰盛的饭菜\",\n      \"why_useful\": \"stick to表示坚持某种做法，hearty形容饭菜丰盛实在，组合起来表达个人偏好，很自然。\",\n      \"example\": \"I usually stick to hearty soups in winter because they're filling and easy.\",\n      \"usage_note\": \"用于说明自己的选择或限制。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Actually, I've come to enjoy it, but that wasn't always the case. When I first moved out on my own, I saw cooking as a chore—I'd just boil pasta or microwave ready meals because I had no confidence in the kitchen. But over the past couple of years, I've started to see it differently. It's become a way for me to unwind after a long day, especially when I put on some music and take my time with the prep. I also love the social side of it—inviting friends over and cooking for them gives me a real sense of pride. That said, I'm not into fancy or complicated dishes; I stick to simple, hearty meals that I know will turn out well. So yes, I genuinely enjoy it now, mainly because it's become more about connection and relaxation than just feeding myself.",
+        "reference_angle_summary": "以时间变化为主线：从讨厌做饭到享受做饭，原因是它从任务变成了放松和社交的方式，并强调只做简单可靠的菜。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "I saw cooking as a chore",
+            "meaning": "我把做饭看作一件苦差事",
+            "meaning_zh": "我把做饭看作一件苦差事",
+            "why_useful": "表达对某事的负面看法，比直接说'I didn't like it'更自然具体，常用于描述态度转变。",
+            "example": "I used to see exercise as a chore, but now I look forward to it.",
+            "usage_note": "常用于对比过去和现在的态度。",
+            "readonly": false
+          },
+          {
+            "expression": "a way for me to unwind",
+            "meaning": "一种让我放松的方式",
+            "meaning_zh": "一种让我放松的方式",
+            "why_useful": "unwind是比relax更地道的口语词，表达减压放松，适合谈论爱好或日常习惯。",
+            "example": "Reading before bed is a way for me to unwind after a hectic day.",
+            "usage_note": "后面常接after + 压力来源。",
+            "readonly": false
+          },
+          {
+            "expression": "stick to simple, hearty meals",
+            "meaning": "坚持做简单而丰盛的饭菜",
+            "meaning_zh": "坚持做简单而丰盛的饭菜",
+            "why_useful": "stick to表示坚持某种做法，hearty形容饭菜丰盛实在，组合起来表达个人偏好，很自然。",
+            "example": "I usually stick to hearty soups in winter because they're filling and easy.",
+            "usage_note": "用于说明自己的选择或限制。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 28794,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"烹饪帮助我在忙碌一天后放松\",\n    \"我通常做简单的新鲜蔬菜饭菜\",\n    \"我喜欢与家人分享饭菜，这是一种一起度过的放松方式\"\n  ],\n  \"model_arguments\": [\n    \"烹饪成为漫长一天后放松的方式，尤其可以边听音乐边慢慢准备食材\",\n    \"喜欢烹饪的社交一面，邀请朋友来吃饭并为他们做饭会带来成就感\",\n    \"不爱做花哨复杂的菜，坚持做简单丰盛的饭菜\",\n    \"现在享受烹饪主要因为它关乎连接和放松\"\n  ],\n  \"overlapping_arguments\": [\n    \"烹饪帮助在忙碌一天后放松\",\n    \"喜欢通过分享饭菜/为他人做饭获得连接感\",\n    \"偏好做简单而非复杂的饭菜\"\n  ],\n  \"reason\": \"AI虽然加入了从讨厌到喜欢的新故事和邀请朋友等细节，但核心论点仍是烹饪让人放松、通过分享获得连接以及偏好简单饭菜，属于对用户理由的换例展开，未形成真正不同的表达路径。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 8009,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"To be honest, I wouldn't say I love cooking, but I do enjoy it under the right circumstances. My enjoyment really depends on who I'm cooking for. When I'm just making something for myself, I tend to see it as a bit of a chore—I'll grab whatever's quick, like eggs on toast or instant noodles. But when I'm cooking for other people, it's a completely different story. I get a real kick out of planning a menu, picking out fresh ingredients, and then seeing everyone enjoy what I've made. There's something deeply satisfying about that. For instance, last month I hosted a small dinner for a few friends and made a slow-cooked beef stew. Watching them go back for seconds made all the effort worthwhile. So I suppose my answer is: I enjoy cooking, but mainly as a social activity rather than a daily routine.\",\n  \"reference_angle_summary\": \"主线：是否享受烹饪取决于为谁做饭——为自己做饭视为杂务，为他人做饭则乐在其中。示例为朋友做炖牛肉。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"under the right circumstances\",\n      \"meaning_zh\": \"在合适的情况下\",\n      \"why_useful\": \"用于表达条件性观点，避免绝对化，是口语中自然的限定表达。\",\n      \"example\": \"I enjoy exercising, but only under the right circumstances—like when I'm not too tired.\",\n      \"usage_note\": \"常用于句首或句尾，引出条件或转折。\"\n    },\n    {\n      \"expression\": \"get a real kick out of\",\n      \"meaning_zh\": \"从……中获得极大乐趣\",\n      \"why_useful\": \"比简单的'enjoy'更生动口语化，表达强烈兴趣。\",\n      \"example\": \"I get a real kick out of solving tricky puzzles.\",\n      \"usage_note\": \"后接名词或动名词。\"\n    },\n    {\n      \"expression\": \"go back for seconds\",\n      \"meaning_zh\": \"再添一份（食物）\",\n      \"why_useful\": \"描述用餐场景的高频表达，体现食物受欢迎程度。\",\n      \"example\": \"The pasta was so good that everyone went back for seconds.\",\n      \"usage_note\": \"常用于谈论做饭或聚餐时。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "To be honest, I wouldn't say I love cooking, but I do enjoy it under the right circumstances. My enjoyment really depends on who I'm cooking for. When I'm just making something for myself, I tend to see it as a bit of a chore—I'll grab whatever's quick, like eggs on toast or instant noodles. But when I'm cooking for other people, it's a completely different story. I get a real kick out of planning a menu, picking out fresh ingredients, and then seeing everyone enjoy what I've made. There's something deeply satisfying about that. For instance, last month I hosted a small dinner for a few friends and made a slow-cooked beef stew. Watching them go back for seconds made all the effort worthwhile. So I suppose my answer is: I enjoy cooking, but mainly as a social activity rather than a daily routine.",
+        "reference_angle_summary": "主线：是否享受烹饪取决于为谁做饭——为自己做饭视为杂务，为他人做饭则乐在其中。示例为朋友做炖牛肉。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "under the right circumstances",
+            "meaning": "在合适的情况下",
+            "meaning_zh": "在合适的情况下",
+            "why_useful": "用于表达条件性观点，避免绝对化，是口语中自然的限定表达。",
+            "example": "I enjoy exercising, but only under the right circumstances—like when I'm not too tired.",
+            "usage_note": "常用于句首或句尾，引出条件或转折。",
+            "readonly": false
+          },
+          {
+            "expression": "get a real kick out of",
+            "meaning": "从……中获得极大乐趣",
+            "meaning_zh": "从……中获得极大乐趣",
+            "why_useful": "比简单的'enjoy'更生动口语化，表达强烈兴趣。",
+            "example": "I get a real kick out of solving tricky puzzles.",
+            "usage_note": "后接名词或动名词。",
+            "readonly": false
+          },
+          {
+            "expression": "go back for seconds",
+            "meaning": "再添一份（食物）",
+            "meaning_zh": "再添一份（食物）",
+            "why_useful": "描述用餐场景的高频表达，体现食物受欢迎程度。",
+            "example": "The pasta was so good that everyone went back for seconds.",
+            "usage_note": "常用于谈论做饭或聚餐时。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 4382,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"user_arguments\":[\"做饭能帮助放松\",\"做简单饭菜配新鲜蔬菜\",\"喜欢与家人分享\",\"做饭是与家人共度时光的放松方式\"],\"model_arguments\":[\"为自己做饭是杂务\",\"为他人做饭时享受规划菜单、挑选食材\",\"看到别人享受食物有满足感\",\"举办朋友聚餐并做炖牛肉的例子\",\"做饭主要是社交活动而非日常\"],\"overlapping_arguments\":[],\"reason\":\"用户核心论点是做饭用于放松并与家人分享；AI回答明确表示不喜欢为自己做饭，核心转向为他人做饭的社交满足感，并提供了全新的朋友聚餐故事，未复用用户的放松、家人分享或新鲜蔬菜等具体论点或例子。\",\"independent\":true}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,494 @@
+{
+  "id": "E",
+  "input": "Big city good. My school wall blue. Jobs because more. More jobs. I no like crowd but bus easy. Better city.",
+  "question": "Do you prefer big cities?",
+  "expectedMode": "rewrite",
+  "elapsedMs": 145327,
+  "feedback": {
+    "overall_score": 3.5,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "grammar",
+        "message": "句子缺少主语和动词，如“Big city good”“Jobs because more”，英语中必须补出主语和be动词/实义动词。"
+      },
+      {
+        "type": "relevance",
+        "message": "“My school wall blue”与“是否喜欢大城市”完全无关，属于无效信息，应删除。"
+      },
+      {
+        "type": "structure",
+        "message": "信息顺序混乱：先给结论，再插入无关细节，最后又重复“Better city”，缺少清晰的原因—让步—结论逻辑。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "“Jobs because more”表意不清，应改为“there are more job opportunities”这类完整表达。"
+      },
+      {
+        "type": "naturalness",
+        "message": "“I no like crowd”不符合自然英语，应为“I don't like the crowds”。"
+      }
+    ],
+    "revision_mode": "rewrite",
+    "optimization_summary": "删除了与问题无关的“My school wall blue”；把碎片化表达补成完整句子；将“more jobs”明确为“more job opportunities”；用“but”连接不喜欢拥挤与公交便利的让步关系，最后用“so overall”收束结论。",
+    "final_upgraded_answer": "I prefer big cities because there are more job opportunities. I don't like the crowds, but the buses are convenient, so overall I think big cities are better.",
+    "reference_answer": "Honestly, not really — I'd take a smaller place any day. The thing that gets me about big cities is how long everything takes. Seeing a friend who lives twenty minutes away can eat up half your evening once you've factored in the walk, the wait and the crowds. In a smaller town, that same catch-up is a ten-minute bike ride, so you actually do it instead of putting it off. I also like bumping into the same faces — the baker, the guy at the corner shop — it makes a place feel like yours. Big cities are exciting for a weekend, but I wouldn't want to live that pace every day.",
+    "reference_angle_summary": "独立主线：以“时间成本”为核心拒绝大城市，辅以熟人感与周末对比；示例不代表用户经历。",
+    "reference_status": "verified",
+    "content_diagnosis": "原回答直接给出了偏好（更喜欢大城市），但理由只有“more jobs”和“bus easy”，且中间混入无关信息“My school wall blue”。整体内容过薄，没有展开为什么工作机会重要或公交便利如何影响偏好。",
+    "structure_diagnosis": "原回答没有清晰的信息顺序：先抛出结论，再插入无关细节，然后补理由，最后重复结论。缺少连接词，句子之间逻辑跳跃。",
+    "optimization_advice": "建议保留“工作机会多”作为主因，并补充一句具体说明，例如你所在行业或专业为什么在大城市机会更多；对于“公交方便”，可以补充一两个具体例子，如通勤时间或线路覆盖。不要编造经历，只补充你真实感受到的细节。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "more job opportunities",
+        "meaning": "更多工作机会",
+        "meaning_zh": "更多工作机会",
+        "why_useful": "谈论城市、职业发展、搬迁原因时高频使用，比“more jobs”更具体自然。",
+        "example": "I moved here because there are more job opportunities in my field.",
+        "usage_note": "opportunity 常用复数，搭配 there are more。",
+        "readonly": false
+      },
+      {
+        "expression": "any day",
+        "meaning": "任何时候都愿意；毫不犹豫地选择",
+        "meaning_zh": "任何时候都愿意；毫不犹豫地选择",
+        "why_useful": "口语中表达强烈偏好的高频短语，比 I prefer 更自然、更有态度。",
+        "example": "I'd choose a quiet beach over a crowded resort any day.",
+        "usage_note": "常放在句尾，前面接 would + 动词。",
+        "readonly": false
+      },
+      {
+        "expression": "the thing that gets me about",
+        "meaning": "让我最受不了/最在意的一点是",
+        "meaning_zh": "让我最受不了/最在意的一点是",
+        "why_useful": "引出具体抱怨或关键点，避免泛泛而谈，适合 Part 1 和 Part 3 展开。",
+        "example": "The thing that gets me about online shopping is all the packaging.",
+        "usage_note": "后接名词或动名词，语气偏口语。",
+        "readonly": false
+      },
+      {
+        "expression": "eat up",
+        "meaning": "消耗掉（时间、金钱等）",
+        "meaning_zh": "消耗掉（时间、金钱等）",
+        "why_useful": "描述时间被大量占用的生动动词短语，比 spend 更有画面感。",
+        "example": "Commuting can eat up two hours of your day before you notice.",
+        "usage_note": "常与 time / hours / savings 搭配。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "Big city good.",
+        "corrected": "I prefer big cities.",
+        "category": "grammar",
+        "explanation_zh": "原句缺少主语和动词，且没有直接回应“prefer”这一偏好问题。",
+        "nature": "Error"
+      },
+      {
+        "original": "My school wall blue.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与“是否喜欢大城市”完全无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "Jobs because more.",
+        "corrected": "because there are more job opportunities.",
+        "category": "grammar",
+        "explanation_zh": "缺少完整的主谓结构，且“jobs because more”语序和搭配不成立。",
+        "nature": "Error"
+      },
+      {
+        "original": "I no like crowd",
+        "corrected": "I don't like the crowds",
+        "category": "grammar",
+        "explanation_zh": "否定形式错误，且crowd通常用复数the crowds表示泛指人群。",
+        "nature": "Error"
+      },
+      {
+        "original": "bus easy",
+        "corrected": "the buses are convenient",
+        "category": "vocabulary",
+        "explanation_zh": "“bus easy”过于简略，用“the buses are convenient”更自然准确。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "直接回答偏好",
+        "content": "用“I prefer big cities”明确回应问题。",
+        "reusable_expression": "I prefer big cities"
+      },
+      {
+        "label": "给出主因",
+        "content": "用“because there are more job opportunities”说明工作机会是主要原因。",
+        "reusable_expression": "because there are more job opportunities"
+      },
+      {
+        "label": "让步与补充",
+        "content": "用“I don't like the crowds, but the buses are convenient”承认缺点并补充交通便利这一优点。",
+        "reusable_expression": "I don't like the crowds, but the buses are convenient"
+      },
+      {
+        "label": "总结结论",
+        "content": "用“so overall I think big cities are better”收束并重申偏好。",
+        "reusable_expression": "so overall I think big cities are better"
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 3,
+      "grammarScore": 2.5,
+      "vocabularyScore": 3.5,
+      "naturalnessScore": 3,
+      "usefulCorrections": "Big city good → I prefer big cities; Jobs because more → because there are more job opportunities; I no like crowd → I don't like the crowds; bus easy → the buses are convenient",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 4,
+        "coherenceScore": 3,
+        "developmentScore": 2.5,
+        "summary": "原回答直接回应了偏好，但理由非常简略，且包含与问题无关的“My school wall blue”，整体内容不足以支撑一个完整的偏好类回答。",
+        "offTopicParts": [
+          "My school wall blue."
+        ],
+        "repetition": [
+          "Big city good 与 Better city 重复表达偏好"
+        ],
+        "orderProblems": [
+          "先给结论，再插入无关细节，再补理由，最后重复结论，逻辑顺序混乱"
+        ],
+        "contentGaps": [
+          "没有具体说明为什么工作机会多对你重要",
+          "没有具体说明公交便利体现在哪里",
+          "没有解释不喜欢拥挤与最终偏好之间的关系"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 6766,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Yeah, I'd say I do prefer big cities, though not everything about them appeals to me. The main draw is the sheer range of options — you can find pretty much any kind of food, job or evening class within a short train ride. I also like the fact that people are more anonymous, so you can just blend in and do your own thing. That said, the noise and the rent do wear you down after a while. So for now, big cities suit me, but I could see myself wanting somewhere quieter later on.\",\n  \"reference_angle_summary\": \"独立主线：以“选择多、匿名感”为核心偏好理由，同时承认噪音与房租的代价，最后给出随时间可能改变的态度；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"the main draw\",\n      \"meaning_zh\": \"主要的吸引力\",\n      \"why_useful\": \"谈论偏好、选择地点或事物时，比 the main reason 更自然、更有口语感。\",\n      \"example\": \"For me, the main draw of living abroad is the freedom to start over.\",\n      \"usage_note\": \"draw 在这里是名词，常搭配 the main/biggest draw is...\"\n    },\n    {\n      \"expression\": \"blend in\",\n      \"meaning_zh\": \"融入人群、不引人注意\",\n      \"why_useful\": \"描述城市生活、社交场合或适应新环境时非常高频。\",\n      \"example\": \"I usually wear plain clothes when I travel so I can blend in.\",\n      \"usage_note\": \"常与 can/could 连用，表示能够不显眼地融入。\"\n    },\n    {\n      \"expression\": \"wear you down\",\n      \"meaning_zh\": \"使人逐渐疲惫、消磨人的精力\",\n      \"why_useful\": \"表达长期压力、重复性烦恼或环境影响的实用短语。\",\n      \"example\": \"The constant traffic noise really wears you down after a few months.\",\n      \"usage_note\": \"主语通常是令人疲惫的事物，宾语是人。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Yeah, I'd say I do prefer big cities, though not everything about them appeals to me. The main draw is the sheer range of options — you can find pretty much any kind of food, job or evening class within a short train ride. I also like the fact that people are more anonymous, so you can just blend in and do your own thing. That said, the noise and the rent do wear you down after a while. So for now, big cities suit me, but I could see myself wanting somewhere quieter later on.",
+        "reference_angle_summary": "独立主线：以“选择多、匿名感”为核心偏好理由，同时承认噪音与房租的代价，最后给出随时间可能改变的态度；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "the main draw",
+            "meaning": "主要的吸引力",
+            "meaning_zh": "主要的吸引力",
+            "why_useful": "谈论偏好、选择地点或事物时，比 the main reason 更自然、更有口语感。",
+            "example": "For me, the main draw of living abroad is the freedom to start over.",
+            "usage_note": "draw 在这里是名词，常搭配 the main/biggest draw is...",
+            "readonly": false
+          },
+          {
+            "expression": "blend in",
+            "meaning": "融入人群、不引人注意",
+            "meaning_zh": "融入人群、不引人注意",
+            "why_useful": "描述城市生活、社交场合或适应新环境时非常高频。",
+            "example": "I usually wear plain clothes when I travel so I can blend in.",
+            "usage_note": "常与 can/could 连用，表示能够不显眼地融入。",
+            "readonly": false
+          },
+          {
+            "expression": "wear you down",
+            "meaning": "使人逐渐疲惫、消磨人的精力",
+            "meaning_zh": "使人逐渐疲惫、消磨人的精力",
+            "why_useful": "表达长期压力、重复性烦恼或环境影响的实用短语。",
+            "example": "The constant traffic noise really wears you down after a few months.",
+            "usage_note": "主语通常是令人疲惫的事物，宾语是人。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 8664,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I prefer big cities because there are more job opportunities. I don't like the crowds, but the buses are convenient, so overall I think big cities are better.\",\n  \"overall_score\": 3.5,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"grammar\",\n      \"message\": \"句子缺少主语和动词，如“Big city good”“Jobs because more”，英语中必须补出主语和be动词/实义动词。\"\n    },\n    {\n      \"type\": \"relevance\",\n      \"message\": \"“My school wall blue”与“是否喜欢大城市”完全无关，属于无效信息，应删除。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"信息顺序混乱：先给结论，再插入无关细节，最后又重复“Better city”，缺少清晰的原因—让步—结论逻辑。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“Jobs because more”表意不清，应改为“there are more job opportunities”这类完整表达。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"“I no like crowd”不符合自然英语，应为“I don't like the crowds”。\"\n    }\n  ],\n  \"revision_mode\": \"rewrite\",\n  \"optimization_summary\": \"删除了与问题无关的“My school wall blue”；把碎片化表达补成完整句子；将“more jobs”明确为“more job opportunities”；用“but”连接不喜欢拥挤与公交便利的让步关系，最后用“so overall”收束结论。\",\n  \"content_diagnosis\": \"原回答直接给出了偏好（更喜欢大城市），但理由只有“more jobs”和“bus easy”，且中间混入无关信息“My school wall blue”。整体内容过薄，没有展开为什么工作机会重要或公交便利如何影响偏好。\",\n  \"structure_diagnosis\": \"原回答没有清晰的信息顺序：先抛出结论，再插入无关细节，然后补理由，最后重复结论。缺少连接词，句子之间逻辑跳跃。\",\n  \"optimization_advice\": \"建议保留“工作机会多”作为主因，并补充一句具体说明，例如你所在行业或专业为什么在大城市机会更多；对于“公交方便”，可以补充一两个具体例子，如通勤时间或线路覆盖。不要编造经历，只补充你真实感受到的细节。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"Big city good.\",\n      \"corrected\": \"I prefer big cities.\",\n      \"category\": \"grammar\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"原句缺少主语和动词，且没有直接回应“prefer”这一偏好问题。\"\n    },\n    {\n      \"original\": \"My school wall blue.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与“是否喜欢大城市”完全无关，应删除。\"\n    },\n    {\n      \"original\": \"Jobs because more.\",\n      \"corrected\": \"because there are more job opportunities.\",\n      \"category\": \"grammar\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"缺少完整的主谓结构，且“jobs because more”语序和搭配不成立。\"\n    },\n    {\n      \"original\": \"I no like crowd\",\n      \"corrected\": \"I don't like the crowds\",\n      \"category\": \"grammar\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"否定形式错误，且crowd通常用复数the crowds表示泛指人群。\"\n    },\n    {\n      \"original\": \"bus easy\",\n      \"corrected\": \"the buses are convenient\",\n      \"category\": \"vocabulary\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"“bus easy”过于简略，用“the buses are convenient”更自然准确。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回答偏好\",\n      \"content\": \"用“I prefer big cities”明确回应问题。\",\n      \"reusable_expression\": \"I prefer big cities\"\n    },\n    {\n      \"label\": \"给出主因\",\n      \"content\": \"用“because there are more job opportunities”说明工作机会是主要原因。\",\n      \"reusable_expression\": \"because there are more job opportunities\"\n    },\n    {\n      \"label\": \"让步与补充\",\n      \"content\": \"用“I don't like the crowds, but the buses are convenient”承认缺点并补充交通便利这一优点。\",\n      \"reusable_expression\": \"I don't like the crowds, but the buses are convenient\"\n    },\n    {\n      \"label\": \"总结结论\",\n      \"content\": \"用“so overall I think big cities are better”收束并重申偏好。\",\n      \"reusable_expression\": \"so overall I think big cities are better\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"more job opportunities\",\n      \"meaning_zh\": \"更多工作机会\",\n      \"why_useful\": \"谈论城市、职业发展、搬迁原因时高频使用，比“more jobs”更具体自然。\",\n      \"example\": \"I moved here because there are more job opportunities in my field.\",\n      \"usage_note\": \"opportunity 常用复数，搭配 there are more。\"\n    },\n    {\n      \"expression\": \"I don't like the crowds, but...\",\n      \"meaning_zh\": \"我不喜欢拥挤，但是……\",\n      \"why_useful\": \"用于表达让步，先承认缺点再给出相反优点，使回答更有层次。\",\n      \"example\": \"I don't like the crowds, but the convenience makes up for it.\",\n      \"usage_note\": \"crowd 泛指人群时常用 the crowds。\"\n    },\n    {\n      \"expression\": \"so overall I think...\",\n      \"meaning_zh\": \"所以总的来说我认为……\",\n      \"why_useful\": \"自然收束观点，适合偏好类问题的结尾。\",\n      \"example\": \"So overall I think living in a big city is worth it.\",\n      \"usage_note\": \"overall 后接完整句子，语气比 in conclusion 更口语。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 3.0,\n    \"grammarScore\": 2.5,\n    \"vocabularyScore\": 3.5,\n    \"naturalnessScore\": 3.0,\n    \"usefulCorrections\": \"Big city good → I prefer big cities; Jobs because more → because there are more job opportunities; I no like crowd → I don't like the crowds; bus easy → the buses are convenient\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 4.0,\n      \"coherenceScore\": 3.0,\n      \"developmentScore\": 2.5,\n      \"summary\": \"原回答直接回应了偏好，但理由非常简略，且包含与问题无关的“My school wall blue”，整体内容不足以支撑一个完整的偏好类回答。\",\n      \"offTopicParts\": [\n        \"My school wall blue.\"\n      ],\n      \"repetition\": [\n        \"Big city good 与 Better city 重复表达偏好\"\n      ],\n      \"orderProblems\": [\n        \"先给结论，再插入无关细节，再补理由，最后重复结论，逻辑顺序混乱\"\n      ],\n      \"contentGaps\": [\n        \"没有具体说明为什么工作机会多对你重要\",\n        \"没有具体说明公交便利体现在哪里\",\n        \"没有解释不喜欢拥挤与最终偏好之间的关系\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 3.5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "grammar",
+            "message": "句子缺少主语和动词，如“Big city good”“Jobs because more”，英语中必须补出主语和be动词/实义动词。"
+          },
+          {
+            "type": "relevance",
+            "message": "“My school wall blue”与“是否喜欢大城市”完全无关，属于无效信息，应删除。"
+          },
+          {
+            "type": "structure",
+            "message": "信息顺序混乱：先给结论，再插入无关细节，最后又重复“Better city”，缺少清晰的原因—让步—结论逻辑。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“Jobs because more”表意不清，应改为“there are more job opportunities”这类完整表达。"
+          },
+          {
+            "type": "naturalness",
+            "message": "“I no like crowd”不符合自然英语，应为“I don't like the crowds”。"
+          }
+        ],
+        "revision_mode": "rewrite",
+        "optimization_summary": "删除了与问题无关的“My school wall blue”；把碎片化表达补成完整句子；将“more jobs”明确为“more job opportunities”；用“but”连接不喜欢拥挤与公交便利的让步关系，最后用“so overall”收束结论。",
+        "final_upgraded_answer": "I prefer big cities because there are more job opportunities. I don't like the crowds, but the buses are convenient, so overall I think big cities are better.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接给出了偏好（更喜欢大城市），但理由只有“more jobs”和“bus easy”，且中间混入无关信息“My school wall blue”。整体内容过薄，没有展开为什么工作机会重要或公交便利如何影响偏好。",
+        "structure_diagnosis": "原回答没有清晰的信息顺序：先抛出结论，再插入无关细节，然后补理由，最后重复结论。缺少连接词，句子之间逻辑跳跃。",
+        "optimization_advice": "建议保留“工作机会多”作为主因，并补充一句具体说明，例如你所在行业或专业为什么在大城市机会更多；对于“公交方便”，可以补充一两个具体例子，如通勤时间或线路覆盖。不要编造经历，只补充你真实感受到的细节。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "more job opportunities",
+            "meaning": "更多工作机会",
+            "meaning_zh": "更多工作机会",
+            "why_useful": "谈论城市、职业发展、搬迁原因时高频使用，比“more jobs”更具体自然。",
+            "example": "I moved here because there are more job opportunities in my field.",
+            "usage_note": "opportunity 常用复数，搭配 there are more。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "Big city good.",
+            "corrected": "I prefer big cities.",
+            "category": "grammar",
+            "explanation_zh": "原句缺少主语和动词，且没有直接回应“prefer”这一偏好问题。",
+            "nature": "Error"
+          },
+          {
+            "original": "My school wall blue.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与“是否喜欢大城市”完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "Jobs because more.",
+            "corrected": "because there are more job opportunities.",
+            "category": "grammar",
+            "explanation_zh": "缺少完整的主谓结构，且“jobs because more”语序和搭配不成立。",
+            "nature": "Error"
+          },
+          {
+            "original": "I no like crowd",
+            "corrected": "I don't like the crowds",
+            "category": "grammar",
+            "explanation_zh": "否定形式错误，且crowd通常用复数the crowds表示泛指人群。",
+            "nature": "Error"
+          },
+          {
+            "original": "bus easy",
+            "corrected": "the buses are convenient",
+            "category": "vocabulary",
+            "explanation_zh": "“bus easy”过于简略，用“the buses are convenient”更自然准确。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回答偏好",
+            "content": "用“I prefer big cities”明确回应问题。",
+            "reusable_expression": "I prefer big cities"
+          },
+          {
+            "label": "给出主因",
+            "content": "用“because there are more job opportunities”说明工作机会是主要原因。",
+            "reusable_expression": "because there are more job opportunities"
+          },
+          {
+            "label": "让步与补充",
+            "content": "用“I don't like the crowds, but the buses are convenient”承认缺点并补充交通便利这一优点。",
+            "reusable_expression": "I don't like the crowds, but the buses are convenient"
+          },
+          {
+            "label": "总结结论",
+            "content": "用“so overall I think big cities are better”收束并重申偏好。",
+            "reusable_expression": "so overall I think big cities are better"
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 3,
+          "grammarScore": 2.5,
+          "vocabularyScore": 3.5,
+          "naturalnessScore": 3,
+          "usefulCorrections": "Big city good → I prefer big cities; Jobs because more → because there are more job opportunities; I no like crowd → I don't like the crowds; bus easy → the buses are convenient",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 4,
+            "coherenceScore": 3,
+            "developmentScore": 2.5,
+            "summary": "原回答直接回应了偏好，但理由非常简略，且包含与问题无关的“My school wall blue”，整体内容不足以支撑一个完整的偏好类回答。",
+            "offTopicParts": [
+              "My school wall blue."
+            ],
+            "repetition": [
+              "Big city good 与 Better city 重复表达偏好"
+            ],
+            "orderProblems": [
+              "先给结论，再插入无关细节，再补理由，最后重复结论，逻辑顺序混乱"
+            ],
+            "contentGaps": [
+              "没有具体说明为什么工作机会多对你重要",
+              "没有具体说明公交便利体现在哪里",
+              "没有解释不喜欢拥挤与最终偏好之间的关系"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 78203,
+      "model": "deepseek-v4-pro",
+      "raw": "",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 18371,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"大城市有更多工作机会\",\n    \"不喜欢人群拥挤，但公交车方便\",\n    \"总体认为大城市更好\"\n  ],\n  \"model_arguments\": [\n    \"大城市选择多，可以找到食物、工作或晚间课程\",\n    \"喜欢城市的匿名感，可以融入人群做自己的事\",\n    \"但噪音和房租让人疲惫\",\n    \"目前适合大城市，以后可能想住安静的地方\"\n  ],\n  \"overlapping_arguments\": [\n    \"大城市有更多工作机会\"\n  ],\n  \"reason\": \"用户的主要理由是大城市有更多工作机会，AI答案虽然把主论点扩展为选择多，但仍将工作列为大城市的核心吸引力之一，复用了相同论点，因此不独立。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4205,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, not really — I'd take a smaller place any day. The thing that gets me about big cities is how long everything takes. Seeing a friend who lives twenty minutes away can eat up half your evening once you've factored in the walk, the wait and the crowds. In a smaller town, that same catch-up is a ten-minute bike ride, so you actually do it instead of putting it off. I also like bumping into the same faces — the baker, the guy at the corner shop — it makes a place feel like yours. Big cities are exciting for a weekend, but I wouldn't want to live that pace every day.\",\n  \"reference_angle_summary\": \"独立主线：以“时间成本”为核心拒绝大城市，辅以熟人感与周末对比；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"any day\",\n      \"meaning_zh\": \"任何时候都愿意；毫不犹豫地选择\",\n      \"why_useful\": \"口语中表达强烈偏好的高频短语，比 I prefer 更自然、更有态度。\",\n      \"example\": \"I'd choose a quiet beach over a crowded resort any day.\",\n      \"usage_note\": \"常放在句尾，前面接 would + 动词。\"\n    },\n    {\n      \"expression\": \"the thing that gets me about\",\n      \"meaning_zh\": \"让我最受不了/最在意的一点是\",\n      \"why_useful\": \"引出具体抱怨或关键点，避免泛泛而谈，适合 Part 1 和 Part 3 展开。\",\n      \"example\": \"The thing that gets me about online shopping is all the packaging.\",\n      \"usage_note\": \"后接名词或动名词，语气偏口语。\"\n    },\n    {\n      \"expression\": \"eat up\",\n      \"meaning_zh\": \"消耗掉（时间、金钱等）\",\n      \"why_useful\": \"描述时间被大量占用的生动动词短语，比 spend 更有画面感。\",\n      \"example\": \"Commuting can eat up two hours of your day before you notice.\",\n      \"usage_note\": \"常与 time / hours / savings 搭配。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, not really — I'd take a smaller place any day. The thing that gets me about big cities is how long everything takes. Seeing a friend who lives twenty minutes away can eat up half your evening once you've factored in the walk, the wait and the crowds. In a smaller town, that same catch-up is a ten-minute bike ride, so you actually do it instead of putting it off. I also like bumping into the same faces — the baker, the guy at the corner shop — it makes a place feel like yours. Big cities are exciting for a weekend, but I wouldn't want to live that pace every day.",
+        "reference_angle_summary": "独立主线：以“时间成本”为核心拒绝大城市，辅以熟人感与周末对比；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "any day",
+            "meaning": "任何时候都愿意；毫不犹豫地选择",
+            "meaning_zh": "任何时候都愿意；毫不犹豫地选择",
+            "why_useful": "口语中表达强烈偏好的高频短语，比 I prefer 更自然、更有态度。",
+            "example": "I'd choose a quiet beach over a crowded resort any day.",
+            "usage_note": "常放在句尾，前面接 would + 动词。",
+            "readonly": false
+          },
+          {
+            "expression": "the thing that gets me about",
+            "meaning": "让我最受不了/最在意的一点是",
+            "meaning_zh": "让我最受不了/最在意的一点是",
+            "why_useful": "引出具体抱怨或关键点，避免泛泛而谈，适合 Part 1 和 Part 3 展开。",
+            "example": "The thing that gets me about online shopping is all the packaging.",
+            "usage_note": "后接名词或动名词，语气偏口语。",
+            "readonly": false
+          },
+          {
+            "expression": "eat up",
+            "meaning": "消耗掉（时间、金钱等）",
+            "meaning_zh": "消耗掉（时间、金钱等）",
+            "why_useful": "描述时间被大量占用的生动动词短语，比 spend 更有画面感。",
+            "example": "Commuting can eat up two hours of your day before you notice.",
+            "usage_note": "常与 time / hours / savings 搭配。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 35883,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"大城市有更多工作机会\",\n    \"不喜欢人群\",\n    \"公交车方便\",\n    \"整体认为大城市更好\"\n  ],\n  \"model_arguments\": [\n    \"大城市做什么都很耗时\",\n    \"见朋友会因步行、等待和人群耗掉大量时间\",\n    \"小城镇骑自行车更快捷方便\",\n    \"喜欢熟悉面孔和社区感\",\n    \"大城市只适合周末，不适合日常节奏\"\n  ],\n  \"overlapping_arguments\": [],\n  \"reason\": \"AI以时间节奏和社区感为核心反对大城市，用户则以工作机会和公交便利支持大城市；人群在AI中仅为时间问题的附带提及，未作为独立论点展开，核心论证路径明显不同。\",\n  \"independent\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

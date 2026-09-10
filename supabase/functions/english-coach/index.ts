@@ -827,6 +827,7 @@ serve(async (req: Request) => {
     }
 
     const speakingFeedback = body.speaking_feedback === true;
+    const speakingReview = speakingFeedback && model === "deepseek-v4-pro";
 
     // Fetch learning context in parallel
     const [
@@ -946,6 +947,7 @@ serve(async (req: Request) => {
     // ── AI Runtime: chat agent (raw text, no JSON parse) ──
     const aiResult = await aiRuntime<string>(finalMessages as Array<{ role: "system" | "user" | "assistant"; content: string }>, {
       agentName: "english-coach",
+      ...(speakingReview ? { model: "deepseek-v4-pro", timeout: 150_000 } : {}),
       maxTokens,
       temperature,
       parseJson: false,

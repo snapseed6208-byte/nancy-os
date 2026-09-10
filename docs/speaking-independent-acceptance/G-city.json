@@ -1,0 +1,470 @@
+{
+  "id": "G-city",
+  "input": "I like living in big cities because there are more jobs. And actually I don't like crowded places. My boyfriend also lives here. The transport is very convenient. So I think big cities are better.",
+  "question": "Do you prefer living in big cities?",
+  "expectedMode": "structure",
+  "elapsedMs": 178878,
+  "feedback": {
+    "overall_score": 6,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "content",
+        "message": "“My boyfriend also lives here”与问题“是否喜欢住在大城市”关联不明确，没有说明这如何影响你的偏好，属于未展开的私人信息。"
+      },
+      {
+        "type": "structure",
+        "message": "“And actually I don't like crowded places”与前后支持大城市优点的句子方向相反，缺少转折连接，逻辑上显得突兀。"
+      },
+      {
+        "type": "vocabulary",
+        "message": "“there are more jobs”可以更自然地表达为“there are more job opportunities”，更符合口语中谈论城市优势的说法。"
+      },
+      {
+        "type": "naturalness",
+        "message": "“So I think big cities are better”作为结尾略显笼统，可以更具体地回扣前面提到的原因。"
+      }
+    ],
+    "revision_mode": "structure",
+    "optimization_summary": "保留了原回答的核心意思：工作机会多、交通方便、不喜欢拥挤，并认为大城市更好。删除了与问题关联不明的“男朋友也住在这里”。将“不喜欢拥挤”用转折连接，使逻辑更顺畅。把“more jobs”升级为“more job opportunities”，结尾更自然地总结。",
+    "final_upgraded_answer": "I like living in big cities mainly because there are more job opportunities. The transport is also very convenient, so overall I think big cities are better. I'm not really a fan of crowded places, though.",
+    "reference_answer": "Not really, and the main reason is the pace. I've stayed with friends in a big city a few times, and after about three days I felt permanently wired — the noise never fully stops, even at night. What gets me is that you can't just step outside and hear yourself think. I'd take a smaller town any day, as long as it's got a decent train link, because then I can dip into the city when I actually want it and come back to quiet. So it's less about avoiding cities and more about not living in the middle of one.",
+    "reference_angle_summary": "独立主线：以“城市节奏让人持续紧绷”为核心，用短住体验说明，再以“小城镇+便利交通”作为条件式选择；示例不代表用户经历。",
+    "reference_status": "verified",
+    "content_diagnosis": "原回答直接回应了是否喜欢住在大城市，给出了工作机会和交通两个理由，也提到了不喜欢拥挤。但“男朋友也住在这里”没有解释与偏好的关系，显得跑题；整体内容较简短，缺少对理由的具体展开。",
+    "structure_diagnosis": "信息顺序为：喜欢大城市→工作多→不喜欢拥挤→男朋友住这里→交通方便→总结。其中“不喜欢拥挤”和“男朋友”插入在支持理由之间，打断了逻辑；结尾总结放在交通之后，顺序可以更紧凑。",
+    "optimization_advice": "建议补充：为什么工作机会多对你重要（例如行业机会、职业发展），交通方便体现在哪里（例如地铁、通勤时间），以及你如何平衡“喜欢大城市”和“不喜欢拥挤”。如果男朋友住在这里确实是你喜欢大城市的原因，需要明确说明，例如“他在这里，所以我不想搬走”，否则可以省略。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "mainly because",
+        "meaning": "主要因为",
+        "meaning_zh": "主要因为",
+        "why_useful": "用于引出最主要的原因，使回答重点突出，自然且高频。",
+        "example": "I prefer online shopping mainly because it saves time.",
+        "usage_note": "后面接名词短语或句子均可。",
+        "readonly": false
+      },
+      {
+        "expression": "permanently wired",
+        "meaning": "一直处于紧绷、亢奋、放松不下来的状态",
+        "meaning_zh": "一直处于紧绷、亢奋、放松不下来的状态",
+        "why_useful": "比 very stressed 更具体，能自然描述环境对人的持续影响，适合城市、工作、考试等话题。",
+        "example": "After a week of back-to-back meetings I felt permanently wired.",
+        "usage_note": "口语中常跟 feel / felt 搭配，语气偏非正式。",
+        "readonly": false
+      },
+      {
+        "expression": "hear yourself think",
+        "meaning": "有安静的环境可以思考、静下心来",
+        "meaning_zh": "有安静的环境可以思考、静下心来",
+        "why_useful": "高频地道表达，常用于抱怨噪音或强调需要安静空间，迁移到学习、居住、旅行场景都很自然。",
+        "example": "The café was so crowded I couldn't hear myself think.",
+        "usage_note": "多用于否定句 can't / couldn't。",
+        "readonly": false
+      },
+      {
+        "expression": "dip into",
+        "meaning": "偶尔体验一下、短暂参与",
+        "meaning_zh": "偶尔体验一下、短暂参与",
+        "why_useful": "比 go to 更有“按需短暂享受”的含义，适合表达有条件地接触某事物，如城市生活、文化活动。",
+        "example": "I like to dip into the city for concerts but I wouldn't want to live there.",
+        "usage_note": "后面常接地点或活动，强调短暂而非长期投入。",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "there are more jobs",
+        "corrected": "there are more job opportunities",
+        "category": "vocabulary",
+        "explanation_zh": "“job opportunities”比“jobs”更具体，更符合谈论城市优势时的自然表达。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "And actually I don't like crowded places.",
+        "corrected": "I'm not really a fan of crowded places, though.",
+        "category": "naturalness",
+        "explanation_zh": "用“though”表示转折，使前后逻辑更连贯；“not really a fan of”是更自然的口语表达。",
+        "nature": "Upgrade"
+      },
+      {
+        "original": "My boyfriend also lives here.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "该信息与问题关联不明确，且没有解释如何影响你的偏好，建议删除或补充说明。",
+        "nature": "Error"
+      },
+      {
+        "original": "So I think big cities are better.",
+        "corrected": "So overall I think big cities are better.",
+        "category": "naturalness",
+        "explanation_zh": "加上“overall”使总结更自然，表明这是综合前面理由后的结论。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "直接回答并给出主要理由",
+        "content": "I like living in big cities mainly because there are more job opportunities.",
+        "reusable_expression": "mainly because..."
+      },
+      {
+        "label": "补充第二个理由",
+        "content": "The transport is also very convenient,",
+        "reusable_expression": "The transport is also very convenient."
+      },
+      {
+        "label": "用转折补充个人保留意见",
+        "content": "I'm not really a fan of crowded places, though.",
+        "reusable_expression": "I'm not really a fan of..., though."
+      },
+      {
+        "label": "总结整体偏好",
+        "content": "so overall I think big cities are better.",
+        "reusable_expression": "so overall I think..."
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 6,
+      "grammarScore": 5.5,
+      "vocabularyScore": 6.5,
+      "naturalnessScore": 6,
+      "usefulCorrections": "there are more jobs → there are more job opportunities; And actually I don't like crowded places. → I'm not really a fan of crowded places, though.; So I think big cities are better. → So overall I think big cities are better.",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 6,
+        "coherenceScore": 6,
+        "developmentScore": 5.5,
+        "summary": "原回答直接回应了问题，给出了工作机会和交通两个理由，但“男朋友也住在这里”与问题关联不明确，且整体展开不足。",
+        "offTopicParts": [
+          "My boyfriend also lives here."
+        ],
+        "repetition": [],
+        "orderProblems": [
+          "“And actually I don't like crowded places”插入在支持理由之间，缺少转折连接。",
+          "“My boyfriend also lives here”打断了工作机会和交通之间的连贯性。"
+        ],
+        "contentGaps": [
+          "没有具体说明工作机会多为什么重要。",
+          "没有具体说明交通方便体现在哪里。",
+          "没有解释如何平衡喜欢大城市和不喜欢拥挤。"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4635,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Honestly, I'd rather live in a big city, mainly because of the sheer convenience. Everything's within reach — late-night supermarkets, decent public transport, and a huge range of restaurants. I also like the fact that there's always something going on, whether it's a concert or a small exhibition. That said, I can see the downside: it's noisy, rent is sky-high, and you rarely get any peace. So for me, the trade-off is worth it while I'm young and busy, but I wouldn't rule out moving somewhere quieter later on, maybe once I want a bit more space and a slower pace of life.\",\n  \"reference_angle_summary\": \"独立主线：以“便利与热闹 vs 噪音与高房租”的权衡为核心，并加入随时间可能改变选择的反思；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"within reach\",\n      \"meaning_zh\": \"触手可及；很容易获得\",\n      \"why_useful\": \"描述城市便利、资源可及性时非常自然，比只说 convenient 更具体。\",\n      \"example\": \"In a big city, good hospitals and schools are usually within reach.\",\n      \"usage_note\": \"常与 everything / amenities / services 搭配。\"\n    },\n    {\n      \"expression\": \"the trade-off is worth it\",\n      \"meaning_zh\": \"这种取舍是值得的\",\n      \"why_useful\": \"表达优缺点权衡时高频、口语化，适合 Part 3 讨论类问题。\",\n      \"example\": \"The commute is long, but the trade-off is worth it for a better job.\",\n      \"usage_note\": \"trade-off 可数，前面常加 the。\"\n    },\n    {\n      \"expression\": \"I wouldn't rule out\",\n      \"meaning_zh\": \"我不会排除……的可能性\",\n      \"why_useful\": \"表达未来可能性、保留态度时很自然，避免绝对化。\",\n      \"example\": \"I wouldn't rule out moving abroad for a year or two.\",\n      \"usage_note\": \"后接名词或动名词，语气比 maybe 更成熟。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Honestly, I'd rather live in a big city, mainly because of the sheer convenience. Everything's within reach — late-night supermarkets, decent public transport, and a huge range of restaurants. I also like the fact that there's always something going on, whether it's a concert or a small exhibition. That said, I can see the downside: it's noisy, rent is sky-high, and you rarely get any peace. So for me, the trade-off is worth it while I'm young and busy, but I wouldn't rule out moving somewhere quieter later on, maybe once I want a bit more space and a slower pace of life.",
+        "reference_angle_summary": "独立主线：以“便利与热闹 vs 噪音与高房租”的权衡为核心，并加入随时间可能改变选择的反思；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "within reach",
+            "meaning": "触手可及；很容易获得",
+            "meaning_zh": "触手可及；很容易获得",
+            "why_useful": "描述城市便利、资源可及性时非常自然，比只说 convenient 更具体。",
+            "example": "In a big city, good hospitals and schools are usually within reach.",
+            "usage_note": "常与 everything / amenities / services 搭配。",
+            "readonly": false
+          },
+          {
+            "expression": "the trade-off is worth it",
+            "meaning": "这种取舍是值得的",
+            "meaning_zh": "这种取舍是值得的",
+            "why_useful": "表达优缺点权衡时高频、口语化，适合 Part 3 讨论类问题。",
+            "example": "The commute is long, but the trade-off is worth it for a better job.",
+            "usage_note": "trade-off 可数，前面常加 the。",
+            "readonly": false
+          },
+          {
+            "expression": "I wouldn't rule out",
+            "meaning": "我不会排除……的可能性",
+            "meaning_zh": "我不会排除……的可能性",
+            "why_useful": "表达未来可能性、保留态度时很自然，避免绝对化。",
+            "example": "I wouldn't rule out moving abroad for a year or two.",
+            "usage_note": "后接名词或动名词，语气比 maybe 更成熟。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 8459,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I like living in big cities mainly because there are more job opportunities. The transport is also very convenient, so overall I think big cities are better. I'm not really a fan of crowded places, though.\",\n  \"overall_score\": 6.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"“My boyfriend also lives here”与问题“是否喜欢住在大城市”关联不明确，没有说明这如何影响你的偏好，属于未展开的私人信息。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"“And actually I don't like crowded places”与前后支持大城市优点的句子方向相反，缺少转折连接，逻辑上显得突兀。\"\n    },\n    {\n      \"type\": \"vocabulary\",\n      \"message\": \"“there are more jobs”可以更自然地表达为“there are more job opportunities”，更符合口语中谈论城市优势的说法。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"“So I think big cities are better”作为结尾略显笼统，可以更具体地回扣前面提到的原因。\"\n    }\n  ],\n  \"revision_mode\": \"structure\",\n  \"optimization_summary\": \"保留了原回答的核心意思：工作机会多、交通方便、不喜欢拥挤，并认为大城市更好。删除了与问题关联不明的“男朋友也住在这里”。将“不喜欢拥挤”用转折连接，使逻辑更顺畅。把“more jobs”升级为“more job opportunities”，结尾更自然地总结。\",\n  \"content_diagnosis\": \"原回答直接回应了是否喜欢住在大城市，给出了工作机会和交通两个理由，也提到了不喜欢拥挤。但“男朋友也住在这里”没有解释与偏好的关系，显得跑题；整体内容较简短，缺少对理由的具体展开。\",\n  \"structure_diagnosis\": \"信息顺序为：喜欢大城市→工作多→不喜欢拥挤→男朋友住这里→交通方便→总结。其中“不喜欢拥挤”和“男朋友”插入在支持理由之间，打断了逻辑；结尾总结放在交通之后，顺序可以更紧凑。\",\n  \"optimization_advice\": \"建议补充：为什么工作机会多对你重要（例如行业机会、职业发展），交通方便体现在哪里（例如地铁、通勤时间），以及你如何平衡“喜欢大城市”和“不喜欢拥挤”。如果男朋友住在这里确实是你喜欢大城市的原因，需要明确说明，例如“他在这里，所以我不想搬走”，否则可以省略。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"there are more jobs\",\n      \"corrected\": \"there are more job opportunities\",\n      \"category\": \"vocabulary\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"“job opportunities”比“jobs”更具体，更符合谈论城市优势时的自然表达。\"\n    },\n    {\n      \"original\": \"And actually I don't like crowded places.\",\n      \"corrected\": \"I'm not really a fan of crowded places, though.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"用“though”表示转折，使前后逻辑更连贯；“not really a fan of”是更自然的口语表达。\"\n    },\n    {\n      \"original\": \"My boyfriend also lives here.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"该信息与问题关联不明确，且没有解释如何影响你的偏好，建议删除或补充说明。\"\n    },\n    {\n      \"original\": \"So I think big cities are better.\",\n      \"corrected\": \"So overall I think big cities are better.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"加上“overall”使总结更自然，表明这是综合前面理由后的结论。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回答并给出主要理由\",\n      \"content\": \"I like living in big cities mainly because there are more job opportunities.\",\n      \"reusable_expression\": \"mainly because...\"\n    },\n    {\n      \"label\": \"补充第二个理由\",\n      \"content\": \"The transport is also very convenient,\",\n      \"reusable_expression\": \"The transport is also very convenient.\"\n    },\n    {\n      \"label\": \"用转折补充个人保留意见\",\n      \"content\": \"I'm not really a fan of crowded places, though.\",\n      \"reusable_expression\": \"I'm not really a fan of..., though.\"\n    },\n    {\n      \"label\": \"总结整体偏好\",\n      \"content\": \"so overall I think big cities are better.\",\n      \"reusable_expression\": \"so overall I think...\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"mainly because\",\n      \"meaning_zh\": \"主要因为\",\n      \"why_useful\": \"用于引出最主要的原因，使回答重点突出，自然且高频。\",\n      \"example\": \"I prefer online shopping mainly because it saves time.\",\n      \"usage_note\": \"后面接名词短语或句子均可。\"\n    },\n    {\n      \"expression\": \"I'm not really a fan of...\",\n      \"meaning_zh\": \"我不太喜欢……\",\n      \"why_useful\": \"比“I don't like”更委婉自然，适合表达个人偏好。\",\n      \"example\": \"I'm not really a fan of spicy food.\",\n      \"usage_note\": \"后接名词或动名词。\"\n    },\n    {\n      \"expression\": \"so overall I think...\",\n      \"meaning_zh\": \"所以总的来说我认为……\",\n      \"why_useful\": \"用于总结观点，使回答有收尾感，适合Part 1和Part 3。\",\n      \"example\": \"So overall I think it's a good idea.\",\n      \"usage_note\": \"放在句首，引出最终结论。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 6.0,\n    \"grammarScore\": 5.5,\n    \"vocabularyScore\": 6.5,\n    \"naturalnessScore\": 6.0,\n    \"usefulCorrections\": \"there are more jobs → there are more job opportunities; And actually I don't like crowded places. → I'm not really a fan of crowded places, though.; So I think big cities are better. → So overall I think big cities are better.\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 6.0,\n      \"coherenceScore\": 6.0,\n      \"developmentScore\": 5.5,\n      \"summary\": \"原回答直接回应了问题，给出了工作机会和交通两个理由，但“男朋友也住在这里”与问题关联不明确，且整体展开不足。\",\n      \"offTopicParts\": [\n        \"My boyfriend also lives here.\"\n      ],\n      \"repetition\": [],\n      \"orderProblems\": [\n        \"“And actually I don't like crowded places”插入在支持理由之间，缺少转折连接。\",\n        \"“My boyfriend also lives here”打断了工作机会和交通之间的连贯性。\"\n      ],\n      \"contentGaps\": [\n        \"没有具体说明工作机会多为什么重要。\",\n        \"没有具体说明交通方便体现在哪里。\",\n        \"没有解释如何平衡喜欢大城市和不喜欢拥挤。\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 6,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "content",
+            "message": "“My boyfriend also lives here”与问题“是否喜欢住在大城市”关联不明确，没有说明这如何影响你的偏好，属于未展开的私人信息。"
+          },
+          {
+            "type": "structure",
+            "message": "“And actually I don't like crowded places”与前后支持大城市优点的句子方向相反，缺少转折连接，逻辑上显得突兀。"
+          },
+          {
+            "type": "vocabulary",
+            "message": "“there are more jobs”可以更自然地表达为“there are more job opportunities”，更符合口语中谈论城市优势的说法。"
+          },
+          {
+            "type": "naturalness",
+            "message": "“So I think big cities are better”作为结尾略显笼统，可以更具体地回扣前面提到的原因。"
+          }
+        ],
+        "revision_mode": "structure",
+        "optimization_summary": "保留了原回答的核心意思：工作机会多、交通方便、不喜欢拥挤，并认为大城市更好。删除了与问题关联不明的“男朋友也住在这里”。将“不喜欢拥挤”用转折连接，使逻辑更顺畅。把“more jobs”升级为“more job opportunities”，结尾更自然地总结。",
+        "final_upgraded_answer": "I like living in big cities mainly because there are more job opportunities. The transport is also very convenient, so overall I think big cities are better. I'm not really a fan of crowded places, though.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了是否喜欢住在大城市，给出了工作机会和交通两个理由，也提到了不喜欢拥挤。但“男朋友也住在这里”没有解释与偏好的关系，显得跑题；整体内容较简短，缺少对理由的具体展开。",
+        "structure_diagnosis": "信息顺序为：喜欢大城市→工作多→不喜欢拥挤→男朋友住这里→交通方便→总结。其中“不喜欢拥挤”和“男朋友”插入在支持理由之间，打断了逻辑；结尾总结放在交通之后，顺序可以更紧凑。",
+        "optimization_advice": "建议补充：为什么工作机会多对你重要（例如行业机会、职业发展），交通方便体现在哪里（例如地铁、通勤时间），以及你如何平衡“喜欢大城市”和“不喜欢拥挤”。如果男朋友住在这里确实是你喜欢大城市的原因，需要明确说明，例如“他在这里，所以我不想搬走”，否则可以省略。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "mainly because",
+            "meaning": "主要因为",
+            "meaning_zh": "主要因为",
+            "why_useful": "用于引出最主要的原因，使回答重点突出，自然且高频。",
+            "example": "I prefer online shopping mainly because it saves time.",
+            "usage_note": "后面接名词短语或句子均可。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "there are more jobs",
+            "corrected": "there are more job opportunities",
+            "category": "vocabulary",
+            "explanation_zh": "“job opportunities”比“jobs”更具体，更符合谈论城市优势时的自然表达。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "And actually I don't like crowded places.",
+            "corrected": "I'm not really a fan of crowded places, though.",
+            "category": "naturalness",
+            "explanation_zh": "用“though”表示转折，使前后逻辑更连贯；“not really a fan of”是更自然的口语表达。",
+            "nature": "Upgrade"
+          },
+          {
+            "original": "My boyfriend also lives here.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "该信息与问题关联不明确，且没有解释如何影响你的偏好，建议删除或补充说明。",
+            "nature": "Error"
+          },
+          {
+            "original": "So I think big cities are better.",
+            "corrected": "So overall I think big cities are better.",
+            "category": "naturalness",
+            "explanation_zh": "加上“overall”使总结更自然，表明这是综合前面理由后的结论。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回答并给出主要理由",
+            "content": "I like living in big cities mainly because there are more job opportunities.",
+            "reusable_expression": "mainly because..."
+          },
+          {
+            "label": "补充第二个理由",
+            "content": "The transport is also very convenient,",
+            "reusable_expression": "The transport is also very convenient."
+          },
+          {
+            "label": "用转折补充个人保留意见",
+            "content": "I'm not really a fan of crowded places, though.",
+            "reusable_expression": "I'm not really a fan of..., though."
+          },
+          {
+            "label": "总结整体偏好",
+            "content": "so overall I think big cities are better.",
+            "reusable_expression": "so overall I think..."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 6,
+          "grammarScore": 5.5,
+          "vocabularyScore": 6.5,
+          "naturalnessScore": 6,
+          "usefulCorrections": "there are more jobs → there are more job opportunities; And actually I don't like crowded places. → I'm not really a fan of crowded places, though.; So I think big cities are better. → So overall I think big cities are better.",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 6,
+            "coherenceScore": 6,
+            "developmentScore": 5.5,
+            "summary": "原回答直接回应了问题，给出了工作机会和交通两个理由，但“男朋友也住在这里”与问题关联不明确，且整体展开不足。",
+            "offTopicParts": [
+              "My boyfriend also lives here."
+            ],
+            "repetition": [],
+            "orderProblems": [
+              "“And actually I don't like crowded places”插入在支持理由之间，缺少转折连接。",
+              "“My boyfriend also lives here”打断了工作机会和交通之间的连贯性。"
+            ],
+            "contentGaps": [
+              "没有具体说明工作机会多为什么重要。",
+              "没有具体说明交通方便体现在哪里。",
+              "没有解释如何平衡喜欢大城市和不喜欢拥挤。"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 76448,
+      "model": "deepseek-v4-pro",
+      "raw": "",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 28011,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\"大城市工作机会更多\", \"不喜欢拥挤的地方\", \"男朋友也住在这里\", \"交通便利\", \"大城市更好\"],\n  \"model_arguments\": [\"大城市生活便利，配套齐全\", \"公共交通方便\", \"餐厅选择多\", \"活动丰富（音乐会、展览）\", \"城市有噪音、房租高、缺乏宁静等缺点\", \"年轻时值得，未来可能搬到安静地方\"],\n  \"overlapping_arguments\": [\"交通便利/公共交通便捷\"],\n  \"reason\": \"AI 答案将用户提出的交通便利作为其核心便利理由之一展开，复用了同一支持性论点；虽然补充了其他内容，但存在论点重合，因此不独立。\",\n  \"independent\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "model-answer",
+      "elapsedMs": 4079,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"reference_answer\": \"Not really, and the main reason is the pace. I've stayed with friends in a big city a few times, and after about three days I felt permanently wired — the noise never fully stops, even at night. What gets me is that you can't just step outside and hear yourself think. I'd take a smaller town any day, as long as it's got a decent train link, because then I can dip into the city when I actually want it and come back to quiet. So it's less about avoiding cities and more about not living in the middle of one.\",\n  \"reference_angle_summary\": \"独立主线：以“城市节奏让人持续紧绷”为核心，用短住体验说明，再以“小城镇+便利交通”作为条件式选择；示例不代表用户经历。\",\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"permanently wired\",\n      \"meaning_zh\": \"一直处于紧绷、亢奋、放松不下来的状态\",\n      \"why_useful\": \"比 very stressed 更具体，能自然描述环境对人的持续影响，适合城市、工作、考试等话题。\",\n      \"example\": \"After a week of back-to-back meetings I felt permanently wired.\",\n      \"usage_note\": \"口语中常跟 feel / felt 搭配，语气偏非正式。\"\n    },\n    {\n      \"expression\": \"hear yourself think\",\n      \"meaning_zh\": \"有安静的环境可以思考、静下心来\",\n      \"why_useful\": \"高频地道表达，常用于抱怨噪音或强调需要安静空间，迁移到学习、居住、旅行场景都很自然。\",\n      \"example\": \"The café was so crowded I couldn't hear myself think.\",\n      \"usage_note\": \"多用于否定句 can't / couldn't。\"\n    },\n    {\n      \"expression\": \"dip into\",\n      \"meaning_zh\": \"偶尔体验一下、短暂参与\",\n      \"why_useful\": \"比 go to 更有“按需短暂享受”的含义，适合表达有条件地接触某事物，如城市生活、文化活动。\",\n      \"example\": \"I like to dip into the city for concerts but I wouldn't want to live there.\",\n      \"usage_note\": \"后面常接地点或活动，强调短暂而非长期投入。\"\n    }\n  ]\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "Not really, and the main reason is the pace. I've stayed with friends in a big city a few times, and after about three days I felt permanently wired — the noise never fully stops, even at night. What gets me is that you can't just step outside and hear yourself think. I'd take a smaller town any day, as long as it's got a decent train link, because then I can dip into the city when I actually want it and come back to quiet. So it's less about avoiding cities and more about not living in the middle of one.",
+        "reference_angle_summary": "独立主线：以“城市节奏让人持续紧绷”为核心，用短住体验说明，再以“小城镇+便利交通”作为条件式选择；示例不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "permanently wired",
+            "meaning": "一直处于紧绷、亢奋、放松不下来的状态",
+            "meaning_zh": "一直处于紧绷、亢奋、放松不下来的状态",
+            "why_useful": "比 very stressed 更具体，能自然描述环境对人的持续影响，适合城市、工作、考试等话题。",
+            "example": "After a week of back-to-back meetings I felt permanently wired.",
+            "usage_note": "口语中常跟 feel / felt 搭配，语气偏非正式。",
+            "readonly": false
+          },
+          {
+            "expression": "hear yourself think",
+            "meaning": "有安静的环境可以思考、静下心来",
+            "meaning_zh": "有安静的环境可以思考、静下心来",
+            "why_useful": "高频地道表达，常用于抱怨噪音或强调需要安静空间，迁移到学习、居住、旅行场景都很自然。",
+            "example": "The café was so crowded I couldn't hear myself think.",
+            "usage_note": "多用于否定句 can't / couldn't。",
+            "readonly": false
+          },
+          {
+            "expression": "dip into",
+            "meaning": "偶尔体验一下、短暂参与",
+            "meaning_zh": "偶尔体验一下、短暂参与",
+            "why_useful": "比 go to 更有“按需短暂享受”的含义，适合表达有条件地接触某事物，如城市生活、文化活动。",
+            "example": "I like to dip into the city for concerts but I wouldn't want to live there.",
+            "usage_note": "后面常接地点或活动，强调短暂而非长期投入。",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 61878,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"大城市有更多工作机会\",\n    \"交通非常方便\",\n    \"不喜欢拥挤的地方\",\n    \"男朋友也住在这里\",\n    \"所以大城市更好\"\n  ],\n  \"model_arguments\": [\n    \"不喜欢大城市的节奏和噪音\",\n    \"城市噪音不断，无法安静思考\",\n    \"宁愿住在有火车连接的小镇，可以偶尔进城再回到安静\",\n    \"不是要完全避开城市，而是不想住在城市中心\"\n  ],\n  \"overlapping_arguments\": [],\n  \"reason\": \"AI以城市节奏和噪音为核心理由，并展开个人经历，选择有火车连接的小镇作为替代；未复用用户的工作机会、男朋友、交通便利或拥挤等论点，火车连接只是作为小镇可偶尔进城的条件，不是对城市交通便利的展开。\",\n  \"independent\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

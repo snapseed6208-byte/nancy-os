@@ -1,3 +1,4 @@
+import { runSpeakingPipeline } from "../src/lib/ai/speakingPipeline";
 import fs from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { SPEAKING_FEEDBACK_PROMPT, buildFeedbackPrompt, buildRetryFeedbackPrompt } from "../src/lib/ai/prompts";
@@ -7,7 +8,7 @@ import { speakingCases } from "../src/__tests__/fixtures/speaking-feedback-cases
 const config = Object.fromEntries(fs.readFileSync('.env.local','utf8').split(/\r?\n/).filter(l=>/^\w+=/.test(l)).map(l=>{const i=l.indexOf('=');return [l.slice(0,i),l.slice(i+1).replace(/^["']|["']$/g,'')]}));
 const url = config.VITE_SUPABASE_URL;
 const secretFile = '.env.speaking-qa.local';
-const outDir = 'docs/speaking-live-acceptance';
+const outDir = 'docs/speaking-independent-acceptance';
 fs.mkdirSync(outDir,{recursive:true});
 const auth = createClient(url, config.VITE_SUPABASE_ANON_KEY, {auth:{persistSession:false}});
 const mode = process.argv[2] || 'semantic';
@@ -26,16 +27,39 @@ const credentials = JSON.parse(fs.readFileSync(secretFile,'utf8'));
 const {data,error} = await auth.auth.signInWithPassword(credentials);
 if(error) throw new Error(error.message);
 const token = data.session!.access_token;
-async function call(system:string,user:string) {
+if(mode==='ui-seed') {
+  const question='Do you prefer living in big cities?';
+  const normalized=question.toLowerCase().replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim();
+  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(normalized)).then(buf=>Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''));
+  const existing=await auth.from('speaking_questions').select('id').eq('user_id',credentials.userId).eq('content_hash',hash);
+  if(existing.error) throw existing.error;
+  if(!existing.data?.length) {
+    const inserted=await auth.from('speaking_questions').insert({user_id:credentials.userId,question,normalized_question:normalized,content_hash:hash,mode:'ielts',topic:'life_routine',part:'part1',source_type:'manual',source_ref:'speaking-browser-acceptance'}).select('id').single();
+    if(inserted.error) throw inserted.error;
+    console.log(JSON.stringify(inserted.data));
+  } else console.log(JSON.stringify(existing.data));
+}
+async function call(system:string,user:string,maxTokens=4096,model='deepseek-chat') {
   const started=Date.now();
-  const res=await fetch(`${url}/functions/v1/english-coach`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({messages:[{role:'system',content:system},{role:'user',content:user}],speaking_feedback:true,inject_context:false,maxTokens:4096,temperature:0.3}),signal:AbortSignal.timeout(120000)});
+  const res=await fetch(`${url}/functions/v1/english-coach`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({messages:[{role:'system',content:system},{role:'user',content:user}],speaking_feedback:true,inject_context:false,maxTokens,model,temperature:0.3}),signal:AbortSignal.timeout(150000)});
   if(!res.ok) throw new Error(`english-coach HTTP ${res.status}: ${(await res.text()).slice(0,120)}`);
   const body=await res.json();
   return {elapsedMs:Date.now()-started,model:body.model,raw:body.content,feedback:parseSpeakingResponse(body.content)};
 }
+async function fullFeedback(question:string, transcript:string) {
+ const calls:unknown[]=[]; const started=Date.now();
+ const feedback=await runSpeakingPipeline(async options=>{
+   const r=await call(options.messages[0].content, options.messages[1].content,options.maxTokens,options.model);
+   calls.push({kind:options.messages[0].content.includes('audit gate')?'fidelity-review':options.messages[0].content.includes('reviewer')?'independence-review':options.messages[0].content.includes('strong conversational English speaker')?'model-answer':'my-best-version',...r});
+   return {content:r.raw,model:r.model||'unknown'};
+ },question,transcript,[],token);
+ return {elapsedMs:Date.now()-started,feedback,calls};
+}
 if(mode==='semantic') {
-  for(const c of speakingCases) {
-    const output=await call(SPEAKING_FEEDBACK_PROMPT,buildFeedbackPrompt(c.question,c.input,[]));
+  const only=(process.argv[3]||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const cases=only.length?speakingCases.filter(c=>only.includes(c.id)):speakingCases;
+  for(const c of cases) {
+    const output=await fullFeedback(c.question,c.input);
     fs.writeFileSync(`${outDir}/${c.id}.json`,JSON.stringify({id:c.id,input:c.input,question:c.question,expectedMode:c.mode,...output},null,2));
     console.log(JSON.stringify({id:c.id,mode:output.feedback.revision_mode,expected:c.mode,elapsedMs:output.elapsedMs,answer:!!output.feedback.final_upgraded_answer,reference:!!output.feedback.reference_answer}));
   }
@@ -81,7 +105,7 @@ if(mode==='audio') {
   if(!transcript) throw new Error('ASR returned empty transcript');
   console.log(JSON.stringify({stage:'ASR',transcript,duration:pcm.length/32000}));
   const question='Do you prefer living in big cities?';
-  const output=await call(SPEAKING_FEEDBACK_PROMPT,buildFeedbackPrompt(question,transcript,[]));
+  const output=await fullFeedback(question,transcript);
   if(!output.feedback.final_upgraded_answer) throw new Error('Missing final answer');
   const {data:session,error:sessionError}=await auth.from('speaking_sessions').insert({user_id:credentials.userId,prompt:question,title:'[QA] Speaking audio acceptance',is_test:true,mode:'free_speaking'}).select().single();
   if(sessionError) throw new Error(sessionError.message);

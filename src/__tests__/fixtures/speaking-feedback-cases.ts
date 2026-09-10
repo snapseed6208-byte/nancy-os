@@ -10,8 +10,8 @@ export const speakingCases = [
   {
     id: "B", question: "Do you prefer working from home?", mode: "expand",
     input: "I prefer working from home because it's convenient.",
-    final: "I prefer working from home because it's convenient. Not having to commute can save time and give me more control over my day. A quiet space at home could also make it easier to focus, while a flexible schedule would allow more room for breaks.",
-    summary: "保留在家办公更方便的观点。补充通勤时间、时间安排和专注度，让原因更具体。", notice: "参考性展开：节省通勤、时间控制、专注和灵活安排是建议理由，不是你已提供的工作经历。",
+    final: "I prefer working from home because it's convenient.",
+    summary: "保留原观点。建议你补充具体方便在哪里，但不替你编造新的理由。", notice: "",
     reference: "An office can be useful when a task calls for close teamwork. Being in the same room makes it easier to ask a quick question and solve problems together.",
   },
   {
@@ -38,8 +38,8 @@ export const speakingCases = [
   {
     id: "F", question: "Why is teamwork useful?", mode: "expand",
     input: "Teamwork is useful because people have different skills.",
-    final: "Teamwork is useful because people have different skills. For example, one person could organize a project while another develops ideas. Sharing responsibilities this way can help a group solve problems more effectively.",
-    summary: "保留不同技能互补的观点。补充假设性的项目分工例子，说明它如何帮助解决问题。", notice: "参考性展开：项目分工是假设示例，并非你的真实经历。",
+    final: "Teamwork is useful because people bring different skills to the table.",
+    summary: "保留不同技能的观点，优化口语搭配。建议你自己补充一个真实的分工例子。", notice: "",
     reference: "Working with others can also keep people motivated. Regular check-ins give a group a sense of progress and encourage everyone to keep going.",
   },
   {
@@ -48,6 +48,13 @@ export const speakingCases = [
     final: "I prefer living in big cities because there are more job opportunities and the public transport is very convenient. Although I don't like crowded places, these advantages make big cities a better choice for me.",
     summary: "保留工作机会多和交通便利两点。删除没有展开说明的男友信息，把不喜欢拥挤作为让步，再收束到你的选择。", notice: "",
     reference: "One reason to choose a big city is its cultural life. There are often museums, concerts and community events to explore. For someone interested in meeting people with different interests, that variety could make everyday life more enjoyable.",
+  },
+  {
+    id: "G-tv", question: "How much time do you spend watching TV?", mode: "light",
+    input: "I watch quite a lot of TV. Recently I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.",
+    final: "I watch quite a lot of TV. Recently, I watched four seasons of Trying in three days because I liked the family relationships. I also watch AI short dramas to unwind.",
+    summary: "保留具体节目、观看时长和原因。只做轻微语言整理。", notice: "",
+    reference: "I rarely watch TV during the week. On Sundays I might spend an hour on a documentary, choosing one subject to focus on rather than leaving the screen on in the background.",
   },
 ] as const;
 

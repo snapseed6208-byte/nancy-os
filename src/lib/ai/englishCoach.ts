@@ -1,5 +1,5 @@
 import {
-  parseSpeakingResponse, speakingObject, buildCorrectionsText,
+  speakingObject, buildCorrectionsText,
   type SimplifiedSpeakingFeedback, type SpeakingStructureStep,
 } from "../english/speakingFeedback";
 // ============================================
@@ -8,11 +8,11 @@ import {
 // ============================================
 
 import { callAI, extractJSON } from "./client";
+import { runSpeakingPipeline } from "./speakingPipeline";
 import { invokeAI, type AIResult } from "./aiService";
 import {
   EXTRACT_EXPRESSIONS_PROMPT,
   GENERATE_QUESTION_PROMPT,
-  SPEAKING_FEEDBACK_PROMPT,
   GENERATE_CATEGORY_QUESTION_PROMPT,
   EXPRESSION_PRACTICE_PROMPT,
   SUMMARIZE_PROGRESS_PROMPT,
@@ -20,10 +20,8 @@ import {
   GENERATE_CONTEXT_CLOZE_PROMPT,
   buildExtractPrompt,
   buildGeneratePrompt,
-  buildFeedbackPrompt,
   buildCategoryPrompt,
   buildExpressionPracticePrompt,
-  buildRetryFeedbackPrompt,
 } from "./prompts";
 
 // ── Types ──
@@ -122,6 +120,7 @@ export async function generateSpeakingQuestion(
 // ── 3. analyzeSpeaking / generateBetterVersion ──
 
 export interface AnalyzeSpeakingOptions {
+  targetLevel?: string;
   questionContext?: { mode?: string; topic?: string; part?: string };
   /** Previous attempt data for retry context */
   retryContext?: {
@@ -139,23 +138,7 @@ export async function analyzeSpeaking(
   authToken: string,
   opts?: AnalyzeSpeakingOptions,
 ): Promise<SpeakingFeedback> {
-  const systemPrompt = opts?.retryContext
-    ? buildRetryFeedbackPrompt(opts.retryContext)
-    : SPEAKING_FEEDBACK_PROMPT;
-
-  const response = await callAI({
-    model: "deepseek-chat",
-    maxTokens: 4096,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: buildFeedbackPrompt(prompt, answer, targetExpressions, opts?.questionContext) },
-    ],
-    speakingFeedback: true,
-    injectContext: false,
-    authToken,
-  });
-
-  const result = parseSpeakingResponse(response.content);
+  const result = await runSpeakingPipeline(callAI, prompt, answer, targetExpressions, authToken, opts);
   const details = result.detailed_analysis;
   const numeric = (key: string) => typeof details[key] === "number" && Number.isFinite(details[key]) && details[key] >= 0 && details[key] <= 9 ? details[key] as number : null;
   const strings = (key: string) => Array.isArray(details[key]) ? details[key].filter((v): v is string => typeof v === "string" && targetExpressions.includes(v)) : [];

@@ -1,0 +1,77 @@
+{
+  "elapsedMs": 6587,
+  "model": "deepseek-chat",
+  "raw": "{\n  \"overall_score\": 7.5,\n  \"target_score\": null,\n  \"key_issues\": [\n    {\n      \"type\": \"content\",\n      \"message\": \"回答内容完整，但个人理由（男友居住）略显单薄，可进一步扩展以增强说服力。\"\n    },\n    {\n      \"type\": \"language\",\n      \"message\": \"存在轻微语法问题，如'the convenience of transport here'中'here'指代不清，建议改为'there'或明确指代城市。\"\n    }\n  ],\n  \"optimization_summary\": \"该回答已成功运用了'offer more job opportunities'和'is a big plus'等目标表达，整体流畅自然。下一步可补充更多细节或例子来丰富内容，并注意代词指代的准确性，使表达更加清晰。\",\n  \"retry_checks\": [\n    {\n      \"type\": \"completeness\",\n      \"message\": \"回答覆盖了主要观点，但个人理由部分可更充实。\"\n    },\n    {\n      \"type\": \"core_expressions\",\n      \"message\": \"已使用'offer more job opportunities'和'is a big plus'，但未使用'not a big fan of'等表达，可考虑替换。\"\n    },\n    {\n      \"type\": \"language\",\n      \"message\": \"存在轻微语法问题，如'here'指代不清，建议修正。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"整体表达自然，但个别词汇选择可更口语化。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 7.5,\n    \"grammarScore\": 7.0,\n    \"vocabularyScore\": 7.5,\n    \"naturalnessScore\": 7.5,\n    \"usefulCorrections\": \"Original: 'the convenience of transport here' → Suggested: 'the convenience of transport there' or 'the convenient transport in big cities'\",\n    \"expressionsUsed\": [\n      \"offer more job opportunities\",\n      \"is a big plus\"\n    ],\n    \"expressionsMissed\": [\n      \"not a big fan of\",\n      \"drained my energy\",\n      \"the best of both worlds\"\n    ],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 8.0,\n      \"coherenceScore\": 7.5,\n      \"developmentScore\": 7.0\n    }\n  }\n}",
+  "feedback": {
+    "overall_score": 7.5,
+    "target_score": null,
+    "key_issues": [
+      {
+        "type": "content",
+        "message": "回答内容完整，但个人理由（男友居住）略显单薄，可进一步扩展以增强说服力。"
+      },
+      {
+        "type": "language",
+        "message": "存在轻微语法问题，如'the convenience of transport here'中'here'指代不清，建议改为'there'或明确指代城市。"
+      }
+    ],
+    "revision_mode": null,
+    "optimization_summary": "该回答已成功运用了'offer more job opportunities'和'is a big plus'等目标表达，整体流畅自然。下一步可补充更多细节或例子来丰富内容，并注意代词指代的准确性，使表达更加清晰。",
+    "final_upgraded_answer": "",
+    "reference_answer": "",
+    "reference_angle_summary": "",
+    "content_diagnosis": "",
+    "structure_diagnosis": "",
+    "optimization_advice": "该回答已成功运用了'offer more job opportunities'和'is a big plus'等目标表达，整体流畅自然。下一步可补充更多细节或例子来丰富内容，并注意代词指代的准确性，使表达更加清晰。",
+    "expansion_notice": "",
+    "takeaway_expressions": [],
+    "corrections": [
+      {
+        "original": "Original: 'the convenience of transport here'",
+        "corrected": "Suggested: 'the convenience of transport there' or 'the convenient transport in big cities'",
+        "category": "",
+        "explanation_zh": ""
+      }
+    ],
+    "answer_structure": [],
+    "detailed_analysis": {
+      "fluencyScore": 7.5,
+      "grammarScore": 7,
+      "vocabularyScore": 7.5,
+      "naturalnessScore": 7.5,
+      "usefulCorrections": "Original: 'the convenience of transport here' → Suggested: 'the convenience of transport there' or 'the convenient transport in big cities'",
+      "expressionsUsed": [
+        "offer more job opportunities",
+        "is a big plus"
+      ],
+      "expressionsMissed": [
+        "not a big fan of",
+        "drained my energy",
+        "the best of both worlds"
+      ],
+      "contentAnalysis": {
+        "relevanceScore": 8,
+        "coherenceScore": 7.5,
+        "developmentScore": 7
+      }
+    },
+    "retry_checks": [
+      {
+        "type": "completeness",
+        "message": "回答覆盖了主要观点，但个人理由部分可更充实。"
+      },
+      {
+        "type": "core_expressions",
+        "message": "已使用'offer more job opportunities'和'is a big plus'，但未使用'not a big fan of'等表达，可考虑替换。"
+      },
+      {
+        "type": "language",
+        "message": "存在轻微语法问题，如'here'指代不清，建议修正。"
+      },
+      {
+        "type": "naturalness",
+        "message": "整体表达自然，但个别词汇选择可更口语化。"
+      }
+    ]
+  }
+}

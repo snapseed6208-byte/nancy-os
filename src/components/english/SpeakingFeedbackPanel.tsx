@@ -8,7 +8,7 @@ import { ScoreBar, readDims, readContent } from "@/components/english/SpeakingSc
 const issueLabels: Record<string, string> = { content: "内容", structure: "结构", grammar: "语法", vocabulary: "搭配", relevance: "切题", naturalness: "自然度" };
 
 const categoryLabels: Record<string, string> = {
-  grammar: "语法", collocation: "搭配", word_choice: "用词", naturalness: "自然度", sentence_structure: "句式", expression_upgrade: "表达升级",
+  grammar: "Grammar", collocation: "Vocabulary", word_choice: "Vocabulary", vocabulary: "Vocabulary", naturalness: "Naturalness", sentence_structure: "Grammar", expression_upgrade: "Naturalness", logic: "Logic", relevance: "Relevance",
 };
 const ERROR_CATEGORIES = new Set(["grammar", "collocation", "word_choice", "sentence_structure"]);
 
@@ -25,12 +25,12 @@ function CollapsibleCard({ defaultOpen = false, title, children, className = car
 }
 
 function EmptyCorrectionsNote() {
-  return <p className="text-xs text-ink-light">整体表达较准确，无明显硬伤；可在下方「可带走的表达」中积累更地道的说法。</p>;
+  return <p className="text-xs text-ink-light">本条反馈没有可展示的具体纠错；如反馈不完整，可重新分析。</p>;
 }
 
 function CorrectionItem({ c }: { c: SpeakingCorrection }) {
-  const isError = ERROR_CATEGORIES.has(c.category);
-  const tag = isError ? "纠错" : c.category === "expression_upgrade" || c.category === "naturalness" ? "升级" : "";
+  const isError = c.nature ? c.nature === "Error" : ERROR_CATEGORIES.has(c.category);
+  const tag = c.nature || (isError ? "Error" : c.category === "expression_upgrade" || c.category === "naturalness" ? "Upgrade" : "");
   return (
     <li className="rounded-xl bg-ink/[0.03] border border-border p-3 space-y-1">
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -42,7 +42,7 @@ function CorrectionItem({ c }: { c: SpeakingCorrection }) {
         {tag && <span className={`text-[10px] rounded-full px-2 py-px ${isError ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-600"}`}>{tag}</span>}
       </div>
       <div className="text-sm leading-relaxed break-words">
-        {c.original && <span className="text-accent-rose line-through decoration-accent-rose/60">{c.original}</span>}
+        {c.original && <span className={isError ? "text-accent-rose line-through decoration-accent-rose/60" : "text-ink-light"}>{c.original}</span>}
         {c.original && c.corrected && <span className="text-ink-lighter mx-1.5">→</span>}
         {c.corrected && <span className="text-sage-deep font-medium">{c.corrected}</span>}
       </div>
@@ -179,7 +179,6 @@ function TakeawayList({ items }: { items: SpeakingTakeaway[] }) {
 export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: SimplifiedSpeakingFeedback; retry?: boolean }) {
   const content = readContent(feedback);
   const hasContentIssues = content.offTopic.length > 0 || content.repetition.length > 0 || content.orderProblems.length > 0 || content.contentGaps.length > 0;
-  const showContentCard = content.relevance !== null || content.coherence !== null || content.development !== null || !!content.summary || hasContentIssues;
   const contentDims = [
     ["切题度 Relevance", content.relevance],
     ["连贯性 Coherence", content.coherence],
@@ -196,7 +195,7 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
           {!retry && feedback.target_score !== null && <span className="ml-3 text-ink-light">优化目标：{feedback.target_score.toFixed(1)}+</span>}
         </p>
         <ScoreDims feedback={feedback} />
-        <p className={subtle}>基于转录文本估计，不含发音评估。</p>
+        <p className={subtle}>以下评分基于转录文本，不包含真实发音、停顿、语速和语调评价。</p>
         {!!feedback.key_issues.length && (
           <ul className="list-disc pl-5 text-sm space-y-1 pt-1">
             {feedback.key_issues.map((i, n) => <li key={n}>{issueLabels[i.type] ? `${issueLabels[i.type]}：` : ""}{i.message}</li>)}
@@ -230,9 +229,11 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
           </section>
 
           {/* Block 3 — 内容与结构诊断 (collapsible) */}
-          {showContentCard && (
+          {(
             <CollapsibleCard title="内容与结构诊断" aria-label="内容与结构诊断">
-              {content.summary && <p className="text-sm text-ink-light leading-relaxed">{content.summary}</p>}
+              <p className="text-sm text-ink-light leading-relaxed"><strong>内容诊断：</strong>{feedback.content_diagnosis || content.summary || "暂无内容诊断。"}</p>
+              <p className="text-sm text-ink-light leading-relaxed"><strong>结构诊断：</strong>{feedback.structure_diagnosis || content.orderProblems.join("；") || "暂无单独结构诊断。"}</p>
+              <p className="text-sm text-ink-light leading-relaxed"><strong>优化建议：</strong>{feedback.optimization_advice || feedback.optimization_summary || "暂无建议。"}</p>
               <div className="space-y-1.5">
                 {contentDims.filter(([, v]) => v !== null).map(([label, v]) => <ScoreBar key={label} label={label} score={v as number} />)}
               </div>
@@ -247,17 +248,11 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
             </CollapsibleCard>
           )}
 
-          {/* Block 4 — 优化思路 */}
-          <section className={card} aria-label="优化思路">
-            <h2 className="text-sm font-semibold">优化思路</h2>
-            <p className="text-sm whitespace-pre-line">{feedback.optimization_summary || "本条记录暂无优化说明。"}</p>
-          </section>
-
-          {/* Block 5 — 最终优化表达 */}
-          <section className="rounded-2xl border-2 border-sage-deep/40 bg-sage-light/30 p-5 space-y-3 min-w-0" aria-label="最终优化表达">
-            <h2 className="font-semibold text-sage-deep">最终优化表达 ⭐</h2>
-            <p className="text-base leading-relaxed whitespace-pre-line">{feedback.final_upgraded_answer || "未生成有效的优化表达，请重新分析。"}</p>
-            <p className="text-xs text-ink-light">{feedback.expansion_notice || "如含原回答未提供的解释或例子，请视为参考性展开，确认符合实际后再使用。"}</p>
+          {/* Block 4 — My Best Version */}
+          <section className="rounded-2xl border-2 border-sage-deep/40 bg-sage-light/30 p-5 space-y-3 min-w-0" aria-label="我的回答·最佳表达">
+            <h2 className="font-semibold text-sage-deep">我的回答·最佳表达</h2>
+            <p className="text-base leading-relaxed whitespace-pre-line">{feedback.final_upgraded_answer || (feedback.answer_status === "unavailable" ? "本次表达未通过原意核对，请重新分析。" : "未生成有效的优化表达，请重新分析。")}</p>
+            <p className="text-xs text-ink-light">这是你的想法，只是表达得更好了。{feedback.expansion_notice}</p>
           </section>
 
           {/* Block 6 — Answer Structure (collapsible scaffold) */}
@@ -273,6 +268,7 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
                     <div className="pb-2 flex-1 min-w-0">
                       <p className="text-[11px] font-semibold text-ink">{s.label}</p>
                       <p className="text-[11px] text-ink-lighter leading-relaxed mt-0.5 whitespace-pre-line">{s.content}</p>
+                      {s.reusable_expression && <p className="text-xs text-sage-deep mt-1">可复用：{s.reusable_expression}</p>}
                     </div>
                   </div>
                 ))}
@@ -290,14 +286,15 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
 
           {/* Block 8 — AI 参考答案 (collapsed by default) */}
           {!!feedback.reference_answer && (
-            <details className={card} aria-label="AI 参考答案">
-              <summary className="text-sm font-medium cursor-pointer">AI 参考答案</summary>
+            <details className={card} aria-label="AI 独立优秀回答">
+              <summary className="text-sm font-medium cursor-pointer">AI 独立优秀回答</summary>
               <div className="pt-2 space-y-2 min-w-0">
-                <p className="text-xs text-ink-light">看看另一种答题思路 — {feedback.reference_angle_summary || "示例不代表你的真实经历。"}</p>
+                <p className="text-xs text-ink-light">另一种独立答题思路；示例不代表你的真实经历。{feedback.reference_angle_summary}</p>
                 <p className="text-sm leading-relaxed whitespace-pre-line">{feedback.reference_answer}</p>
               </div>
             </details>
           )}
+          {feedback.reference_status === "unavailable" && <section className={card}><h2 className="text-sm font-semibold">AI 独立优秀回答</h2><p className="text-xs text-ink-light">暂未生成通过独立性检查的参考回答，请重新分析。</p></section>}
         </>
       )}
     </div>

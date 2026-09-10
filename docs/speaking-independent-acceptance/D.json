@@ -1,0 +1,670 @@
+{
+  "id": "D",
+  "input": "I like cooking because I can choose fresh ingredients. My school has five buildings. My address is near a bus stop. The weather is sunny today. Choosing fresh ingredients matters to me.",
+  "question": "Why do you like cooking?",
+  "expectedMode": "trim",
+  "elapsedMs": 412812,
+  "feedback": {
+    "overall_score": 5.5,
+    "target_score": 7.5,
+    "key_issues": [
+      {
+        "type": "relevance",
+        "message": "回答中混入了与问题完全无关的内容（如学校建筑、地址、天气），严重偏离主题，需删除。"
+      },
+      {
+        "type": "content",
+        "message": "核心观点仅提到'选择新鲜食材'，缺乏具体展开（如为什么这个选择重要），内容较单薄。"
+      },
+      {
+        "type": "structure",
+        "message": "信息顺序混乱，无关内容穿插在核心观点之间，破坏了逻辑连贯性。"
+      },
+      {
+        "type": "naturalness",
+        "message": "结尾句'Choosing fresh ingredients matters to me'与开头重复，显得冗余，可用'That choice'简洁指代。"
+      }
+    ],
+    "revision_mode": "trim",
+    "optimization_summary": "删除所有与烹饪无关的内容（学校、地址、天气），保留核心观点并简化表达，使回答聚焦于'选择新鲜食材'这一原因。",
+    "final_upgraded_answer": "I like cooking because I can choose fresh ingredients. That choice really matters to me.",
+    "reference_answer": "I think the main reason I like cooking is that it gives me a sense of control and creativity that I don't get from my daily routine. When I'm at work, everything is pretty structured, but in the kitchen, I can experiment—swap ingredients, adjust spices, and see what happens. It's like a mini science project that ends with something delicious. Another thing is the mindfulness aspect. When I'm chopping vegetables or stirring a sauce, I'm completely focused on the task, so it clears my head after a stressful day. Plus, there's a real payoff when people enjoy what I've made. Seeing my friends or family genuinely appreciate a dish I've put effort into is incredibly satisfying. It's not just about feeding people; it's about sharing a bit of myself through the food. So, for me, cooking is a blend of relaxation, creativity, and connection.",
+    "reference_angle_summary": "主线：烹饪提供日常工作中缺乏的掌控感与创造力，同时带来正念放松和人际连接；示例为虚构，不代表用户经历。",
+    "reference_status": "verified",
+    "answer_status": "verified",
+    "content_diagnosis": "原回答直接回答了问题，但夹杂大量无关信息，严重干扰主线。核心观点'选择新鲜食材'仅陈述未展开，缺乏细节支撑。",
+    "structure_diagnosis": "信息顺序混乱：先给出核心原因，随后插入无关内容，最后重复核心观点，缺乏清晰的逻辑推进。",
+    "optimization_advice": "建议补充为什么'选择新鲜食材'对你重要，例如：'It lets me control what goes into my meals, which makes me feel healthier.' 但不要编造具体经历，仅提供方向。",
+    "expansion_notice": "",
+    "takeaway_expressions": [
+      {
+        "expression": "That choice really matters to me.",
+        "meaning": "那个选择对我来说真的很重要。",
+        "meaning_zh": "那个选择对我来说真的很重要。",
+        "why_useful": "用'that choice'指代前文内容，避免重复，表达简洁自然，适用于强调个人偏好。",
+        "example": "I prefer morning runs. That choice keeps me energized all day.",
+        "usage_note": "适合在解释原因后补充个人感受时使用。",
+        "readonly": false
+      },
+      {
+        "expression": "gives me a sense of control and creativity",
+        "meaning": "给我一种掌控感和创造力",
+        "meaning_zh": "给我一种掌控感和创造力",
+        "why_useful": "用于解释个人爱好或工作偏好的深层原因，比简单说'有趣'更具体",
+        "example": "Painting gives me a sense of control and creativity that my desk job doesn't.",
+        "usage_note": "可替换主语，如 gardening, writing",
+        "readonly": false
+      },
+      {
+        "expression": "it clears my head",
+        "meaning": "让我头脑清醒/放松心情",
+        "meaning_zh": "让我头脑清醒/放松心情",
+        "why_useful": "描述减压活动的自然口语表达，高频且地道",
+        "example": "Going for a run really clears my head after a long day.",
+        "usage_note": "常用于谈论放松方式",
+        "readonly": false
+      },
+      {
+        "expression": "there's a real payoff",
+        "meaning": "有实实在在的回报/收获",
+        "meaning_zh": "有实实在在的回报/收获",
+        "why_useful": "强调努力后的实际好处，比'it's worth it'更生动",
+        "example": "Learning a language takes time, but there's a real payoff when you travel.",
+        "usage_note": "可搭配 when 从句说明具体回报",
+        "readonly": false
+      }
+    ],
+    "corrections": [
+      {
+        "original": "My school has five buildings.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与问题完全无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "My address is near a bus stop.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与问题完全无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "The weather is sunny today.",
+        "corrected": "",
+        "category": "relevance",
+        "explanation_zh": "与问题完全无关，应删除。",
+        "nature": "Error"
+      },
+      {
+        "original": "Choosing fresh ingredients matters to me.",
+        "corrected": "That choice really matters to me.",
+        "category": "naturalness",
+        "explanation_zh": "原句重复了开头的'choose fresh ingredients'，用'that choice'指代更简洁自然，避免冗余。",
+        "nature": "Upgrade"
+      }
+    ],
+    "answer_structure": [
+      {
+        "label": "直接给出核心原因",
+        "content": "用'because I can choose fresh ingredients'明确回答喜欢烹饪的原因。",
+        "reusable_expression": "I like cooking because..."
+      },
+      {
+        "label": "强调该原因的重要性",
+        "content": "用'That choice really matters to me'收尾，突出个人感受，避免重复。",
+        "reusable_expression": "That choice really matters to me."
+      }
+    ],
+    "detailed_analysis": {
+      "fluencyScore": 5,
+      "grammarScore": 6,
+      "vocabularyScore": 5.5,
+      "naturalnessScore": 4.5,
+      "usefulCorrections": "删除无关内容后，回答更流畅；'That choice'替换重复表达，提升自然度。",
+      "expressionsUsed": [],
+      "expressionsMissed": [],
+      "contentAnalysis": {
+        "relevanceScore": 3,
+        "coherenceScore": 3.5,
+        "developmentScore": 4,
+        "summary": "原回答包含大量无关信息，严重偏离主题；核心观点未展开，内容单薄。",
+        "offTopicParts": [
+          "My school has five buildings.",
+          "My address is near a bus stop.",
+          "The weather is sunny today."
+        ],
+        "repetition": [
+          "Choosing fresh ingredients matters to me 与开头重复"
+        ],
+        "orderProblems": [
+          "无关内容穿插在核心观点之间，破坏逻辑"
+        ],
+        "contentGaps": [
+          "未解释为什么选择新鲜食材重要"
+        ]
+      }
+    },
+    "retry_checks": []
+  },
+  "calls": [
+    {
+      "kind": "model-answer",
+      "elapsedMs": 6976,
+      "model": "deepseek-chat",
+      "raw": "{\"reference_answer\":\"I think the main reason I like cooking is that it gives me a sense of control and creativity that I don't get from my daily routine. When I'm at work, everything is pretty structured, but in the kitchen, I can experiment—swap ingredients, adjust spices, and see what happens. It's like a mini science project that ends with something delicious. Another thing is the mindfulness aspect. When I'm chopping vegetables or stirring a sauce, I'm completely focused on the task, so it clears my head after a stressful day. Plus, there's a real payoff when people enjoy what I've made. Seeing my friends or family genuinely appreciate a dish I've put effort into is incredibly satisfying. It's not just about feeding people; it's about sharing a bit of myself through the food. So, for me, cooking is a blend of relaxation, creativity, and connection.\",\"reference_angle_summary\":\"主线：烹饪提供日常工作中缺乏的掌控感与创造力，同时带来正念放松和人际连接；示例为虚构，不代表用户经历。\",\"takeaway_expressions\":[{\"expression\":\"gives me a sense of control and creativity\",\"meaning_zh\":\"给我一种掌控感和创造力\",\"why_useful\":\"用于解释个人爱好或工作偏好的深层原因，比简单说'有趣'更具体\",\"example\":\"Painting gives me a sense of control and creativity that my desk job doesn't.\",\"usage_note\":\"可替换主语，如 gardening, writing\"},{\"expression\":\"it clears my head\",\"meaning_zh\":\"让我头脑清醒/放松心情\",\"why_useful\":\"描述减压活动的自然口语表达，高频且地道\",\"example\":\"Going for a run really clears my head after a long day.\",\"usage_note\":\"常用于谈论放松方式\"},{\"expression\":\"there's a real payoff\",\"meaning_zh\":\"有实实在在的回报/收获\",\"why_useful\":\"强调努力后的实际好处，比'it's worth it'更生动\",\"example\":\"Learning a language takes time, but there's a real payoff when you travel.\",\"usage_note\":\"可搭配 when 从句说明具体回报\"}]}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "I think the main reason I like cooking is that it gives me a sense of control and creativity that I don't get from my daily routine. When I'm at work, everything is pretty structured, but in the kitchen, I can experiment—swap ingredients, adjust spices, and see what happens. It's like a mini science project that ends with something delicious. Another thing is the mindfulness aspect. When I'm chopping vegetables or stirring a sauce, I'm completely focused on the task, so it clears my head after a stressful day. Plus, there's a real payoff when people enjoy what I've made. Seeing my friends or family genuinely appreciate a dish I've put effort into is incredibly satisfying. It's not just about feeding people; it's about sharing a bit of myself through the food. So, for me, cooking is a blend of relaxation, creativity, and connection.",
+        "reference_angle_summary": "主线：烹饪提供日常工作中缺乏的掌控感与创造力，同时带来正念放松和人际连接；示例为虚构，不代表用户经历。",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "gives me a sense of control and creativity",
+            "meaning": "给我一种掌控感和创造力",
+            "meaning_zh": "给我一种掌控感和创造力",
+            "why_useful": "用于解释个人爱好或工作偏好的深层原因，比简单说'有趣'更具体",
+            "example": "Painting gives me a sense of control and creativity that my desk job doesn't.",
+            "usage_note": "可替换主语，如 gardening, writing",
+            "readonly": false
+          },
+          {
+            "expression": "it clears my head",
+            "meaning": "让我头脑清醒/放松心情",
+            "meaning_zh": "让我头脑清醒/放松心情",
+            "why_useful": "描述减压活动的自然口语表达，高频且地道",
+            "example": "Going for a run really clears my head after a long day.",
+            "usage_note": "常用于谈论放松方式",
+            "readonly": false
+          },
+          {
+            "expression": "there's a real payoff",
+            "meaning": "有实实在在的回报/收获",
+            "meaning_zh": "有实实在在的回报/收获",
+            "why_useful": "强调努力后的实际好处，比'it's worth it'更生动",
+            "example": "Learning a language takes time, but there's a real payoff when you travel.",
+            "usage_note": "可搭配 when 从句说明具体回报",
+            "readonly": false
+          }
+        ],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 9006,
+      "model": "deepseek-chat",
+      "raw": "{\n  \"final_upgraded_answer\": \"I like cooking because it lets me choose fresh ingredients. For me, that choice really matters, since it means I can control what goes into my meals.\",\n  \"overall_score\": 4.5,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"relevance\",\n      \"message\": \"回答中包含了与问题无关的句子，如'My school has five buildings'、'My address is near a bus stop'和'The weather is sunny today'，这些内容偏离了'为什么喜欢烹饪'的主题。\"\n    },\n    {\n      \"type\": \"content\",\n      \"message\": \"核心观点'选择新鲜食材'仅被简单重复，缺乏具体解释或例子来支撑，导致内容单薄。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"信息组织混乱，无关内容穿插在核心观点之间，影响了逻辑连贯性。\"\n    }\n  ],\n  \"revision_mode\": \"trim\",\n  \"optimization_summary\": \"删除了所有与主题无关的句子（学校、地址、天气），保留了核心观点'选择新鲜食材'，并稍作语言润色，使回答更连贯自然。\",\n  \"content_diagnosis\": \"原回答直接回应了问题，但主线不清晰，核心观点'选择新鲜食材'被大量无关信息淹没。内容重复（'Choosing fresh ingredients matters to me'与开头重复），缺乏展开。\",\n  \"structure_diagnosis\": \"信息顺序混乱，无关内容（学校、地址、天气）穿插在核心观点之间，导致逻辑断裂。\",\n  \"optimization_advice\": \"建议补充为什么选择新鲜食材对你重要，例如：新鲜食材口感更好、更健康，或者你享受挑选的过程。可以加入一个简短的个人例子，如'我经常去市场挑选当季蔬菜'，但不要编造未提及的细节。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"My school has five buildings.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与问题无关，应删除。\"\n    },\n    {\n      \"original\": \"My address is near a bus stop.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与问题无关，应删除。\"\n    },\n    {\n      \"original\": \"The weather is sunny today.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与问题无关，应删除。\"\n    },\n    {\n      \"original\": \"Choosing fresh ingredients matters to me.\",\n      \"corrected\": \"For me, that choice really matters, since it means I can control what goes into my meals.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句重复了开头内容，升级后更自然地解释了为什么重要。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回应问题\",\n      \"content\": \"首句直接给出喜欢烹饪的原因：能选择新鲜食材。\",\n      \"reusable_expression\": \"I like cooking because...\"\n    },\n    {\n      \"label\": \"强调重要性并简要解释\",\n      \"content\": \"第二句强调这个选择对自己很重要，并补充了一个简短的理由（控制食材），使回答更完整。\",\n      \"reusable_expression\": \"For me, that choice really matters, since...\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"lets me choose fresh ingredients\",\n      \"meaning_zh\": \"让我能选择新鲜食材\",\n      \"why_useful\": \"用'lets me'表达'使我能'，比'can'更自然，且'fresh ingredients'是常见搭配。\",\n      \"example\": \"Cooking at home lets me choose fresh ingredients every day.\",\n      \"usage_note\": \"适合描述个人偏好或能力。\"\n    },\n    {\n      \"expression\": \"that choice really matters\",\n      \"meaning_zh\": \"那个选择真的很重要\",\n      \"why_useful\": \"用'matters'强调重要性，比'is important'更简洁有力。\",\n      \"example\": \"For me, that choice really matters when I buy groceries.\",\n      \"usage_note\": \"用于强调某事的价值。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 4.0,\n    \"grammarScore\": 5.0,\n    \"vocabularyScore\": 5.0,\n    \"naturalnessScore\": 4.0,\n    \"usefulCorrections\": \"\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 3.0,\n      \"coherenceScore\": 3.0,\n      \"developmentScore\": 2.0,\n      \"summary\": \"原回答包含大量无关内容，核心观点未展开，逻辑混乱。\",\n      \"offTopicParts\": [\n        \"My school has five buildings.\",\n        \"My address is near a bus stop.\",\n        \"The weather is sunny today.\"\n      ],\n      \"repetition\": [\n        \"Choosing fresh ingredients matters to me. (与首句重复)\"\n      ],\n      \"orderProblems\": [\n        \"无关内容穿插在核心观点之间\"\n      ],\n      \"contentGaps\": [\n        \"未解释为什么选择新鲜食材重要\"\n      ]\n    }\n  }\n}",
+      "feedback": {
+        "overall_score": 4.5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "relevance",
+            "message": "回答中包含了与问题无关的句子，如'My school has five buildings'、'My address is near a bus stop'和'The weather is sunny today'，这些内容偏离了'为什么喜欢烹饪'的主题。"
+          },
+          {
+            "type": "content",
+            "message": "核心观点'选择新鲜食材'仅被简单重复，缺乏具体解释或例子来支撑，导致内容单薄。"
+          },
+          {
+            "type": "structure",
+            "message": "信息组织混乱，无关内容穿插在核心观点之间，影响了逻辑连贯性。"
+          }
+        ],
+        "revision_mode": "trim",
+        "optimization_summary": "删除了所有与主题无关的句子（学校、地址、天气），保留了核心观点'选择新鲜食材'，并稍作语言润色，使回答更连贯自然。",
+        "final_upgraded_answer": "I like cooking because it lets me choose fresh ingredients. For me, that choice really matters, since it means I can control what goes into my meals.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了问题，但主线不清晰，核心观点'选择新鲜食材'被大量无关信息淹没。内容重复（'Choosing fresh ingredients matters to me'与开头重复），缺乏展开。",
+        "structure_diagnosis": "信息顺序混乱，无关内容（学校、地址、天气）穿插在核心观点之间，导致逻辑断裂。",
+        "optimization_advice": "建议补充为什么选择新鲜食材对你重要，例如：新鲜食材口感更好、更健康，或者你享受挑选的过程。可以加入一个简短的个人例子，如'我经常去市场挑选当季蔬菜'，但不要编造未提及的细节。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "lets me choose fresh ingredients",
+            "meaning": "让我能选择新鲜食材",
+            "meaning_zh": "让我能选择新鲜食材",
+            "why_useful": "用'lets me'表达'使我能'，比'can'更自然，且'fresh ingredients'是常见搭配。",
+            "example": "Cooking at home lets me choose fresh ingredients every day.",
+            "usage_note": "适合描述个人偏好或能力。",
+            "readonly": false
+          },
+          {
+            "expression": "that choice really matters",
+            "meaning": "那个选择真的很重要",
+            "meaning_zh": "那个选择真的很重要",
+            "why_useful": "用'matters'强调重要性，比'is important'更简洁有力。",
+            "example": "For me, that choice really matters when I buy groceries.",
+            "usage_note": "用于强调某事的价值。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "My school has five buildings.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "My address is near a bus stop.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "The weather is sunny today.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "Choosing fresh ingredients matters to me.",
+            "corrected": "For me, that choice really matters, since it means I can control what goes into my meals.",
+            "category": "naturalness",
+            "explanation_zh": "原句重复了开头内容，升级后更自然地解释了为什么重要。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回应问题",
+            "content": "首句直接给出喜欢烹饪的原因：能选择新鲜食材。",
+            "reusable_expression": "I like cooking because..."
+          },
+          {
+            "label": "强调重要性并简要解释",
+            "content": "第二句强调这个选择对自己很重要，并补充了一个简短的理由（控制食材），使回答更完整。",
+            "reusable_expression": "For me, that choice really matters, since..."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 4,
+          "grammarScore": 5,
+          "vocabularyScore": 5,
+          "naturalnessScore": 4,
+          "usefulCorrections": "",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 3,
+            "coherenceScore": 3,
+            "developmentScore": 2,
+            "summary": "原回答包含大量无关内容，核心观点未展开，逻辑混乱。",
+            "offTopicParts": [
+              "My school has five buildings.",
+              "My address is near a bus stop.",
+              "The weather is sunny today."
+            ],
+            "repetition": [
+              "Choosing fresh ingredients matters to me. (与首句重复)"
+            ],
+            "orderProblems": [
+              "无关内容穿插在核心观点之间"
+            ],
+            "contentGaps": [
+              "未解释为什么选择新鲜食材重要"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 119141,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"claim_evidence\": [\n    {\n      \"sentence\": \"I like cooking because it lets me choose fresh ingredients.\",\n      \"clauses\": [\n        {\n          \"clause\": \"I like cooking because it lets me choose fresh ingredients.\",\n          \"evidence\": \"I like cooking because I can choose fresh ingredients.\"\n        }\n      ]\n    },\n    {\n      \"sentence\": \"For me, that choice really matters, since it means I can control what goes into my meals.\",\n      \"clauses\": [\n        {\n          \"clause\": \"For me, that choice really matters\",\n          \"evidence\": \"Choosing fresh ingredients matters to me.\"\n        },\n        {\n          \"clause\": \"since it means I can control what goes into my meals\",\n          \"evidence\": null\n        }\n      ]\n    }\n  ],\n  \"unsupported_claims\": [\n    \"since it means I can control what goes into my meals — 原文只提到能选择新鲜食材以及这很重要，未提到控制餐食内容。\"\n  ],\n  \"teaching_errors\": [\n    \"最后一条修正把新增理由 'since it means I can control what goes into my meals' 标为 naturalness Upgrade，并在 optimization_summary 中称“稍作语言润色”，未说明这是新增内容，诊断不准确。\"\n  ],\n  \"revision_mode\": \"rewrite\",\n  \"issues\": [\n    \"删除 'since it means I can control what goes into my meals'；原文没有支持该理由。\",\n    \"保留已有观点，不要为补足内容而编造理由；可建议用户补充真实例子。\",\n    \"修正优化总结和最后一条 correction 的说明，不能把无依据新增内容称为语言润色或 naturalness Upgrade。\"\n  ],\n  \"faithful\": false\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "rewrite",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 9290,
+      "model": "deepseek-chat",
+      "raw": "```json\n{\n  \"final_upgraded_answer\": \"I like cooking because I can choose fresh ingredients. That choice really matters to me.\",\n  \"overall_score\": 5.0,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"relevance\",\n      \"message\": \"回答中混入了与问题完全无关的内容（'My school has five buildings'、'My address is near a bus stop'、'The weather is sunny today'），严重偏离主题，应全部删除。\"\n    },\n    {\n      \"type\": \"content\",\n      \"message\": \"核心观点（喜欢烹饪因为能选新鲜食材）只做了简单陈述，缺乏具体展开或例子支撑，内容单薄。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"信息组织混乱，无关内容穿插在核心观点之间，破坏了回答的连贯性。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"结尾句'Choosing fresh ingredients matters to me'与开头重复，显得冗余，且'that choice'的指代不够自然。\"\n    }\n  ],\n  \"revision_mode\": \"trim\",\n  \"optimization_summary\": \"删除了所有与问题无关的句子（学校、地址、天气），保留核心观点。将重复的结尾句简化为更自然的表达，使回答聚焦于'喜欢烹饪是因为能选择新鲜食材'这一主线。\",\n  \"content_diagnosis\": \"原回答直接回应了问题，但核心观点仅有一句，缺乏展开。大量无关内容（学校建筑、地址、天气）严重偏离主题，属于明显的离题填充。回答没有提供任何具体例子或细节来支持'喜欢烹饪'的理由。\",\n  \"structure_diagnosis\": \"信息顺序混乱：先给出核心观点，然后插入三段完全无关的内容，最后又回到与开头重复的观点。这种结构缺乏逻辑连贯性，无关内容严重干扰了主线。\",\n  \"optimization_advice\": \"建议补充一个真实的例子来支撑'能选择新鲜食材'这个理由，例如：'比如我买西红柿时会挑当季的，做出来的菜味道特别好'。也可以补充另一个真实的烹饪理由，但不要编造。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"My school has five buildings.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"explanation_zh\": \"与问题完全无关，应删除。\",\n      \"nature\": \"Error\"\n    },\n    {\n      \"original\": \"My address is near a bus stop.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"explanation_zh\": \"与问题完全无关，应删除。\",\n      \"nature\": \"Error\"\n    },\n    {\n      \"original\": \"The weather is sunny today.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"explanation_zh\": \"与问题完全无关，应删除。\",\n      \"nature\": \"Error\"\n    },\n    {\n      \"original\": \"Choosing fresh ingredients matters to me.\",\n      \"corrected\": \"That choice really matters to me.\",\n      \"category\": \"naturalness\",\n      \"explanation_zh\": \"原句重复了开头的'choose fresh ingredients'，用'that choice'指代更简洁自然，避免冗余。\",\n      \"nature\": \"Upgrade\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接回应问题\",\n      \"content\": \"用'I like cooking because...'直接给出喜欢烹饪的原因。\",\n      \"reusable_expression\": \"I like cooking because...\"\n    },\n    {\n      \"label\": \"强调原因的重要性\",\n      \"content\": \"用'That choice really matters to me'收尾，强化观点但避免重复。\",\n      \"reusable_expression\": \"That choice really matters to me.\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"That choice really matters to me.\",\n      \"meaning_zh\": \"那个选择对我来说真的很重要。\",\n      \"why_useful\": \"用'that choice'指代前文提到的具体内容，避免重复，同时'really matters'是表达重视某事的高频自然说法。\",\n      \"example\": \"I prefer cycling to work. That choice really matters to me because it keeps me active.\",\n      \"usage_note\": \"适合在解释偏好后强调其重要性时使用。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 4.5,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 4.0,\n    \"usefulCorrections\": \"删除所有无关内容，修正重复表达。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 3.0,\n      \"coherenceScore\": 3.5,\n      \"developmentScore\": 3.0,\n      \"summary\": \"回答直接回应了问题，但核心观点缺乏展开，且混入大量无关内容，严重损害了相关性和连贯性。\",\n      \"offTopicParts\": [\n        \"My school has five buildings.\",\n        \"My address is near a bus stop.\",\n        \"The weather is sunny today.\"\n      ],\n      \"repetition\": [\n        \"Choosing fresh ingredients matters to me 与开头的 choose fresh ingredients 重复\"\n      ],\n      \"orderProblems\": [\n        \"无关内容穿插在核心观点之间，破坏逻辑顺序\"\n      ],\n      \"contentGaps\": [\n        \"缺少具体例子或细节来支持'能选择新鲜食材'的理由\"\n      ]\n    }\n  }\n}\n```",
+      "feedback": {
+        "overall_score": 5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "relevance",
+            "message": "回答中混入了与问题完全无关的内容（'My school has five buildings'、'My address is near a bus stop'、'The weather is sunny today'），严重偏离主题，应全部删除。"
+          },
+          {
+            "type": "content",
+            "message": "核心观点（喜欢烹饪因为能选新鲜食材）只做了简单陈述，缺乏具体展开或例子支撑，内容单薄。"
+          },
+          {
+            "type": "structure",
+            "message": "信息组织混乱，无关内容穿插在核心观点之间，破坏了回答的连贯性。"
+          },
+          {
+            "type": "naturalness",
+            "message": "结尾句'Choosing fresh ingredients matters to me'与开头重复，显得冗余，且'that choice'的指代不够自然。"
+          }
+        ],
+        "revision_mode": "trim",
+        "optimization_summary": "删除了所有与问题无关的句子（学校、地址、天气），保留核心观点。将重复的结尾句简化为更自然的表达，使回答聚焦于'喜欢烹饪是因为能选择新鲜食材'这一主线。",
+        "final_upgraded_answer": "I like cooking because I can choose fresh ingredients. That choice really matters to me.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回应了问题，但核心观点仅有一句，缺乏展开。大量无关内容（学校建筑、地址、天气）严重偏离主题，属于明显的离题填充。回答没有提供任何具体例子或细节来支持'喜欢烹饪'的理由。",
+        "structure_diagnosis": "信息顺序混乱：先给出核心观点，然后插入三段完全无关的内容，最后又回到与开头重复的观点。这种结构缺乏逻辑连贯性，无关内容严重干扰了主线。",
+        "optimization_advice": "建议补充一个真实的例子来支撑'能选择新鲜食材'这个理由，例如：'比如我买西红柿时会挑当季的，做出来的菜味道特别好'。也可以补充另一个真实的烹饪理由，但不要编造。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "That choice really matters to me.",
+            "meaning": "那个选择对我来说真的很重要。",
+            "meaning_zh": "那个选择对我来说真的很重要。",
+            "why_useful": "用'that choice'指代前文提到的具体内容，避免重复，同时'really matters'是表达重视某事的高频自然说法。",
+            "example": "I prefer cycling to work. That choice really matters to me because it keeps me active.",
+            "usage_note": "适合在解释偏好后强调其重要性时使用。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "My school has five buildings.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "My address is near a bus stop.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "The weather is sunny today.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "Choosing fresh ingredients matters to me.",
+            "corrected": "That choice really matters to me.",
+            "category": "naturalness",
+            "explanation_zh": "原句重复了开头的'choose fresh ingredients'，用'that choice'指代更简洁自然，避免冗余。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接回应问题",
+            "content": "用'I like cooking because...'直接给出喜欢烹饪的原因。",
+            "reusable_expression": "I like cooking because..."
+          },
+          {
+            "label": "强调原因的重要性",
+            "content": "用'That choice really matters to me'收尾，强化观点但避免重复。",
+            "reusable_expression": "That choice really matters to me."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 4.5,
+          "grammarScore": 6,
+          "vocabularyScore": 5.5,
+          "naturalnessScore": 4,
+          "usefulCorrections": "删除所有无关内容，修正重复表达。",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 3,
+            "coherenceScore": 3.5,
+            "developmentScore": 3,
+            "summary": "回答直接回应了问题，但核心观点缺乏展开，且混入大量无关内容，严重损害了相关性和连贯性。",
+            "offTopicParts": [
+              "My school has five buildings.",
+              "My address is near a bus stop.",
+              "The weather is sunny today."
+            ],
+            "repetition": [
+              "Choosing fresh ingredients matters to me 与开头的 choose fresh ingredients 重复"
+            ],
+            "orderProblems": [
+              "无关内容穿插在核心观点之间，破坏逻辑顺序"
+            ],
+            "contentGaps": [
+              "缺少具体例子或细节来支持'能选择新鲜食材'的理由"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 129818,
+      "model": "deepseek-v4-pro",
+      "raw": "{\"unsupported_claims\":[],\"teaching_errors\":[\"key_issues中的naturalness称“that choice”指代不够自然，与corrections中将其作为自然度Upgrade并称“更简洁自然”的判断自相矛盾；诊断不一致。\"],\"revision_mode\":\"trim\",\"issues\":[\"请统一自然度判断：如果认为“that choice”不自然，就不要在最终答案中使用并标记为更自然的Upgrade；如果认为它更自然，请删除key_issues中与之矛盾的批评。\"],\"faithful\":false}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "trim",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "my-best-version",
+      "elapsedMs": 9065,
+      "model": "deepseek-chat",
+      "raw": "```json\n{\n  \"final_upgraded_answer\": \"I like cooking because I can choose fresh ingredients. That choice really matters to me.\",\n  \"overall_score\": 5.5,\n  \"target_score\": 7.5,\n  \"key_issues\": [\n    {\n      \"type\": \"relevance\",\n      \"message\": \"回答中混入了与问题完全无关的内容（如学校建筑、地址、天气），严重偏离主题，需删除。\"\n    },\n    {\n      \"type\": \"content\",\n      \"message\": \"核心观点仅提到'选择新鲜食材'，缺乏具体展开（如为什么这个选择重要），内容较单薄。\"\n    },\n    {\n      \"type\": \"structure\",\n      \"message\": \"信息顺序混乱，无关内容穿插在核心观点之间，破坏了逻辑连贯性。\"\n    },\n    {\n      \"type\": \"naturalness\",\n      \"message\": \"结尾句'Choosing fresh ingredients matters to me'与开头重复，显得冗余，可用'That choice'简洁指代。\"\n    }\n  ],\n  \"revision_mode\": \"trim\",\n  \"optimization_summary\": \"删除所有与烹饪无关的内容（学校、地址、天气），保留核心观点并简化表达，使回答聚焦于'选择新鲜食材'这一原因。\",\n  \"content_diagnosis\": \"原回答直接回答了问题，但夹杂大量无关信息，严重干扰主线。核心观点'选择新鲜食材'仅陈述未展开，缺乏细节支撑。\",\n  \"structure_diagnosis\": \"信息顺序混乱：先给出核心原因，随后插入无关内容，最后重复核心观点，缺乏清晰的逻辑推进。\",\n  \"optimization_advice\": \"建议补充为什么'选择新鲜食材'对你重要，例如：'It lets me control what goes into my meals, which makes me feel healthier.' 但不要编造具体经历，仅提供方向。\",\n  \"expansion_notice\": \"\",\n  \"corrections\": [\n    {\n      \"original\": \"My school has five buildings.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与问题完全无关，应删除。\"\n    },\n    {\n      \"original\": \"My address is near a bus stop.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与问题完全无关，应删除。\"\n    },\n    {\n      \"original\": \"The weather is sunny today.\",\n      \"corrected\": \"\",\n      \"category\": \"relevance\",\n      \"nature\": \"Error\",\n      \"explanation_zh\": \"与问题完全无关，应删除。\"\n    },\n    {\n      \"original\": \"Choosing fresh ingredients matters to me.\",\n      \"corrected\": \"That choice really matters to me.\",\n      \"category\": \"naturalness\",\n      \"nature\": \"Upgrade\",\n      \"explanation_zh\": \"原句重复了开头的'choose fresh ingredients'，用'that choice'指代更简洁自然，避免冗余。\"\n    }\n  ],\n  \"answer_structure\": [\n    {\n      \"label\": \"直接给出核心原因\",\n      \"content\": \"用'because I can choose fresh ingredients'明确回答喜欢烹饪的原因。\",\n      \"reusable_expression\": \"I like cooking because...\"\n    },\n    {\n      \"label\": \"强调该原因的重要性\",\n      \"content\": \"用'That choice really matters to me'收尾，突出个人感受，避免重复。\",\n      \"reusable_expression\": \"That choice really matters to me.\"\n    }\n  ],\n  \"takeaway_expressions\": [\n    {\n      \"expression\": \"That choice really matters to me.\",\n      \"meaning_zh\": \"那个选择对我来说真的很重要。\",\n      \"why_useful\": \"用'that choice'指代前文内容，避免重复，表达简洁自然，适用于强调个人偏好。\",\n      \"example\": \"I prefer morning runs. That choice keeps me energized all day.\",\n      \"usage_note\": \"适合在解释原因后补充个人感受时使用。\"\n    }\n  ],\n  \"detailed_analysis\": {\n    \"fluencyScore\": 5.0,\n    \"grammarScore\": 6.0,\n    \"vocabularyScore\": 5.5,\n    \"naturalnessScore\": 4.5,\n    \"usefulCorrections\": \"删除无关内容后，回答更流畅；'That choice'替换重复表达，提升自然度。\",\n    \"expressionsUsed\": [],\n    \"expressionsMissed\": [],\n    \"contentAnalysis\": {\n      \"relevanceScore\": 3.0,\n      \"coherenceScore\": 3.5,\n      \"developmentScore\": 4.0,\n      \"summary\": \"原回答包含大量无关信息，严重偏离主题；核心观点未展开，内容单薄。\",\n      \"offTopicParts\": [\"My school has five buildings.\", \"My address is near a bus stop.\", \"The weather is sunny today.\"],\n      \"repetition\": [\"Choosing fresh ingredients matters to me 与开头重复\"],\n      \"orderProblems\": [\"无关内容穿插在核心观点之间，破坏逻辑\"],\n      \"contentGaps\": [\"未解释为什么选择新鲜食材重要\"]\n    }\n  }\n}\n```",
+      "feedback": {
+        "overall_score": 5.5,
+        "target_score": 7.5,
+        "key_issues": [
+          {
+            "type": "relevance",
+            "message": "回答中混入了与问题完全无关的内容（如学校建筑、地址、天气），严重偏离主题，需删除。"
+          },
+          {
+            "type": "content",
+            "message": "核心观点仅提到'选择新鲜食材'，缺乏具体展开（如为什么这个选择重要），内容较单薄。"
+          },
+          {
+            "type": "structure",
+            "message": "信息顺序混乱，无关内容穿插在核心观点之间，破坏了逻辑连贯性。"
+          },
+          {
+            "type": "naturalness",
+            "message": "结尾句'Choosing fresh ingredients matters to me'与开头重复，显得冗余，可用'That choice'简洁指代。"
+          }
+        ],
+        "revision_mode": "trim",
+        "optimization_summary": "删除所有与烹饪无关的内容（学校、地址、天气），保留核心观点并简化表达，使回答聚焦于'选择新鲜食材'这一原因。",
+        "final_upgraded_answer": "I like cooking because I can choose fresh ingredients. That choice really matters to me.",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "原回答直接回答了问题，但夹杂大量无关信息，严重干扰主线。核心观点'选择新鲜食材'仅陈述未展开，缺乏细节支撑。",
+        "structure_diagnosis": "信息顺序混乱：先给出核心原因，随后插入无关内容，最后重复核心观点，缺乏清晰的逻辑推进。",
+        "optimization_advice": "建议补充为什么'选择新鲜食材'对你重要，例如：'It lets me control what goes into my meals, which makes me feel healthier.' 但不要编造具体经历，仅提供方向。",
+        "expansion_notice": "",
+        "takeaway_expressions": [
+          {
+            "expression": "That choice really matters to me.",
+            "meaning": "那个选择对我来说真的很重要。",
+            "meaning_zh": "那个选择对我来说真的很重要。",
+            "why_useful": "用'that choice'指代前文内容，避免重复，表达简洁自然，适用于强调个人偏好。",
+            "example": "I prefer morning runs. That choice keeps me energized all day.",
+            "usage_note": "适合在解释原因后补充个人感受时使用。",
+            "readonly": false
+          }
+        ],
+        "corrections": [
+          {
+            "original": "My school has five buildings.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "My address is near a bus stop.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "The weather is sunny today.",
+            "corrected": "",
+            "category": "relevance",
+            "explanation_zh": "与问题完全无关，应删除。",
+            "nature": "Error"
+          },
+          {
+            "original": "Choosing fresh ingredients matters to me.",
+            "corrected": "That choice really matters to me.",
+            "category": "naturalness",
+            "explanation_zh": "原句重复了开头的'choose fresh ingredients'，用'that choice'指代更简洁自然，避免冗余。",
+            "nature": "Upgrade"
+          }
+        ],
+        "answer_structure": [
+          {
+            "label": "直接给出核心原因",
+            "content": "用'because I can choose fresh ingredients'明确回答喜欢烹饪的原因。",
+            "reusable_expression": "I like cooking because..."
+          },
+          {
+            "label": "强调该原因的重要性",
+            "content": "用'That choice really matters to me'收尾，突出个人感受，避免重复。",
+            "reusable_expression": "That choice really matters to me."
+          }
+        ],
+        "detailed_analysis": {
+          "fluencyScore": 5,
+          "grammarScore": 6,
+          "vocabularyScore": 5.5,
+          "naturalnessScore": 4.5,
+          "usefulCorrections": "删除无关内容后，回答更流畅；'That choice'替换重复表达，提升自然度。",
+          "expressionsUsed": [],
+          "expressionsMissed": [],
+          "contentAnalysis": {
+            "relevanceScore": 3,
+            "coherenceScore": 3.5,
+            "developmentScore": 4,
+            "summary": "原回答包含大量无关信息，严重偏离主题；核心观点未展开，内容单薄。",
+            "offTopicParts": [
+              "My school has five buildings.",
+              "My address is near a bus stop.",
+              "The weather is sunny today."
+            ],
+            "repetition": [
+              "Choosing fresh ingredients matters to me 与开头重复"
+            ],
+            "orderProblems": [
+              "无关内容穿插在核心观点之间，破坏逻辑"
+            ],
+            "contentGaps": [
+              "未解释为什么选择新鲜食材重要"
+            ]
+          }
+        },
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "fidelity-review",
+      "elapsedMs": 121350,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"claim_evidence\": [\n    {\n      \"sentence\": \"I like cooking because I can choose fresh ingredients.\",\n      \"support\": \"I like cooking because I can choose fresh ingredients.\"\n    },\n    {\n      \"sentence\": \"That choice really matters to me.\",\n      \"support\": \"Choosing fresh ingredients matters to me.\"\n    }\n  ],\n  \"unsupported_claims\": [],\n  \"teaching_errors\": [],\n  \"revision_mode\": \"trim\",\n  \"issues\": [],\n  \"faithful\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": "trim",
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    },
+    {
+      "kind": "independence-review",
+      "elapsedMs": 15140,
+      "model": "deepseek-v4-pro",
+      "raw": "{\n  \"user_arguments\": [\n    \"做饭时可以选择新鲜食材\",\n    \"选择新鲜食材对用户很重要\"\n  ],\n  \"model_arguments\": [\n    \"做饭带来控制感和创造力\",\n    \"做饭时专注切菜搅酱有正念放松作用\",\n    \"与他人分享亲手做的食物带来满足感和连接\"\n  ],\n  \"overlapping_arguments\": [],\n  \"reason\": \"用户的核心论点仅围绕选择新鲜食材及其重要性，AI回答没有提及或展开这一论点，而是从控制感、创造力、放松和分享等不同角度解释喜欢做饭的原因，未复用用户独特观点或论据。\",\n  \"independent\": true\n}",
+      "feedback": {
+        "overall_score": null,
+        "target_score": null,
+        "key_issues": [],
+        "revision_mode": null,
+        "optimization_summary": "",
+        "final_upgraded_answer": "",
+        "reference_answer": "",
+        "reference_angle_summary": "",
+        "content_diagnosis": "",
+        "structure_diagnosis": "",
+        "optimization_advice": "",
+        "expansion_notice": "",
+        "takeaway_expressions": [],
+        "corrections": [],
+        "answer_structure": [],
+        "detailed_analysis": {},
+        "retry_checks": []
+      }
+    }
+  ]
+}

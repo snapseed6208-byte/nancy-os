@@ -18,9 +18,9 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Speaking feedback contract and rendering", () => {
   it.each(speakingCases)("$id: transports real mock input and renders one learning answer", async c => {
-    vi.mocked(callAI).mockResolvedValue({ content: JSON.stringify(responseFor(c)), model: "mock" });
+    vi.mocked(callAI).mockResolvedValueOnce({ content: JSON.stringify(responseFor(c)), model: "mock" }).mockResolvedValueOnce({ content: JSON.stringify({reference_answer:c.reference}), model:"mock" }).mockResolvedValueOnce({content: JSON.stringify({faithful:true,revision_mode:c.mode}),model:"mock"}).mockResolvedValueOnce({content: JSON.stringify({independent:true}),model:"mock"});
     const result = await analyzeSpeaking(c.question, c.input, [], "test-token");
-    expect(callAI).toHaveBeenCalledTimes(1);
+    expect(callAI).toHaveBeenCalledTimes(4);
     expect(vi.mocked(callAI).mock.calls[0][0]).toMatchObject({ speakingFeedback: true, injectContext: false });
     expect(vi.mocked(callAI).mock.calls[0][0].messages[1].content).toContain(c.input);
     expect(result.revision_mode).toBe(c.mode);
@@ -28,9 +28,9 @@ describe("Speaking feedback contract and rendering", () => {
     const stored = speakingFeedbackStorage(result);
     expect(normalizeSpeakingFeedback(stored)).toMatchObject(responseFor(c));
     render(<SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(stored)} />);
-    expect(screen.getAllByRole("region", { name: "最终优化表达" })).toHaveLength(1);
+    expect(screen.getAllByRole("region", { name: "我的回答·最佳表达" })).toHaveLength(1);
     expect(screen.getByText(c.final)).toBeInTheDocument();
-    const summary = screen.getByText("AI 参考答案");
+    const summary = screen.getByText("AI 独立优秀回答");
     expect(summary.closest("details")).not.toHaveAttribute("open");
     fireEvent.click(summary);
     expect(summary.closest("details")).toHaveAttribute("open");
@@ -59,15 +59,15 @@ describe("Speaking feedback contract and rendering", () => {
     const value = parseSpeakingResponse('{"final_upgraded_answer":"Keep my answer.\\nSecond line.","takeaway_expressions":[');
     expect(value.final_upgraded_answer).toBe("Keep my answer.\nSecond line.");
     render(<SpeakingFeedbackPanel feedback={value} />);
-    expect(screen.queryByText("AI 参考答案")).toBeNull();
+    expect(screen.queryByText("AI 独立优秀回答")).toBeNull();
     expect(screen.queryByText("可带走的表达")).toBeNull();
     expect(parseSpeakingResponse('{"final_upgraded_answer":"unfinished').final_upgraded_answer).toBe("");
   });
 
   it("limits issues and takeaways, accepts only expressions actually in the final answer", () => {
     const f = normalizeSpeakingFeedback({ final_upgraded_answer: "one two three four five", key_issues: Array.from({ length: 8 }, () => ({ type: "grammar", message: "issue" })), takeaway_expressions: [null, { expression: "missing" }, ...["one", "one", "two", "three", "four", "five"].map(expression => ({ expression }))] });
-    expect(f.key_issues).toHaveLength(3);
-    expect(f.takeaway_expressions.map(e => e.expression)).toEqual(["one", "two", "three", "four"]);
+    expect(f.key_issues).toHaveLength(5);
+    expect(f.takeaway_expressions.map(e => e.expression)).toEqual(["one", "two", "three", "four", "five"]);
   });
 
   it("keeps absent scores null rather than inventing zero performance", async () => {
@@ -87,8 +87,8 @@ describe("Speaking feedback contract and rendering", () => {
     expect(result.revision_mode).toBeNull();
     render(<SpeakingFeedbackPanel feedback={result} retry />);
     expect(screen.getByText("通勤理由更完整。")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "最终优化表达" })).toBeNull();
-    expect(screen.queryByText("AI 参考答案")).toBeNull();
+    expect(screen.queryByRole("region", { name: "我的回答·最佳表达" })).toBeNull();
+    expect(screen.queryByText("AI 独立优秀回答")).toBeNull();
     expect(vi.mocked(callAI).mock.calls[0][0].messages[0].content).toContain("Original transcript");
   });
 
@@ -106,7 +106,7 @@ describe("Speaking feedback contract and rendering", () => {
     expect(SPEAKING_FEEDBACK_PROMPT).toContain("Relevance → Content → Structure → Grammar / Collocation → Naturalness → Band-level upgrade");
     expect(SPEAKING_FEEDBACK_PROMPT).toContain("Do not invent personal facts");
     expect(SPEAKING_FEEDBACK_PROMPT).toContain("参考性展开");
-    expect(SPEAKING_FEEDBACK_PROMPT).toContain("another substantive angle");
+    expect(SPEAKING_FEEDBACK_PROMPT).toContain("NEVER generate a reference here");
     expect(buildRetryFeedbackPrompt({})).not.toContain('"final_upgraded_answer":');
     expect(buildRetryFeedbackPrompt({})).toContain("Do not generate any revised");
   });
@@ -182,8 +182,8 @@ describe("structured hybrid feedback rendering", () => {
     expect(screen.getByText("strength 应用复数")).toBeInTheDocument();
     expect(screen.getByText("更口语自然")).toBeInTheDocument();
     // grammar + collocation are actual errors → 纠错 badge; naturalness is an upgrade → 升级 badge.
-    expect(screen.getAllByText("纠错")).toHaveLength(2);
-    expect(screen.getByText("升级")).toBeInTheDocument();
+    expect(screen.getAllByText("Error")).toHaveLength(2);
+    expect(screen.getByText("Upgrade")).toBeInTheDocument();
   });
 
   it("renders content diagnosis card with real content dims and issue lists", () => {
@@ -205,10 +205,10 @@ describe("structured hybrid feedback rendering", () => {
 
   it("labels the AI reference angle in its collapsed subtitle and keeps only one final answer", () => {
     render(<SpeakingFeedbackPanel feedback={fullFeedback()} />);
-    expect(screen.getByText("AI 参考答案")).toBeInTheDocument();
-    expect(screen.getByText(/看看另一种答题思路 — 文化角度/)).toBeInTheDocument();
+    expect(screen.getByText("AI 独立优秀回答")).toBeInTheDocument();
+    expect(screen.getByText(/另一种独立答题思路.*文化角度/)).toBeInTheDocument();
     // Single learning answer: only the final-upgraded card and the independent reference exist.
-    expect(screen.getAllByRole("region", { name: "最终优化表达" })).toHaveLength(1);
+    expect(screen.getAllByRole("region", { name: "我的回答·最佳表达" })).toHaveLength(1);
     expect(screen.queryByText(/Natural Version|High-score Answer|更自然的表达/)).toBeNull();
   });
 });

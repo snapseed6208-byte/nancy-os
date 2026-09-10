@@ -58,6 +58,8 @@ const DEFAULT_MAX_TOKENS = 2048;
 // ── Unified AI Runtime ──
 
 export interface AIRuntimeOptions {
+  /** Optional model override; callers must constrain externally supplied values. */
+  model?: string;
   /** Agent name for logging (required) */
   agentName: string;
   /** Max chars per message content (default 8000) */
@@ -158,6 +160,7 @@ export async function aiRuntime<T = unknown>(
   // ── Layer 3: DeepSeek call ──
   console.log(`${tag} start chars=${totalChars} maxTokens=${finalMaxTokens}`);
   const aiResult = await callDeepSeek<string>(processed, {
+    model: options.model,
     temperature: options.temperature ?? 0.5,
     maxTokens: finalMaxTokens,
     timeout: options.timeout,
