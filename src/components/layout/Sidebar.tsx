@@ -515,7 +515,10 @@ function SidebarContent({
           const isActive =
             config.path === "/"
               ? location === "/"
-              : location.startsWith(config.path);
+              : (location === config.path || location.startsWith(`${config.path}/`)) &&
+                !NAVIGATION_ITEMS.some(other => other.path !== config.path &&
+                  other.path.startsWith(`${config.path}/`) &&
+                  (location === other.path || location.startsWith(`${other.path}/`)));
 
           return (
             <DropZone

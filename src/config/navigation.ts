@@ -82,6 +82,15 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     description: "口语、表达库、复习",
   },
   {
+    id: "vocabulary",
+    label: "专八词汇",
+    icon: "BookOpen",
+    path: "/english/vocabulary",
+    group: "learning",
+    defaultOrder: 14,
+    description: "PDF 词库、熟词生义、复习",
+  },
+  {
     id: "exam",
     label: "考试学习",
     icon: "GraduationCap",

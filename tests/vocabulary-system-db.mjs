@@ -1,0 +1,98 @@
+import {readFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+import assert from "node:assert/strict";
+const {PGlite}=await import(process.argv[2]?pathToFileURL(process.argv[2]).href:"@electric-sql/pglite");
+const db=new PGlite(); let checks=0,seq=0;
+const ok=(v,message)=>{assert.ok(v,message);checks++;};
+const rejects=async(p,pattern)=>{await assert.rejects(p,pattern);checks++;};
+const uid="10000000-0000-0000-0000-000000000001",other="10000000-0000-0000-0000-000000000002";
+const service=()=>db.exec("reset role; set role service_role;");
+const user=(id=uid)=>db.exec(`reset role; set role authenticated; set request.jwt.claim.sub='${id}';`);
+const rows=async(sql,args=[]) => (await db.query(sql,args)).rows;
+const word=async(id)=>(await rows("select * from vocabulary_words where id=$1",[id]))[0];
+async function attempt(id,mode,score=100) {
+  await service(); const w=await word(id);
+  const q=(await rows("insert into vocabulary_questions(user_id,word_id,mode,content_version,variant,payload) values($1,$2,$3,$4,$5,'{}') returning id",[uid,id,mode,w.content_version,++seq]))[0];
+  // Distinct fixture versions allow repeated same-day attempts to exercise the evidence cap.
+  const a=(await rows("insert into vocabulary_attempts(user_id,word_id,question_id,mode,word_version) values($1,$2,$3,$4,$5) returning id",[uid,id,q.id,mode,w.version]))[0];
+  const feedback={score,explanation:"reason",expected_answer:"limit",root_cause:score<80?"wrong sense":"",transferable_rule:"abstract object",error_type:"context_meaning",corrected_answer:"limit"};
+  const result=(await rows("select complete_vocabulary_attempt($1,$2,'my answer',$3) as feedback",[uid,a.id,JSON.stringify(feedback)]))[0].feedback;
+  return {id:a.id,result};
+}
+async function nextEvidenceDay(id,mode) {
+  await service(); await db.query("update vocabulary_words set mastery=jsonb_set(mastery,ARRAY[$2,'last_day'],'\"2000-01-01\"'),last_review_day='2000-01-01',last_listening_day='2000-01-01',due_at=now()-interval '1 second',listening_due_at=case when listening_due_at is null then null else now()-interval '1 second' end where id=$1",[id,mode]);
+}
+try {
+  await db.exec(`create role authenticated;create role anon;create role service_role bypassrls;create schema auth;
+    create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+    grant usage on schema auth to authenticated,anon,service_role;insert into auth.users values('${uid}'),('${other}');`);
+  await db.exec(readFileSync("supabase/migrations/107_tem8_vocabulary.sql","utf8"));
+  await db.exec(readFileSync("supabase/migrations/108_tem8_learning_system.sql","utf8"));
+  checks++;
+  await user();
+  const imp=(await rows("insert into vocabulary_imports(user_id,name,fingerprint,chunks) values($1,'fixture','fixture','[\"raw original\"]') returning id",[uid]))[0];
+  const entries=Array.from({length:35},(_,i)=>({word:`word ${String.fromCharCode(97+i%26)}${i>=26?'b':''}`,meaning:"meaning",original:"original",context:"raw original",type:i<7?"familiar":i<14?"academic":"new"}));
+  await db.query("select save_vocabulary_chunk($1,0,$2)",[imp.id,JSON.stringify(entries)]);
+  ok((await rows("select * from vocabulary_words")).length===35,"all words imported with restricted direct writes");
+  ok((await rows("select target_level from vocabulary_words where type='academic'"))[0].target_level==="P1","output words identified before enrichment");
+  const plan=(await rows("select to_jsonb(ensure_vocabulary_day(25)) as p"))[0].p;
+  ok(plan.new_ids.length===15&&plan.familiar_ids.length===5&&plan.production_ids.length===5,"15/5/5 daily mix");
+  const again=(await rows("select to_jsonb(ensure_vocabulary_day(100)) as p"))[0].p;
+  ok(JSON.stringify(again)===JSON.stringify(plan),"same-day reload does not replenish new slots");
+  const id=plan.familiar_ids[0];
+  await rejects(db.query("update vocabulary_words set level='P2' where id=$1",[id]),/permission denied/);
+  await rejects(db.query("insert into vocabulary_words(user_id,word,level) values($1,'forged','P2')",[uid]),/permission denied/);
+  await rejects(db.query("select review_vocabulary($1,0,true,'','')",[id]),/permission denied/);
+  await rejects(db.query("select complete_vocabulary_attempt($1,$2,'forged','{}')",[uid,id]),/permission denied/);
+  await rejects(db.query("select * from vocabulary_questions"),/permission denied/);
+  const r1=await attempt(id,"R1"); let w=await word(id);
+  ok(w.level==="R1"&&w.review_stage===1,"R1 evidence applied");
+  const version=w.version;
+  const duplicate=(await rows("select complete_vocabulary_attempt($1,$2,'changed','{\"score\":0}') as r",[uid,r1.id]))[0].r;
+  ok(duplicate.score===100&&(await word(id)).version===version,"submission retry is idempotent");
+  await attempt(id,"R2");w=await word(id);
+  ok(w.level==="R2"&&w.review_stage===1,"same-day new skill does not advance schedule twice");
+  await attempt(id,"P1");await attempt(id,"P1");w=await word(id);
+  ok(w.level==="R2"&&w.mastery.P1.passes===1,"same-day P1 successes do not inflate mastery");
+  await nextEvidenceDay(id,"P1");await attempt(id,"P1");w=await word(id);
+  ok(w.level==="P1"&&w.review_stage===2,"P1 requires cross-day evidence");
+  await attempt(id,"P2");ok((await word(id)).level==="P1","one P2 success insufficient");
+  await nextEvidenceDay(id,"P2");await attempt(id,"P2");w=await word(id);
+  ok(w.level==="P2","production mastery reached with prerequisites");
+  const readingDue=String(w.due_at),readingStage=w.review_stage;
+  await attempt(id,"listening",0);w=await word(id);
+  ok(w.level==="P2"&&String(w.due_at)===readingDue&&w.review_stage===readingStage&&w.listening_status==="weak","listening failure preserves reading");
+  const listeningErrors=await rows("select * from vocabulary_errors where word_id=$1 and mode='listening'",[id]);
+  ok(listeningErrors.length===1&&!listeningErrors[0].resolved_at,"listening error recorded");
+  await attempt(id,"listening");ok((await word(id)).listening_status==="learning","first correction is not stable");
+  await nextEvidenceDay(id,"listening");await attempt(id,"listening");
+  ok((await word(id)).listening_status==="stable","cross-day listening recovery");
+  ok((await rows("select resolved_at from vocabulary_errors where word_id=$1 and mode='listening'",[id]))[0].resolved_at,"error resolved after contextual retests");
+  await db.query("update vocabulary_words set due_at=now()+interval '10 days',last_review_day='2000-01-01' where id=$1",[id]);
+  w=await word(id);const dueBefore=String(w.due_at),stageBefore=w.review_stage;
+  await attempt(id,"R1");w=await word(id);
+  ok(String(w.due_at)===dueBefore&&w.review_stage===stageBefore,"early practice cannot postpone review");
+  await attempt(id,"R2",0);w=await word(id);
+  ok(w.level==="R1"&&w.review_stage===0&&w.status==="error","wrong contextual meaning lowers appropriate mastery");
+  const beforeCapture=w.error_count;
+  await db.query("select record_vocabulary_observation($1,$2,'missed audio','meaning',true,$3)",[uid,id,imp.id]);
+  await db.query("select record_vocabulary_observation($1,$2,'missed audio','meaning',true,$3)",[uid,id,imp.id]);
+  ok((await word(id)).error_count===beforeCapture+1,"capture retry does not duplicate real errors");
+  const lease=(await rows("select claim_vocabulary_job($1,'enrich:test') as token",[uid]))[0].token;
+  ok(!!lease,"first AI job claimed");
+  ok((await rows("select claim_vocabulary_job($1,'enrich:test') as token",[uid]))[0].token===null,"concurrent paid work blocked");
+  await user(other);
+  ok((await rows("select * from vocabulary_words")).length===0,"RLS word isolation");
+  ok((await rows("select * from vocabulary_attempts")).length===0,"RLS attempt isolation");
+  ok((await rows("select * from vocabulary_daily_plans")).length===0,"RLS plan isolation");
+  await rejects(db.query("select edit_vocabulary_word($1,'new','R1','bad','')",[id]),/Word not found/);
+  const zero=(await rows("select to_jsonb(ensure_vocabulary_day(0)) as p"))[0].p;
+  ok(zero.target===0&&zero.new_ids.length===0,"review-only day supported");
+  await user();
+  await db.query("select edit_vocabulary_word($1,'familiar','P2','corrected meaning','v.')",[id]);
+  w=await word(id);ok(w.content_version===1&&w.curated&&w.meaning==="corrected meaning"&&w.enrichment===null,"curation invalidates stale question context");
+  const dash=(await rows("select vocabulary_dashboard() as d"))[0].d;
+  ok(dash.attempts>0&&dash.modes.length>=5&&dash.today_completed===1,"analytics aggregate completed evidence");
+  console.log(`Vocabulary full system: ${checks} database assertions passed.`);
+}finally{await db.close();}
+

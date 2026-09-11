@@ -6,6 +6,7 @@ import Home from "@/pages/Home";
 import Plan from "@/pages/Plan";
 import Career from "@/pages/Career";
 import English from "@/pages/English";
+import EnglishVocabulary from "@/pages/EnglishVocabulary";
 import EnglishExpressionHub from "@/pages/EnglishExpressionHub";
 import EnglishExpressions from "@/pages/EnglishExpressions";
 import EnglishExpressionDetail from "@/pages/EnglishExpressionDetail";
@@ -80,6 +81,7 @@ function AppRoutes() {
         <Route path="/plan" component={Plan} />
         <Route path="/career" component={Career} />
         <Route path="/english" component={English} />
+        <Route path="/english/vocabulary" component={EnglishVocabulary} />
         <Route path="/english/expressions" component={EnglishExpressionHub} />
         <Route path="/english/library" component={EnglishExpressions} />
         <Route path="/english/library/:id" component={EnglishExpressionDetail} />

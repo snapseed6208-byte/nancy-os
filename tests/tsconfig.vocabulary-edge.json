@@ -1,0 +1,7 @@
+{
+  "extends":"../tsconfig.json",
+  "compilerOptions":{
+    "paths":{"npm:@supabase/supabase-js@2":["./node_modules/@supabase/supabase-js/dist/index.d.mts"]}
+  },
+  "include":["../supabase/functions/tem8-vocabulary-agent/**/*.ts","./vocabulary-edge-types.d.ts"]
+}
