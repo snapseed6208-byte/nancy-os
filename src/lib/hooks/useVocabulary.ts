@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
-import { vocabularyChunks, type VocabularyImport, type VocabularyWord } from "@/lib/english/vocabulary";
+import { vocabularyChunks, type VocabularyExtractResult, type VocabularyImport, type VocabularyWord } from "@/lib/english/vocabulary";
 import type { VocabularyPlan, VocabularyQuestion, VocabularyFeedback, VocabularyAttempt, VocabularyDashboard, TestMode } from "@/lib/english/vocabulary";
 import { useShanghaiDateKey } from "@/lib/hooks/useShanghaiDateKey";
 
@@ -38,8 +38,9 @@ export function useVocabulary() {
     return result.data as VocabularyImport;
   },onSuccess:refresh});
   const ai = useMutation({mutationFn:async (payload:Record<string,unknown>) => {
-    const result = await invokeAI("tem8-vocabulary-agent",payload,{timeout:90000});
+    const result = await invokeAI<VocabularyExtractResult>("tem8-vocabulary-agent",payload,{timeout:90000});
     if (!result.success) throw new Error(result.error);
+    return result.data;
   },onSuccess:(_,payload)=>payload.action === "extract" ? qc.invalidateQueries({queryKey:[...key,"imports"]}) : refresh()});
   async function call<T>(body:Record<string,unknown>):Promise<T> {
     const result=await invokeAI<T>("tem8-vocabulary-agent",body,{timeout:90000});

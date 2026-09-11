@@ -19,6 +19,8 @@ export interface VocabularyWord {
   content_version?: number; archived?: boolean; curated?: boolean;
 }
 export interface VocabularyImport { id: string; name: string; chunk_count: number; completed_chunks: number[]; created_at: string; source_kind?: string }
+export interface VocabularyReject { index: number; span_id: string | null; field: string; reason: string }
+export interface VocabularyExtractResult { saved?: number; rejected?: VocabularyReject[]; notes?: { index: number; field: string; detail: string }[]; spans?: number }
 export const testModes = {R1:"R1 · 释义识别",R2:"R2 · 语境辨义",collocation:"搭配填空",P1:"P1 · 翻译输出",P2:"P2 · 自主造句",listening:"听力辨认"} as const;
 export type TestMode = keyof typeof testModes;
 export interface VocabularyPlan { user_id:string; day:string; new_ids:string[]; familiar_ids:string[]; production_ids:string[]; target:number }

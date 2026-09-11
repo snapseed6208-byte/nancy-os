@@ -4,7 +4,7 @@ import { BookOpen, Upload, Loader2 } from "lucide-react";
 import { useVocabulary } from "@/lib/hooks/useVocabulary";
 import { getSavedLearnTarget, saveLearnTarget } from "@/lib/hooks/useReviewSession";
 import { parseFile } from "@/lib/parsers/fileParsers";
-import { dailyVocabularyQueue, vocabularyTypes, type VocabularyImport, type VocabularyQuestion, type TestMode } from "@/lib/english/vocabulary";
+import { dailyVocabularyQueue, vocabularyTypes, type VocabularyImport, type VocabularyQuestion, type VocabularyReject, type TestMode } from "@/lib/english/vocabulary";
 import VocabularyCard from "@/components/english/vocabulary/VocabularyCard";
 import VocabularyPractice from "@/components/english/vocabulary/VocabularyPractice";
 import VocabularyInbox, { sourceKinds } from "@/components/english/vocabulary/VocabularyInbox";
@@ -18,6 +18,7 @@ export default function EnglishVocabulary() {
   const [tab,setTab]=useState<keyof typeof tabs>("today");
   const [search,setSearch]=useState("");const [type,setType]=useState("");const [selected,setSelected]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);const [message,setMessage]=useState("");const [error,setError]=useState("");
+  const [rejects,setRejects]=useState<VocabularyReject[]>([]);
   const [sourceKind,setSourceKind]=useState("vocabulary");
   const [target,setTarget]=useState(()=>{try{return localStorage.getItem("english_learning_target") ? getSavedLearnTarget() : 25;}catch{return 25;}});
   const [test,setTest]=useState<VocabularyQuestion|null>(null);
@@ -40,14 +41,20 @@ export default function EnglishVocabulary() {
   },[model.day,model.plan.data,model.plan.isLoading,model.plan.isError,words.length,busy,tab]);
   async function run(action:()=>Promise<unknown>){setError("");try{await action();}catch(e){setError((e as Error).message||"操作失败，请重试");}}
   async function processImport(imp:VocabularyImport){
-    setBusy(true);stop.current=false;
+    setBusy(true);stop.current=false;setRejects([]);
+    let saved=0;const rejected:VocabularyReject[]=[];
     try{
       for(let i=0;i<imp.chunk_count;i++){
         if(stop.current) break;if(imp.completed_chunks.includes(i)) continue;
         setMessage(`正在提取 ${imp.name}：第 ${i+1} / ${imp.chunk_count} 批`);
-        await model.ai.mutateAsync({action:"extract",importId:imp.id,chunk:i});
+        const data=await model.ai.mutateAsync({action:"extract",importId:imp.id,chunk:i});
+        saved+=data?.saved||0;
+        rejected.push(...(data?.rejected||[]));
+        if(mounted.current&&rejected.length) setRejects([...rejected]);
       }
-      if(mounted.current) setMessage(stop.current ? "已暂停；完成批次保留，可继续导入。" : "导入完成。可生成今日名单，打开词卡时自动加工学习内容。");
+      if(mounted.current) setMessage(stop.current
+        ? `已暂停；完成批次保留，可继续导入。已保存 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝`:"."}`
+        : `导入完成：新增／合并 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝（见下方原因）`:"。"}可生成今日名单，打开词卡时自动加工学习内容。`);
     }finally{if(mounted.current){setBusy(false);void model.refresh();}}
   }
   async function importText(name:string,text:string,kind:string){
@@ -80,6 +87,7 @@ export default function EnglishVocabulary() {
       {busy&&<button className={button} onClick={()=>{stop.current=true;setMessage("当前批次完成后暂停…");}}>暂停导入</button>}
     </div>
     {message&&<p role="status" className="text-sm text-sage-deep">{message}</p>}
+    {rejects.length>0&&<details className="rounded-lg border border-border p-3 text-sm"><summary className="cursor-pointer text-ink-light">被拒绝的词条（{rejects.length}）</summary><ul className="mt-2 space-y-1 text-xs text-ink-lighter">{rejects.slice(0,200).map((r,i)=><li key={`${r.span_id}-${r.index}-${i}`}>第 {r.span_id?.split(":")[0]??"?"} 批 · 条目 {r.index} · {r.span_id??"无 span"} · {r.field} · {r.reason}</li>)}</ul></details>}
     {(error||loadError)&&<div role="alert" className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error||loadError?.message}<button className="ml-3 underline" onClick={()=>void model.refresh()}>重新加载</button></div>}
     <nav aria-label="词汇视图" className="flex flex-wrap gap-2">{Object.entries(tabs).map(([id,label])=><button key={id} aria-pressed={tab===id} onClick={()=>{setTab(id as keyof typeof tabs);setSelected(null);}} className={`${button} ${tab===id?"bg-sage-light text-sage-deep":""}`}>{label}</button>)}</nav>
     {tab==="inbox" ? <VocabularyInbox imports={model.imports.data||[]} busy={busy} onResume={processImport} onText={importText} onCapture={async(body)=>{const data=await model.capture.mutateAsync(body);setMessage("来源与词条已保存；已有词条合并来源。");setTab("all");setSelected(data.wordId);}}/> : tab==="progress" ? <VocabularyProgress dashboard={model.dashboard.data} history={model.history.data||[]} words={words} onWord={id=>{setTab("all");setSelected(id);}}/> : <>

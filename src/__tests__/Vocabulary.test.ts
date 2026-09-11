@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { learningQueue, vocabularyChunks, vocabularyPriority, type VocabularyWord } from "@/lib/english/vocabulary";
-import { validateEntries, validateEnrichment } from "../../supabase/functions/tem8-vocabulary-agent/validation";
+import { validateEnrichment } from "../../supabase/functions/tem8-vocabulary-agent/validation";
 
 const word = (id:string,extra:Partial<VocabularyWord>={}):VocabularyWord => ({id,word:id,pos:"v.",meaning:"原义",type:"new",sources:[],enrichment:null,level:"R0",status:"inbox",review_stage:0,due_at:null,error_count:0,version:0,...extra});
 describe("vocabulary scheduling and import",()=>{
@@ -19,13 +19,8 @@ describe("vocabulary scheduling and import",()=>{
     const src={import_id:"a",name:"A",original:"word",context:"word 释义"};
     expect(vocabularyPriority(word("a",{sources:[src,src]}))).toBe(vocabularyPriority(word("b",{sources:[src]})));
   });
-  it("rejects hallucinated provenance and malformed AI output instead of partially saving",()=>{
-    const entry={word:"exacerbate",original:"exacerbated",context:"exacerbated 加剧",meaning:"加剧",pos:"v.",type:"new"};
-    expect(validateEntries({entries:[entry]},"exacerbated 加剧")[0].word).toBe("exacerbate");
-    expect(()=>validateEntries({entries:[entry]},"unrelated source")).toThrow();
-    expect(()=>validateEntries({entries:[{...entry,type:"invented"}]},"exacerbated 加剧")).toThrow();
-    expect(()=>validateEntries({},"text")).toThrow();
-    expect(validateEntries({entries:[{...entry,word:"cliché",original:"cliché",context:"cliché 陈词滥调",meaning:"陈词滥调"}]},"cliché 陈词滥调")[0].word).toBe("cliché");
+  it("rejects malformed AI output instead of partially saving",()=>{
+    expect(()=>validateEnrichment({},"new")).toThrow();
   });
   it("rejects incomplete enrichment and permits bounded specialized cards",()=>{
     expect(()=>validateEnrichment({core_meaning:"test"})).toThrow();

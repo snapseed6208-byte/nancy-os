@@ -1,20 +1,4 @@
-const types = ["new", "familiar", "collocation", "academic", "listening"];
 const str = (v: unknown): v is string => typeof v === "string" && v.length <= 3000;
-export function validateEntries(value: unknown, source: string) {
-  const entries = (value as { entries?: unknown })?.entries;
-  if (!Array.isArray(entries) || entries.length > 150) throw new Error("词条提取结果不完整，请重试本批次");
-  return entries.map((e: Record<string, unknown>) => {
-    const word=typeof e?.word==="string" ? e.word.normalize("NFKC").replace(/[’‘]/g,"'").replace(/[‐‑–]/g,"-").trim() : "";
-    if (!e || !str(e.word) || !/^\p{Script=Latin}[\p{Script=Latin}\p{M} '\-]{0,119}$/u.test(word) ||
-      !str(e.original) || !e.original.trim() || !source.toLowerCase().includes(e.original.toLowerCase()) ||
-      !str(e.context) || !e.context.trim() || !source.includes(e.context) || !e.context.toLowerCase().includes(e.original.toLowerCase()) ||
-      !str(e.meaning) || (e.meaning !== "" && !source.includes(e.meaning)) || !str(e.pos) || !types.includes(String(e.type))) {
-      throw new Error("AI 词条缺少可核对的原文，未保存本批次");
-    }
-    return { word: word.toLowerCase().replace(/\s+/g, " "), original: e.original, context: e.context,
-      meaning: e.meaning, pos: e.pos, type: e.type };
-  });
-}
 export function validateEnrichment(value: unknown, type?:string): Record<string, unknown> & {schema_version:number} {
   const e = value as Record<string, unknown>;
   const fields = ["core_meaning","tem8_meaning","english_definition","pronunciation","known_meaning","trigger","trap","register"];
