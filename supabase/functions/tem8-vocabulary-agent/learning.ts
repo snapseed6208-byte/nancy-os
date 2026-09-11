@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
-import { MODES, QUESTION_PROMPT, GRADE_PROMPT, validateQuestion, publicQuestion, deterministicGrade, validateGrade, type Mode } from "./practice.ts";
+import { MODES, QUESTION_PROMPT, GRADE_PROMPT, validateQuestion, publicQuestion, deterministicGrade, validateGrade, clampLevel, type Mode } from "./practice.ts";
 
 export async function handleLearning(body: Record<string, unknown>, db: SupabaseClient, userDb: SupabaseClient, userId: string) {
   if (body.action === "capture") {
@@ -78,7 +78,7 @@ export async function handleLearning(body: Record<string, unknown>, db: Supabase
     if(a.day!==new Date(Date.now()+8*3600000).toISOString().slice(0,10)) throw new Error("日期已变更，请关闭测试并重新出题");
     const q=await db.from("vocabulary_questions").select("*").eq("id",a.question_id).eq("user_id",userId).single();
     if(q.error) throw q.error;
-    const w=await db.from("vocabulary_words").select("word,content_version,archived").eq("id",a.word_id).eq("user_id",userId).single();
+    const w=await db.from("vocabulary_words").select("word,content_version,archived,target_level").eq("id",a.word_id).eq("user_id",userId).single();
     if(w.error || w.data.archived || w.data.content_version!==q.data.content_version) throw new Error("词条内容已修改，请重新出题");
     let grade=deterministicGrade(q.data.payload,a.mode,answer);
     if(!grade) {
@@ -90,6 +90,16 @@ export async function handleLearning(body: Record<string, unknown>, db: Supabase
     const submitted=a.mode==="R1" || a.mode==="R2" || a.mode==="collocation" ? q.data.payload.options[Number(answer)] : answer;
     const saved=await db.rpc("complete_vocabulary_attempt",{p_user:userId,p_attempt:a.id,p_answer:submitted,p_feedback:grade});
     if(saved.error) throw saved.error;
+    // The RPC promotes purely on evidence. The word's target is the ceiling, so a manual test
+    // past the goal (自定义测试) is graded and recorded but cannot push persisted mastery higher.
+    // Listening is its own dimension and never rewrites the reading level.
+    const level=String(saved.data?.level||"R0");
+    const capped=a.mode==="listening" ? level : clampLevel(level,String(w.data.target_level||"R1"));
+    if(capped!==level) {
+      const fixed=await db.from("vocabulary_words").update({level:capped}).eq("id",a.word_id).eq("user_id",userId);
+      if(fixed.error) throw fixed.error;
+      return {...saved.data,level:capped};
+    }
     return saved.data;
   }
   throw new Error("未知学习操作");

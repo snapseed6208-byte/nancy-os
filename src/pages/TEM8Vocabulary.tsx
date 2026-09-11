@@ -5,7 +5,7 @@ import { HubHeader } from "@/components/english/EnglishHubUI";
 import { useVocabulary } from "@/lib/hooks/useVocabulary";
 import { getSavedLearnTarget, saveLearnTarget } from "@/lib/hooks/useReviewSession";
 import { parseFile } from "@/lib/parsers/fileParsers";
-import { dailyVocabularyQueue, type VocabularyImport, type VocabularyReject } from "@/lib/english/vocabulary";
+import { dailyQueueMix, dailyVocabularyQueue, targetLabels, testModes, vocabularyTypes, type QueueMode, type VocabularyImport, type VocabularyReject } from "@/lib/english/vocabulary";
 import VocabularyHub from "@/components/english/vocabulary/VocabularyHub";
 import VocabularyLibrary from "@/components/english/vocabulary/VocabularyLibrary";
 import VocabularyWordDetail from "@/components/english/vocabulary/VocabularyWordDetail";
@@ -14,6 +14,8 @@ import VocabularyProgress from "@/components/english/vocabulary/VocabularyProgre
 
 const button = "min-h-11 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-40 hover:bg-sage-light/30";
 const titles: Record<string, string> = { "": "专八词汇", today: "今日学习", review: "到期复习", library: "全部词汇", import: "导入词汇", errors: "错词本", listening: "听力专项", analytics: "学习分析", archive: "已归档" };
+// The day's real mix, in the learner's words. Internal R1/R2/P1/P2 never appear here.
+const mixLabels: Record<QueueMode, string> = { R1: targetLabels.R1, R2: targetLabels.R2, collocation: vocabularyTypes.collocation, P1: targetLabels.P1, P2: targetLabels.P2, listening: testModes.listening, review: "复习" };
 export default function TEM8Vocabulary() {
   const model = useVocabulary();
   const [location, navigate] = useLocation();
@@ -32,6 +34,7 @@ export default function TEM8Vocabulary() {
   useEffect(() => { window.scrollTo?.(0, 0); }, [location]);
   const words = model.words.data || [];
   const queue = dailyVocabularyQueue(words, model.plan.data);
+  const mix = dailyQueueMix(words, model.plan.data);
   useEffect(() => {
     if (view !== "today" || busy || !words.length || model.plan.isLoading || model.plan.isError || model.plan.data || plannedDay.current === model.day) return;
     plannedDay.current = model.day;
@@ -99,7 +102,7 @@ export default function TEM8Vocabulary() {
     </> : view === "analytics" ? <VocabularyProgress dashboard={model.dashboard.data} history={model.history.data || []} words={words} onWord={id => navigate("/tem8/vocabulary/word/" + encodeURIComponent(id))} /> : view in titles ? <>
       {view === "today" && <section className="rounded-lg bg-sage-light/25 p-5 space-y-3">
         <h2 className="font-medium">{model.day} · 今日安排</h2>
-        {model.plan.data ? <p className="text-sm text-ink-light">阅读识别 {model.plan.data.new_ids.length} · 语境掌握 {model.plan.data.familiar_ids.length} · 提示输出 {model.plan.data.production_ids.length}{queue.length === 0 && " · 今日学习已完成"}</p> : <div className="flex flex-wrap items-center gap-3"><label className="text-sm">每日词数 <input aria-label="每日词数" type="number" min={0} max={100} value={target} onChange={ev => setTarget(Math.max(0, Math.min(100, Number(ev.target.value))))} className="w-20 ml-2 p-2 border border-border rounded-lg" /></label><button disabled={model.startDay.isPending || !words.length} className={button} onClick={() => void run(async () => { if(target >= 1 && target <= 30) saveLearnTarget(target); await model.startDay.mutateAsync(target); })}>生成今日学习</button></div>}
+        {model.plan.data ? <p className="text-sm text-ink-light">{mix.map(m => `${mixLabels[m.mode]} ${m.count}`).join(" · ")}{queue.length === 0 && " · 今日学习已完成"}</p> : <div className="flex flex-wrap items-center gap-3"><label className="text-sm">每日词数 <input aria-label="每日词数" type="number" min={0} max={100} value={target} onChange={ev => setTarget(Math.max(0, Math.min(100, Number(ev.target.value))))} className="w-20 ml-2 p-2 border border-border rounded-lg" /></label><button disabled={model.startDay.isPending || !words.length} className={button} onClick={() => void run(async () => { if(target >= 1 && target <= 30) saveLearnTarget(target); await model.startDay.mutateAsync(target); })}>生成今日学习</button></div>}
         <p className="text-xs text-ink-lighter">系统按每个词的学习目标与当前进度自动安排内容与题型，打开词卡直接作答即可，不必自己选择测试类型。名单跨设备保存，刷新不增加新词；到期复习独立加入。</p>
       </section>}
       <VocabularyLibrary key={view} words={listWords} loading={model.words.isLoading} archived={view === "archive"} />

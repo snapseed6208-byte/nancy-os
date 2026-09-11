@@ -101,6 +101,20 @@ export function dailyVocabularyQueue(words:VocabularyWord[],plan:VocabularyPlan|
       return time(a)-time(b)||vocabularyPriority(b)-vocabularyPriority(a);
     });
 }
+export type QueueMode = TestMode | "review";
+// What the day's queue will actually ask for, word by word. The plan only decides which words are
+// in scope; nextPracticeMode decides the work, so the shown mix can never promise a depth a word's
+// target does not allow. A word that has met its target counts as review, not as a harder test.
+export function dailyQueueMix(words:VocabularyWord[],plan:VocabularyPlan|null|undefined,now=Date.now()):{mode:QueueMode;count:number}[] {
+  const order:QueueMode[]=["R1","R2","collocation","P1","P2","listening","review"];
+  const counts=new Map<QueueMode,number>();
+  for(const w of dailyVocabularyQueue(words,plan,now)){
+    const next=nextPracticeMode(w,now);
+    const mode:QueueMode=next.done ? "review" : next.mode;
+    counts.set(mode,(counts.get(mode)||0)+1);
+  }
+  return order.filter(m=>counts.get(m)).map(mode=>({mode,count:counts.get(mode)!}));
+}
 // Bump when the chunking strategy changes so an unchanged file re-imports under the new strategy
 // instead of deduping back onto its old, differently-chunked row.
 export const CHUNKER_VERSION = 2;

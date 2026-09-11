@@ -1,5 +1,16 @@
 export const MODES = ["R1", "R2", "collocation", "P1", "P2", "listening"] as const;
 export type Mode = typeof MODES[number];
+export const LEVEL_LADDER = ["R0", "R1", "R2", "P1", "P2"] as const;
+// The word's target depth is a ceiling on persisted mastery, not just a display hint: a manual
+// test past the goal must never promote the stored level beyond what the learner committed to.
+// An unrecognised target leaves the stored value untouched rather than guessing a ceiling.
+export function clampLevel(level: string, target: string): string {
+  const l = LEVEL_LADDER.indexOf(level as typeof LEVEL_LADDER[number]);
+  const t = LEVEL_LADDER.indexOf(target as typeof LEVEL_LADDER[number]);
+  if (t < 0) return level;
+  if (l < 0) return target;
+  return l > t ? target : level;
+}
 export interface Question {
   prompt: string; options: string[]; correct_index: number | null; expected_answer: string;
   explanation: string; trigger: string; audio_text: string; rubric: string;
