@@ -6,7 +6,7 @@ import { normalizeSpeakingFeedback, parseSpeakingResponse, speakingFeedbackStora
 import type { SimplifiedSpeakingFeedback } from "../lib/english/speakingFeedback";
 import { fetchExistingExpressionEnglish, saveSpeakingTakeaway } from "../lib/english/speakingBank";
 import { speakingCases, responseFor } from "./fixtures/speaking-feedback-cases";
-import { SPEAKING_FEEDBACK_PROMPT, buildRetryFeedbackPrompt } from "../lib/ai/prompts";
+import { SPEAKING_DIAGNOSIS_PROMPT, SPEAKING_RECONSTRUCTION_PROMPT, buildRetryFeedbackPrompt } from "../lib/ai/prompts";
 import { analyzeSpeaking } from "../lib/ai/englishCoach";
 import { callAI } from "../lib/ai/client";
 vi.mock("../lib/ai/client", () => ({ callAI: vi.fn(), extractJSON: vi.fn() }));
@@ -20,8 +20,8 @@ describe("Speaking feedback contract and rendering", () => {
   it("preserves unchecked status through storage and visibly warns without certifying", () => {
     const stored=speakingFeedbackStorage(normalizeSpeakingFeedback({final_upgraded_answer:"Keep this draft",answer_status:"unchecked"}));
     render(<SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(stored)} />);
-    expect(screen.getByText(/原意核对暂未完成/)).toBeInTheDocument();
-    expect(screen.queryByText(/这是你的想法，只是表达得更好了/)).toBeNull();
+    expect(screen.getByText(/质量核对暂未完成/)).toBeInTheDocument();
+    expect(screen.queryByText(/逐句翻译或纠错/)).toBeNull();
   });
   it("explains hidden teaching feedback while retaining the verified answer", () => {
     render(<SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback({final_upgraded_answer:"Verified answer",answer_status:"verified",teaching_status:"needs_review"})} />);
@@ -29,9 +29,14 @@ describe("Speaking feedback contract and rendering", () => {
     expect(screen.getByRole("status")).toHaveTextContent("纠错说明存在不一致");
   });
   it.each(speakingCases)("$id: transports real mock input and renders one learning answer", async c => {
-    vi.mocked(callAI).mockResolvedValueOnce({ content: JSON.stringify(responseFor(c)), model: "mock" }).mockResolvedValueOnce({ content: JSON.stringify({reference_answer:c.reference}), model:"mock" }).mockResolvedValueOnce({content: JSON.stringify({faithful:true,revision_mode:c.mode}),model:"mock"}).mockResolvedValueOnce({content: JSON.stringify({independent:true}),model:"mock"});
+    vi.mocked(callAI)
+      .mockResolvedValueOnce({ content: JSON.stringify(responseFor(c)), model: "mock" })
+      .mockResolvedValueOnce({ content: JSON.stringify({reference_answer:c.reference}), model:"mock" })
+      .mockResolvedValueOnce({ content: JSON.stringify({final_upgraded_answer:c.final}), model:"mock" })
+      .mockResolvedValueOnce({content: JSON.stringify({faithful:true,policy_violations:[],diagnosis_misses:[],revision_mode:c.mode}),model:"mock"})
+      .mockResolvedValueOnce({content: JSON.stringify({independent:true}),model:"mock"});
     const result = await analyzeSpeaking(c.question, c.input, [], "test-token");
-    expect(callAI).toHaveBeenCalledTimes(4);
+    expect(callAI).toHaveBeenCalledTimes(5);
     expect(vi.mocked(callAI).mock.calls[0][0]).toMatchObject({ speakingFeedback: true, injectContext: false });
     expect(vi.mocked(callAI).mock.calls[0][0].messages[1].content).toContain(c.input);
     expect(result.revision_mode).toBe(c.mode);
@@ -112,12 +117,57 @@ describe("Speaking feedback contract and rendering", () => {
     expect(normalizeSpeakingFeedback(row).final_upgraded_answer).toBe(raw.final_upgraded_answer);
   });
 
-  it("prompt contains adaptive revision and truthfulness requirements; retry is separate", () => {
-    expect(SPEAKING_FEEDBACK_PROMPT).toContain("80–90%");
-    expect(SPEAKING_FEEDBACK_PROMPT).toContain("Relevance → Content → Structure → Grammar / Collocation → Naturalness → Band-level upgrade");
-    expect(SPEAKING_FEEDBACK_PROMPT).toContain("Do not invent personal facts");
-    expect(SPEAKING_FEEDBACK_PROMPT).toContain("参考性展开");
-    expect(SPEAKING_FEEDBACK_PROMPT).toContain("NEVER generate a reference here");
+  it("feeds the off-topic diagnosis and real scenario into answer reconstruction", async () => {
+    const reconstructionDiagnosis = {
+      relevance: { score: 4.5, status: "partially_off_topic", problem: "题目问今天，但主体转到三周前。" },
+      coherence: { score: 5.5, problem: "信息顺序没有回到今天。" },
+      development: { score: 5, problem: "缺少今天发生的具体小事。" },
+      coreIdea: "最近实习顺利，mentor 很支持自己，因此心情不错。",
+      keep: ["mentor 乐于帮助自己的素材"],
+      removeOrReduce: ["压缩三周前入职的背景", "删除重复的 quite 和 really"],
+      missing: ["直接回应今天的状态", "补一个与今天相关的小事件", "用今天的心情收尾"],
+      recommendedStructure: [
+        { label: "回应今天", content: "先直接回答今天过得怎么样。" },
+        { label: "今天的小事", content: "用 mentor 帮忙的一个小事件展开。" },
+        { label: "收回感受", content: "回到今天的心情。" },
+      ],
+      mainProblem: "回答只部分切题，时间焦点从今天偏移到了三周前。",
+    };
+    const best = "My day's been pretty good so far. Work was a little busy, but my mentor helped me with a small problem today. Nothing huge happened, but I'm in a really good mood.";
+    vi.mocked(callAI)
+      .mockResolvedValueOnce({ content: JSON.stringify({ reconstruction_diagnosis: reconstructionDiagnosis, revision_mode: "rewrite", detailed_analysis: { contentAnalysis: { relevanceScore: 4.5, coherenceScore: 5.5, developmentScore: 5 } } }), model: "mock" })
+      .mockResolvedValueOnce({ content: JSON.stringify({ reference_answer: "I nearly missed my bus this morning, but a stranger held it for me." }), model: "mock" })
+      .mockResolvedValueOnce({ content: JSON.stringify({ final_upgraded_answer: best, expansion_notice: "已补充一个与今天相关的小事件。" }), model: "mock" })
+      .mockResolvedValueOnce({ content: JSON.stringify({ faithful: true, policy_violations: [], diagnosis_misses: [] }), model: "mock" })
+      .mockResolvedValueOnce({ content: JSON.stringify({ independent: true, overlapping_arguments: [] }), model: "mock" });
+
+    const result = await analyzeSpeaking(
+      "Hey, how’s your day going so far — anything interesting happen?",
+      "Three weeks ago I became an intern. My mentor is very patient, so everything is quite quite good these days.",
+      [], "token", { questionContext: { mode: "daily", scenario: "Friendly small talk with a classmate before a lecture." } },
+    );
+    const reconstructionPayload = JSON.parse(vi.mocked(callAI).mock.calls[2][0].messages[1].content);
+    expect(reconstructionPayload.structured_diagnosis).toEqual(reconstructionDiagnosis);
+    expect(reconstructionPayload.scenario).toContain("Friendly small talk");
+    expect(result.final_upgraded_answer).toBe(best);
+    expect(result.answer_structure.map(step => step.label)).toEqual(["回应今天", "今天的小事", "收回感受"]);
+    const referencePayload = JSON.parse(vi.mocked(callAI).mock.calls[1][0].messages[1].content);
+    expect(referencePayload).not.toHaveProperty("learner_transcript");
+    expect(JSON.stringify(referencePayload)).not.toContain("mentor");
+
+    render(<SpeakingFeedbackPanel feedback={result} />);
+    fireEvent.click(screen.getByText("内容与结构诊断"));
+    expect(screen.getByText(/时间焦点从今天偏移到了三周前/)).toBeInTheDocument();
+    expect(screen.getByText(/回应今天 → 今天的小事 → 收回感受/)).toBeInTheDocument();
+  });
+
+  it("separates diagnosis from reconstruction and keeps retry separate", () => {
+    expect(SPEAKING_DIAGNOSIS_PROMPT).toContain("这一步只分析用户原始回答");
+    expect(SPEAKING_DIAGNOSIS_PROMPT).toContain("reconstruction_diagnosis");
+    expect(SPEAKING_RECONSTRUCTION_PROMPT).toContain("MUST explicitly follow that diagnosis");
+    expect(SPEAKING_RECONSTRUCTION_PROMPT).toContain("Meaning preservation is not the highest priority");
+    expect(SPEAKING_RECONSTRUCTION_PROMPT).toContain("Do not invent major personal facts");
+    expect(SPEAKING_RECONSTRUCTION_PROMPT).toContain("Casual small talk");
     expect(buildRetryFeedbackPrompt({})).not.toContain('"final_upgraded_answer":');
     expect(buildRetryFeedbackPrompt({})).toContain("Do not generate any revised");
   });

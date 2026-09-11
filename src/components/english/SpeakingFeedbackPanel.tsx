@@ -178,6 +178,7 @@ function TakeawayList({ items }: { items: SpeakingTakeaway[] }) {
 
 export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: SimplifiedSpeakingFeedback; retry?: boolean }) {
   const content = readContent(feedback);
+  const diagnosis = feedback.reconstruction_diagnosis;
   const hasContentIssues = content.offTopic.length > 0 || content.repetition.length > 0 || content.orderProblems.length > 0 || content.contentGaps.length > 0;
   const contentDims = [
     ["切题度 Relevance", content.relevance],
@@ -231,13 +232,27 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
           {/* Block 3 — 内容与结构诊断 (collapsible) */}
           {(
             <CollapsibleCard title="内容与结构诊断" aria-label="内容与结构诊断">
-              <p className="text-sm text-ink-light leading-relaxed"><strong>内容诊断：</strong>{feedback.content_diagnosis || content.summary || "暂无内容诊断。"}</p>
-              <p className="text-sm text-ink-light leading-relaxed"><strong>结构诊断：</strong>{feedback.structure_diagnosis || content.orderProblems.join("；") || "暂无单独结构诊断。"}</p>
-              <p className="text-sm text-ink-light leading-relaxed"><strong>优化建议：</strong>{feedback.optimization_advice || feedback.optimization_summary || "暂无建议。"}</p>
+              {diagnosis ? (
+                <div className="space-y-2 text-sm text-ink-light leading-relaxed">
+                  <p><strong className="text-ink">最大问题：</strong>{diagnosis.mainProblem || feedback.content_diagnosis || "暂无明确问题。"}</p>
+                  {!!diagnosis.keep.length && <p><strong className="text-ink">保留：</strong>{diagnosis.keep.join("；")}</p>}
+                  {!!diagnosis.removeOrReduce.length && <p><strong className="text-ink">需要调整：</strong>{diagnosis.removeOrReduce.join("；")}</p>}
+                  {!!diagnosis.missing.length && <p><strong className="text-ink">需要补充：</strong>{diagnosis.missing.join("；")}</p>}
+                  {!!diagnosis.recommendedStructure.length && (
+                    <p><strong className="text-ink">推荐结构：</strong>{diagnosis.recommendedStructure.map(step => step.label).join(" → ")}</p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-ink-light leading-relaxed"><strong>内容诊断：</strong>{feedback.content_diagnosis || content.summary || "暂无内容诊断。"}</p>
+                  <p className="text-sm text-ink-light leading-relaxed"><strong>结构诊断：</strong>{feedback.structure_diagnosis || content.orderProblems.join("；") || "暂无单独结构诊断。"}</p>
+                  <p className="text-sm text-ink-light leading-relaxed"><strong>优化建议：</strong>{feedback.optimization_advice || feedback.optimization_summary || "暂无建议。"}</p>
+                </>
+              )}
               <div className="space-y-1.5">
                 {contentDims.filter(([, v]) => v !== null).map(([label, v]) => <ScoreBar key={label} label={label} score={v as number} />)}
               </div>
-              {hasContentIssues && (
+              {!diagnosis && hasContentIssues && (
                 <div className="space-y-1 text-xs text-ink-light pt-1">
                   {content.offTopic.map((p, i) => <p key={`o${i}`} className="flex items-start gap-1.5"><span className="text-amber-500 shrink-0">⚠</span><span>偏题：{p}</span></p>)}
                   {content.repetition.map((p, i) => <p key={`r${i}`} className="flex items-start gap-1.5"><span className="text-ink-lighter shrink-0">↻</span><span>重复：{p}</span></p>)}
@@ -251,9 +266,13 @@ export function SpeakingFeedbackPanel({ feedback, retry = false }: { feedback: S
           {/* Block 4 — My Best Version */}
           <section className="rounded-2xl border-2 border-sage-deep/40 bg-sage-light/30 p-5 space-y-3 min-w-0" aria-label="我的回答·最佳表达">
             <h2 className="font-semibold text-sage-deep">我的回答·最佳表达</h2>
-            <p className="text-base leading-relaxed whitespace-pre-line">{feedback.final_upgraded_answer || (feedback.answer_status === "unavailable" ? "本次表达未通过原意核对，请重新分析。" : "未生成有效的优化表达，请重新分析。")}</p>
-            <p className="text-xs text-ink-light">{feedback.answer_status === "unchecked" ? "原意核对暂未完成：已保留生成的表达，请对照原文确认有无新增意思。" : feedback.answer_status === "unavailable" ? "请重新分析后再使用。" : "这是你的想法，只是表达得更好了。"}{feedback.expansion_notice}</p>
-            {feedback.teaching_status === "needs_review" && <p role="status" className="text-xs text-amber-700">最佳表达已通过原意核对；纠错说明存在不一致，已暂时隐藏。请重新分析以修复教学反馈。</p>}
+            <p className="text-base leading-relaxed whitespace-pre-line">{feedback.final_upgraded_answer || (feedback.answer_status === "unavailable" ? "本次重构未通过质量核对，请重新分析。" : "未生成有效的最佳表达，请重新分析。")}</p>
+            <p className="text-xs text-ink-light">{feedback.answer_status === "unchecked"
+              ? "质量核对暂未完成；答案已按题目和你的核心想法重新组织。"
+              : feedback.answer_status === "unavailable"
+                ? "请重新分析后再使用。"
+                : "基于你的核心想法重新组织，不是逐句翻译或纠错。"}{feedback.expansion_notice ? ` ${feedback.expansion_notice}` : ""}</p>
+            {feedback.teaching_status === "needs_review" && <p role="status" className="text-xs text-amber-700">纠错说明存在不一致，已暂时隐藏；请重新分析后使用教学反馈。</p>}
           </section>
 
           {/* Block 6 — Answer Structure (collapsible scaffold) */}

@@ -572,7 +572,7 @@ export default function EnglishSpeaking() {
         suitableExpressions.map(e => e.english),
         session.access_token,
         {
-          questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart },
+          questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart, scenario: questionContext },
           retryContext: {
             final_upgraded_answer: firstFeedback?.final_upgraded_answer,
             originalAnswer: firstTranscript,
@@ -705,7 +705,7 @@ export default function EnglishSpeaking() {
       console.log("[EnglishSpeaking] Starting AI analysis", { transcript_len: text.length, session_id: sessionId });
       const result = await analyzeSpeaking(
         question, text, suitableExpressions.map(e => e.english), session.access_token,
-        { questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart }, onProgress: setAnalysisProgress },
+        { questionContext: { mode: selectedMode, topic: selectedTopic, part: selectedPart, scenario: questionContext }, onProgress: setAnalysisProgress },
       );
       setFeedback(result);
       console.log("[EnglishSpeaking] AI analysis complete", {

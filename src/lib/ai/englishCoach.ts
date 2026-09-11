@@ -122,7 +122,7 @@ export async function generateSpeakingQuestion(
 export interface AnalyzeSpeakingOptions {
   onProgress?: (message: string) => void;
   targetLevel?: string;
-  questionContext?: { mode?: string; topic?: string; part?: string };
+  questionContext?: { mode?: string; topic?: string; part?: string; scenario?: string };
   /** Previous attempt data for retry context */
   retryContext?: {
     final_upgraded_answer?: string;

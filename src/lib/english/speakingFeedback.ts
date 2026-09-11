@@ -29,6 +29,20 @@ export interface SpeakingStructureStep {
   reusable_expression?: string;
 }
 
+export type SpeakingRelevanceStatus = "on_topic" | "partially_off_topic" | "seriously_off_topic";
+
+export interface SpeakingReconstructionDiagnosis {
+  relevance: { score: number | null; status: SpeakingRelevanceStatus | ""; problem: string };
+  coherence: { score: number | null; problem: string };
+  development: { score: number | null; problem: string };
+  coreIdea: string;
+  keep: string[];
+  removeOrReduce: string[];
+  missing: string[];
+  recommendedStructure: SpeakingStructureStep[];
+  mainProblem: string;
+}
+
 export interface SpeakingTakeaway {
   expression: string;
   /** Chinese meaning (normalized read key; maps meaning_zh / meaning / chinese). */
@@ -54,6 +68,8 @@ export interface SimplifiedSpeakingFeedback {
   reference_status?: "verified" | "unavailable";
   answer_status?: "verified" | "unavailable" | "unchecked";
   teaching_status?: "needs_review";
+  /** Structured diagnosis consumed by the reconstruction stage. Optional for legacy rows. */
+  reconstruction_diagnosis?: SpeakingReconstructionDiagnosis;
   content_diagnosis?: string;
   structure_diagnosis?: string;
   optimization_advice?: string;
@@ -131,6 +147,37 @@ function mapStructure(raw: Record<string, unknown>): SpeakingStructureStep[] {
   return arr;
 }
 
+function mapReconstructionDiagnosis(value: unknown): SpeakingReconstructionDiagnosis | undefined {
+  const raw = speakingObject(value);
+  if (!Object.keys(raw).length) return undefined;
+  const relevance = speakingObject(raw.relevance);
+  const coherence = speakingObject(raw.coherence);
+  const development = speakingObject(raw.development);
+  const status = str(relevance.status);
+  const stringList = (value: unknown) => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && !!item.trim()).map(item => item.trim()).slice(0, 8)
+    : [];
+  const recommendedStructure = mapStructure({
+    answer_structure: raw.recommendedStructure ?? raw.recommended_structure,
+  }).slice(0, 5);
+  return {
+    relevance: {
+      score: score(relevance.score),
+      status: ["on_topic", "partially_off_topic", "seriously_off_topic"].includes(status)
+        ? status as SpeakingRelevanceStatus : "",
+      problem: str(relevance.problem),
+    },
+    coherence: { score: score(coherence.score), problem: str(coherence.problem) },
+    development: { score: score(development.score), problem: str(development.problem) },
+    coreIdea: first(raw.coreIdea, raw.core_idea),
+    keep: stringList(raw.keep),
+    removeOrReduce: stringList(raw.removeOrReduce ?? raw.remove_or_reduce),
+    missing: stringList(raw.missing),
+    recommendedStructure,
+    mainProblem: first(raw.mainProblem, raw.main_problem),
+  };
+}
+
 function mapTakeaways(raw: Record<string, unknown>, final: string): SpeakingTakeaway[] {
   const hasCanonical = Array.isArray(raw.takeaway_expressions);
   const hasExpressionUpgrade = Array.isArray(raw.expression_upgrade) || Array.isArray(raw.expressionUpgrade);
@@ -198,6 +245,7 @@ export function normalizeSpeakingFeedback(value: unknown): SimplifiedSpeakingFee
   const structureRaw = Array.isArray(raw.answer_structure)
     ? raw.answer_structure
     : legacyStructure ?? [];
+  const reconstructionDiagnosis = mapReconstructionDiagnosis(raw.reconstruction_diagnosis ?? raw.content_reconstruction);
   return {
     overall_score: score(raw.overall_score) ?? (scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 2) / 2 : null),
     target_score: score(raw.target_score),
@@ -210,13 +258,16 @@ export function normalizeSpeakingFeedback(value: unknown): SimplifiedSpeakingFee
     reference_status: raw.reference_status === "verified" || raw.reference_status === "unavailable" ? raw.reference_status : undefined,
     answer_status: raw.answer_status === "verified" || raw.answer_status === "unavailable" || raw.answer_status === "unchecked" ? raw.answer_status : undefined,
     teaching_status: raw.teaching_status === "needs_review" ? "needs_review" : undefined,
+    reconstruction_diagnosis: reconstructionDiagnosis,
     content_diagnosis: first(raw.content_diagnosis, speakingObject(details.contentAnalysis).summary, content.summary),
     structure_diagnosis: str(raw.structure_diagnosis),
     optimization_advice: first(raw.optimization_advice, raw.optimization_summary),
     expansion_notice: str(raw.expansion_notice),
     takeaway_expressions: mapTakeaways(raw, final + "\n" + first(raw.reference_answer, raw.referenceAnswer, raw.one_better_example)),
     corrections: mapCorrections(raw),
-    answer_structure: mapStructure({ answer_structure: structureRaw }),
+    answer_structure: reconstructionDiagnosis?.recommendedStructure.length
+      ? reconstructionDiagnosis.recommendedStructure
+      : mapStructure({ answer_structure: structureRaw }),
     detailed_analysis: Object.keys(details).length ? details : { ...content,
       fluencyScore: raw.fluencyScore ?? raw.fluency_score,
       grammarScore: raw.grammarScore ?? raw.grammar_score,
