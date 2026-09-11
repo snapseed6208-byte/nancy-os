@@ -52,7 +52,7 @@ export default function TEM8Vocabulary() {
       }
       if(mounted.current) setMessage(stop.current
         ? `已暂停；完成批次保留，可继续导入。已保存 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝`:"."}`
-        : `导入完成：新增／合并 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝（见下方原因）`:"。"}可生成今日名单，打开词卡时自动加工学习内容。`);
+        : `导入完成：新增／合并 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝（见下方原因）`:"。"}可生成今日学习名单，打开词卡时自动加工学习内容。`);
     }finally{if(mounted.current){setBusy(false);void model.refresh();}}
   }
   async function importText(name:string,text:string,kind:string){
@@ -99,7 +99,7 @@ export default function TEM8Vocabulary() {
     </> : view === "analytics" ? <VocabularyProgress dashboard={model.dashboard.data} history={model.history.data || []} words={words} onWord={id => navigate("/tem8/vocabulary/word/" + encodeURIComponent(id))} /> : view in titles ? <>
       {view === "today" && <section className="rounded-lg bg-sage-light/25 p-5 space-y-3">
         <h2 className="font-medium">{model.day} · 今日安排</h2>
-        {model.plan.data ? <p className="text-sm text-ink-light">阅读识别 {model.plan.data.new_ids.length} · 语境掌握 {model.plan.data.familiar_ids.length} · 提示输出 {model.plan.data.production_ids.length}{queue.length === 0 && " · 今日学习已完成"}</p> : <div className="flex flex-wrap items-center gap-3"><label className="text-sm">每日词数 <input aria-label="每日新词名额" type="number" min={0} max={100} value={target} onChange={ev => setTarget(Math.max(0, Math.min(100, Number(ev.target.value))))} className="w-20 ml-2 p-2 border border-border rounded-lg" /></label><button disabled={model.startDay.isPending || !words.length} className={button} onClick={() => void run(async () => { if(target >= 1 && target <= 30) saveLearnTarget(target); await model.startDay.mutateAsync(target); })}>生成今日学习</button></div>}
+        {model.plan.data ? <p className="text-sm text-ink-light">阅读识别 {model.plan.data.new_ids.length} · 语境掌握 {model.plan.data.familiar_ids.length} · 提示输出 {model.plan.data.production_ids.length}{queue.length === 0 && " · 今日学习已完成"}</p> : <div className="flex flex-wrap items-center gap-3"><label className="text-sm">每日词数 <input aria-label="每日词数" type="number" min={0} max={100} value={target} onChange={ev => setTarget(Math.max(0, Math.min(100, Number(ev.target.value))))} className="w-20 ml-2 p-2 border border-border rounded-lg" /></label><button disabled={model.startDay.isPending || !words.length} className={button} onClick={() => void run(async () => { if(target >= 1 && target <= 30) saveLearnTarget(target); await model.startDay.mutateAsync(target); })}>生成今日学习</button></div>}
         <p className="text-xs text-ink-lighter">系统按每个词的学习目标与当前进度自动安排内容与题型，打开词卡直接作答即可，不必自己选择测试类型。名单跨设备保存，刷新不增加新词；到期复习独立加入。</p>
       </section>}
       <VocabularyLibrary key={view} words={listWords} loading={model.words.isLoading} archived={view === "archive"} />

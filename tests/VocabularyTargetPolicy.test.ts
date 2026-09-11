@@ -7,6 +7,7 @@ const passes=(d:TestMode,n:number)=>({[d]:{passes:n,last_day:"2026-01-01",score:
 const word=(id:string,extra:Partial<VocabularyWord>={}):VocabularyWord=>({id,word:id,pos:"v.",meaning:"原义",type:"new",sources:[],enrichment:null,level:"R0",status:"inbox",review_stage:0,due_at:null,error_count:0,version:0,...extra});
 const card=readFileSync(join(process.cwd(),"src/components/english/vocabulary/VocabularyCard.tsx"),"utf8");
 const page=readFileSync(join(process.cwd(),"src/components/english/vocabulary/VocabularyLibrary.tsx"),"utf8");
+const progress=readFileSync(join(process.cwd(),"src/components/english/vocabulary/VocabularyProgress.tsx"),"utf8");
 
 describe("target depth decides how far each word is pushed",()=>{
   it("stops at R1: a recognition-only word never advances to R2",()=>{
@@ -79,6 +80,11 @@ describe("display layer never leaks internal codes or over-claims mastery",()=>{
     expect(page).toContain("学习目标<select");
     // Raw codes are gone from the list row.
     expect(page).not.toContain("{w.level} → {w.target_level");
+  });
+  it("renders the analytics tiles in user language and counts the capped level",()=>{
+    expect(progress).toContain("{targetLabels[level]} 当前掌握");
+    expect(progress).toContain("currentLevel(w)===level");
+    expect(progress).not.toContain("{level} 当前掌握");
   });
   it("hides the test-mode selector behind 更多 while keeping manual tests reachable",()=>{
     expect(card).toContain("自定义测试");
