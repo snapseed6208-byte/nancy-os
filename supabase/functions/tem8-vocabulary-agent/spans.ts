@@ -64,23 +64,31 @@ function groupEntries(cells: Cell[]): Cell[][] {
   return groups;
 }
 
-function coalesce(groups: Cell[][], max: number): Cell[][] {
+export interface Group { start: number; end: number }
+export interface EntryLayout { indexed: boolean; groups: Group[] }
+
+// Entry boundaries: an index cell ("1", "12", …) begins an entry, so a cut at a group start
+// never lands inside an entry. Without index cells every cell is its own group (prose fallback).
+export function layoutEntries(text: string): EntryLayout {
+  const cells = splitCells(text);
+  if (!cells.length) return { indexed: false, groups: [] };
+  const indexed = cells.some(cell => INDEX_RE.test(cell.text));
+  const grouped = indexed ? groupEntries(cells) : cells.map(cell => [cell]);
+  return { indexed, groups: grouped.map(group => ({ start: group[0].start, end: group[group.length - 1].end })) };
+}
+
+function coalesce(groups: Group[], max: number): Group[] {
   const size = Math.ceil(groups.length / max);
-  const out: Cell[][] = [];
-  for (let i = 0; i < groups.length; i += size) out.push(groups.slice(i, i + size).flat());
+  const out: Group[] = [];
+  for (let i = 0; i < groups.length; i += size) out.push({ start: groups[i].start, end: groups[Math.min(i + size, groups.length) - 1].end });
   return out;
 }
 
 export function buildSpans(chunk: string, chunkIndex: number, max = 200): Span[] {
-  const cells = splitCells(chunk);
-  if (!cells.length) return [];
-  const hasIndex = cells.some(cell => INDEX_RE.test(cell.text));
-  let groups: Cell[][] = hasIndex ? groupEntries(cells) : cells.map(cell => [cell]);
-  if (groups.length > max) groups = coalesce(groups, max);
-  return groups.map(group => {
-    const start = group[0].start, end = group[group.length - 1].end;
-    return { span_id: `${chunkIndex}:${start}-${end}`, text: chunk.slice(start, end) };
-  });
+  const { groups } = layoutEntries(chunk);
+  if (!groups.length) return [];
+  const bounded = groups.length > max ? coalesce(groups, max) : groups;
+  return bounded.map(({ start, end }) => ({ span_id: `${chunkIndex}:${start}-${end}`, text: chunk.slice(start, end) }));
 }
 
 // Program-side provenance: find the raw surface form of a lemma inside its span. No AI attestation.

@@ -4,11 +4,12 @@ import { validateEnrichment } from "../../supabase/functions/tem8-vocabulary-age
 
 const word = (id:string,extra:Partial<VocabularyWord>={}):VocabularyWord => ({id,word:id,pos:"v.",meaning:"原义",type:"new",sources:[],enrichment:null,level:"R0",status:"inbox",review_stage:0,due_at:null,error_count:0,version:0,...extra});
 describe("vocabulary scheduling and import",()=>{
-  it("preserves the whole source including boundary text and limits batch size",()=>{
-    const input=Array.from({length:1500},(_,i)=>`term${i} 中文义${i}`).join(" ");
+  it("preserves the whole source and sizes batches by entry count",()=>{
+    const input=Array.from({length:150},(_,i)=>`${i+1}   term${i}   /tɜːm/   n. 中文义${i}`).join(" ");
     const chunks=vocabularyChunks(input);
-    expect(chunks.every(c=>c.length<=3500)).toBe(true);
-    expect(chunks[0]+chunks.slice(1).map(c=>c.slice(200)).join("")).toBe(input);
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.join("")).toBe(input);
+    expect(chunks.every(c=>c.length<=6000)).toBe(true);
     expect(vocabularyChunks("")).toEqual([]);
   });
   it("schedules overdue stable words before new words, excludes future reviews, respects limit",()=>{

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { invokeAI } from "@/lib/ai/aiService";
-import { vocabularyChunks, type VocabularyExtractResult, type VocabularyImport, type VocabularyWord } from "@/lib/english/vocabulary";
+import { CHUNKER_VERSION, vocabularyChunks, type VocabularyExtractResult, type VocabularyImport, type VocabularyWord } from "@/lib/english/vocabulary";
 import type { VocabularyPlan, VocabularyQuestion, VocabularyFeedback, VocabularyAttempt, VocabularyDashboard, TestMode } from "@/lib/english/vocabulary";
 import { useShanghaiDateKey } from "@/lib/hooks/useShanghaiDateKey";
 
@@ -28,7 +28,7 @@ export function useVocabulary() {
     return data as VocabularyImport[];
   }});
   const createImport = useMutation({mutationFn:async ({name,text,kind="vocabulary"}:{name:string;text:string;kind?:string}) => {
-    const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(kind==="vocabulary" ? text : `${kind}\n${text}`));
+    const digest = await crypto.subtle.digest("SHA-256",new TextEncoder().encode(kind==="vocabulary" ? `${CHUNKER_VERSION}\n${text}` : `${CHUNKER_VERSION}\n${kind}\n${text}`));
     const fingerprint = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,"0")).join("");
     const {error} = await supabase.from("vocabulary_imports").upsert({user_id:user!.id,name,fingerprint,source_kind:kind,chunks:vocabularyChunks(text)},
       {onConflict:"user_id,fingerprint",ignoreDuplicates:true});

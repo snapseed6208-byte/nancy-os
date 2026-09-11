@@ -22,7 +22,7 @@ export async function handleExtract(body: Record<string, unknown>, db: SupabaseC
   const result = await aiRuntime([
     { role: "system", content: PROMPT },
     { role: "user", content: `Source kind: ${imp.source_kind || "vocabulary"}.\nSpans (span_id<TAB>text):\n${spans.map(span => `${span.span_id}\t${span.text}`).join("\n")}` },
-  ], { agentName: "tem8-vocabulary-extract", maxInputLength: 8000, maxTokens: 6000, dynamicTokens: false, temperature: 0.1 });
+  ], { agentName: "tem8-vocabulary-extract", maxInputLength: 14000, maxTokens: 6000, dynamicTokens: false, temperature: 0.1 });
   if (!result.success) throw new HttpError(502, result.error);
   const { candidates, rejected, notes } = selectCandidates(result.data, spans);
   // Always mark the chunk complete, even with zero accepted entries, so the import can advance.

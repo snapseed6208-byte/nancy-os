@@ -1,3 +1,5 @@
+import { layoutEntries } from "../../../supabase/functions/tem8-vocabulary-agent/spans";
+
 export const vocabularyTypes = { new: "新词", familiar: "熟词生义", collocation: "搭配", academic: "学术／正式", listening: "听力识别" } as const;
 export type VocabularyType = keyof typeof vocabularyTypes;
 export type VocabularyLevel = "R0" | "R1" | "R2" | "P1" | "P2";
@@ -52,23 +54,53 @@ export function dailyVocabularyQueue(words:VocabularyWord[],plan:VocabularyPlan|
       return time(a)-time(b)||vocabularyPriority(b)-vocabularyPriority(a);
     });
 }
-// Lossless chunks with a small overlap so entries spanning boundaries retain context.
-export function vocabularyChunks(text: string, size = 3500): string[] {
-  if (size < 400) throw new Error("Chunk size must be at least 400");
-  const chunks: string[] = [];
-  for (let start = 0; start < text.length;) {
-    let end = Math.min(start + size, text.length);
-    if (end < text.length) {
-      const boundary = text.lastIndexOf(" ", end);
-      if (boundary > start + size / 2) end = boundary;
+// Bump when the chunking strategy changes so an unchanged file re-imports under the new strategy
+// instead of deduping back onto its old, differently-chunked row.
+export const CHUNKER_VERSION = 2;
+export const CHUNK_TARGET_WORDS = 30;
+export const CHUNK_MAX_WORDS = 40;
+export const CHUNK_MAX_CHARS = 6000;
+const alphaTokens = /[A-Za-z][A-Za-z'-]*/g;
+
+// Last resort for a single entry/cell larger than the character cap: cut at whitespace, never mid-word.
+function splitOversized(slice: string, maxChars: number): string[] {
+  const parts: string[] = [];
+  for (let start = 0; start < slice.length;) {
+    let end = Math.min(start + maxChars, slice.length);
+    if (end < slice.length) {
+      const space = slice.lastIndexOf(" ", end);
+      if (space > start) end = space;
     }
-    // Dense word-only PDFs can exceed the extraction output budget long before the character cap.
-    const terms=[...text.slice(start,end).matchAll(/[A-Za-z][A-Za-z'-]*/g)];
-    const denseBoundary=terms.slice(80).find(term=>term.index>=400);
-    if(denseBoundary) end=start+denseBoundary.index;
-    chunks.push(text.slice(start, end));
-    if (end === text.length) break;
-    start = end - 200;
+    parts.push(slice.slice(start, end));
+    start = end;
+  }
+  return parts;
+}
+
+// Cut batches only at entry boundaries: a batch never starts mid-entry, mid-IPA or mid-word,
+// and consecutive batches do not overlap. Indexed lists are packed by entry count (target 30,
+// hard cap 40); prose without reliable index boundaries packs whole cells up to the character cap.
+export function vocabularyChunks(text: string, maxChars = CHUNK_MAX_CHARS): string[] {
+  if (!text) return [];
+  const { indexed, groups } = layoutEntries(text);
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < groups.length) {
+    const start = i === 0 ? 0 : groups[i].start;
+    let j = i, words = 0;
+    while (j < groups.length) {
+      const group = groups[j];
+      const groupWords = indexed ? 1 : (text.slice(group.start, group.end).match(alphaTokens)?.length || 1);
+      if (j > i && (words >= CHUNK_TARGET_WORDS || words + groupWords > CHUNK_MAX_WORDS || group.end - start > maxChars)) break;
+      words += groupWords; j++;
+      if (group.end - start >= maxChars || groupWords > CHUNK_MAX_WORDS) break;
+    }
+    // Include the separator before the next entry so consecutive chunks tile the source exactly.
+    const slice = text.slice(start, j < groups.length ? groups[j].start : text.length);
+    // A lone entry/cell bigger than the cap (unindexed prose) has no trusted inner boundary;
+    // split at whitespace rather than emit an over-budget batch or cut mid-word.
+    chunks.push(...(slice.length > maxChars ? splitOversized(slice, maxChars) : [slice]));
+    i = j;
   }
   return chunks;
 }
