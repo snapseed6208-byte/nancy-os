@@ -14,8 +14,9 @@ import {
   useSpeakingSessions, useSpeakingSession, useCreateSpeakingSessionV2,
   useCreateSpeakingAttempt, uploadAudio, useDueExpressions, useSpeakingStats,
   useSpeakingQuestions, useSpeakingQuestionHistory, useRecordSpeakingQuestionUsage,
-  useUpdateSpeakingSession, useSoftDeleteSpeakingSession,
+  useUpdateSpeakingSession, useSoftDeleteSpeakingSession, useSpeakingQuestion, useUpdateSpeakingAttempt,
 } from "@/lib/hooks/useEnglish";
+import { buildReanalyzeInput, buildRetryContext, reanalyzeTranscript, reanalyzedAttemptPayload } from "@/lib/english/speakingReanalyze";
 import type { SpeakingQuestion, SpeakingQuestionHistoryEntry } from "@/lib/hooks/useEnglish";
 import { useSpeechRecognition } from "@/lib/hooks/useSpeechRecognition";
 import {
@@ -2428,6 +2429,13 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
   const [editNotes, setEditNotes] = useState("");
   const updateSession = useUpdateSpeakingSession();
 
+  // Re-analysis reuses the row's stored transcript and the session's question context. It is only
+  // ever started by an explicit click — nothing here runs on mount, so no quota is spent silently.
+  const questionQuery = useSpeakingQuestion((s?.question_id as string) || undefined);
+  const updateAttempt = useUpdateSpeakingAttempt();
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+  const [reanalyzeError, setReanalyzeError] = useState("");
+
   if (isLoading) {
     return (
       <div className="text-center py-12">
@@ -2446,6 +2454,67 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
   }
 
   const firstAttempt = attempts.find(a => !a.is_retry && Number(a.attempt_round || 1) === 1) || attempts[0];
+  const retryAttempt = attempts.find(a => a.is_retry === true || Number(a.attempt_round || 1) > 1);
+  const hasRetry = !!retryAttempt && retryAttempt !== firstAttempt;
+
+  const attemptId = (row: Record<string, unknown>) => String(row.id || "");
+  // Whether this row can be replayed, and why not when it can't — surfaced instead of a dead button.
+  function reanalyzeBlocker(row: Record<string, unknown>, isRetry: boolean): string {
+    if (isRetry && !buildRetryContext(firstAttempt)) return "缺少首轮的优化版本，无法重新分析这一轮。";
+    if (!String(s?.prompt || "").trim()) return "这条记录没有存下题目，无法重新分析。";
+    if (!reanalyzeTranscript(row)) return "这条记录没有转录文本，无法重新分析。";
+    return "";
+  }
+
+  async function runReanalyze(row: Record<string, unknown>, isRetry: boolean) {
+    const blocker = reanalyzeBlocker(row, isRetry);
+    if (blocker) { setReanalyzeError(blocker); return; }
+    const input = buildReanalyzeInput(s as Record<string, unknown>, questionQuery.data);
+    setReanalyzeError("");
+    setReanalyzingId(attemptId(row));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("请先登录");
+      const retryContext = isRetry ? buildRetryContext(firstAttempt) : null;
+      const result = await analyzeSpeaking(
+        input.question,
+        reanalyzeTranscript(row),
+        input.targets,
+        session.access_token,
+        { questionContext: input.questionContext, ...(retryContext ? { retryContext } : {}) },
+      );
+      await updateAttempt.mutateAsync({
+        attemptId: attemptId(row),
+        sessionId,
+        payload: reanalyzedAttemptPayload(result),
+      });
+    } catch (err) {
+      setReanalyzeError(err instanceof Error ? err.message : "重新分析失败，请稍后重试");
+    } finally {
+      setReanalyzingId(null);
+    }
+  }
+
+  const reanalyzeControl = (row: Record<string, unknown>, isRetry: boolean) => {
+    const blocker = reanalyzeBlocker(row, isRetry);
+    const busy = !!reanalyzingId;
+    return (
+      <div className="bg-card rounded-2xl border border-border px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button
+          type="button"
+          onClick={() => void runReanalyze(row, isRetry)}
+          disabled={busy || !!blocker}
+          className="inline-flex items-center gap-1.5 min-h-9 rounded-lg border border-border px-3 py-1.5 text-xs text-ink-light hover:bg-sage-light/30 disabled:opacity-40"
+        >
+          <RefreshCw size={12} className={reanalyzingId === attemptId(row) ? "animate-spin" : undefined} />
+          {reanalyzingId === attemptId(row) ? "正在重新分析…" : "重新分析这条记录"}
+        </button>
+        <span className="text-[10px] text-ink-lighter">
+          {blocker || "用这条记录已保存的转录与题目重跑一次，新反馈覆盖当前内容。需手动点击，不会自动运行。"}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -2468,6 +2537,12 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
           <Edit3 size={14} className="text-ink-light" />
         </button>
       </header>
+
+      {reanalyzeError && (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
+          {reanalyzeError}
+        </div>
+      )}
 
       {/* Question */}
       <div className="bg-card rounded-2xl border border-border p-4">
@@ -2525,17 +2600,12 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
         </div>
       )}
 
+      {firstAttempt && reanalyzeControl(firstAttempt, false)}
+
       {firstAttempt && <SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(firstAttempt)} />}
 
       {/* Retry attempt comparison — shown when a retry (Round 2+) exists */}
-      {(() => {
-        const retryAttempt = attempts.find(
-          (a) => (a as Record<string, unknown>).is_retry === true || ((a as Record<string, unknown>).attempt_round as number) > 1,
-        ) as Record<string, unknown> | undefined;
-
-        if (!retryAttempt || retryAttempt === firstAttempt) return null;
-
-        return (
+      {hasRetry && retryAttempt && (
           <div className="space-y-4 mt-6 border-t border-border pt-4">
             <div className="flex items-center gap-2">
               <RefreshCw size={14} className="text-purple-600" />
@@ -2566,10 +2636,11 @@ function SessionDetail({ sessionId, onBack }: { sessionId: string; onBack: () =>
               </div>
             )}
 
+            {reanalyzeControl(retryAttempt, true)}
+
             <SpeakingFeedbackPanel feedback={normalizeSpeakingFeedback(retryAttempt)} retry />
           </div>
-        );
-      })()}
+      )}
 
       {/* ── Edit Dialog ── */}
       {showEditDialog && (

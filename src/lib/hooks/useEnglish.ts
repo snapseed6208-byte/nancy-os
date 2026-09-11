@@ -557,6 +557,29 @@ export function useCreateSpeakingAttempt() {
   });
 }
 
+export function useUpdateSpeakingAttempt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { attemptId: string; sessionId?: string | null; payload: Record<string, unknown> }) => {
+      const { data, error } = await supabase
+        .from("speaking_attempts")
+        .update(input.payload)
+        .eq("id", input.attemptId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["speaking_sessions"] });
+      qc.invalidateQueries({ queryKey: ["speaking_stats"] });
+      if (variables.sessionId) {
+        qc.invalidateQueries({ queryKey: ["speaking_session", variables.sessionId] });
+      }
+    },
+  });
+}
+
 export function useUpdateSpeakingSession() {
   const qc = useQueryClient();
   return useMutation({
