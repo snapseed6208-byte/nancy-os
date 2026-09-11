@@ -1,4 +1,4 @@
-import { Route, Switch } from "wouter";
+import { Route, Switch, Redirect } from "wouter";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import AppShell from "@/components/layout/AppShell";
 import Login from "@/pages/Login";
@@ -6,7 +6,8 @@ import Home from "@/pages/Home";
 import Plan from "@/pages/Plan";
 import Career from "@/pages/Career";
 import English from "@/pages/English";
-import EnglishVocabulary from "@/pages/EnglishVocabulary";
+import TEM8Vocabulary from "@/pages/TEM8Vocabulary";
+import TEM8Hub from "@/pages/TEM8Hub";
 import EnglishExpressionHub from "@/pages/EnglishExpressionHub";
 import EnglishExpressions from "@/pages/EnglishExpressions";
 import EnglishExpressionDetail from "@/pages/EnglishExpressionDetail";
@@ -81,7 +82,9 @@ function AppRoutes() {
         <Route path="/plan" component={Plan} />
         <Route path="/career" component={Career} />
         <Route path="/english" component={English} />
-        <Route path="/english/vocabulary" component={EnglishVocabulary} />
+        <Route path="/english/vocabulary"><Redirect to="/tem8/vocabulary" replace /></Route>
+        <Route path="/tem8" component={TEM8Hub} />
+        <Route path={/^\/tem8\/vocabulary(?:\/.*)?$/} component={TEM8Vocabulary} />
         <Route path="/english/expressions" component={EnglishExpressionHub} />
         <Route path="/english/library" component={EnglishExpressions} />
         <Route path="/english/library/:id" component={EnglishExpressionDetail} />

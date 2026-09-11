@@ -85,7 +85,6 @@ export default function English() {
           <h2 id="learning-centers" className="text-lg font-semibold mt-0.5">学习中心</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <CenterCard icon={Library} title="专八词汇" description="PDF 导入 · 熟词生义 · 词汇复习" tone="sage" onClick={() => navigate("/english/vocabulary")} />
           <CenterCard icon={GraduationCap} title="表达学习" description="学表达 · SRS 复习 · 表达库" tone="sage" onClick={() => navigate("/english/expressions")} />
           <CenterCard icon={Mic} title="英语口语" description="对话 · 主题表达 · AI 纠错" tone="rose" onClick={() => navigate("/english/speaking")} />
           <CenterCard icon={BookOpen} title="英文阅读" description="EPUB · 原著阅读 · 表达摘录" tone="blue" onClick={() => navigate("/english/reading")} />

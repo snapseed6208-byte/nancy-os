@@ -37,14 +37,13 @@ beforeEach(() => {
 });
 
 describe("English OS information architecture", () => {
-  it("renders the learning hubs including TEM8 vocabulary on /english", () => {
+  it("keeps TEM8 outside the English learning hubs", () => {
     render(<English />);
     expect(screen.getByRole("button", { name: /表达学习/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /英语口语/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /英文阅读/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /学习分析/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /专八词汇/ }));
-    expect(navigate).toHaveBeenLastCalledWith("/english/vocabulary");
+    expect(screen.queryByRole("button", { name: /专八词汇|TEM8/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("heading", { name: "今日英语" })).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "快捷入口" })).not.toBeInTheDocument();
     expect(screen.queryByText("搜索表达库")).not.toBeInTheDocument();

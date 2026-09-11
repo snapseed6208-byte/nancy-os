@@ -2,16 +2,16 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function HubHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack?: () => void }) {
+export function HubHeader({ title, subtitle, onBack, namespace = "English OS", backLabel = "返回 English OS" }: { title: string; subtitle: string; onBack?: () => void; namespace?: string; backLabel?: string }) {
   return (
     <header className="flex items-center gap-3">
       {onBack && (
-        <button type="button" onClick={onBack} title="返回 English OS" className="h-9 w-9 shrink-0 rounded-lg bg-ink/5 flex items-center justify-center hover:bg-ink/10">
+        <button type="button" onClick={onBack} aria-label={backLabel} title={backLabel} className="h-11 w-11 shrink-0 rounded-lg bg-ink/5 flex items-center justify-center hover:bg-ink/10">
           <ArrowLeft size={17} />
         </button>
       )}
       <div className="min-w-0">
-        <p className="text-xs text-ink-lighter">English OS</p>
+        <p className="text-xs text-ink-lighter">{namespace}</p>
         <h1 className="text-2xl font-semibold mt-0.5">{title}</h1>
         <p className="text-sm text-ink-light mt-1">{subtitle}</p>
       </div>

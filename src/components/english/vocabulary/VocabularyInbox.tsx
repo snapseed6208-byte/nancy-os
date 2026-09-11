@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import type { VocabularyImport } from "@/lib/english/vocabulary";
 export const sourceKinds={vocabulary:"词汇 PDF／词表",exam:"真题",reading:"阅读材料",listening:"听力材料",writing:"翻译／写作",error:"真实错词"} as const;
-const button="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-40";
+const button="min-h-11 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-40";
 const input="block w-full mt-1 p-2 border border-border rounded-lg bg-card";
 function ImportSource({id}:{id:string}) {
   const [open,setOpen]=useState(false);
@@ -11,7 +11,7 @@ function ImportSource({id}:{id:string}) {
     const {data,error}=await supabase.from("vocabulary_imports").select("chunks").eq("id",id).single();
     if(error) throw error;return data.chunks as string[];
   }});
-  return <details className="mt-3 text-sm" onToggle={ev=>setOpen(ev.currentTarget.open)}><summary className="cursor-pointer text-ink-light">查看保留原文（批次间有重叠）</summary>{source.isLoading&&<p>加载中…</p>}{source.isError&&<p role="alert">原文加载失败<button onClick={()=>void source.refetch()}>重试</button></p>}<pre className="whitespace-pre-wrap max-h-64 overflow-auto mt-2">{source.data?.map(c=>c.normalize("NFKC")).join("\n\n——下一批——\n\n")}</pre></details>;
+  return <details className="mt-3 text-sm" onToggle={ev=>setOpen(ev.currentTarget.open)}><summary className="cursor-pointer text-ink-light">查看保留原文（批次间有重叠）</summary>{source.isLoading&&<p>加载中…</p>}{source.isError&&<p role="alert">原文加载失败<button onClick={()=>void source.refetch()}>重试</button></p>}<pre className="whitespace-pre-wrap break-all max-h-64 overflow-auto mt-2">{source.data?.map(c=>c.normalize("NFKC")).join("\n\n——下一批——\n\n")}</pre></details>;
 }
 export default function VocabularyInbox({imports,busy,onResume,onCapture,onText}:{imports:VocabularyImport[];busy:boolean;onResume:(imp:VocabularyImport)=>Promise<void>;onCapture:(body:Record<string,unknown>)=>Promise<void>;onText:(name:string,text:string,kind:string)=>Promise<void>}) {
   const [title,setTitle]=useState(""); const [kind,setKind]=useState("reading");

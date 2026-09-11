@@ -83,12 +83,12 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: "vocabulary",
-    label: "专八词汇",
+    label: "TEM8 OS",
     icon: "BookOpen",
-    path: "/english/vocabulary",
+    path: "/tem8",
     group: "learning",
     defaultOrder: 14,
-    description: "PDF 词库、熟词生义、复习",
+    description: "专八备考 · 词汇 · 听力 · 阅读 · 翻译 · 写作",
   },
   {
     id: "exam",
