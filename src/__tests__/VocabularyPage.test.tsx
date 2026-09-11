@@ -23,7 +23,7 @@ function mount(path="/tem8/vocabulary/library"){
   const location=memoryLocation({path});
   return {...render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><Router hook={location.hook}><Switch><Route path="/english/vocabulary"><Redirect to="/tem8/vocabulary" replace /></Route><Route path="/tem8" component={TEM8Hub}/><Route path={/^\/tem8\/vocabulary(?:\/.*)?$/} component={TEM8Vocabulary}/></Switch></Router></QueryClientProvider>),location};
 }
-async function openTest(){fireEvent.click(screen.getByRole("link",{name:/qualify/}));fireEvent.click(await screen.findByRole("button",{name:"开始测试"}));return await screen.findByRole("dialog");}
+async function openTest(){fireEvent.click(screen.getByRole("link",{name:/qualify/}));fireEvent.click(await screen.findByRole("button",{name:"继续学习"}));return await screen.findByRole("dialog");}
 beforeEach(()=>{state.words=[{...sample}];state.imports=[];state.plan=undefined;vi.spyOn(window,"scrollTo").mockImplementation(()=>{});vi.clearAllMocks();state.question.mockResolvedValue(test);state.submit.mockResolvedValue(feedback);});
 afterEach(cleanup);
 describe("TEM8 full vocabulary page",()=>{
@@ -105,10 +105,10 @@ describe("TEM8 routing and progressive disclosure",()=>{
   it("filters status, type and archived words without enriching the list",()=>{
     state.words=[sample,{...sample,id:"two",word:"steady",status:"stable",type:"new"},{...sample,id:"three",word:"archived",archived:true}];
     mount();
-    fireEvent.change(screen.getByLabelText("学习状态筛选"),{target:{value:"stable"}});
+    fireEvent.change(screen.getByLabelText("学习状态"),{target:{value:"stable"}});
     expect(screen.getByRole("link",{name:/steady/})).toBeInTheDocument();
     expect(screen.queryByRole("link",{name:/qualify/})).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("学习状态筛选"),{target:{value:"archived"}});
+    fireEvent.change(screen.getByLabelText("学习状态"),{target:{value:"archived"}});
     expect(screen.getByRole("link",{name:/archived/})).toBeInTheDocument();
     expect(state.ai).not.toHaveBeenCalled();
   });
