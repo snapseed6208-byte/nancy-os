@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { ChevronRight } from "lucide-react";
+import DeleteVocabularyButton from "./DeleteVocabularyButton";
 import { currentLevel, levelLabels, statusLabels, targetLabels, targetLevel, vocabularyTypes, type VocabularyWord } from "@/lib/english/vocabulary";
 
 // Three independent dimensions — 学习状态 / 学习目标 / 分类. They used to be one combined select
 // that mixed status, R0..P2 codes and specialty tags, so a single choice could not be read back.
 // Internal codes stay in the DB; the list only ever shows targetLabels.
-export default function VocabularyLibrary({ words, loading, archived = false }: { words: VocabularyWord[]; loading: boolean; archived?: boolean }) {
+export default function VocabularyLibrary({ words, loading, archived = false, onDelete }: { words: VocabularyWord[]; loading: boolean; archived?: boolean; onDelete:(id:string)=>Promise<void> }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState(archived ? "archived" : "");
   const [goal, setGoal] = useState("");
@@ -36,7 +37,7 @@ export default function VocabularyLibrary({ words, loading, archived = false }: 
     {loading ? <p role="status" className="py-8 text-sm">正在加载词库…</p> : <>
       <p className="text-xs text-ink-light">{filtered.length} 个词汇</p>
       {filtered.length === 0 && <p className="rounded-lg bg-card p-6 text-sm text-ink-light">暂无符合条件的词汇。可以调整筛选或导入词表。</p>}
-      <div className="space-y-3">{filtered.slice(currentPage * 40, currentPage * 40 + 40).map(w => <VocabularyListItem key={w.id} word={w} />)}</div>
+      <div className="space-y-3">{filtered.slice(currentPage * 40, currentPage * 40 + 40).map(w => <div key={w.id} className="rounded-xl bg-card overflow-hidden"><VocabularyListItem word={w} /><div className="px-3 pb-2 flex justify-end"><DeleteVocabularyButton name={w.word} onDelete={()=>onDelete(w.id)} description="删除这个词及其练习、错因和学习进度，不影响其他词汇。若只想暂停学习，请使用词卡中的归档。此操作无法撤销。"/></div></div>)}</div>
       {filtered.length > 40 && <div className="flex items-center justify-between gap-2"><button className={control} disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</button><span className="text-sm">{currentPage + 1} / {Math.ceil(filtered.length / 40)}</span><button className={control} disabled={(currentPage + 1) * 40 >= filtered.length} onClick={() => setPage(currentPage + 1)}>下一页</button></div>}
     </>}
   </section>;

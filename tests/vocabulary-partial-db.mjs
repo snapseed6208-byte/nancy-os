@@ -1,0 +1,44 @@
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import assert from 'node:assert/strict';
+const {PGlite}=await import(pathToFileURL(process.argv[2]).href);
+const db=new PGlite();
+const uid='10000000-0000-0000-0000-000000000001', other='10000000-0000-0000-0000-000000000002';
+const rows=async(sql,args=[])=>(await db.query(sql,args)).rows;
+try {
+  await db.exec(`create role authenticated;create role anon;create role service_role bypassrls;create schema auth;
+  create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+  grant usage on schema auth to authenticated,anon,service_role;insert into auth.users values('${uid}'),('${other}');`);
+  for(const name of ['107_tem8_vocabulary.sql','108_tem8_learning_system.sql','109_vocabulary_partial_import.sql']) await db.exec(readFileSync('supabase/migrations/'+name,'utf8'));
+  await db.exec(`set role authenticated;set request.jwt.claim.sub='${uid}';`);
+  const imp=(await rows("insert into vocabulary_imports(user_id,name,fingerprint,chunks) values($1,'partial','partial','[\"text\"]') returning id",[uid]))[0];
+  const entries=Array.from({length:170},(_,i)=>({word:'word'+String.fromCharCode(97+Math.floor(i/26),97+i%26),original:'word',meaning:'meaning',context:'text',type:'new'}));
+  await db.query('select save_vocabulary_extraction($1,0,$2,false)',[imp.id,JSON.stringify(entries)]);
+  assert.equal((await rows('select * from vocabulary_words')).length,170);
+  assert.deepEqual((await rows('select completed_chunks from vocabulary_imports'))[0].completed_chunks,[]);
+  assert.equal((await rows('select partial_words from vocabulary_imports'))[0].partial_words['0'].length,170);
+  await db.query('select save_vocabulary_extraction($1,0,$2,false)',[imp.id,JSON.stringify(entries)]);
+  assert.equal((await rows('select * from vocabulary_words')).length,170);
+  assert.equal((await rows('select sources from vocabulary_words limit 1'))[0].sources.length,1);
+  await db.exec(`set request.jwt.claim.sub='${other}';`);
+  await assert.rejects(db.query('select save_vocabulary_extraction($1,0,$2,true)',[imp.id,'[]']),/Import not found/);
+  assert.equal((await rows('delete from vocabulary_imports where id=$1 returning id',[imp.id])).length,0);
+  await db.exec(`set request.jwt.claim.sub='${uid}';`);
+  // A failure in a later batch rolls back the earlier batch too.
+  await assert.rejects(db.query('select save_vocabulary_extraction($1,0,$2,true)',[imp.id,JSON.stringify([...entries,{word:'newgood',type:'new'},{word:'bad',type:'invalid'}])]),/check constraint/);
+  assert.equal((await rows("select * from vocabulary_words where word='newgood'")).length,0);
+  await db.query('select save_vocabulary_extraction($1,0,$2,true)',[imp.id,'[]']);
+  assert.deepEqual((await rows('select completed_chunks from vocabulary_imports'))[0].completed_chunks,[0]);
+  assert.deepEqual((await rows('select partial_words from vocabulary_imports'))[0].partial_words,{});
+  const word=(await rows('select id from vocabulary_words limit 1'))[0];
+  await db.exec('reset role;set role service_role;');
+  const question=(await rows("insert into vocabulary_questions(user_id,word_id,mode,content_version,variant,payload) values($1,$2,'R1',0,0,'{}') returning id",[uid,word.id]))[0];
+  await db.query("insert into vocabulary_attempts(user_id,word_id,question_id,mode,word_version) values($1,$2,$3,'R1',0)",[uid,word.id,question.id]);
+  await db.exec(`reset role;set role authenticated;set request.jwt.claim.sub='${uid}';`);
+  await db.query('delete from vocabulary_imports where id=$1',[imp.id]);
+  assert.equal((await rows('select * from vocabulary_words')).length,170);
+  await db.query('delete from vocabulary_words where id=$1',[word.id]);
+  assert.equal((await rows('select * from vocabulary_words')).length,169);
+  assert.equal((await rows('select * from vocabulary_attempts')).length,0);
+  console.log('PASS: 150+ entries, partial resume, idempotency, atomic rollback, owner isolation, independent import deletion and word cascade');
+} finally {await db.close();}

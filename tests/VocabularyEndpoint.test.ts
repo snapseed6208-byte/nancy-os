@@ -84,7 +84,7 @@ describe("vocabulary extract endpoint owns provenance",()=>{
     const result=await handleExtract({importId:"imp",chunk:0},db);
     expect(result.saved).toBe(0);
     expect(result.rejected).toHaveLength(1);
-    expect(rpc).toHaveBeenCalledWith("save_vocabulary_chunk",expect.objectContaining({p_chunk:0,p_entries:[]}));
+    expect(rpc).toHaveBeenCalledWith("save_vocabulary_extraction",expect.objectContaining({p_chunk:0,p_entries:[]}));
   });
   it("does not regrade an already-completed chunk",async()=>{
     const {db,rpc}=extractDb([CHUNK],[0]);

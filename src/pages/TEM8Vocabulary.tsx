@@ -25,6 +25,7 @@ export default function TEM8Vocabulary() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [rejects, setRejects] = useState<VocabularyReject[]>([]);
+  const [importWarning,setImportWarning]=useState("");
   const [sourceKind, setSourceKind] = useState("vocabulary");
   const [target, setTarget] = useState(() => { try { return localStorage.getItem("english_learning_target") ? getSavedLearnTarget() : 25; } catch { return 25; } });
   const stop = useRef(false);
@@ -52,10 +53,18 @@ export default function TEM8Vocabulary() {
         saved+=data?.saved||0;
         rejected.push(...(data?.rejected||[]));
         if(mounted.current&&rejected.length) setRejects([...rejected]);
+        if(data?.partial) {
+          stop.current=true;
+          if(mounted.current) setMessage(`本批次达到输出上限，已保存 ${saved} 条。原文和进度已保留，请点击“继续提取”。`);
+          return;
+        }
       }
       if(mounted.current) setMessage(stop.current
         ? `已暂停；完成批次保留，可继续导入。已保存 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝`:"."}`
         : `导入完成：新增／合并 ${saved} 条${rejected.length?`，${rejected.length} 条被拒绝（见下方原因）`:"。"}可生成今日学习名单，打开词卡时自动加工学习内容。`);
+    }catch(e){
+      if(mounted.current) setMessage(`导入已暂停，本轮已保存 ${saved} 条；此前完成的批次也已保留，可点击“继续提取”重试。`);
+      throw e;
     }finally{if(mounted.current){setBusy(false);void model.refresh();}}
   }
   async function importText(name:string,text:string,kind:string){
@@ -68,8 +77,18 @@ export default function TEM8Vocabulary() {
       if(!/\.(pdf|txt|md)$/i.test(file.name)) throw new Error("请选择 PDF、TXT 或 Markdown 文件");
       if(file.size>20*1024*1024) throw new Error("文件上限 20MB，请拆分后导入");
       setMessage("正在读取文件文字…");const result=await parseFile(file);
-      if(result.warning||!result.text.trim()) throw new Error(result.warning||"未提取到文字");
-      await importText(file.name,result.text,sourceKind);
+      if(!result.text.trim()) throw new Error(result.warning||"未提取到文字");
+      setImportWarning(result.warning||"");
+      // Keep all text in separate resumable records when one import exceeds the character limit.
+      const imports:VocabularyImport[]=[];
+      for(let start=0;start<result.text.length;start+=1000000) {
+        const part=result.text.slice(start,start+1000000);
+        imports.push(await model.createImport.mutateAsync({name:result.text.length>1000000 ? `${file.name} · 第 ${Math.floor(start/1000000)+1} 部分` : file.name,text:part,kind:sourceKind}));
+      }
+      for(const imp of imports) {
+        await processImport(imp);
+        if(stop.current) break;
+      }
     }finally{if(mounted.current) setBusy(false);}
   }
 
@@ -97,15 +116,16 @@ export default function TEM8Vocabulary() {
         </div>
       </section>
       {message && <p role="status" className="text-sm text-sage-deep">{message}</p>}
+      {importWarning && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{importWarning}</p>}
     {rejects.length>0&&<details className="rounded-lg border border-border p-3 text-sm"><summary className="cursor-pointer text-ink-light">被拒绝的词条（{rejects.length}）</summary><ul className="mt-2 space-y-1 text-xs text-ink-lighter">{rejects.slice(0,200).map((r,i)=><li key={`${r.span_id}-${r.index}-${i}`}>第 {r.span_id?.split(":")[0]??"?"} 批 · 条目 {r.index} · {r.span_id??"无 span"} · {r.field} · {r.reason}</li>)}</ul></details>}
-      <VocabularyInbox imports={model.imports.data || []} busy={busy} onResume={processImport} onText={importText} onCapture={async body => { const data = await model.capture.mutateAsync(body); navigate("/tem8/vocabulary/word/" + encodeURIComponent(data.wordId)); }} />
+      <VocabularyInbox imports={model.imports.data || []} busy={busy} onDelete={id=>model.deleteImport.mutateAsync(id)} onResume={processImport} onText={importText} onCapture={async body => { const data = await model.capture.mutateAsync(body); navigate("/tem8/vocabulary/word/" + encodeURIComponent(data.wordId)); }} />
     </> : view === "analytics" ? <VocabularyProgress dashboard={model.dashboard.data} history={model.history.data || []} words={words} onWord={id => navigate("/tem8/vocabulary/word/" + encodeURIComponent(id))} /> : view in titles ? <>
       {view === "today" && <section className="rounded-lg bg-sage-light/25 p-5 space-y-3">
         <h2 className="font-medium">{model.day} · 今日安排</h2>
         {model.plan.data ? <p className="text-sm text-ink-light">{mix.map(m => `${mixLabels[m.mode]} ${m.count}`).join(" · ")}{queue.length === 0 && " · 今日学习已完成"}</p> : <div className="flex flex-wrap items-center gap-3"><label className="text-sm">每日词数 <input aria-label="每日词数" type="number" min={0} max={100} value={target} onChange={ev => setTarget(Math.max(0, Math.min(100, Number(ev.target.value))))} className="w-20 ml-2 p-2 border border-border rounded-lg" /></label><button disabled={model.startDay.isPending || !words.length} className={button} onClick={() => void run(async () => { if(target >= 1 && target <= 30) saveLearnTarget(target); await model.startDay.mutateAsync(target); })}>生成今日学习</button></div>}
         <p className="text-xs text-ink-lighter">系统按每个词的学习目标与当前进度自动安排内容与题型，打开词卡直接作答即可，不必自己选择测试类型。名单跨设备保存，刷新不增加新词；到期复习独立加入。</p>
       </section>}
-      <VocabularyLibrary key={view} words={listWords} loading={model.words.isLoading} archived={view === "archive"} />
+      <VocabularyLibrary key={view} words={listWords} loading={model.words.isLoading} archived={view === "archive"} onDelete={id=>model.deleteWord.mutateAsync(id)} />
     </> : <Link href="/tem8/vocabulary" className="text-sage-deep">返回 Vocabulary</Link>}
   </div>;
 }

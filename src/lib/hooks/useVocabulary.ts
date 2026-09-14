@@ -68,6 +68,16 @@ export function useVocabulary() {
     const {error}=await supabase.from("vocabulary_words").update({archived}).eq("id",id).eq("user_id",user!.id);
     if(error) throw error;
   },onSuccess:refresh});
+  const deleteImport=useMutation({mutationFn:async(id:string)=>{
+    const {data,error}=await supabase.from("vocabulary_imports").delete().eq("id",id).eq("user_id",user!.id).select("id");
+    if(error) throw error;
+    if(!data?.length) throw new Error("导入记录未删除，请刷新后重试");
+  },onSuccess:async()=>{await qc.invalidateQueries({queryKey:["vocabulary-import-source"]});await refresh();}});
+  const deleteWord=useMutation({mutationFn:async(id:string)=>{
+    const {data,error}=await supabase.from("vocabulary_words").delete().eq("id",id).eq("user_id",user!.id).select("id");
+    if(error) throw error;
+    if(!data?.length) throw new Error("词汇未删除，请刷新后重试");
+  },onSuccess:async()=>{await qc.invalidateQueries({queryKey:["vocabulary-errors"]});await refresh();}});
   const dashboard=useQuery({queryKey:[...key,"dashboard",day],enabled:!!user,queryFn:async()=>{
     const {data,error}=await supabase.rpc("vocabulary_dashboard"); if(error) throw error; return data as VocabularyDashboard;
   }});
@@ -75,5 +85,5 @@ export function useVocabulary() {
     const {data,error}=await supabase.from("vocabulary_attempts").select("*").eq("user_id",user!.id).not("completed_at","is",null).order("completed_at",{ascending:false}).limit(100);
     if(error) throw error; return data as VocabularyAttempt[];
   }});
-  return {words,imports,createImport,ai,plan,startDay,question,submit,capture,edit,archive,dashboard,history,day,refresh};
+  return {words,imports,createImport,ai,plan,startDay,question,submit,capture,edit,archive,deleteImport,deleteWord,dashboard,history,day,refresh};
 }

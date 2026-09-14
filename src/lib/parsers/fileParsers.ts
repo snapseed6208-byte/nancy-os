@@ -48,19 +48,23 @@ async function parsePdf(file: File): Promise<ParseResult> {
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const pages: string[] = [];
+  const failedPages: number[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
+    try {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items
       .map((item) => ("str" in item ? item.str : ""))
       .join(" ");
     pages.push(pageText);
+    } catch { failedPages.push(i); }
   }
 
   const text = pages.join("\n\n").trim();
 
   let warning: string | undefined;
+  if(failedPages.length) warning=`第 ${failedPages.join("、")} 页读取失败；已保留其余页面文字。可拆分失败页面后重试。`;
   if (!text || text.length < 10) {
     warning = "该 PDF 可能为扫描版或图片格式，无法提取文字。当前不支持 OCR 文字识别，请使用包含可选文字层的 PDF 文件。";
   }

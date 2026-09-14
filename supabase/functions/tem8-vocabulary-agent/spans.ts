@@ -119,7 +119,7 @@ export function locateOriginal(spanText: string, word: string): { original: stri
 export function selectCandidates(value: unknown, spans: Span[]): { candidates: Candidate[]; rejected: Reject[]; notes: Note[] } {
   const list = (value as { entries?: unknown })?.entries;
   if (!Array.isArray(list)) throw new HttpError(502, "AI 返回结果结构无效，请重试本批次");
-  if (list.length > MAX_ENTRIES) throw new HttpError(502, "AI 返回词条数量超出上限");
+  // Validate every returned item; persistence splits accepted entries into bounded batches.
   const byId = new Map(spans.map(span => [span.span_id, span]));
   const candidates: Candidate[] = []; const rejected: Reject[] = []; const notes: Note[] = [];
   const seen = new Set<string>();

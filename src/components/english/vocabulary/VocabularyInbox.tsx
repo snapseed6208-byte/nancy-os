@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import type { VocabularyImport } from "@/lib/english/vocabulary";
+import DeleteVocabularyButton from "./DeleteVocabularyButton";
 export const sourceKinds={vocabulary:"词汇 PDF／词表",exam:"真题",reading:"阅读材料",listening:"听力材料",writing:"翻译／写作",error:"真实错词"} as const;
 const button="min-h-11 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-40";
 const input="block w-full mt-1 p-2 border border-border rounded-lg bg-card";
@@ -13,7 +14,7 @@ function ImportSource({id}:{id:string}) {
   }});
   return <details className="mt-3 text-sm" onToggle={ev=>setOpen(ev.currentTarget.open)}><summary className="cursor-pointer text-ink-light">查看保留原文（批次间有重叠）</summary>{source.isLoading&&<p>加载中…</p>}{source.isError&&<p role="alert">原文加载失败<button onClick={()=>void source.refetch()}>重试</button></p>}<pre className="whitespace-pre-wrap break-all max-h-64 overflow-auto mt-2">{source.data?.map(c=>c.normalize("NFKC")).join("\n\n——下一批——\n\n")}</pre></details>;
 }
-export default function VocabularyInbox({imports,busy,onResume,onCapture,onText}:{imports:VocabularyImport[];busy:boolean;onResume:(imp:VocabularyImport)=>Promise<void>;onCapture:(body:Record<string,unknown>)=>Promise<void>;onText:(name:string,text:string,kind:string)=>Promise<void>}) {
+export default function VocabularyInbox({imports,busy,onResume,onCapture,onText,onDelete}:{imports:VocabularyImport[];busy:boolean;onResume:(imp:VocabularyImport)=>Promise<void>;onCapture:(body:Record<string,unknown>)=>Promise<void>;onText:(name:string,text:string,kind:string)=>Promise<void>;onDelete:(id:string)=>Promise<void>}) {
   const [title,setTitle]=useState(""); const [kind,setKind]=useState("reading");
   const [word,setWord]=useState(""); const [meaning,setMeaning]=useState(""); const [context,setContext]=useState("");
   const [interpretation,setInterpretation]=useState(""); const [text,setText]=useState("");const [error,setError]=useState("");
@@ -33,7 +34,7 @@ export default function VocabularyInbox({imports,busy,onResume,onCapture,onText}
     <details className="rounded-lg border border-border p-4"><summary className="font-medium cursor-pointer">批量粘贴词表／学习材料</summary><div className="space-y-3 mt-4 text-sm"><label>资料名称<input className={input} value={title} maxLength={200} onChange={ev=>setTitle(ev.target.value)}/></label><label>材料类型<select className={input} value={kind} onChange={ev=>setKind(ev.target.value)}>{Object.entries(sourceKinds).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label><textarea aria-label="批量词汇材料" className={input} rows={7} maxLength={1000000} value={text} onChange={ev=>setText(ev.target.value)} placeholder="粘贴词表、阅读段落、听力转写或错题原文"/><button disabled={busy||saving||!text.trim()} className={button} onClick={()=>void run(async()=>{await onText(title||"粘贴材料",text,kind);setText("");})}>自动提取入库</button></div></details>
     {error&&<p role="alert" className="text-red-700 text-sm">{error}</p>}
     <h2 className="font-medium">导入记录</h2>
-    {imports.map(imp=><article key={imp.id} className="border border-border rounded-lg p-4"><div className="flex flex-wrap gap-3 justify-between"><h3 className="font-medium break-all">{imp.name}</h3><span className="text-sm">{imp.completed_chunks.length} / {imp.chunk_count} 批</span></div>{imp.completed_chunks.length<imp.chunk_count&&<button disabled={busy||saving} className={`${button} mt-3`} onClick={()=>void run(()=>onResume(imp))}>继续提取</button>}<ImportSource id={imp.id}/></article>)}
+    {imports.map(imp=><article key={imp.id} className="border border-border rounded-xl bg-card p-4"><div className="flex flex-wrap gap-3 justify-between"><h3 className="font-medium break-all">{imp.name}</h3><span className="text-xs tabular-nums text-ink-light">{imp.completed_chunks.length} / {imp.chunk_count} 批已保存</span></div><progress aria-label={`${imp.name}导入进度`} value={imp.completed_chunks.length} max={Math.max(1,imp.chunk_count)} className="w-full h-1.5 mt-3 accent-sage-deep"/><div className="flex flex-wrap items-start justify-between gap-2 mt-3">{imp.completed_chunks.length<imp.chunk_count ? <button disabled={busy||saving} className={button} onClick={()=>void run(()=>onResume(imp))}>继续提取</button> : <span className="text-xs text-sage-deep py-3">已完成</span>}<DeleteVocabularyButton name={imp.name} disabled={busy||saving} onDelete={()=>onDelete(imp.id)} description="移除这条导入记录及续传原文；已入库词汇和学习进度保留。此操作无法撤销。"/></div><ImportSource id={imp.id}/></article>)}
     {!imports.length&&<p className="text-ink-lighter py-6">上传词汇 PDF 或粘贴资料，开始建立个人词库。</p>}
   </section>;
 }

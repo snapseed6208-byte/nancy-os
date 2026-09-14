@@ -2,8 +2,9 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
 import { HttpError } from "./errors.ts";
 import { buildSpans, selectCandidates, type Note, type Reject } from "./spans.ts";
+import { extractResponse } from "./partial.ts";
 
-export interface ExtractResult { saved: number; rejected: Reject[]; notes: Note[]; spans: number }
+export interface ExtractResult { saved: number; rejected: Reject[]; notes: Note[]; spans: number; partial?: boolean }
 
 const PROMPT = `You enrich TEM8 vocabulary entries. You are given numbered source spans extracted from a PDF or text vocabulary list. For every span containing useful TEM8 lexical items, return one entry per item.
 Return JSON {"entries":[{"span_id":"<id copied exactly from the list>","word":"lemma, lowercase, singular","pos":"part of speech or empty","type":"new|familiar|collocation|academic|listening","meaning_zh":"Chinese meaning"}]}.
@@ -21,12 +22,13 @@ export async function handleExtract(body: Record<string, unknown>, db: SupabaseC
   const spans = buildSpans(text, index);
   const result = await aiRuntime([
     { role: "system", content: PROMPT },
-    { role: "user", content: `Source kind: ${imp.source_kind || "vocabulary"}.\nSpans (span_id<TAB>text):\n${spans.map(span => `${span.span_id}\t${span.text}`).join("\n")}` },
-  ], { agentName: "tem8-vocabulary-extract", maxInputLength: 14000, maxTokens: 6000, dynamicTokens: false, temperature: 0.1 });
+    { role: "user", content: `Source kind: ${imp.source_kind || "vocabulary"}.\nPreviously saved words in this chunk (omit these; extract only the remaining items): ${JSON.stringify(imp.partial_words?.[index]||[])}\nSpans (span_id<TAB>text):\n${spans.map(span => `${span.span_id}\t${span.text}`).join("\n")}` },
+  ], { agentName: "tem8-vocabulary-extract", maxInputLength: 14000, maxTokens: 6000, dynamicTokens: false, temperature: 0.1, parseJson: false });
   if (!result.success) throw new HttpError(502, result.error);
-  const { candidates, rejected, notes } = selectCandidates(result.data, spans);
-  // Always mark the chunk complete, even with zero accepted entries, so the import can advance.
-  const saved = await db.rpc("save_vocabulary_chunk", { p_import: imp.id, p_chunk: index, p_entries: candidates });
+  const parsed=extractResponse(result.data);
+  const { candidates, rejected, notes } = selectCandidates(parsed.data, spans);
+  // Preserve complete entries on truncation, without falsely finishing this chunk.
+  const saved = await db.rpc("save_vocabulary_extraction", { p_import: imp.id, p_chunk: index, p_entries: candidates, p_complete: !parsed.partial });
   if (saved.error) throw new HttpError(500, "保存词条失败");
-  return { saved: saved.data ?? 0, rejected, notes, spans: spans.length };
+  return { saved: saved.data ?? 0, rejected, notes, spans: spans.length, partial: parsed.partial };
 }

@@ -6,12 +6,13 @@ import TEM8Hub from "@/pages/TEM8Hub";
 import { Router, Route, Switch, Redirect } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { NAVIGATION_ITEMS } from "@/config/navigation";
-const state=vi.hoisted(()=>({words:[] as unknown[],imports:[] as unknown[],submit:vi.fn(),question:vi.fn(),ai:vi.fn(),refresh:vi.fn(),startDay:vi.fn(),archive:vi.fn(),plan:undefined as unknown}));
+import { parseFile } from "@/lib/parsers/fileParsers";
+const state=vi.hoisted(()=>({words:[] as unknown[],imports:[] as unknown[],submit:vi.fn(),question:vi.fn(),ai:vi.fn(),refresh:vi.fn(),startDay:vi.fn(),deleteWord:vi.fn(),deleteImport:vi.fn(),createImport:vi.fn(),archive:vi.fn(),plan:undefined as unknown}));
 vi.mock("@/lib/hooks/useVocabulary",()=>({useVocabulary:()=>({
   words:{data:state.words,isLoading:false},imports:{data:state.imports,isLoading:false},day:"2026-09-10",
   plan:{data:state.plan === null ? null : {day:"2026-09-10",new_ids:["one"],familiar_ids:[],production_ids:[],target:25}},
   submit:{mutateAsync:state.submit,isPending:false},question:{mutateAsync:state.question,isPending:false},ai:{mutateAsync:state.ai,isPending:false},
-  startDay:{mutateAsync:state.startDay,isPending:false},edit:{isPending:false},archive:{mutateAsync:state.archive,isPending:false},dashboard:{data:undefined},history:{data:[]},refresh:state.refresh,createImport:{},
+  startDay:{mutateAsync:state.startDay,isPending:false},edit:{isPending:false},archive:{mutateAsync:state.archive,isPending:false},dashboard:{data:undefined},history:{data:[]},refresh:state.refresh,createImport:{mutateAsync:state.createImport},deleteWord:{mutateAsync:state.deleteWord},deleteImport:{mutateAsync:state.deleteImport},
 })}));
 vi.mock("@/lib/supabase",()=>({supabase:{}}));
 vi.mock("@/lib/parsers/fileParsers",()=>({parseFile:vi.fn()}));
@@ -27,6 +28,49 @@ async function openTest(){fireEvent.click(screen.getByRole("link",{name:/qualify
 beforeEach(()=>{state.words=[{...sample}];state.imports=[];state.plan=undefined;vi.spyOn(window,"scrollTo").mockImplementation(()=>{});vi.clearAllMocks();state.question.mockResolvedValue(test);state.submit.mockResolvedValue(feedback);});
 afterEach(cleanup);
 describe("TEM8 full vocabulary page",()=>{
+  it("saves extracted PDF text even when some pages produced a warning",async()=>{
+    vi.mocked(parseFile).mockResolvedValue({text:"qualify 限定",warning:"第 2 页读取失败",fileName:"test.pdf",fileType:"pdf",charCount:10});
+    state.createImport.mockResolvedValue({id:"pdf",name:"test.pdf",chunk_count:1,completed_chunks:[]});
+    state.ai.mockResolvedValue({saved:1});
+    mount("/tem8/vocabulary/import");
+    fireEvent.change(screen.getByLabelText("导入词汇文件"),{target:{files:[new File(["pdf"],"test.pdf",{type:"application/pdf"})]}});
+    await waitFor(()=>expect(state.createImport).toHaveBeenCalledWith(expect.objectContaining({text:"qualify 限定"})));
+    expect(await screen.findByText("第 2 页读取失败")).toBeInTheDocument();
+    await waitFor(()=>expect(state.ai).toHaveBeenCalled());
+  });
+  it("reports saved entries and pauses when the response is incomplete",async()=>{
+    state.imports=[{id:"pdf",name:"词表.pdf",chunk_count:3,completed_chunks:[]}];
+    state.ai.mockResolvedValueOnce({saved:12,partial:true});mount("/tem8/vocabulary/import");
+    fireEvent.click(screen.getByText("继续提取"));
+    await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("已保存 12 条"));
+    expect(state.ai).toHaveBeenCalledTimes(1);
+  });
+  it("keeps an explicit saved count on a later chunk failure",async()=>{
+    state.imports=[{id:"pdf",name:"词表.pdf",chunk_count:3,completed_chunks:[]}];
+    state.ai.mockResolvedValueOnce({saved:9}).mockRejectedValueOnce(new Error("连接中断"));mount("/tem8/vocabulary/import");
+    fireEvent.click(screen.getByText("继续提取"));
+    await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("已保存 9 条"));
+    expect(screen.getByRole("alert")).toHaveTextContent("连接中断");
+  });
+  it("requires confirmation for deleting a word and surfaces failures",async()=>{
+    state.deleteWord.mockRejectedValueOnce(new Error("删除失败"));mount();
+    fireEvent.click(screen.getByRole("button",{name:"删除qualify"}));
+    expect(state.deleteWord).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"取消"}));
+    expect(state.deleteWord).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"删除qualify"}));
+    fireEvent.click(screen.getByRole("button",{name:"确认删除"}));
+    await waitFor(()=>expect(state.deleteWord).toHaveBeenCalledWith("one"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("删除失败");
+  });
+  it("deletes only the selected import after explaining that vocabulary remains",async()=>{
+    state.imports=[{id:"pdf",name:"词表.pdf",chunk_count:1,completed_chunks:[0]}];mount("/tem8/vocabulary/import");
+    fireEvent.click(screen.getByRole("button",{name:"删除词表.pdf"}));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("已入库词汇和学习进度保留");
+    fireEvent.click(screen.getByRole("button",{name:"确认删除"}));
+    await waitFor(()=>expect(state.deleteImport).toHaveBeenCalledWith("pdf"));
+    expect(state.deleteWord).not.toHaveBeenCalled();
+  });
   it("hides the server solution until an answer is submitted",async()=>{
     mount();const dialog=await openTest();expect(within(dialog).queryByText("to limit a statement")).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button",{name:"提交答案"})).toBeDisabled();
