@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { aiRuntime } from "../_shared/ai.ts";
-import { MODES, QUESTION_PROMPT, GRADE_PROMPT, validateQuestion, publicQuestion, deterministicGrade, validateGrade, clampLevel, type Mode } from "./practice.ts";
+import { MODES, QUESTION_PROMPT, GRADE_PROMPT, validateQuestion, validateAssessment, shuffleQuestion, assessmentFocus, publicQuestion, deterministicGrade, validateGrade, clampLevel, type Mode } from "./practice.ts";
 
 export async function handleLearning(body: Record<string, unknown>, db: SupabaseClient, userDb: SupabaseClient, userId: string) {
   if (body.action === "capture") {
@@ -48,17 +48,26 @@ export async function handleLearning(body: Record<string, unknown>, db: Supabase
       question=found.data;
     } else {
       // Three rotating variants per error epoch; new mistakes generate fresh contextual retests.
-      const variant=w.error_count*3+(Math.floor(Date.now()/86400000)%3);
+      // Negative namespace invalidates old generated questions without changing active attempts.
+      const rotation=w.error_count*3+(Math.floor(Date.now()/86400000)%3);
+      const variant=-1-rotation;
       const cached=await db.from("vocabulary_questions").select("*").eq("word_id",w.id).eq("user_id",userId).eq("mode",mode).eq("content_version",w.content_version).eq("variant",variant).maybeSingle();
       if(cached.error) throw cached.error;
       question=cached.data;
       if(!question) {
         const prior=await db.from("vocabulary_errors").select("interpretation,actual_meaning,root_cause,transferable_rule").eq("word_id",w.id).eq("user_id",userId).eq("mode",mode).is("resolved_at",null).order("created_at",{ascending:false}).limit(1);
         if(prior.error) throw prior.error;
-        const result=await aiRuntime([{role:"system",content:QUESTION_PROMPT},{role:"user",content:JSON.stringify({word:w.word,mode,enrichment:w.enrichment,previous_error:prior.data?.[0]||null,variant})}],
+        const recent=await db.from("vocabulary_questions").select("mode,payload").eq("word_id",w.id).eq("user_id",userId).order("created_at",{ascending:false}).limit(3);
+        if(recent.error) throw recent.error;
+        const previous_questions=(recent.data||[]).map(row=>({mode:row.mode,prompt:row.payload.prompt,options:row.payload.options}));
+        let payload;
+        for(let retry=0;retry<3;retry++) {
+        const result=await aiRuntime([{role:"system",content:QUESTION_PROMPT},{role:"user",content:JSON.stringify({word:w.word,mode,enrichment:w.enrichment,previous_error:prior.data?.[0]||null,variant,assessment_focus:assessmentFocus(mode,rotation),previous_questions})}],
           {agentName:"tem8-question",maxInputLength:10000,maxTokens:2200,dynamicTokens:false,temperature:0.35});
         if(!result.success) throw new Error(result.error);
-        const payload=validateQuestion(result.data,mode);
+        try { payload=shuffleQuestion(validateAssessment(validateQuestion(result.data,mode),mode)); break; } catch(error) { if(retry===2) throw error; }
+        }
+        if(!payload) throw new Error("Question validation failed");
         const stored=await db.from("vocabulary_questions").insert({user_id:userId,word_id:w.id,mode,content_version:w.content_version,variant,payload}).select("*").single();
         if(stored.error) throw stored.error;
         question=stored.data;

@@ -1,0 +1,116 @@
+[
+  {
+    "word": "disparage",
+    "mode": "R1",
+    "question": {
+      "prompt": "请从下列选项中选出与 disparage 含义最接近的一项。",
+      "options": [
+        "criticize",
+        "mock",
+        "dismiss",
+        "belittle"
+      ],
+      "correct_index": 3,
+      "expected_answer": "belittle",
+      "explanation": "disparage 意为“贬低、轻视”，强调降低某人或某事的价值评价，与 belittle 最接近。criticize 仅表示“批评”，不一定贬低价值；dismiss 表示“不予考虑、打发走”，侧重忽略而非贬损；mock 表示“嘲笑”，侧重取笑而非评价其价值。",
+      "trigger": "当遇到表示“贬低、轻视”的动词时，优先寻找强调降低价值评价的近义词，而非仅表示批评、忽略或嘲笑的词。",
+      "audio_text": "",
+      "rubric": "选择 belittle 得满分；选择其他选项不得分。"
+    }
+  },
+  {
+    "word": "disparage",
+    "mode": "R2",
+    "question": {
+      "prompt": "阅读情境，选择对 disparage 一词在句中的含义最准确的解释。\n\n情境：The manager did not criticize the proposal's budget or timeline; instead, she disparaged the entire project as a waste of talent, implying that no one involved had anything worthwhile to contribute.",
+      "options": [
+        "She spoke of the project as having little value.",
+        "She delayed making a decision about the project.",
+        "She questioned the project's practical details.",
+        "She praised the project's potential."
+      ],
+      "correct_index": 0,
+      "expected_answer": "She spoke of the project as having little value.",
+      "explanation": "disparage 意为“贬低、轻视”，即把某事物说得没有价值。情境中明确说她并未批评预算或时间表，而是把整个项目说成浪费人才，暗示参与者没有值得贡献之处，这正是“贬低其价值”。选项“质疑项目的实际细节”对应的是批评具体问题，与“没有批评预算或时间表”矛盾；“推迟决定”在情境中没有任何依据；“赞扬项目潜力”与贬低态度相反。",
+      "trigger": "当语境先排除具体批评，再出现对整体价值的否定性评价时，disparage 表示贬低、轻视。",
+      "audio_text": "",
+      "rubric": "选择正确选项得满分；选择其他选项不得分。"
+    }
+  },
+  {
+    "word": "disparage",
+    "mode": "collocation",
+    "question": {
+      "prompt": "选择最符合学术语境且搭配自然的动词填空：\n\nThe reviewer did not merely question the methodology; she ___ the entire study as intellectually bankrupt, dismissing decades of scholarship as worthless.",
+      "options": [
+        "undermined",
+        "challenged",
+        "criticized",
+        "disparaged"
+      ],
+      "correct_index": 3,
+      "expected_answer": "disparaged",
+      "explanation": "disparaged 表示“贬低、轻蔑地认为毫无价值”，与 as intellectually bankrupt、dismissing...as worthless 的强烈贬低语义完全吻合。criticized 仅指一般批评，不能体现“贬为毫无价值”的轻蔑程度；challenged 指质疑、挑战，不包含贬低；undermined 指削弱、暗中破坏，通常不接 as + 形容词补语，且语义侧重破坏而非公开贬低。",
+      "trigger": "当语境出现 as + 贬义形容词/名词（如 as worthless, as intellectually bankrupt）且需要表达“公开贬低、轻蔑否定”时，优先考虑 disparage 而非一般批评或质疑类动词。",
+      "audio_text": "",
+      "rubric": "选择正确动词得满分；若选 criticized/challenged/undermined 则不得分，因其程度、语义侧重或搭配不符。"
+    }
+  },
+  {
+    "word": "qualify",
+    "mode": "R1",
+    "question": {
+      "prompt": "请选择与 qualify 在下列语境中含义最接近的英文释义：\nThe report's conclusion was qualified by the note that data from rural clinics were incomplete.",
+      "options": [
+        "to provide evidence that supports a claim",
+        "to express something in a more forceful and confident way",
+        "to make someone officially eligible for a profession or activity",
+        "to add a condition or limitation that restricts the force of a statement"
+      ],
+      "correct_index": 3,
+      "expected_answer": "to add a condition or limitation that restricts the force of a statement",
+      "explanation": "此处 qualified 表示“对结论加以限定”，即补充条件或限制，使其语气和适用范围收窄。选项“to make someone officially eligible for a profession or activity”是 qualify 的常见义“取得资格”，但语境中没有某人获得资格；选项“to provide evidence that supports a claim”把 qualify 误作“证明、支持”，与 note 表示的限制性说明不符；选项“to express something in a more forceful and confident way”方向相反，qualified 在此不是加强而是削弱绝对性。",
+      "trigger": "看到 qualify/qualified 后接 statement、conclusion、opinion、claim 等，且出现 but、although、note、except 等限制信号时，优先考虑“限定、修正范围”义，而非“取得资格”。",
+      "audio_text": "",
+      "rubric": "选择正确释义得1分；选择其他选项不得分。"
+    }
+  },
+  {
+    "word": "qualify",
+    "mode": "R2",
+    "question": {
+      "prompt": "阅读下列情境，判断 qualify 在句中的含义，并选择最准确的句子释义：\n\nThe senator said she supported the bill, but qualified her support by noting that she would vote against it if the funding for public schools was cut. Reporters described her position as cautious rather than wholehearted.",
+      "options": [
+        "她支持该法案，但否认自己曾作出任何支持的表态。",
+        "她支持该法案，因为她已具备投票所需的法律资格。",
+        "她支持该法案，并强调自己的支持比以往更加坚定。",
+        "她支持该法案，但附加了一个条件，使这种支持受到限制。"
+      ],
+      "correct_index": 3,
+      "expected_answer": "她支持该法案，但附加了一个条件，使这种支持受到限制。",
+      "explanation": "此处 qualify 表示“限制或修正陈述的范围”，句中 but 后的条件（如果公立学校经费被削减就投反对票）以及 reporters 所说的 cautious rather than wholehearted 都说明支持是有条件、被削弱的。选项“附加了一个条件，使这种支持受到限制”与此一致。选项“强调支持更加坚定”与 cautious 相矛盾；选项“具备投票所需的法律资格”把 qualify 误解为“取得资格”；选项“否认曾作出任何支持的表态”与 she supported the bill 直接冲突。",
+      "trigger": "看到 but / although / however 等转折后出现条件、例外或保留时，qualify 常表示“对陈述加以限制或修正”，而非“取得资格”。",
+      "audio_text": "",
+      "rubric": "能识别 qualify 在此语境中表示“限制、修正（支持）的范围”，并选出保留条件与削弱力度的释义；仅凭 qualify 的常见义“取得资格”作答不得分。"
+    }
+  },
+  {
+    "word": "qualify",
+    "mode": "collocation",
+    "question": {
+      "prompt": "选择最符合学术英语表达习惯的动词填入空格，使句子语义完整、搭配自然：\n\nThe researcher's sweeping claim that remote work boosts productivity for all employees was ___ by the acknowledgment that the sample consisted mainly of software engineers.",
+      "options": [
+        "refuted",
+        "generalized",
+        "corroborated",
+        "qualified"
+      ],
+      "correct_index": 3,
+      "expected_answer": "qualified",
+      "explanation": "空格所在句意为：研究者关于远程办公提升所有员工生产力的笼统论断，因承认样本主要是软件工程师而受到限制/有所保留。qualified 在此表示“对陈述加以限定、缩小其适用范围”，与 by the acknowledgment that... 这一限定性说明自然搭配。refuted（驳倒）语义过强，承认样本局限只是限制结论的适用范围，并未推翻结论；corroborated（证实）与承认样本局限的让步含义相反；generalized（推广）与 was ... by the acknowledgment 的被动结构及语义不符，且“被推广”不能由承认局限来触发。",
+      "trigger": "当学术论断后接 by the acknowledgment/admission/note that... 等限定性说明时，常选表示“限定、保留”的动词，而非“证实/驳倒/推广”。",
+      "audio_text": "",
+      "rubric": "选择 qualified 得满分；选择其他选项不得分。"
+    }
+  }
+]
